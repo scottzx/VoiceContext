@@ -1,0 +1,29 @@
+# VoiceContext 文档
+
+本目录保存 VoiceContext 的产品、设计和工程文档。文档中的产品边界以 PRD 为准，PM 看板用于跟踪需求、任务、依赖和里程碑。
+
+## 产品文档
+
+- [VoiceContext v1 产品需求文档（PRD）](./PRD.md)：v1 产品边界、用户流程、信息架构、页面清单、状态矩阵、功能需求、验收标准，以及原型任务 `#39` / `#40` 的输入与交付定义。
+- [v1 信息架构与低保真原型](./design/v1/information-architecture.md)：已通过的统一 Recording 页面树、流程、状态矩阵与可点击低保真交付。
+- [v1 设计系统与高保真原型](./design/v1/design-system.md)：个人语言记事本、多人对话与会议共用的视觉 token、语音胶囊、音频播放器、SwiftUI 标注、无障碍要求与高保真原型入口。
+
+## 文档约定
+
+- PRD 是产品范围和交互输入的仓库内单一事实源。
+- PM 需求与任务使用 `#编号` 标识；修改产品范围时，需要同时更新 PRD 和对应 PM 条目。
+- 原型、UI/UX 和设计走查产物后续统一放在 `docs/design/v1/`。
+- 工程实现与 PRD 不一致时，不允许静默选择其中一方；先记录差异，再由产品负责人确认。
+
+## PM 任务读取注意
+
+`project-items list` 是摘要视图，会省略任务说明和验收标准。执行任务前必须使用详情和关系图命令：
+
+```bash
+/Users/scott/Documents/01-开发项目/1agents/1agents_app/build/1agents project-items get '#39' --json
+/Users/scott/Documents/01-开发项目/1agents/1agents_app/build/1agents project-items graph '#39' --json
+/Users/scott/Documents/01-开发项目/1agents/1agents_app/build/1agents project-items get '#40' --json
+/Users/scott/Documents/01-开发项目/1agents/1agents_app/build/1agents project-items graph '#40' --json
+```
+
+对 `#39`，详情应包含 `docs/PRD.md` 输入、四类仓库内设计产物和独立验收标准；关系图应显示 `#39 → #38`，以及后续 `#40 → #39`。对 `#40`，以 `docs/design/v1/design-system.md` 和 `docs/design/v1/prototype/` 为高保真交付事实，并确认后续 `#41` 仍依赖 `#40`。

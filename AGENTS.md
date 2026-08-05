@@ -72,3 +72,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## Design System
+
+Always read `DESIGN.md` before making any visual or UI decision. All typography, colors, spacing, layout, motion, component hierarchy, and prohibited patterns are defined there. Do not deviate without explicit user approval. During UI review or QA, flag any implementation that conflicts with `DESIGN.md`.

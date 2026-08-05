@@ -1,0 +1,10 @@
+speech_note/speech_note/ModelResources/*.gguf
+speech_note/speech_note/ModelResources/*.onnx
+speech_note/speech_note/Frameworks/
+.gstack/
+.DS_Store
+*.DS_Store
+build/
+speech_note/build/
+xcuserdata/
+*.xcuserstate

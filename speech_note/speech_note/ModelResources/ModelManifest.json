@@ -1,0 +1,23 @@
+[
+  {
+    "id": "sensevoice-q8-0",
+    "relativePath": "SenseVoiceSmall-Q8_0.gguf",
+    "sha256": "6c759ee4c9748c9b3f7a5a60ca74f0f7e685fb9d45d1378fce7cfd62f59adf29",
+    "sourceURL": "https://huggingface.co/handy-computer/SenseVoiceSmall-gguf/resolve/main/SenseVoiceSmall-Q8_0.gguf",
+    "licenseURL": "https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE"
+  },
+  {
+    "id": "silero-vad",
+    "relativePath": "silero_vad.onnx",
+    "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+    "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+    "licenseURL": "https://github.com/snakers4/silero-vad/blob/master/LICENSE"
+  },
+  {
+    "id": "cam-plus",
+    "relativePath": "3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx",
+    "sha256": "e2d2048292e055f7b61cdec3db010503f35369b245bf0b3bbad021c9a91e4053",
+    "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx",
+    "licenseURL": "https://github.com/modelscope/3D-Speaker/blob/main/LICENSE"
+  }
+]
