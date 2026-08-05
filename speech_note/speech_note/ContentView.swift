@@ -1,14 +1,18 @@
 import SwiftUI
 
-/// Validation surface for the 0.1.0 recording core. It is deliberately a
-/// single, quiet screen: the person starts and stops the microphone, and the
-/// evidence the device checklist needs (state, chunks, gaps, recovery,
-/// integrity) is read straight from the journal/SQLite-backed model rather
-/// than from the old direct-recorder spike.
+/// The product-facing recording workspace. Its state is deliberately read
+/// from `RecordingCoreModel`, which in turn refreshes its snapshots from the
+/// journal/SQLite repository; this view never creates a parallel UI state
+/// machine for capture.
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: RecordingCoreModel
     @State private var modelError: String?
+    @State private var selectedDate = Calendar.current.startOfDay(for: Date())
+    @State private var isStartSheetPresented = false
+    @State private var isSettingsPresented = false
+    @State private var isRecordingScreenPresented = false
 
     init() {
         do {
@@ -24,69 +28,705 @@ struct ContentView: View {
             if let modelError {
                 startupFailure(modelError)
             } else {
-                validationScreen
+                workspace
             }
         }
         .onChange(of: scenePhase) { _, phase in
             model.scenePhaseChanged(to: ScenePhaseLike(phase))
         }
-    }
-
-    private var validationScreen: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                header
-                timerBlock
-                controls
-                evidence
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 32)
+        .onChange(of: model.captureIsActive) { _, isActive in
+            isRecordingScreenPresented = isActive
         }
-        .background(Color(uiColor: .systemBackground))
         .task {
             await model.recoverOnLaunch()
         }
     }
 
-    // MARK: - Header
+    private var workspace: some View {
+        NavigationStack {
+            recordsScreen
+                .navigationTitle("记录")
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("我的", systemImage: "person.circle") {
+                            isSettingsPresented = true
+                        }
+                        .accessibilityLabel("打开我的")
+                    }
+                }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if model.captureIsActive {
+                        RecordingBar(model: model, reduceMotion: reduceMotion)
+                    }
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    captureDock
+                }
+        }
+        .sheet(isPresented: $isStartSheetPresented) {
+            StartRecordingSheet(model: model)
+        }
+        .sheet(isPresented: $isSettingsPresented) {
+            SettingsScreen(model: model, reduceMotion: reduceMotion)
+        }
+        .fullScreenCover(isPresented: $isRecordingScreenPresented) {
+            RecordingScreen(
+                model: model,
+                reduceMotion: reduceMotion,
+                isPresented: $isRecordingScreenPresented
+            )
+        }
+    }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("录音核心验证")
-                .font(.largeTitle.weight(.bold))
-            Text("0.1.0 · journal / SQLite / gap 真机链路")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            stateLine
+    private var recordsScreen: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                CalendarStrip(selectedDate: $selectedDate, recordings: model.recordings)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(selectedDateTitle)
+                        .font(.headline)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
+
+                    if recordingsForSelectedDate.isEmpty {
+                        ContentUnavailableView {
+                            Label("这一天还没有记录", systemImage: "waveform")
+                        } description: {
+                            Text("开始录音，保存一个念头或一次对话。")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 32)
+                    } else {
+                        ForEach(recordingsForSelectedDate) { recording in
+                            RecordingRow(recording: recording)
+                            Divider().padding(.leading, 20)
+                        }
+                    }
+                }
+            }
+            .padding(.top, 12)
+            .padding(.bottom, 20)
+        }
+        .background(Color(uiColor: .systemBackground))
+    }
+
+    private var captureDock: some View {
+        VStack(spacing: 6) {
+            Button {
+                isStartSheetPresented = true
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(.red)
+                        .frame(width: 64, height: 64)
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 72, height: 72)
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("开始录音")
+            .accessibilityHint("可选择性填写标题和会议字段")
+
+            Text("开始录音")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.primary)
         }
         .padding(.top, 8)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
     }
 
-    private var stateLine: some View {
-        HStack(spacing: 8) {
-            Image(systemName: stateSymbol)
-                .foregroundStyle(stateColor)
-            Text(stateText)
-                .font(.headline)
-                .foregroundStyle(stateColor)
-            if model.isInBackground {
-                Text("后台")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+    private var recordingsForSelectedDate: [Recording] {
+        model.recordings.filter {
+            Calendar.current.isDate($0.startedAt, inSameDayAs: selectedDate)
+        }
+    }
+
+    private var selectedDateTitle: String {
+        if Calendar.current.isDateInToday(selectedDate) { return "今天的记录" }
+        return selectedDate.formatted(.dateTime.month(.wide).day().weekday(.wide))
+    }
+
+    private func startupFailure(_ message: String) -> some View {
+        ContentUnavailableView {
+            Label("记录空间未能打开", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(message)
+        }
+        .foregroundStyle(.primary)
+    }
+}
+
+private struct CalendarStrip: View {
+    @Binding var selectedDate: Date
+    let recordings: [Recording]
+
+    private let calendar = Calendar.current
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(days, id: \.self) { day in
+                    let isSelected = calendar.isDate(day, inSameDayAs: selectedDate)
+                    let count = recordings.filter { calendar.isDate($0.startedAt, inSameDayAs: day) }.count
+                    Button {
+                        selectedDate = day
+                    } label: {
+                        VStack(spacing: 4) {
+                            Text(day.formatted(.dateTime.weekday(.narrow)))
+                                .font(.caption.weight(.medium))
+                            Text(day.formatted(.dateTime.day()))
+                                .font(.headline.monospacedDigit())
+                            Text(count == 0 ? " " : "\(count) 条")
+                                .font(.caption2)
+                                .lineLimit(1)
+                        }
+                        .frame(width: 48, height: 68)
+                        .foregroundStyle(isSelected ? .white : .primary)
+                        .background {
+                            if isSelected {
+                                Capsule().fill(.primary)
+                            } else if calendar.isDateInToday(day) {
+                                Capsule().stroke(Color.secondary, lineWidth: 1)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(day.formatted(.dateTime.year().month().day().weekday(.wide)))
+                    .accessibilityValue(count == 0 ? "没有记录" : "\(count) 条记录")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
             }
-            Spacer()
-            if let recording = model.snapshot.recording {
-                Text(recording.id.shortID)
-                    .font(.caption.monospaced())
+            .padding(.horizontal, 20)
+        }
+    }
+
+    private var days: [Date] {
+        let today = calendar.startOfDay(for: Date())
+        return (-3...3).compactMap { calendar.date(byAdding: .day, value: $0, to: today) }
+    }
+}
+
+private struct RecordingRow: View {
+    let recording: Recording
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: statusSymbol)
+                .font(.title3)
+                .foregroundStyle(statusColor)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(recording.title?.isEmpty == false ? recording.title! : defaultTitle)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                Text(metadata)
+                    .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary)
+                if recording.state != .complete {
+                    Label(statusText, systemImage: statusSymbol)
+                        .font(.caption)
+                        .foregroundStyle(statusColor)
+                }
+            }
+            Spacer(minLength: 8)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(recording.title?.isEmpty == false ? recording.title! : defaultTitle)，\(metadata)，\(statusText)")
+    }
+
+    private var defaultTitle: String {
+        recording.isMeeting ? "未命名会议" : "未命名录音"
+    }
+
+    private var metadata: String {
+        let time = recording.startedAt.formatted(date: .omitted, time: .shortened)
+        let duration: String
+        if let endedAt = recording.endedAt {
+            duration = Self.duration(endedAt.timeIntervalSince(recording.startedAt))
+        } else {
+            duration = "录制中"
+        }
+        return "\(time) · \(duration)"
+    }
+
+    private var statusText: String {
+        switch recording.state {
+        case .recording: "正在录音"
+        case .paused: "已暂停"
+        case .interrupted: "录音中断，需要注意"
+        case .stopping: "正在停止"
+        case .processing: "正在处理"
+        case .complete: "已完成"
+        case .failed: "需要注意"
+        }
+    }
+
+    private var statusSymbol: String {
+        switch recording.state {
+        case .recording: "record.circle.fill"
+        case .paused: "pause.circle.fill"
+        case .interrupted, .failed: "exclamationmark.triangle.fill"
+        case .stopping: "stop.circle"
+        case .processing: "hourglass"
+        case .complete: "checkmark.circle"
+        }
+    }
+
+    private var statusColor: Color {
+        switch recording.state {
+        case .recording, .failed: .red
+        case .paused, .interrupted, .processing: .orange
+        case .stopping, .complete: .secondary
+        }
+    }
+
+    fileprivate static func duration(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval))
+        return seconds >= 3_600
+            ? String(format: "%d:%02d:%02d", seconds / 3_600, seconds / 60 % 60, seconds % 60)
+            : String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+private struct StartRecordingSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var isMeeting = false
+    let model: RecordingCoreModel
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Button {
+                        Task {
+                            await model.start(title: title, isMeeting: isMeeting)
+                            if model.captureIsActive { dismiss() }
+                        }
+                    } label: {
+                        Label("直接开始录音", systemImage: "mic.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.primary)
+                    .accessibilityHint("不填写以下字段也可以开始")
+                } footer: {
+                    Text("标题和会议字段都可以在录音结束后补充。")
+                }
+
+                Section("可选信息") {
+                    TextField("标题", text: $title)
+                        .textInputAutocapitalization(.sentences)
+                    Toggle("这是一次会议", isOn: $isMeeting)
+                }
+
+                if let notice = model.notice {
+                    Section {
+                        Label(notice, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("开始记录")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
             }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("录音状态：\(stateText)")
+        .presentationDetents([.medium])
+    }
+}
+
+private struct RecordingScreen: View {
+    let model: RecordingCoreModel
+    let reduceMotion: Bool
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Spacer(minLength: 28)
+                status
+                timer
+                level
+                Spacer()
+                controls
+                if let notice = model.notice {
+                    Label(notice, systemImage: "info.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 20)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 24)
+            .navigationTitle("录音中")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("最小化") { isPresented = false }
+                }
+            }
+            .background(Color(uiColor: .systemBackground))
+        }
+        .interactiveDismissDisabled()
+        .onChange(of: model.captureIsActive) { _, active in
+            if !active { isPresented = false }
+        }
     }
 
-    private var stateSymbol: String {
+    private var status: some View {
+        Label(statusText, systemImage: statusSymbol)
+            .font(.headline)
+            .foregroundStyle(statusColor)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("录音状态：\(statusText)")
+    }
+
+    private var timer: some View {
+        Text(elapsedText)
+            .font(.system(size: 48, weight: .regular, design: .rounded).monospacedDigit())
+            .contentTransition(.numericText())
+            .padding(.top, 12)
+            .accessibilityLabel("已录制时长")
+            .accessibilityValue(elapsedAccessibility)
+    }
+
+    @ViewBuilder
+    private var level: some View {
+        if let inputLevel = model.inputLevel {
+            GeometryReader { proxy in
+                Capsule()
+                    .fill(Color(uiColor: .systemFill))
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(.red)
+                            .frame(width: max(2, proxy.size.width * CGFloat(inputLevel)))
+                    }
+            }
+            .frame(height: 6)
+            .padding(.top, 24)
+            .accessibilityLabel("麦克风输入电平")
+            .accessibilityValue("\(Int(inputLevel * 100))%")
+        } else {
+            Text(levelFallback)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.top, 24)
+        }
+    }
+
+    private var controls: some View {
+        HStack(spacing: 20) {
+            Button {
+                Task { await model.pauseOrResume() }
+            } label: {
+                Label(pauseTitle, systemImage: pauseSymbol)
+                    .frame(minWidth: 88, minHeight: 52)
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.presentation == .interrupted)
+            .accessibilityHint(model.presentation == .interrupted ? "系统中断期间不可暂停" : "")
+
+            Button(role: .destructive) {
+                Task { await model.stop() }
+            } label: {
+                Label("停止", systemImage: "stop.fill")
+                    .frame(minWidth: 88, minHeight: 52)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .accessibilityLabel("停止录音")
+        }
+        .sensoryFeedback(.impact(weight: .medium), trigger: model.presentation)
+    }
+
+    private var statusText: String {
+        switch model.presentation {
+        case .recording: "正在录音"
+        case .paused: "已暂停"
+        case .interrupted: "已中断，等待恢复"
+        case .stopping: "正在安全停止"
+        case .processing: "正在处理"
+        case .idle, .failed: "录音已结束"
+        }
+    }
+
+    private var statusSymbol: String {
+        switch model.presentation {
+        case .recording: "record.circle.fill"
+        case .paused: "pause.circle.fill"
+        case .interrupted: "exclamationmark.triangle.fill"
+        case .stopping: "stop.circle"
+        case .processing: "hourglass"
+        case .idle, .failed: "checkmark.circle"
+        }
+    }
+
+    private var statusColor: Color {
+        switch model.presentation {
+        case .recording: .red
+        case .paused, .interrupted, .processing: .orange
+        case .stopping, .idle: .secondary
+        case .failed: .red
+        }
+    }
+
+    private var elapsedText: String {
+        guard let recording = model.snapshot.recording else { return "00:00" }
+        let ending = recording.endedAt ?? Date()
+        return RecordingRow.duration(ending.timeIntervalSince(recording.startedAt))
+    }
+
+    private var elapsedAccessibility: String {
+        guard let recording = model.snapshot.recording else { return "尚未开始录音" }
+        let seconds = max(0, Int((recording.endedAt ?? Date()).timeIntervalSince(recording.startedAt)))
+        return "\(seconds / 60) 分 \(seconds % 60) 秒"
+    }
+
+    private var pauseTitle: String { model.presentation == .paused ? "继续" : "暂停" }
+    private var pauseSymbol: String { model.presentation == .paused ? "play.fill" : "pause.fill" }
+    private var levelFallback: String {
+        model.presentation == .interrupted ? "系统中断；恢复后会继续显示输入电平。" : "正在等待麦克风输入。"
+    }
+}
+
+private struct RecordingBar: View {
+    let model: RecordingCoreModel
+    let reduceMotion: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "record.circle.fill")
+                .foregroundStyle(.red)
+                .symbolEffect(.pulse, isActive: !reduceMotion && model.presentation == .recording)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(barTitle)
+                    .font(.subheadline.weight(.semibold))
+                Text("\(elapsedText) · \(backlogText)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(barTitle)，已录制 \(elapsedAccessibility)，\(backlogText)")
+
+            Spacer(minLength: 4)
+
+            Button(role: .destructive) {
+                Task { await model.stop() }
+            } label: {
+                Label("停止", systemImage: "stop.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minWidth: 54, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
+            .accessibilityLabel("停止录音")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.red.opacity(0.08))
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private var barTitle: String {
+        switch model.presentation {
+        case .recording: "正在录音"
+        case .paused: "录音已暂停"
+        case .interrupted: "录音已中断"
+        default: "录音状态变化中"
+        }
+    }
+
+    private var backlogText: String {
+        model.isInBackground ? "录音继续，转写待前台处理" : "转写将在停止后处理"
+    }
+
+    private var elapsedText: String {
+        guard let recording = model.snapshot.recording else { return "00:00" }
+        return RecordingRow.duration(Date().timeIntervalSince(recording.startedAt))
+    }
+
+    private var elapsedAccessibility: String {
+        guard let recording = model.snapshot.recording else { return "0 分 0 秒" }
+        let seconds = max(0, Int(Date().timeIntervalSince(recording.startedAt)))
+        return "\(seconds / 60) 分 \(seconds % 60) 秒"
+    }
+}
+
+private struct SettingsScreen: View {
+    @Environment(\.dismiss) private var dismiss
+    let model: RecordingCoreModel
+    let reduceMotion: Bool
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Label("录音和文稿默认保存在本机", systemImage: "lock")
+                } header: {
+                    Text("隐私")
+                }
+
+                Section {
+                    LabeledContent("音频保留") {
+                        Text("默认 7 天")
+                            .foregroundStyle(.secondary)
+                    }
+                    LabeledContent("记录数") {
+                        Text("\(model.recordings.count)")
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("记录")
+                }
+
+                #if DEBUG
+                Section("开发验证") {
+                    NavigationLink {
+                        RecordingCoreValidationScreen(model: model)
+                    } label: {
+                        Label("录音核心验证", systemImage: "stethoscope")
+                    }
+                }
+                #endif
+            }
+            .navigationTitle("我的")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if model.captureIsActive {
+                    RecordingBar(model: model, reduceMotion: reduceMotion)
+                }
+            }
+        }
+    }
+}
+
+/// Kept out of the production navigation tree, but connected to the exact
+/// model used by the product screens so the remaining #19 device checks can
+/// inspect journal/SQLite evidence without reviving the old main UI.
+#if DEBUG
+private struct RecordingCoreValidationScreen: View {
+    let model: RecordingCoreModel
+
+    var body: some View {
+        List {
+            Section("会话") {
+                LabeledContent("状态") {
+                    Label(validationStateText, systemImage: validationStateSymbol)
+                        .foregroundStyle(validationStateColor)
+                }
+                LabeledContent("状态事件") {
+                    Text("\(model.snapshot.appliedEventCount)")
+                        .monospacedDigit()
+                }
+
+                Button(model.captureIsActive ? "停止录音" : "开始录音") {
+                    Task {
+                        if model.captureIsActive {
+                            await model.stop()
+                        } else {
+                            await model.start(title: "验证录音")
+                        }
+                    }
+                }
+                .tint(model.captureIsActive ? .red : .primary)
+
+                if model.captureIsActive {
+                    Button(model.presentation == .paused ? "继续" : "暂停") {
+                        Task { await model.pauseOrResume() }
+                    }
+                    .disabled(model.presentation == .interrupted)
+                }
+            }
+
+            Section("分片与缺口") {
+                LabeledContent("已关闭分片") {
+                    Text("\(model.snapshot.chunks.count)")
+                }
+                LabeledContent("显式 gap") {
+                    Text("\(model.snapshot.gaps.count)")
+                }
+                ForEach(model.snapshot.gaps) { gap in
+                    Label(validationGapText(gap), systemImage: "exclamationmark.triangle")
+                        .font(.subheadline)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            Section("恢复与完整性") {
+                Button("再次运行恢复（幂等检查）") {
+                    Task { await model.runRecoveryAgain() }
+                }
+                Button("运行完整性诊断") {
+                    Task { await model.runDiagnostics() }
+                }
+                Button("生成验证报告") {
+                    Task { await model.makeReport() }
+                }
+
+                if let issues = model.integrityIssues {
+                    Label(
+                        issues.isEmpty ? "无完整性问题" : "发现 \(issues.count) 个完整性问题",
+                        systemImage: issues.isEmpty ? "checkmark.circle" : "exclamationmark.triangle"
+                    )
+                    .foregroundStyle(issues.isEmpty ? .green : .orange)
+                }
+
+                if let reportURL = model.reportURL {
+                    ShareLink(item: reportURL) {
+                        Label("分享验证报告", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
+
+            if let notice = model.notice {
+                Section {
+                    Text(notice)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("录音核心验证")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var validationStateText: String {
+        switch model.presentation {
+        case .idle: "未开始"
+        case .recording: "正在录音"
+        case .paused: "已暂停"
+        case .interrupted: "已中断"
+        case .stopping: "正在停止"
+        case .processing: "正在处理"
+        case let .failed(message): "失败：\(message)"
+        }
+    }
+
+    private var validationStateSymbol: String {
         switch model.presentation {
         case .idle: "circle.dashed"
         case .recording: "record.circle.fill"
@@ -98,427 +738,20 @@ struct ContentView: View {
         }
     }
 
-    private var stateColor: Color {
+    private var validationStateColor: Color {
         switch model.presentation {
-        case .idle: .secondary
-        case .recording: .red
-        case .paused: .orange
-        case .interrupted: .orange
-        case .stopping: .secondary
-        case .processing: .orange
-        case .failed: .red
+        case .recording, .failed: .red
+        case .paused, .interrupted, .processing: .orange
+        case .idle, .stopping: .secondary
         }
     }
 
-    private var stateText: String {
-        switch model.presentation {
-        case .idle: "未开始"
-        case .recording: "正在录音"
-        case .paused: "已暂停"
-        case .interrupted: "已中断，等待处理"
-        case .stopping: "正在停止"
-        case .processing: "已停止，处理中"
-        case .failed(let message): "失败：\(message)"
-        }
-    }
-
-    // MARK: - Timer
-
-    private var timerBlock: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(timerText)
-                .font(.system(size: 48, weight: .regular, design: .rounded).monospacedDigit())
-                .contentTransition(.numericText())
-                .accessibilityLabel("已录制时长")
-                .accessibilityValue(timerAccessibility)
-            Text(timerCaption)
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
-            if model.presentation == .recording, let level = model.inputLevel {
-                inputLevelBar(level: level)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func inputLevelBar(level: Float) -> some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color(uiColor: .systemFill))
-                Capsule()
-                    .fill(.red)
-                    .frame(width: max(2, proxy.size.width * CGFloat(level)))
-            }
-        }
-        .frame(height: 4)
-        .accessibilityLabel("麦克风输入电平")
-    }
-
-    private var timerText: String {
-        guard let recording = model.snapshot.recording else { return "--:--" }
-        let interval: TimeInterval
-        switch recording.state {
-        case .recording, .paused:
-            interval = Date().timeIntervalSince(recording.startedAt)
-        default:
-            interval = (recording.endedAt ?? recording.updatedAt).timeIntervalSince(recording.startedAt)
-        }
-        return Self.clock(max(0, interval))
-    }
-
-    private var timerAccessibility: String {
-        guard let recording = model.snapshot.recording else { return "尚未开始录音" }
-        let seconds = Int(Date().timeIntervalSince(recording.startedAt))
-        return "\(seconds / 60) 分 \(seconds % 60) 秒"
-    }
-
-    private var timerCaption: String {
-        let chunks = model.snapshot.chunks
-        let gaps = model.snapshot.gaps
-        let lastSample = chunks.last?.endSample ?? 0
-        return "chunk \(chunks.count) · gap \(gaps.count) · 样本 \(lastSample.formatted()) · 事件 \(model.snapshot.appliedEventCount)"
-    }
-
-    // MARK: - Controls
-
-    private var controls: some View {
-        VStack(spacing: 16) {
-            recordButton
-            if showsSecondaryControls {
-                secondaryControls
-            }
-            if let notice = model.notice {
-                noticeBanner(notice)
-            }
-        }
-    }
-
-    private var showsSecondaryControls: Bool {
-        switch model.presentation {
-        case .recording, .paused, .interrupted, .processing: true
-        default: false
-        }
-    }
-
-    private var recordButton: some View {
-        Button(action: primaryAction) {
-            ZStack {
-                Circle()
-                    .fill(recordButtonFill)
-                    .frame(width: 64, height: 64)
-                Image(systemName: recordButtonSymbol)
-                    .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(recordButtonGlyph)
-            }
-            .frame(width: 72, height: 72)
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!primaryActionEnabled)
-        .opacity(primaryActionEnabled ? 1 : 0.4)
-        .frame(maxWidth: .infinity)
-        .accessibilityLabel(primaryAccessibilityLabel)
-        .sensoryFeedback(primaryFeedback, trigger: model.presentation)
-    }
-
-    private var recordButtonSymbol: String {
-        switch model.presentation {
-        case .idle, .failed: "mic.fill"
-        case .recording, .paused, .interrupted: "stop.fill"
-        case .stopping, .processing: "hourglass"
-        }
-    }
-
-    private var recordButtonFill: Color {
-        switch model.presentation {
-        case .idle, .failed: .red
-        case .recording, .paused, .interrupted: .red
-        case .stopping, .processing: Color(.systemGray4)
-        }
-    }
-
-    private var recordButtonGlyph: Color {
-        switch model.presentation {
-        case .stopping, .processing: .secondary
-        default: .white
-        }
-    }
-
-    private var primaryActionEnabled: Bool {
-        switch model.presentation {
-        case .idle, .failed, .recording, .paused, .interrupted: true
-        case .stopping, .processing: false
-        }
-    }
-
-    private var primaryAccessibilityLabel: String {
-        switch model.presentation {
-        case .idle, .failed: "开始录音"
-        case .recording, .paused, .interrupted: "停止录音"
-        default: "录音状态切换中"
-        }
-    }
-
-    private var primaryFeedback: SensoryFeedback {
-        switch model.presentation {
-        case .recording: .start
-        case .interrupted: .warning
-        case .failed: .error
-        default: .impact(weight: .light)
-        }
-    }
-
-    private func primaryAction() {
-        switch model.presentation {
-        case .idle, .failed:
-            Task { await model.start() }
-        case .recording, .paused, .interrupted:
-            Task { await model.stop() }
-        case .stopping, .processing:
-            break
-        }
-    }
-
-    private var secondaryControls: some View {
-        HStack(spacing: 12) {
-            switch model.presentation {
-            case .recording, .paused, .interrupted:
-                Button(model.presentation == .paused ? "继续" : "暂停") {
-                    Task { await model.pauseOrResume() }
-                }
-                .buttonStyle(.bordered)
-                .disabled(model.presentation == .interrupted)
-
-                if model.presentation == .interrupted {
-                    Text("中断期间由系统决定是否恢复")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .processing:
-                Button("标记处理完成") {
-                    Task { await model.markProcessingCompleted() }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.primary)
-            default:
-                EmptyView()
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func noticeBanner(_ notice: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "info.circle")
-            Text(notice)
-                .font(.subheadline)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
-        .accessibilityElement(children: .combine)
-    }
-
-    // MARK: - Evidence
-
-    private var evidence: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            evidenceSection("恢复与幂等") {
-                recoveryRows
-                Button("再次运行恢复（幂等检查）") {
-                    Task { await model.runRecoveryAgain() }
-                }
-                .buttonStyle(.bordered)
-                .font(.subheadline)
-            }
-
-            evidenceSection("分片 chunk") {
-                if model.snapshot.chunks.isEmpty {
-                    emptyRow("停止或达到分片边界后出现")
-                } else {
-                    ForEach(model.snapshot.chunks) { chunk in
-                        chunkRow(chunk)
-                    }
-                }
-            }
-
-            evidenceSection("缺口 gap") {
-                if model.snapshot.gaps.isEmpty {
-                    emptyRow("暂无中断、路由或写入缺口")
-                } else {
-                    ForEach(model.snapshot.gaps) { gap in
-                        gapRow(gap)
-                    }
-                }
-            }
-
-            evidenceSection("完整性与报告") {
-                integrityRows
-                HStack(spacing: 12) {
-                    Button("运行诊断") {
-                        Task { await model.runDiagnostics() }
-                    }
-                    .buttonStyle(.bordered)
-                    .font(.subheadline)
-
-                    Button("生成报告") {
-                        Task { await model.makeReport() }
-                    }
-                    .buttonStyle(.bordered)
-                    .font(.subheadline)
-
-                    if let url = model.reportURL {
-                        ShareLink(item: url) {
-                            Text("分享")
-                        }
-                        .buttonStyle(.bordered)
-                        .font(.subheadline)
-                    }
-                }
-            }
-        }
-    }
-
-    private func evidenceSection<Content: View>(
-        _ title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline)
-            content()
-        }
-    }
-
-    private var recoveryRows: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if model.recoveries.isEmpty {
-                emptyRow("启动时会读取 journal 并修复索引")
-            } else {
-                ForEach(Array(model.recoveries.enumerated()), id: \.offset) { _, recovery in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("重放 \(recovery.replayedEventCount) · 恢复 \(recovery.recoveredRecordingIDs.count)")
-                            .font(.subheadline.monospacedDigit())
-                        if !recovery.recoveredRecordingIDs.isEmpty {
-                            Text(recovery.recoveredRecordingIDs.map(\.shortID).joined(separator: "，"))
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func chunkRow(_ chunk: AudioChunk) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(chunk.id.shortID)
-                    .font(.subheadline.monospaced())
-                Spacer()
-                Text(chunkStateText(chunk.state))
-                    .font(.caption)
-                    .foregroundStyle(chunk.state == .closed ? Color.secondary : Color.orange)
-            }
-            Text("\(chunk.startSample.formatted()) → \(chunk.endSample.formatted()) · \((chunk.endSample - chunk.startSample).formatted()) 样本")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 4)
-        Divider()
-    }
-
-    private func chunkStateText(_ state: AudioChunkState) -> String {
-        switch state {
-        case .writing: "写入中"
-        case .closed: "已关闭"
-        case .corrupt: "损坏"
-        case .audioRemoved: "音频已清理"
-        }
-    }
-
-    @ViewBuilder
-    private func gapRow(_ gap: RecordingGap) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(gapReasonText(gap.reason))
-                    .font(.subheadline)
-                Spacer()
-                Text(gap.endSample == nil ? "未关闭" : "已关闭")
-                    .font(.caption)
-                    .foregroundStyle(gap.endSample == nil ? Color.orange : Color.secondary)
-            }
-            Text("\(gap.startSample.formatted()) → \(gap.endSample.map { $0.formatted() } ?? "…")")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 4)
-        Divider()
-    }
-
-    private func gapReasonText(_ reason: RecordingGapReason) -> String {
-        switch reason {
-        case .systemInterruption: "系统中断（电话/Siri）"
-        case .routeChange: "路由变化（蓝牙等）"
-        case .writeFailure: "写入背压/失败"
-        case .recoveredAfterTermination: "强制终止后恢复"
-        }
-    }
-
-    private var integrityRows: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let issues = model.integrityIssues {
-                if issues.isEmpty {
-                    Label("无重叠、无未解释缺口、音频可读", systemImage: "checkmark.circle")
-                        .font(.subheadline)
-                        .foregroundStyle(.green)
-                } else {
-                    ForEach(Array(issues.enumerated()), id: \.offset) { _, issue in
-                        Label(String(describing: issue), systemImage: "exclamationmark.triangle")
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.orange)
-                    }
-                }
-            } else {
-                emptyRow("运行诊断以核对样本边界与音频可读性")
-            }
-        }
-    }
-
-    private func emptyRow(_ text: String) -> some View {
-        Text(text)
-            .font(.subheadline)
-            .foregroundStyle(.tertiary)
-    }
-
-    private func startupFailure(_ message: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.largeTitle)
-                .foregroundStyle(.orange)
-            Text("录音核心初始化失败")
-                .font(.headline)
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private static func clock(_ interval: TimeInterval) -> String {
-        let total = Int(interval)
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
-        return hours > 0
-            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
-            : String(format: "%02d:%02d", minutes, seconds)
+    private func validationGapText(_ gap: RecordingGap) -> String {
+        let end = gap.endSample.map(String.init) ?? "未关闭"
+        return "\(gap.reason.rawValue)：\(gap.startSample) → \(end)"
     }
 }
+#endif
 
 private extension ScenePhaseLike {
     init(_ phase: ScenePhase) {
@@ -528,12 +761,6 @@ private extension ScenePhaseLike {
         case .background: self = .background
         @unknown default: self = .inactive
         }
-    }
-}
-
-private extension UUID {
-    var shortID: String {
-        String(uuidString.prefix(8))
     }
 }
 

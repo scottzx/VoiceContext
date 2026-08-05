@@ -5,8 +5,10 @@ import SherpaOnnxC
 /// `SenseVoiceInferenceService` and is admitted through its lifecycle gate.
 actor SpeechAnalysisService {
     struct SpeechSpan: Equatable, Sendable {
-        let startSample: Int
-        let endSample: Int
+        /// Absolute 16 kHz sample offsets in the recording, not offsets local
+        /// to an AAC chunk or a VAD input buffer.
+        let startSample: Int64
+        let endSample: Int64
 
         var duration: TimeInterval {
             Double(endSample - startSample) / Self.sampleRate
@@ -16,12 +18,28 @@ actor SpeechAnalysisService {
     }
 
     struct Utterance: Sendable {
+        /// The inclusive recording range represented by `samples`.
+        let startSample: Int64
+        let endSample: Int64
         let samples: [Float]
-        let spanCount: Int
+        /// The exact VAD spans (or bounded portions of one) which formed this
+        /// utterance. Downstream transcript segments can retain this link.
+        let speechSpans: [SpeechSpan]
+
+        var spanCount: Int { speechSpans.count }
 
         var duration: TimeInterval {
             Double(samples.count) / 16_000
         }
+    }
+
+    /// PCM from one closed or active AAC chunk, retaining the chunk's absolute
+    /// position so a VAD result can be assembled across chunk boundaries.
+    struct SampleChunk: Sendable {
+        let startSample: Int64
+        let samples: [Float]
+
+        var endSample: Int64 { startSample + Int64(samples.count) }
     }
 
     struct Result: Sendable {
@@ -57,13 +75,25 @@ actor SpeechAnalysisService {
         }
     }
 
-    func analyze(samples: [Float], resourceRoot: URL) async throws -> Result {
+    func analyze(
+        samples: [Float],
+        resourceRoot: URL,
+        startingAt startSample: Int64 = 0
+    ) async throws -> Result {
         try await Task.detached(priority: .userInitiated) {
-            try Self.run(samples: samples, resourceRoot: resourceRoot)
+            try Self.run(
+                samples: samples,
+                resourceRoot: resourceRoot,
+                startingAt: startSample
+            )
         }.value
     }
 
-    private nonisolated static func run(samples: [Float], resourceRoot: URL) throws -> Result {
+    private nonisolated static func run(
+        samples: [Float],
+        resourceRoot: URL,
+        startingAt startSample: Int64
+    ) throws -> Result {
         let inputMetrics = AudioInputMetrics.from(samples: samples)
         let vadModel = resourceRoot.appending(path: "silero_vad.onnx")
         let speakerModel = resourceRoot.appending(path: "3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx")
@@ -75,11 +105,19 @@ actor SpeechAnalysisService {
         }
 
         let vadStartedAt = Date()
-        let spans = try detectSpeech(in: samples, modelURL: vadModel)
+        let spans = try detectSpeech(
+            in: samples,
+            modelURL: vadModel,
+            startingAt: startSample
+        )
         let vadMilliseconds = Date().timeIntervalSince(vadStartedAt) * 1_000
         guard !spans.isEmpty else { throw AnalysisError.noSpeechDetected(inputMetrics) }
 
-        let utterances = makeUtterances(from: spans, sourceSamples: samples)
+        let utterances = makeUtterances(
+            from: spans,
+            sourceSamples: samples,
+            sourceStartSample: startSample
+        )
         guard !utterances.isEmpty else { throw AnalysisError.noSpeechDetected(inputMetrics) }
 
         let voicedDuration = spans.reduce(0) { $0 + $1.duration }
@@ -103,7 +141,11 @@ actor SpeechAnalysisService {
         )
     }
 
-    private nonisolated static func detectSpeech(in samples: [Float], modelURL: URL) throws -> [SpeechSpan] {
+    private nonisolated static func detectSpeech(
+        in samples: [Float],
+        modelURL: URL,
+        startingAt startSample: Int64
+    ) throws -> [SpeechSpan] {
         var config = SherpaOnnxVadModelConfig()
         config.silero_vad.threshold = 0.25
         config.silero_vad.min_silence_duration = 0.5
@@ -145,7 +187,10 @@ actor SpeechAnalysisService {
             let start = max(0, Int(segment.pointee.start))
             let end = min(samples.count, start + Int(segment.pointee.n))
             if end > start {
-                spans.append(SpeechSpan(startSample: start, endSample: end))
+                spans.append(SpeechSpan(
+                    startSample: startSample + Int64(start),
+                    endSample: startSample + Int64(end)
+                ))
             }
             SherpaOnnxDestroySpeechSegment(segment)
             SherpaOnnxVoiceActivityDetectorPop(detector)
@@ -155,38 +200,106 @@ actor SpeechAnalysisService {
 
     nonisolated static func makeUtterances(
         from spans: [SpeechSpan],
-        sourceSamples: [Float]
+        sourceSamples: [Float],
+        sourceStartSample: Int64 = 0
     ) -> [Utterance] {
-        let maximumDurationSamples = 15 * 16_000
-        let maximumMergeGapSamples = Int(0.75 * 16_000)
+        makeUtterances(
+            from: spans,
+            sourceChunks: [SampleChunk(startSample: sourceStartSample, samples: sourceSamples)]
+        )
+    }
+
+    /// Combines nearby VAD spans while keeping every position absolute. The
+    /// 25-second ceiling is a hard inference guard; Silero's 15-second VAD
+    /// ceiling keeps ordinary utterances in the intended 3–15 second range.
+    nonisolated static func makeUtterances(
+        from spans: [SpeechSpan],
+        sourceChunks: [SampleChunk]
+    ) -> [Utterance] {
+        let maximumDurationSamples = Int64(25 * 16_000)
+        let maximumMergeGapSamples = Int64(0.75 * 16_000)
+        let chunks = sourceChunks
+            .filter { !$0.samples.isEmpty }
+            .sorted { $0.startSample < $1.startSample }
+        guard !chunks.isEmpty else { return [] }
+
         var utterances: [Utterance] = []
-        var start = spans[0].startSample
-        var end = spans[0].endSample
-        var spanCount = 1
+        var currentSpans: [SpeechSpan] = []
+        var start: Int64?
+        var end: Int64?
 
         func appendCurrent() {
-            guard end > start else { return }
+            guard let start, let end, end > start,
+                  let samples = samples(in: start..<end, from: chunks) else {
+                return
+            }
             utterances.append(Utterance(
-                samples: Array(sourceSamples[start..<end]),
-                spanCount: spanCount
+                startSample: start,
+                endSample: end,
+                samples: samples,
+                speechSpans: currentSpans
             ))
+            currentSpans = []
+            selfReset()
         }
 
-        for span in spans.dropFirst() {
-            let gap = span.startSample - end
-            let candidateLength = span.endSample - start
-            if gap <= maximumMergeGapSamples && candidateLength <= maximumDurationSamples {
-                end = span.endSample
-                spanCount += 1
-            } else {
-                appendCurrent()
-                start = span.startSample
-                end = span.endSample
-                spanCount = 1
+        func selfReset() {
+            start = nil
+            end = nil
+        }
+
+        for inputSpan in spans.sorted(by: { $0.startSample < $1.startSample }) where inputSpan.endSample > inputSpan.startSample {
+            var spanStart = inputSpan.startSample
+            while spanStart < inputSpan.endSample {
+                if let start, let end {
+                    let gap = spanStart - end
+                    let maximumEnd = start + maximumDurationSamples
+                    guard gap <= maximumMergeGapSamples, spanStart < maximumEnd else {
+                        appendCurrent()
+                        continue
+                    }
+
+                    let spanEnd = min(inputSpan.endSample, maximumEnd)
+                    currentSpans.append(SpeechSpan(startSample: spanStart, endSample: spanEnd))
+                    self.end = max(end, spanEnd)
+                    spanStart = spanEnd
+                    if spanStart < inputSpan.endSample {
+                        appendCurrent()
+                    }
+                } else {
+                    let spanEnd = min(inputSpan.endSample, spanStart + maximumDurationSamples)
+                    start = spanStart
+                    end = spanEnd
+                    currentSpans = [SpeechSpan(startSample: spanStart, endSample: spanEnd)]
+                    spanStart = spanEnd
+                    if spanStart < inputSpan.endSample {
+                        appendCurrent()
+                    }
+                }
             }
         }
         appendCurrent()
         return utterances
+    }
+
+    private nonisolated static func samples(
+        in range: Range<Int64>,
+        from chunks: [SampleChunk]
+    ) -> [Float]? {
+        var cursor = range.lowerBound
+        var result: [Float] = []
+        result.reserveCapacity(Int(range.count))
+
+        for chunk in chunks where chunk.endSample > cursor && chunk.startSample < range.upperBound {
+            guard chunk.startSample <= cursor else { return nil }
+            let end = min(chunk.endSample, range.upperBound)
+            let lowerIndex = Int(cursor - chunk.startSample)
+            let upperIndex = Int(end - chunk.startSample)
+            result.append(contentsOf: chunk.samples[lowerIndex..<upperIndex])
+            cursor = end
+            if cursor == range.upperBound { return result }
+        }
+        return nil
     }
 
     private nonisolated static func computeEmbedding(

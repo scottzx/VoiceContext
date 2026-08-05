@@ -26,6 +26,7 @@ final class RecordingCoreModel {
     private(set) var presentation: RecordingSessionCoordinator.PresentationState = .idle
     private(set) var activeRecordingID: UUID?
     private(set) var snapshot = Snapshot()
+    private(set) var recordings: [Recording] = []
     private(set) var recoveries: [RecoverySummary] = []
     private(set) var inputLevel: Float?
     private(set) var integrityIssues: [RecordingIntegrityIssue]?
@@ -68,10 +69,23 @@ final class RecordingCoreModel {
 
     // MARK: - Session control
 
-    func start() async {
+    var captureIsActive: Bool {
+        switch presentation {
+        case .recording, .paused, .interrupted:
+            true
+        case .idle, .stopping, .processing, .failed:
+            false
+        }
+    }
+
+    func start(title: String? = nil, isMeeting: Bool = false) async {
         notice = nil
         do {
-            let recordingID = try await coordinator.start()
+            let normalizedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let recordingID = try await coordinator.start(
+                isMeeting: isMeeting,
+                title: normalizedTitle?.isEmpty == false ? normalizedTitle : nil
+            )
             activeRecordingID = recordingID
         } catch {
             notice = "开始失败：\(error.localizedDescription)"
@@ -256,6 +270,13 @@ final class RecordingCoreModel {
     }
 
     private func refresh() async {
+        do {
+            recordings = try await repository.recordings()
+                .sorted { $0.startedAt > $1.startedAt }
+        } catch {
+            notice = "读取记录列表失败：\(error.localizedDescription)"
+        }
+
         var recordingID = activeRecordingID
         if recordingID == nil {
             recordingID = await latestRecordingID()
