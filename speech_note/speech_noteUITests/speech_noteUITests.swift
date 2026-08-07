@@ -23,14 +23,48 @@ final class speech_noteUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
+    func testRecordsScreenExposesTheRecordingEntryPointAndDirectStartSheet() throws {
         // UI tests must launch the application that they test.
         let app = XCUIApplication()
         app.launch()
 
+        let skipOnboarding = app.buttons["暂时跳过"]
+        if skipOnboarding.waitForExistence(timeout: 3) {
+            skipOnboarding.tap()
+        }
+
+        let startRecording = app.buttons["开始录音"]
+        XCTAssertTrue(startRecording.waitForExistence(timeout: 5))
+
+        startRecording.tap()
+        XCTAssertTrue(app.navigationBars["开始记录"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["直接开始录音"].exists)
+        XCTAssertTrue(app.switches["这是一次会议"].exists)
+
         // Use XCTAssert and related functions to verify your tests produce the correct results.
         // XCUIAutomation Documentation
         // https://developer.apple.com/documentation/xcuiautomation
+    }
+
+    @MainActor
+    func testFailedRecordingOpensItsDetailAndExposesTheProcessingError() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestingResetOnboarding", "-uiTestingSeedRecordingDetail"]
+        app.launch()
+
+        let skipOnboarding = app.buttons["暂时跳过"]
+        if skipOnboarding.waitForExistence(timeout: 3) {
+            skipOnboarding.tap()
+        }
+
+        let row = app.buttons["recording-row-00000000-0000-0000-0000-000000000042"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+
+        XCTAssertTrue(app.navigationBars["录音详情"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["处理失败"].exists)
+        XCTAssertTrue(app.staticTexts["Silero VAD 未形成语音片段"].exists)
+        XCTAssertTrue(app.buttons["重新处理"].exists)
     }
 
     @MainActor

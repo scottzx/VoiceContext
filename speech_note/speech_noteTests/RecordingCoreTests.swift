@@ -121,6 +121,234 @@ struct RecordingCoreTests {
         #expect(recoveredJobs[0].lastError == "recoveredAfterTermination")
     }
 
+    @Test func recoveryRestoresMissingTranscriptionJobForStoppedProcessingRecording() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let processing = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(13),
+            state: .processing
+        )
+        try await repository.createRecording(processing, at: startedAt)
+        try await repository.changeState(
+            recordingID: processing.id,
+            to: .processing,
+            endedAt: processing.endedAt,
+            at: processing.endedAt!
+        )
+
+        _ = try await repository.recoverUnfinished(at: startedAt.addingTimeInterval(20))
+
+        let job = try #require(await repository.jobs(recordingID: processing.id).first)
+        #expect(job.kind == .transcription)
+        #expect(job.state == .pending)
+        #expect(job.attemptCount == 0)
+    }
+
+    @Test func foregroundSchedulerCompletesShortRecordingAndPersistsItsJob() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let recording = Recording(startedAt: .distantPast, state: .processing)
+        try await repository.createRecording(recording, at: recording.startedAt)
+        let executor = SchedulerExecutorProbe()
+        let outcomes = SchedulerOutcomeProbe()
+        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { recordingID in
+            await executor.record(recordingID)
+        }
+
+        try await scheduler.enqueue(recordingID: recording.id) { outcome in
+            await outcomes.record(outcome)
+        }
+        await scheduler.waitForIdle()
+
+        #expect(await executor.recordingIDs == [recording.id])
+        let jobs = try await repository.jobs(recordingID: recording.id)
+        #expect(jobs.count == 1)
+        #expect(jobs[0].state == .completed)
+        #expect(jobs[0].attemptCount == 1)
+        #expect(await outcomes.values == [.init(recordingID: recording.id, state: .completed)])
+    }
+
+    @Test func schedulerLeavesNoSpeechFailureVisibleAndRetryable() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let recording = Recording(startedAt: .distantPast, state: .processing)
+        try await repository.createRecording(recording, at: recording.startedAt)
+        let outcomes = SchedulerOutcomeProbe()
+        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { _ in
+            throw SchedulerTestError.noSpeech
+        }
+
+        try await scheduler.enqueue(recordingID: recording.id) { outcome in
+            await outcomes.record(outcome)
+        }
+        await scheduler.waitForIdle()
+
+        let failedJob = try #require(await repository.jobs(recordingID: recording.id).first)
+        #expect(failedJob.state == .failed)
+        #expect(failedJob.attemptCount == 1)
+        #expect(failedJob.lastError == SchedulerTestError.noSpeech.localizedDescription)
+        #expect(await outcomes.values == [.init(
+            recordingID: recording.id,
+            state: .failed(message: SchedulerTestError.noSpeech.localizedDescription)
+        )])
+
+        await scheduler.enteredBackground()
+        try await scheduler.retry(recordingID: recording.id) { outcome in
+            await outcomes.record(outcome)
+        }
+        let pendingJob = try #require(await repository.jobs(recordingID: recording.id).first)
+        #expect(pendingJob.state == .pending)
+        await scheduler.enteredForeground()
+        await scheduler.waitForIdle()
+        let retriedJob = try #require(await repository.jobs(recordingID: recording.id).first)
+        #expect(retriedJob.state == .failed)
+        #expect(retriedJob.attemptCount == 2)
+    }
+
+    @Test func failedRecordingKeepsTheAudioAndErrorInputsRequiredByItsDetail() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(13),
+            title: "短录音",
+            state: .failed,
+            updatedAt: startedAt.addingTimeInterval(13)
+        )
+        let chunk = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/\(recording.id.uuidString)/audio.m4a",
+            startSample: 0,
+            endSample: 208_000,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(13)
+        )
+        let job = RecordingJob(
+            id: UUID(),
+            recordingID: recording.id,
+            kind: .transcription,
+            state: .failed,
+            attemptCount: 1,
+            lastError: SchedulerTestError.noSpeech.localizedDescription,
+            createdAt: startedAt,
+            updatedAt: startedAt.addingTimeInterval(13)
+        )
+
+        try await repository.createRecording(recording, at: startedAt)
+        try await repository.addChunk(chunk, at: chunk.endedAt)
+        try await repository.upsertJob(job, at: job.updatedAt)
+
+        #expect(try await repository.recording(id: recording.id) == recording)
+        #expect(try await repository.chunks(recordingID: recording.id) == [chunk])
+        let storedJob = try #require(await repository.jobs(recordingID: recording.id).first)
+        #expect(storedJob.state == .failed)
+        #expect(storedJob.lastError == SchedulerTestError.noSpeech.localizedDescription)
+    }
+
+    @Test func schedulerDefersBackgroundWorkThenResumesCrashLeftJob() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let recording = Recording(startedAt: .distantPast, state: .processing)
+        try await repository.createRecording(recording, at: recording.startedAt)
+        let createdAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let running = RecordingJob(
+            id: UUID(),
+            recordingID: recording.id,
+            kind: .transcription,
+            state: .running,
+            attemptCount: 1,
+            lastError: nil,
+            createdAt: createdAt,
+            updatedAt: createdAt
+        )
+        try await repository.upsertJob(running, at: createdAt)
+        let executor = SchedulerExecutorProbe()
+        let outcomes = SchedulerOutcomeProbe()
+        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { recordingID in
+            await executor.record(recordingID)
+        }
+
+        await scheduler.enteredBackground()
+        try await scheduler.resumePendingJobs { outcome in
+            await outcomes.record(outcome)
+        }
+        #expect(await executor.recordingIDs.isEmpty)
+        #expect(try await repository.jobs(recordingID: recording.id)[0].state == .pending)
+
+        await scheduler.enteredForeground()
+        await scheduler.waitForIdle()
+        let completedJob = try #require(await repository.jobs(recordingID: recording.id).first)
+        #expect(completedJob.state == .completed)
+        #expect(completedJob.attemptCount == 2)
+        #expect(await executor.recordingIDs == [recording.id])
+        #expect(await outcomes.values == [.init(recordingID: recording.id, state: .completed)])
+    }
+
+    @Test @MainActor func processingOutcomeCompletesShortRecordingAndKeepsNoSpeechFailureVisible() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+
+        let completedID = try await coordinator.start()
+        capture.currentSample = 16_000
+        try await coordinator.stop()
+        try await coordinator.finishProcessing(recordingID: completedID, outcome: .completed)
+        #expect(try await repository.recording(id: completedID)?.state == .complete)
+        #expect(coordinator.presentationState == .idle)
+        #expect(coordinator.activeRecordingID == nil)
+
+        let failedID = try await coordinator.start()
+        capture.currentSample = 16_000
+        try await coordinator.stop()
+        try await coordinator.finishProcessing(
+            recordingID: failedID,
+            outcome: .failed(message: SchedulerTestError.noSpeech.localizedDescription)
+        )
+        #expect(try await repository.recording(id: failedID)?.state == .failed)
+        #expect(coordinator.presentationState == .failed(SchedulerTestError.noSpeech.localizedDescription))
+    }
+
+    @Test @MainActor func failedProcessingReleasesTheCaptureSessionForTheNextRecording() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+
+        let failedID = try await coordinator.start()
+        capture.currentSample = 16_000
+        try await coordinator.stop()
+        try await coordinator.finishProcessing(
+            recordingID: failedID,
+            outcome: .failed(message: SchedulerTestError.noSpeech.localizedDescription)
+        )
+
+        #expect(coordinator.activeRecordingID == nil)
+        let nextID = try await coordinator.start()
+        #expect(nextID != failedID)
+        #expect(coordinator.presentationState == .recording)
+    }
+
     @Test func twoHourSegmentationHasExactContinuousFiveMinuteBoundaries() {
         let sampleRate: Int64 = 16_000
         let segmentLength = 5 * 60 * sampleRate
@@ -385,6 +613,138 @@ struct RecordingCoreTests {
         #expect(markdown.contains("2 小时分片 | pending | 等待 Human"))
     }
 
+    @Test func successfulShortSpeechPersistsCanonicalJSONAndMarkdown() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200.125)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(13),
+            title: "短录音",
+            state: .processing
+        )
+        let chunk = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/short.m4a",
+            startSample: 0,
+            endSample: 208_000,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(13)
+        )
+        let document = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [chunk],
+            segmentTexts: [(chunkID: chunk.id, text: "这是一条十三秒的测试录音。")],
+            timezone: "Asia/Shanghai"
+        )
+        try document.requireContent()
+
+        let store = try TranscriptDocumentStore(rootURL: root)
+        try await store.write(document)
+
+        #expect(try await store.document(recordingID: recording.id) == document)
+        let markdown = try #require(await store.markdown(recordingID: recording.id))
+        #expect(markdown.contains("schema: voice-context/transcript@1"))
+        #expect(markdown.contains("这是一条十三秒的测试录音。"))
+    }
+
+    @Test func transcriptStoreReadsLegacyAcronymIDKeysWrittenOnDevice() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recordingID = UUID(uuidString: "BA485C93-6D6E-42E9-ADDA-B8DA50B2CA7C")!
+        let chunkID = UUID(uuidString: "D1765381-81EC-4761-BDDF-8978200D4197")!
+        let segmentID = UUID(uuidString: "BA485C93-6D6E-42E9-ADDA-B8DA00000001")!
+        let json = """
+        {
+          "schema": "voice-context/transcript@1",
+          "recording_id": "\(recordingID.uuidString)",
+          "kind": "recording",
+          "state": "complete",
+          "revision": 1,
+          "tags": [],
+          "started_at": "2026-08-06T03:51:28Z",
+          "ended_at": "2026-08-06T03:51:41Z",
+          "timezone": "Asia/Shanghai",
+          "language": "zh",
+          "audio": {
+            "local_only": true,
+            "available_on_this_device": true,
+            "retention": "seven_days"
+          },
+          "speech_spans": [],
+          "speakers": [],
+          "segments": [{
+            "id": "\(segmentID.uuidString)",
+            "sequence": 1,
+            "started_at": "2026-08-06T03:51:28Z",
+            "offset_milliseconds": 0,
+            "text": "已省略的真机测试文本",
+            "source_chunk_id": "\(chunkID.uuidString)",
+            "speech_span_i_ds": []
+          }],
+          "gaps": []
+        }
+        """
+        let store = try TranscriptDocumentStore(rootURL: root)
+        try Data(json.utf8).write(to: await store.jsonURL(for: recordingID))
+
+        let document = try #require(await store.document(recordingID: recordingID))
+        #expect(document.recordingID == recordingID)
+        #expect(document.segments.first?.sourceChunkID == chunkID)
+        #expect(document.segments.first?.speechSpanIDs == [])
+    }
+
+    @Test func emptyOrFailedSpeechDoesNotBecomeAnEmptyCompletedDocument() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recording = Recording(startedAt: .distantPast, endedAt: .distantPast.addingTimeInterval(13), state: .processing)
+        let chunk = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/empty.m4a",
+            startSample: 0,
+            endSample: 208_000,
+            startedAt: recording.startedAt,
+            endedAt: recording.endedAt!
+        )
+        let document = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [chunk],
+            segmentTexts: [(chunkID: chunk.id, text: "   ")]
+        )
+
+        #expect(throws: TranscriptDocumentV1.DocumentError.emptyTranscript) {
+            try document.requireContent()
+        }
+        let store = try TranscriptDocumentStore(rootURL: root)
+        #expect(try await store.document(recordingID: recording.id) == nil)
+    }
+
+    @Test func markdownIsRebuiltFromTheStoredJSONDocument() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(startedAt: startedAt, endedAt: startedAt.addingTimeInterval(2), state: .processing)
+        let chunk = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/one.m4a",
+            startSample: 16_000,
+            endSample: 32_000,
+            startedAt: startedAt.addingTimeInterval(1),
+            endedAt: startedAt.addingTimeInterval(2)
+        )
+        let document = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [chunk],
+            segmentTexts: [(chunkID: chunk.id, text: "第二秒开始的文本。")]
+        )
+        let store = try TranscriptDocumentStore(rootURL: root)
+        try await store.write(document)
+
+        let decoded = try #require(await store.document(recordingID: recording.id))
+        #expect(try await store.markdown(recordingID: recording.id) == TranscriptMarkdownRenderer.render(decoded))
+        #expect(decoded.segments.first?.offsetMilliseconds == 1_000)
+    }
+
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("RecordingCoreTests-\(UUID().uuidString)", isDirectory: true)
@@ -417,6 +777,28 @@ struct RecordingCoreTests {
             startedAt: recording.startedAt,
             endedAt: recording.startedAt.addingTimeInterval(1)
         )
+    }
+}
+
+private enum SchedulerTestError: LocalizedError {
+    case noSpeech
+
+    var errorDescription: String? { "Silero VAD 未形成语音片段" }
+}
+
+private actor SchedulerExecutorProbe {
+    private(set) var recordingIDs: [UUID] = []
+
+    func record(_ recordingID: UUID) {
+        recordingIDs.append(recordingID)
+    }
+}
+
+private actor SchedulerOutcomeProbe {
+    private(set) var values: [ForegroundTranscriptionScheduler.Outcome] = []
+
+    func record(_ outcome: ForegroundTranscriptionScheduler.Outcome) {
+        values.append(outcome)
     }
 }
 

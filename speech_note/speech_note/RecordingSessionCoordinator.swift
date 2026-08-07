@@ -181,8 +181,57 @@ final class RecordingSessionCoordinator {
         }
         let failed = try machine.apply(.processingFailed)
         try await repository.changeState(recordingID: recordingID, to: failed, at: now())
-        stateMachine = machine
+        stateMachine = nil
+        activeRecordingID = nil
         presentationState = .failed(message)
+    }
+
+    /// Applies a scheduler result to either the live session or a recovered
+    /// processing Recording. The recording ID is explicit so recovery does not
+    /// depend on an in-memory microphone session surviving termination.
+    func finishProcessing(
+        recordingID: UUID,
+        outcome: ForegroundTranscriptionScheduler.Outcome.State
+    ) async throws {
+        let recording = try await repository.recording(id: recordingID)
+        guard let recording else { throw CoordinatorError.noActiveSession }
+
+        var machine = stateMachine ?? RecordingStateMachine(state: recording.state)
+        switch outcome {
+        case .completed:
+            let complete = try machine.apply(.processingCompleted)
+            try await repository.changeState(recordingID: recordingID, to: complete, at: now())
+            if activeRecordingID == recordingID {
+                stateMachine = nil
+                activeRecordingID = nil
+                presentationState = .idle
+            }
+        case let .failed(message):
+            let failed = try machine.apply(.processingFailed)
+            try await repository.changeState(recordingID: recordingID, to: failed, at: now())
+            if activeRecordingID == recordingID {
+                // Capture is already stopped. Keeping this in-memory session
+                // active after a retryable processing failure prevents the
+                // user from starting a new recording, even though the failed
+                // Recording and its durable job/error remain available for a
+                // later explicit retry.
+                stateMachine = nil
+                activeRecordingID = nil
+                presentationState = .failed(message)
+            }
+        }
+    }
+
+    func retryProcessing(recordingID: UUID) async throws {
+        let recording = try await repository.recording(id: recordingID)
+        guard let recording else { throw CoordinatorError.noActiveSession }
+        var machine = stateMachine ?? RecordingStateMachine(state: recording.state)
+        let processing = try machine.apply(.retryProcessing)
+        try await repository.changeState(recordingID: recordingID, to: processing, at: now())
+        if activeRecordingID == recordingID {
+            stateMachine = machine
+            presentationState = .processing
+        }
     }
 
     func applicationEnteredBackground() {

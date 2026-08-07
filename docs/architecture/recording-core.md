@@ -6,7 +6,7 @@
 - Owner：Human product owner / Agent implementation
 - 来源需求：`#3`，继承顶层 `#1`
 - 对应功能模块：录音与本地数据 / 本地状态、任务队列与 journal；录音分片与前后台生命周期；恢复、低存储与音频保留
-- 最后更新：2026-08-05
+- 最后更新：2026-08-07
 
 ## 背景与问题
 
@@ -15,15 +15,17 @@
 ## 目标
 
 - 一条 Recording 从显式开始到停止、处理、完成具有可验证状态机；非法迁移被拒绝。
-- AAC-LC 以 16 kHz 单声道写入约 5 分钟 chunk，每个 chunk 有稳定 UUID 和无重叠的绝对样本边界。
+- AAC-LC 以 16 kHz 单声道写入 AudioChunk；新录音默认每 60 秒（960,000 个输出样本）轮转，每个 chunk 有稳定 UUID、sequence 和无重叠的绝对样本边界。
 - SQLite 是可查询索引，append-only JSONL journal 是提交事实；重放幂等。
 - 中断、路由变化、写入背压或错误形成可定位 gap，不把缺口伪装成连续音频。
 - 进程终止后恢复为 `interrupted`，运行中的任务回到 `pending`，但不秘密重启麦克风。
 - 所有 Recording 原始音频默认 7 天；Recording 或 chunk pin 可长期保留；文本和派生文档不参与音频清理。
+- 一条 Recording 可以包含任意数量 AudioChunk；文件轮转不创建新的用户记录。已关闭 chunk 立即成为后续增量处理的可靠检查点，但录音核心不在实时音频路径执行 VAD 或模型推理。
 
 ## 不做
 
 - 本里程碑不实现 VAD、转写、说话人聚类、公开文档生成或最终产品页面。
+- 分钟级增量转写、跨 chunk utterance carry 与 `source_ranges` 由 `docs/architecture/incremental-transcription.md` 定义；本里程碑只提供连续样本、chunk 关闭事件和恢复边界。
 - 不做自动监听、开机自启录音、电话录音或原始音频云同步。
 - 不为低存储静默删除未到期音频；不把会议标记当作永久保留开关。
 - 不用模拟器结果替代后台、锁屏、中断、路由和 2 小时真机证据。
@@ -76,14 +78,18 @@
 
 AVAudioEngine tap 只复制输入 PCM 到有界队列。串行 writer 负责计量、48 kHz 等输入到 16 kHz mono Float32 的转换、AAC 编码和文件轮转；tap 不调用模型、不访问 SQLite、不写文件。`AACChunkBoundaryPlanner` 以绝对 16 kHz 样本计数切分跨包边界，避免依赖墙钟累计误差。
 
+默认轮转长度为 960,000 个输出样本。若一个输入包跨越边界，writer 将同一包精确切成“旧 chunk 尾部”和“新 chunk 头部”，保证前一段 `endSample ==` 后一段 `startSample`。普通文件轮转不产生 gap，也不得通过移动或复制尾部样本制造重叠。历史约 5 分钟或其他长度的 chunk 仍由其实际 `startSample/endSample` 驱动读取，读取端不得假定固定时长。
+
 ### 生命周期
 
-`RecordingSessionCoordinator` 是状态、capture、repository 和界面展示状态的协调边界。进入后台不停止 capture；系统中断将状态迁移为 `interrupted` 并打开 gap，结束时关闭 gap并按系统 `shouldResume` 决定是否恢复。锁屏停止通过 `MPRemoteCommandCenter.stopCommand` 暴露，最终可用性由真机验收。
+`RecordingSessionCoordinator` 是 capture、repository 和录音展示状态的协调边界。进入后台不停止 capture；系统中断将采集状态迁移为 `interrupted` 并打开 gap，结束时关闭 gap并按系统 `shouldResume` 决定是否恢复。锁屏停止通过 `MPRemoteCommandCenter.stopCommand` 暴露，最终可用性由真机验收。
+
+采集生命周期与处理生命周期彼此独立。用户停止后，coordinator 在最后 AudioChunk 和 journal 安全关闭后立即释放当前麦克风会话；该 Recording 的 VAD、转写、聚类或文档任务可以继续运行，但不得继续占用 `activeCaptureRecordingID`，也不得阻止新的 Recording 开始。
 
 ## 数据与接口
 
 - `Recording`：UUID、开始/结束时间、可选标题、`isMeeting`、状态、保留策略和更新时间。
-- `AudioChunk`：UUID、Recording UUID、相对路径、`startSample/endSample`、时间、状态和 chunk pin。
+- `AudioChunk`：UUID、Recording UUID、sequence、相对路径、`startSample/endSample`、时间、状态和 chunk pin。
 - `RecordingJob`：UUID、类型、pending/running/completed/failed、尝试次数与错误。
 - `RecordingGap`：UUID、原因、绝对样本起止和墙钟起止。
 - SQLite schema v1：`recordings`、`audio_chunks`、`recording_jobs`、`recording_gaps`、`journal_events`；`PRAGMA user_version=1`。
@@ -93,9 +99,9 @@ AVAudioEngine tap 只复制输入 PCM 到有界队列。串行 writer 负责计�
 
 ## 状态、错误与恢复
 
-- 合法主路径：`recording → stopping → processing → complete`。
-- 暂停：`recording ↔ paused`；中断：`recording|paused → interrupted`。
-- 处理中失败：`processing → failed → processing`。
+- 采集主路径：`idle → preparing → recording → stopping → idle`。
+- 采集暂停：`recording ↔ paused`；采集中断：`recording|paused → interrupted`。
+- Recording 处理状态由独立调度器维护，可与采集状态同时存在；`processing → complete|needs_attention|locked_pending_purchase` 不占用麦克风会话。
 - 非法迁移抛出错误，不静默改状态。
 - 强制终止：`recording|paused|stopping → interrupted`，打开 `recoveredAfterTermination` gap；运行中的 job 回到 pending。
 - 低存储：在请求麦克风前失败；默认保护阈值 512 MiB，可在测试中注入容量。
@@ -113,7 +119,8 @@ AVAudioEngine tap 只复制输入 PCM 到有界队列。串行 writer 负责计�
 
 - [x] 领域模型与 journal 事件可编码解码；SQLite v1 migration 可重复创建。
 - [x] journal 先 flush 后索引提交；重复 replay 不重复创建 Recording、chunk、gap 或 job。
-- [x] 2 小时样本规划形成 24 个连续 5 分钟边界；跨输入包边界无重叠与未解释缺口。
+- [x] 通用样本边界规划与历史 5 分钟真机证据证明跨输入包轮转无重叠与未解释缺口。
+- [ ] 新录音默认 60 秒轮转；2 小时形成 120 个连续完整 chunk 加可选尾段，历史非 60 秒 chunk 仍可读取、播放、转写和导出。
 - [x] tap 不运行模型或文件写入；writer 队列有界且错误可观察。
 - [x] 非法状态迁移被拒绝；未显式开始或低存储时不访问麦克风。
 - [x] 强制终止恢复为 interrupted；运行中 job 回 pending；重复恢复幂等。
@@ -128,10 +135,11 @@ AVAudioEngine tap 只复制输入 PCM 到有界队列。串行 writer 负责计�
 - 已知行为：session 激活/去激活会各产生一个 sample 0 / 末样本位置的 routeChange 点状 gap，属诚实记录，无需修复。
 - 暂停区间不产生 gap 行，墙钟缺口可由 journal 状态迁移事件推导；若未来要求墙钟缺口全部 gap 化，需新增 pause gap reason。
 - 强杀时进行中的 chunk 按设计不可恢复（只有 closed chunk 入 journal），孤儿 m4a 会留在磁盘；是否在恢复时清理或 salvage 留待后续版本评估。
+- 60 秒轮转把未关闭检查点窗口从约 5 分钟降至最多约 60 秒，但不等于承诺当前 active chunk 必然可恢复；发布验收必须分别报告 closed chunk 恢复与 orphan/salvage 行为。
 
 ## PM 追踪关系
 
 - 来源 requirement：`#3`
 - 功能蓝图：录音与本地数据 / 本地状态、任务队列与 journal；录音分片与前后台生命周期；恢复、低存储与音频保留
-- 交付任务：`#15`、`#16`、`#17`、`#18`、`#19`
+- 交付任务：`#15`、`#16`、`#17`、`#18`、`#19`，以及 60 秒轮转与采集/处理边界的后续增量任务
 - 目标里程碑：`0.1.0`

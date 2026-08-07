@@ -38,6 +38,9 @@ final class RecordingCoreModel {
     let repository: RecordingRepository
     private let recorder = AACSegmentRecorder()
     private let coordinator: RecordingSessionCoordinator
+    private let inferenceService: SenseVoiceInferenceService
+    private let transcriptStore: TranscriptDocumentStore
+    private let transcriptionScheduler: ForegroundTranscriptionScheduler
     private let diagnostics = RecordingDiagnostics()
     private var refreshTask: Task<Void, Never>?
 
@@ -48,7 +51,39 @@ final class RecordingCoreModel {
 
     init(rootURL: URL) throws {
         repository = try RecordingRepository(rootURL: rootURL)
+        let transcriptStore = try TranscriptDocumentStore(rootURL: rootURL)
+        self.transcriptStore = transcriptStore
         coordinator = RecordingSessionCoordinator(repository: repository, capture: recorder)
+        let inferenceService = SenseVoiceInferenceService()
+        self.inferenceService = inferenceService
+        transcriptionScheduler = ForegroundTranscriptionScheduler(
+            repository: repository,
+            execute: { [repository, inferenceService] recordingID in
+                let chunks = try await repository.chunks(recordingID: recordingID)
+                    .filter { $0.state == .closed }
+                    .sorted { $0.startSample < $1.startSample }
+                guard !chunks.isEmpty else {
+                    throw SenseVoiceInferenceService.InferenceError.runtime("录音没有已关闭的音频分片")
+                }
+                var transcriptionResults: [(chunkID: UUID, text: String)] = []
+                for chunk in chunks {
+                    let result = try await inferenceService.transcribe(
+                        recordingURL: repository.rootURL.appendingPathComponent(chunk.relativePath)
+                    )
+                    transcriptionResults.append((chunkID: chunk.id, text: result.text))
+                }
+                guard let recording = try await repository.recording(id: recordingID) else {
+                    throw SenseVoiceInferenceService.InferenceError.runtime("找不到待写入文稿的录音")
+                }
+                let document = TranscriptDocumentV1(
+                    recording: recording,
+                    chunks: chunks,
+                    segmentTexts: transcriptionResults
+                )
+                try document.requireContent()
+                try await transcriptStore.write(document)
+            }
+        )
         coordinator.onStateChanged = { [weak self] state in
             self?.presentationChanged(to: state)
         }
@@ -109,15 +144,22 @@ final class RecordingCoreModel {
     func stop() async {
         do {
             try await coordinator.stop()
+            if let recordingID = coordinator.activeRecordingID {
+                try await transcriptionScheduler.enqueue(
+                    recordingID: recordingID,
+                    onOutcome: { [weak self] outcome in
+                        await self?.applyTranscriptionOutcome(outcome)
+                    }
+                )
+            }
         } catch {
             notice = error.localizedDescription
         }
         await refresh()
     }
 
-    /// The 0.1.0 core intentionally ends capture in `processing`; there is no
-    /// transcription pipeline yet, so the validation screen advances the state
-    /// machine explicitly instead of silently flipping it.
+    /// Retained for the debug validation screen. Production transitions are
+    /// driven by `ForegroundTranscriptionScheduler` after capture stops.
     func markProcessingCompleted() async {
         do {
             try await coordinator.markProcessingCompleted()
@@ -127,14 +169,43 @@ final class RecordingCoreModel {
         await refresh()
     }
 
+    func retryTranscription(recordingID: UUID) async {
+        do {
+            try await coordinator.retryProcessing(recordingID: recordingID)
+            try await transcriptionScheduler.retry(
+                recordingID: recordingID,
+                onOutcome: { [weak self] outcome in
+                    await self?.applyTranscriptionOutcome(outcome)
+                }
+            )
+        } catch {
+            notice = "重试失败：\(error.localizedDescription)"
+        }
+        await refresh()
+    }
+
+    /// The details surface reads the canonical JSON document. A nil value is
+    /// truthful for pending/failed processing and is not an empty transcript.
+    func transcript(recordingID: UUID) async throws -> TranscriptDocumentV1? {
+        try await transcriptStore.document(recordingID: recordingID)
+    }
+
     func scenePhaseChanged(to phase: ScenePhaseLike) {
         switch phase {
         case .background:
             coordinator.applicationEnteredBackground()
             isInBackground = true
+            Task { [inferenceService, transcriptionScheduler] in
+                await transcriptionScheduler.enteredBackground()
+                _ = await inferenceService.enteredBackground()
+            }
         case .active:
             coordinator.applicationBecameActive()
             isInBackground = false
+            Task { [inferenceService, transcriptionScheduler] in
+                await inferenceService.enteredForeground()
+                await transcriptionScheduler.enteredForeground()
+            }
         default:
             break
         }
@@ -153,6 +224,11 @@ final class RecordingCoreModel {
     private func runRecovery() async {
         do {
             let result = try await repository.recoverUnfinished(at: Date())
+            try await transcriptionScheduler.resumePendingJobs(
+                onOutcome: { [weak self] outcome in
+                    await self?.applyTranscriptionOutcome(outcome)
+                }
+            )
             recoveries.append(RecoverySummary(
                 date: Date(),
                 replayedEventCount: result.replayedEventCount,
@@ -163,6 +239,20 @@ final class RecordingCoreModel {
                 : "恢复完成：\(result.interruptedRecordingIDs.count) 条录音转为 interrupted。"
         } catch {
             notice = "恢复失败：\(error.localizedDescription)"
+        }
+        await refresh()
+    }
+
+    private func applyTranscriptionOutcome(_ outcome: ForegroundTranscriptionScheduler.Outcome) async {
+        do {
+            try await coordinator.finishProcessing(
+                recordingID: outcome.recordingID,
+                outcome: outcome.state
+            )
+        } catch {
+            // A scheduler failure must remain visible rather than being
+            // converted into a completed Recording by a UI fallback.
+            notice = "转写状态更新失败：\(error.localizedDescription)"
         }
         await refresh()
     }
@@ -239,6 +329,10 @@ final class RecordingCoreModel {
 
     private func presentationChanged(to state: RecordingSessionCoordinator.PresentationState) {
         presentation = state
+        // The coordinator owns the microphone-session lifetime. Keep this
+        // convenience value in sync so an outcome cannot leave the UI model
+        // pointing at a released capture session.
+        activeRecordingID = coordinator.activeRecordingID
         switch state {
         case .recording, .stopping, .processing, .paused:
             startPolling()

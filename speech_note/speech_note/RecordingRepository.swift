@@ -109,6 +109,13 @@ actor RecordingRepository {
         try index.jobs(recordingID: recordingID)
     }
 
+    func jobs(
+        kind: RecordingJobKind,
+        states: Set<RecordingJobState>
+    ) throws -> [RecordingJob] {
+        try index.jobs(kind: kind, states: states)
+    }
+
     func gaps(recordingID: UUID) throws -> [RecordingGap] {
         try index.gaps(recordingID: recordingID)
     }
@@ -140,6 +147,46 @@ actor RecordingRepository {
                 try upsertJob(job, at: date)
             }
             recovered.append(recording.id)
+        }
+
+        // Capture may have stopped just before termination. In that window a
+        // Recording is already `processing`, but its transcription job may
+        // not yet be durable (or its durable job result may not yet have been
+        // applied to the Recording). Reconcile both before the foreground
+        // scheduler resumes so relaunch cannot leave a stopped recording in
+        // "正在处理" forever.
+        for recording in try index.recordings(states: [.processing]) {
+            let transcriptionJobs = try index.jobs(recordingID: recording.id)
+                .filter { $0.kind == .transcription }
+            guard let job = transcriptionJobs.last else {
+                let pending = RecordingJob(
+                    id: UUID(),
+                    recordingID: recording.id,
+                    kind: .transcription,
+                    state: .pending,
+                    attemptCount: 0,
+                    lastError: nil,
+                    createdAt: date,
+                    updatedAt: date
+                )
+                try upsertJob(pending, at: date)
+                continue
+            }
+
+            switch job.state {
+            case .pending:
+                break
+            case .running:
+                var pending = job
+                pending.state = .pending
+                pending.lastError = "recoveredAfterTermination"
+                pending.updatedAt = date
+                try upsertJob(pending, at: date)
+            case .completed:
+                try changeState(recordingID: recording.id, to: .complete, at: date)
+            case .failed:
+                try changeState(recordingID: recording.id, to: .failed, at: date)
+            }
         }
 
         return RecoveryResult(

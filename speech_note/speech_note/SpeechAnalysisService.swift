@@ -18,7 +18,7 @@ actor SpeechAnalysisService {
     }
 
     struct Utterance: Sendable {
-        /// The inclusive recording range represented by `samples`.
+        /// The half-open recording range represented by `samples`.
         let startSample: Int64
         let endSample: Int64
         let samples: [Float]
@@ -209,14 +209,13 @@ actor SpeechAnalysisService {
         )
     }
 
-    /// Combines nearby VAD spans while keeping every position absolute. The
-    /// 25-second ceiling is a hard inference guard; Silero's 15-second VAD
-    /// ceiling keeps ordinary utterances in the intended 3–15 second range.
+    /// Combines nearby VAD spans while keeping every position absolute.
+    /// These spans support analysis only; production ASR receives the complete
+    /// persisted AAC chunk.
     nonisolated static func makeUtterances(
         from spans: [SpeechSpan],
         sourceChunks: [SampleChunk]
     ) -> [Utterance] {
-        let maximumDurationSamples = Int64(25 * 16_000)
         let maximumMergeGapSamples = Int64(0.75 * 16_000)
         let chunks = sourceChunks
             .filter { !$0.samples.isEmpty }
@@ -225,51 +224,50 @@ actor SpeechAnalysisService {
 
         var utterances: [Utterance] = []
         var currentSpans: [SpeechSpan] = []
-        var start: Int64?
-        var end: Int64?
+        var currentStart: Int64?
+        var currentEnd: Int64?
+
+        func resetCurrent() {
+            currentSpans = []
+            currentStart = nil
+            currentEnd = nil
+        }
 
         func appendCurrent() {
-            guard let start, let end, end > start,
-                  let samples = samples(in: start..<end, from: chunks) else {
+            defer { resetCurrent() }
+            guard let currentStart, let currentEnd, currentEnd > currentStart,
+                  let samples = samples(in: currentStart..<currentEnd, from: chunks) else {
                 return
             }
             utterances.append(Utterance(
-                startSample: start,
-                endSample: end,
+                startSample: currentStart,
+                endSample: currentEnd,
                 samples: samples,
                 speechSpans: currentSpans
             ))
-            currentSpans = []
-            selfReset()
-        }
-
-        func selfReset() {
-            start = nil
-            end = nil
         }
 
         for inputSpan in spans.sorted(by: { $0.startSample < $1.startSample }) where inputSpan.endSample > inputSpan.startSample {
             var spanStart = inputSpan.startSample
             while spanStart < inputSpan.endSample {
-                if let start, let end {
-                    let gap = spanStart - end
-                    let maximumEnd = start + maximumDurationSamples
-                    guard gap <= maximumMergeGapSamples, spanStart < maximumEnd else {
+                if currentStart != nil, let activeEnd = currentEnd {
+                    let gap = spanStart - activeEnd
+                    guard gap <= maximumMergeGapSamples else {
                         appendCurrent()
                         continue
                     }
 
-                    let spanEnd = min(inputSpan.endSample, maximumEnd)
+                    let spanEnd = inputSpan.endSample
                     currentSpans.append(SpeechSpan(startSample: spanStart, endSample: spanEnd))
-                    self.end = max(end, spanEnd)
+                    currentEnd = max(activeEnd, spanEnd)
                     spanStart = spanEnd
                     if spanStart < inputSpan.endSample {
                         appendCurrent()
                     }
                 } else {
-                    let spanEnd = min(inputSpan.endSample, spanStart + maximumDurationSamples)
-                    start = spanStart
-                    end = spanEnd
+                    let spanEnd = inputSpan.endSample
+                    currentStart = spanStart
+                    currentEnd = spanEnd
                     currentSpans = [SpeechSpan(startSample: spanStart, endSample: spanEnd)]
                     spanStart = spanEnd
                     if spanStart < inputSpan.endSample {

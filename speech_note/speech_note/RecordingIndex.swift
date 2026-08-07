@@ -168,6 +168,38 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         }
     }
 
+    func jobs(
+        kind: RecordingJobKind,
+        states: Set<RecordingJobState>
+    ) throws -> [RecordingJob] {
+        try lock.withLock {
+            var result: [RecordingJob] = []
+            try query(
+                "SELECT id, recording_id, kind, state, attempt_count, last_error, created_at, updated_at FROM recording_jobs WHERE kind = ? ORDER BY created_at",
+                [.text(kind.rawValue)]
+            ) { statement in
+                guard
+                    let id = UUID(uuidString: text(statement, 0)),
+                    let ownerID = UUID(uuidString: text(statement, 1)),
+                    let jobKind = RecordingJobKind(rawValue: text(statement, 2)),
+                    let state = RecordingJobState(rawValue: text(statement, 3))
+                else { throw IndexError.invalidRow("recording_jobs") }
+                guard states.contains(state) else { return }
+                result.append(RecordingJob(
+                    id: id,
+                    recordingID: ownerID,
+                    kind: jobKind,
+                    state: state,
+                    attemptCount: Int(sqlite3_column_int64(statement, 4)),
+                    lastError: optionalText(statement, 5),
+                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
+                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7))
+                ))
+            }
+            return result
+        }
+    }
+
     func gaps(recordingID: UUID) throws -> [RecordingGap] {
         try lock.withLock {
             var result: [RecordingGap] = []

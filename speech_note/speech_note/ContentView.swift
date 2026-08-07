@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 /// The product-facing recording workspace. Its state is deliberately read
@@ -13,8 +14,22 @@ struct ContentView: View {
     @State private var isStartSheetPresented = false
     @State private var isSettingsPresented = false
     @State private var isRecordingScreenPresented = false
+    private let isRecordingDetailFixtureEnabled: Bool
 
     init() {
+        isRecordingDetailFixtureEnabled = ProcessInfo.processInfo.arguments.contains("-uiTestingSeedRecordingDetail")
+        if isRecordingDetailFixtureEnabled {
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let fixtureRoot = documents.appendingPathComponent("VoiceContext-uiTesting", isDirectory: true)
+            try? FileManager.default.removeItem(at: fixtureRoot)
+            do {
+                _model = State(initialValue: try RecordingCoreModel(rootURL: fixtureRoot))
+            } catch {
+                _modelError = State(initialValue: error.localizedDescription)
+                _model = State(initialValue: RecordingCoreModel.makePlaceholder())
+            }
+            return
+        }
         do {
             _model = State(initialValue: try RecordingCoreModel())
         } catch {
@@ -38,6 +53,9 @@ struct ContentView: View {
             isRecordingScreenPresented = isActive
         }
         .task {
+            if isRecordingDetailFixtureEnabled {
+                await installRecordingDetailFixture()
+            }
             await model.recoverOnLaunch()
         }
     }
@@ -99,7 +117,13 @@ struct ContentView: View {
                         .padding(.vertical, 32)
                     } else {
                         ForEach(recordingsForSelectedDate) { recording in
-                            RecordingRow(recording: recording)
+                            NavigationLink {
+                                RecordingDetailScreen(model: model, recordingID: recording.id)
+                            } label: {
+                                RecordingRow(recording: recording)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("recording-row-\(recording.id.uuidString)")
                             Divider().padding(.leading, 20)
                         }
                     }
@@ -159,6 +183,331 @@ struct ContentView: View {
             Text(message)
         }
         .foregroundStyle(.primary)
+    }
+
+    private func installRecordingDetailFixture() async {
+        guard (try? await model.repository.recordings().isEmpty) == true else { return }
+        let startedAt = Date()
+        let recording = Recording(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000042")!,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(13),
+            title: "测试详情录音",
+            state: .failed,
+            updatedAt: startedAt.addingTimeInterval(13)
+        )
+        let chunk = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/fixture.m4a",
+            startSample: 0,
+            endSample: 208_000,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(13)
+        )
+        let job = RecordingJob(
+            id: UUID(),
+            recordingID: recording.id,
+            kind: .transcription,
+            state: .failed,
+            attemptCount: 1,
+            lastError: "Silero VAD 未形成语音片段",
+            createdAt: startedAt,
+            updatedAt: startedAt.addingTimeInterval(13)
+        )
+        do {
+            try await model.repository.createRecording(recording, at: startedAt)
+            try await model.repository.addChunk(chunk, at: chunk.endedAt)
+            try await model.repository.upsertJob(job, at: job.updatedAt)
+        } catch {
+            modelError = "无法建立详情测试数据：\(error.localizedDescription)"
+        }
+    }
+}
+
+/// A deliberately small, truthful detail surface for the recordings that the
+/// capture pipeline already persists. Full transcript editing belongs to #28,
+/// but a completed or failed recording must never be a dead-end in the list.
+private struct RecordingDetailScreen: View {
+    let model: RecordingCoreModel
+    let recordingID: UUID
+
+    @State private var chunks: [AudioChunk] = []
+    @State private var transcriptionJob: RecordingJob?
+    @State private var transcript: TranscriptDocumentV1?
+    @State private var loadError: String?
+    @State private var transcriptError: String?
+    @State private var player: AVAudioPlayer?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                status
+                audio
+                document
+                processing
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 20)
+        }
+        .background(Color(uiColor: .systemBackground))
+        .navigationTitle(currentRecording.isMeeting ? "会议详情" : "录音详情")
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: currentRecording.updatedAt) {
+            await loadDetail()
+        }
+        .onDisappear {
+            player?.stop()
+        }
+    }
+
+    private var currentRecording: Recording {
+        model.recordings.first(where: { $0.id == recordingID })
+            ?? Recording(id: recordingID, startedAt: .distantPast, state: .failed)
+    }
+
+    private var playableChunks: [AudioChunk] {
+        chunks.filter {
+            $0.state == .closed &&
+                FileManager.default.fileExists(
+                    atPath: model.repository.rootURL.appendingPathComponent($0.relativePath).path
+                )
+        }
+    }
+
+    private var status: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(currentRecording.title?.isEmpty == false
+                 ? currentRecording.title!
+                 : (currentRecording.isMeeting ? "未命名会议" : "未命名录音"))
+                .font(.title3.weight(.semibold))
+
+            Text(metadata)
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            Label(statusText, systemImage: statusSymbol)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(statusColor)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(currentRecording.title ?? "未命名录音")，\(metadata)，\(statusText)")
+    }
+
+    @ViewBuilder
+    private var audio: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("音频")
+                .font(.headline)
+
+            if playableChunks.isEmpty {
+                Label("音频暂不可用", systemImage: "waveform.slash")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(playableChunks) { chunk in
+                    Button {
+                        togglePlayback(of: chunk)
+                    } label: {
+                        HStack {
+                            Label(
+                                player?.isPlaying == true ? "停止播放" : "播放录音",
+                                systemImage: player?.isPlaying == true ? "stop.fill" : "play.fill"
+                            )
+                            Spacer()
+                            Text(RecordingRow.duration(
+                                chunk.endedAt.timeIntervalSince(chunk.startedAt)
+                            ))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.primary)
+                    .accessibilityLabel("播放音频分片")
+                }
+            }
+        }
+    }
+
+    private var document: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("文稿")
+                .font(.headline)
+            if let transcript {
+                Text("逐字稿 · revision \(transcript.revision)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(transcript.segments) { segment in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("+\(transcriptOffset(segment.offsetMilliseconds))")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                        Text(segment.text)
+                            .font(.body)
+                    }
+                    .padding(.vertical, 8)
+                }
+            } else {
+                Text(currentRecording.state == .processing
+                     ? "正在生成本地文稿。"
+                     : "这条录音尚无可读取的本地文稿。")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let transcriptError {
+                Label(transcriptError, systemImage: "exclamationmark.triangle")
+                    .font(.subheadline)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("transcript-read-error")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var processing: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("处理状态")
+                .font(.headline)
+
+            if let transcriptionJob {
+                LabeledContent("转写") {
+                    Text(jobStateText(transcriptionJob.state))
+                        .foregroundStyle(jobColor(transcriptionJob.state))
+                }
+                LabeledContent("尝试次数") {
+                    Text("\(transcriptionJob.attemptCount)")
+                        .monospacedDigit()
+                }
+                if let message = transcriptionJob.lastError, !message.isEmpty {
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                }
+            } else {
+                Text("尚未创建转写任务。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if currentRecording.state == .failed {
+                Button("重新处理") {
+                    Task { await model.retryTranscription(recordingID: recordingID) }
+                }
+                .buttonStyle(.bordered)
+                .tint(.primary)
+                .accessibilityHint("重新提交本地转写任务")
+            }
+
+            if let loadError {
+                Label(loadError, systemImage: "exclamationmark.triangle")
+                    .font(.subheadline)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private var metadata: String {
+        let time = currentRecording.startedAt.formatted(date: .abbreviated, time: .shortened)
+        let duration = currentRecording.endedAt.map {
+            RecordingRow.duration($0.timeIntervalSince(currentRecording.startedAt))
+        } ?? "录制中"
+        return "\(time) · \(duration)"
+    }
+
+    private var statusText: String {
+        switch currentRecording.state {
+        case .recording: "正在录音"
+        case .paused: "已暂停"
+        case .interrupted: "录音中断，需要注意"
+        case .stopping: "正在停止"
+        case .processing: "正在处理"
+        case .complete: "已完成"
+        case .failed: "需要注意"
+        }
+    }
+
+    private var statusSymbol: String {
+        switch currentRecording.state {
+        case .recording: "record.circle.fill"
+        case .paused: "pause.circle.fill"
+        case .interrupted, .failed: "exclamationmark.triangle.fill"
+        case .stopping: "stop.circle"
+        case .processing: "hourglass"
+        case .complete: "checkmark.circle"
+        }
+    }
+
+    private var statusColor: Color {
+        switch currentRecording.state {
+        case .recording, .failed: .red
+        case .paused, .interrupted, .processing: .orange
+        case .stopping, .complete: .secondary
+        }
+    }
+
+    private func jobStateText(_ state: RecordingJobState) -> String {
+        switch state {
+        case .pending: "等待处理"
+        case .running: "正在处理"
+        case .completed: "已完成"
+        case .failed: "处理失败"
+        }
+    }
+
+    private func jobColor(_ state: RecordingJobState) -> Color {
+        switch state {
+        case .pending, .running: .orange
+        case .completed: .secondary
+        case .failed: .red
+        }
+    }
+
+    private func loadDetail() async {
+        do {
+            async let storedChunks = model.repository.chunks(recordingID: recordingID)
+            async let jobs = model.repository.jobs(recordingID: recordingID)
+            chunks = try await storedChunks.sorted { $0.startSample < $1.startSample }
+            transcriptionJob = try await jobs.last(where: { $0.kind == .transcription })
+            loadError = nil
+        } catch {
+            loadError = "无法读取录音详情：\(error.localizedDescription)"
+            return
+        }
+
+        do {
+            transcript = try await model.transcript(recordingID: recordingID)
+            transcriptError = nil
+        } catch {
+            transcript = nil
+            transcriptError = "文稿无法读取：\(error.localizedDescription)"
+        }
+    }
+
+    private func togglePlayback(of chunk: AudioChunk) {
+        if player?.isPlaying == true {
+            player?.stop()
+            player = nil
+            return
+        }
+
+        do {
+            let audio = try AVAudioPlayer(
+                contentsOf: model.repository.rootURL.appendingPathComponent(chunk.relativePath)
+            )
+            audio.prepareToPlay()
+            audio.play()
+            player = audio
+        } catch {
+            loadError = "音频无法播放：\(error.localizedDescription)"
+        }
+    }
+
+    private func transcriptOffset(_ milliseconds: Int) -> String {
+        let minutes = milliseconds / 60_000
+        let seconds = milliseconds / 1_000 % 60
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
@@ -238,6 +587,10 @@ private struct RecordingRow: View {
                 }
             }
             Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
@@ -580,10 +933,20 @@ private struct SettingsScreen: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
+                Section("隐私与许可") {
                     Label("录音和文稿默认保存在本机", systemImage: "lock")
-                } header: {
-                    Text("隐私")
+
+                    NavigationLink {
+                        PrivacyAndPermissionsView()
+                    } label: {
+                        Label("隐私与权限", systemImage: "hand.raised")
+                    }
+
+                    NavigationLink {
+                        ThirdPartyLicensesView()
+                    } label: {
+                        Label("第三方许可与归因", systemImage: "doc.text")
+                    }
                 }
 
                 Section {

@@ -30,7 +30,6 @@ actor SenseVoiceInferenceService {
 
     enum InferenceError: LocalizedError {
         case invalidPCMFormat(sampleRate: Double, channels: AVAudioChannelCount)
-        case sampleTooLong
         case runtime(String)
         case abortedForBackground
 
@@ -38,8 +37,6 @@ actor SenseVoiceInferenceService {
             switch self {
             case let .invalidPCMFormat(sampleRate, channels):
                 "转写输入必须是 16 kHz 单声道 PCM（收到 \(sampleRate) Hz / \(channels) 声道）。"
-            case .sampleTooLong:
-                "技术验证样本不能超过 25 秒。"
             case let .runtime(message):
                 "SenseVoice 运行失败：\(message)"
             case .abortedForBackground:
@@ -93,7 +90,7 @@ actor SenseVoiceInferenceService {
         try await lifecycleGate.beginMetalWork()
         cancellation.clearAbort()
         let result = try await Task.detached(priority: .userInitiated) { [cancellation] in
-            try Self.run(utterances: analysis.utterances, resourceRoot: resourceRoot, cancellation: cancellation)
+            try Self.run(samples: samples, resourceRoot: resourceRoot, cancellation: cancellation)
         }.value
 
         let metrics = await lifecycleGate.metrics()
@@ -144,7 +141,7 @@ actor SenseVoiceInferenceService {
     }
 
     nonisolated private static func run(
-        utterances: [SpeechAnalysisService.Utterance],
+        samples: [Float],
         resourceRoot: URL,
         cancellation: InferenceCancellationFlag
     ) throws -> NativeResult {
@@ -171,31 +168,22 @@ actor SenseVoiceInferenceService {
             throw InferenceError.abortedForBackground
         }
 
-        var transcripts: [String] = []
-        for utterance in utterances {
-            guard !cancellation.shouldAbort else {
-                throw InferenceError.abortedForBackground
-            }
-            var runParams = transcribe_run_params()
-            transcribe_run_params_init(&runParams)
-            let runStatus = "zh".withCString { language in
-                runParams.language = language
-                return utterance.samples.withUnsafeBufferPointer {
-                    transcribe_run(session, $0.baseAddress, Int32($0.count), &runParams)
-                }
-            }
-            if runStatus == TRANSCRIBE_ERR_ABORTED || cancellation.shouldAbort {
-                throw InferenceError.abortedForBackground
-            }
-            guard runStatus == TRANSCRIBE_OK else {
-                throw InferenceError.runtime(statusDescription(runStatus))
-            }
-            let text = String(cString: transcribe_full_text(session))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty {
-                transcripts.append(text)
+        var runParams = transcribe_run_params()
+        transcribe_run_params_init(&runParams)
+        let runStatus = "zh".withCString { language in
+            runParams.language = language
+            return samples.withUnsafeBufferPointer {
+                transcribe_run(session, $0.baseAddress, Int32($0.count), &runParams)
             }
         }
+        if runStatus == TRANSCRIBE_ERR_ABORTED || cancellation.shouldAbort {
+            throw InferenceError.abortedForBackground
+        }
+        guard runStatus == TRANSCRIBE_OK else {
+            throw InferenceError.runtime(statusDescription(runStatus))
+        }
+        let text = String(cString: transcribe_full_text(session))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
         var timings = transcribe_timings()
         transcribe_timings_init(&timings)
@@ -206,10 +194,10 @@ actor SenseVoiceInferenceService {
 
         let backend = String(cString: transcribe_model_backend(transcribe_get_model(session)))
         let inferenceMilliseconds = timings.mel_ms + timings.encode_ms + timings.decode_ms
-        let audioDuration = utterances.reduce(0) { $0 + $1.duration }
+        let audioDuration = Double(samples.count) / 16_000
 
         return NativeResult(
-            text: transcripts.joined(separator: " "),
+            text: text,
             backend: backend,
             loadMilliseconds: timings.load_ms,
             inferenceMilliseconds: inferenceMilliseconds,
@@ -283,7 +271,6 @@ enum PCM16KMonoLoader {
             )
         }
 
-        let maximumSampleCount = 25 * 16_000
         var samples: [Float] = []
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_096)!
 
@@ -295,9 +282,6 @@ enum PCM16KMonoLoader {
             }
 
             samples.append(contentsOf: UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
-            guard samples.count <= maximumSampleCount else {
-                throw SenseVoiceInferenceService.InferenceError.sampleTooLong
-            }
         }
 
         guard !samples.isEmpty else {
