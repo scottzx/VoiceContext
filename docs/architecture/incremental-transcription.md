@@ -4,9 +4,9 @@
 
 - 状态：已确认
 - Owner：Human product owner / Agent implementation
-- 来源需求：`#3`、`#4`、`#5`，继承顶层 `#1`
-- 对应功能模块：录音与本地数据 / 录音分片与前后台生命周期；本地语音智能 / VAD 与 utterance 组装；SenseVoice 前台转写调度；开放文档与产品体验 / TranscriptDocumentV1 与 Markdown
-- 最后更新：2026-08-07
+- 来源需求：`#3`、`#4`、`#5`、`#52`，继承顶层 `#1`
+- 对应功能模块：录音与本地数据 / 60 秒录音分片与前后台生命周期、录音与处理正交生命周期；本地语音智能 / VAD、跨分片 carry 与 utterance 组装、SenseVoice 分钟级增量转写调度；开放文档与产品体验 / TranscriptDocumentV1、source_ranges 与 Markdown
+- 最后更新：2026-08-11
 
 ## 背景与问题
 
@@ -28,7 +28,7 @@
 
 - 不实现逐字流式模型，不承诺词级实时刷新。
 - v1 不从云端转写，不在后台提交 SenseVoice Metal command buffer。
-- 不为了转写而移动、复制、重叠或重新编码权威 AAC 音频。
+- 不为了转写而移动、复制、重叠或重新编码麦克风录音的权威 AAC 音频；Files 导入只复制一份完整源文件到私有目录，不默认重切为 60 秒文件。
 - 不把内部 AudioChunk 暴露为用户可见的多条录音。
 - 本阶段不承诺 salvage 未关闭 AAC；只有 closed chunk 是权威恢复检查点。
 - 不新增视觉风格或原型方向；沿用已确认设计系统。
@@ -78,7 +78,7 @@
 
 ## 原型与 UI/UX
 
-无需新增低保真或高保真原型。既有录音页、全局录音条、处理中和详情页结构保持不变；后续 UI 实现任务只需把旧的“停止后处理”语义改为分钟级增量状态，并新增“已转写至 +MM:SS / 待处理 N 个分片”的诚实反馈。设计走查继续由既有 `#41` 负责。
+无需新增低保真或高保真原型。既有录音页、全局录音条、处理中和详情页结构保持不变；后续 UI 实现任务只需把旧的“停止后处理”语义改为分钟级增量状态，并新增“已转写至 +MM:SS / 待处理 N 项”的诚实反馈。内部 AudioChunk 数量和文件边界不向用户展示。设计走查继续由既有 `#41` 负责。
 
 ## 技术方案
 
@@ -91,6 +91,24 @@
 | `Utterance` | VAD 停顿与 25 秒硬上限 | SenseVoice 模型输入和 transcript segment 来源 |
 
 三者不得 1:1 绑定。一个 Recording 有多个 AudioChunk；一个 AudioChunk 可产生多个 utterance；一个 utterance 可跨多个连续 AudioChunk。
+
+### Files 导入：完整源文件 + 逻辑处理范围
+
+物理 `AudioChunk` 是麦克风录音的可靠落盘策略，不是导入音频的默认存储格式。Files 导入采用下列模型：
+
+| 对象 | 责任 | 是否为独立媒体文件 |
+|---|---|---|
+| `ImportedAudioAsset` | 私有目录中唯一的完整源文件副本；用于播放、重新处理和媒体导出 | 是，且默认仅一份 |
+| `ProcessingRange` | 以 `sequence`、起止时间或起止采样点表示的 60 秒处理单元 | 否，只是持久化元数据 |
+| VAD utterance | 在处理范围内按需解码后得到的 3–25 秒可推理语音段 | 否 |
+
+- 导入完成后读取媒体元数据，再连续建立 60 秒 `ProcessingRange`；最后一个范围可短于 60 秒。
+- 执行范围任务时，只从 `ImportedAudioAsset` 读取所需样本并在内存中规范化为 16 kHz、单声道 PCM；不得一次性把完整导入文件送入模型。
+- 范围末尾有未闭合语音时，沿用 `OpenUtteranceCarry`：下一范围与必要尾部上下文联合推理，成功后清除续接标记。
+- 播放始终读取完整源文件（或唯一标准化资产），以全局时间轴定位；逻辑处理范围绝不暴露成播放器片段列表。
+- 仅当原始编码无法稳定随机读取或解码时，允许生成**一份**标准化私有资产；仍以逻辑范围处理，不切出多个 60 秒 AAC/PCM 文件。
+
+导入记录在用户界面、`TranscriptDocument` 和全局播放时间轴中与麦克风记录保持统一，但其数据关系为 `ImportedAudioAsset + ProcessingRange`，而非物理 `AudioChunk` 序列。
 
 ### 分钟级流水线
 
@@ -143,11 +161,19 @@ ASR     utterances      carry + utterances
 
 读取端必须按实际范围工作。历史约 5 分钟或任意长度 chunk 与新 60 秒 chunk 可以共存。
 
+### `ImportedAudioAsset` 与 `ProcessingRange`
+
+- `ImportedAudioAsset`：`recordingID`、私有 URL、原始文件名、UTType、时长和导入时间。
+- `ProcessingRange`：`recordingID`、`sequence`、起止时间/采样点、状态、续接标记和重试信息；它不拥有媒体文件。
+- 导入范围任务的稳定幂等键：`recordingID + processingRangeID + pipelineVersion`。
+
 ### `ChunkProcessingJob`
 
 - 稳定幂等键：`recordingID + chunkID + pipelineVersion`
 - `sequence`、`state`、`attemptCount`、`lastError`
 - `pending/running/completed/failed/deferredUntilForeground/lockedPendingPurchase`
+
+导入范围任务使用同一调度语义，但其稳定幂等键为 `recordingID + processingRangeID + pipelineVersion`；`chunkID` 与 `processingRangeID` 只能二选一，不能为导入记录补造物理 `AudioChunk`。
 
 ### `OpenUtteranceCarry`
 
@@ -161,13 +187,14 @@ carry 可作为独立持久化实体，或由可幂等重建的 chunk 分析检�
 
 ```json
 {
-  "chunk_id": "UUID",
+  "source_kind": "audio_chunk",
+  "source_id": "UUID",
   "start_sample": 950400,
   "end_sample": 960000
 }
 ```
 
-Transcript segment 使用 `source_ranges: [SourceRange]`，不再以单一 `source_chunk_id` 作为完整来源。为兼容已存在的 `voice-context/transcript@1` 本地文件，迁移读取器需接受旧单值并规范化为一个 range；写出策略及是否升级 schema version 由文档契约任务明确，不能静默破坏旧文件。
+Transcript segment 使用 `source_ranges: [SourceRange]`，不再以单一 `source_chunk_id` 作为完整来源。麦克风记录的 `source_kind` 为 `audio_chunk`；Files 导入为 `imported_asset`，`source_id` 指向 `ImportedAudioAsset`。为兼容已存在的 `voice-context/transcript@1` 本地文件，迁移读取器需接受旧 `chunk_id` 单值并规范化为一个 range；写出策略及是否升级 schema version 由文档契约任务明确，不能静默破坏旧文件。
 
 ### 处理进度
 
@@ -201,9 +228,9 @@ Transcript segment 使用 `source_ranges: [SourceRange]`，不再以单一 `sour
 
 ## 隐私、安全与合规
 
-- AudioChunk、临时 PCM（若未来引入）、carry 和 source ranges 都是本地敏感录音数据，不进入公开 iCloud Drive。
+- AudioChunk、ImportedAudioAsset、临时 PCM（若未来引入）、carry 和 source ranges 都是本地敏感录音数据，不进入公开 iCloud Drive。
 - 当前可靠性优先方案不新增临时 utterance 音频副本；ASR 在内存中拼接所需 PCM，并在任务结束后释放。
-- 原始音频保留与删除规则以 Recording/AudioChunk 为准；删除音频不删除 transcript，但必须更新来源可用状态。
+- 原始音频保留与删除规则以 Recording 及其 `AudioChunk` 或 `ImportedAudioAsset` 为准；删除音频不删除 transcript，但必须更新来源可用状态。
 - 试用额度按首次成功提交的 canonical ASR 音频时长累计；幂等重试不得重复扣减。
 
 ## 验收标准
@@ -219,6 +246,7 @@ Transcript segment 使用 `source_ranges: [SourceRange]`，不再以单一 `sour
 - [ ] 停止后最终尾段立即关闭入队，麦克风无需等待转写完成即可复用。
 - [ ] 强制终止恢复不重复 job、carry、utterance、segment 或试用扣费；未关闭 chunk 行为如实记录。
 - [ ] UI 与 VoiceOver 能区分正在录音、已转写至、待处理、后台暂停、热暂停、锁定和失败。
+- [ ] 导入音频默认只保存一份完整私有媒体资产，并以 60 秒逻辑处理范围恢复转写；长文件不会一次性读入内存，也不会默认生成多个 60 秒媒体文件。
 
 ## 待确认项
 
@@ -228,7 +256,9 @@ Transcript segment 使用 `source_ranges: [SourceRange]`，不再以单一 `sour
 
 ## PM 追踪关系
 
-- 来源 requirement：`#3`、`#4`、`#5`
-- 功能蓝图：录音与本地数据 / 录音分片与前后台生命周期；本地语音智能 / VAD 与 utterance 组装；SenseVoice 前台转写调度；开放文档与产品体验 / TranscriptDocumentV1 与 Markdown
-- 交付任务：待本轮功能蓝图与任务调整后回填
+- 来源 requirement：`#3`、`#4`、`#5`、`#52`
+- 功能蓝图：录音与本地数据 / 60 秒录音分片与前后台生命周期、录音与处理正交生命周期；本地语音智能 / VAD、跨分片 carry 与 utterance 组装、SenseVoice 分钟级增量转写调度；开放文档与产品体验 / TranscriptDocumentV1、source_ranges 与 Markdown
+- 既有基线任务：`#16`（5 分钟 AAC 分片）、`#17`（录音状态机）、`#18`（恢复）、`#20`（基础 utterance 组装）、`#21`（前台 Metal 调度）、`#23`（TranscriptDocumentV1）、`#42`（录音 UI）
+- 本轮增量任务：`#43`（60 秒分片与历史兼容）、`#44`（正交生命周期）、`#45`（跨 chunk carry）、`#46`（分钟级调度）、`#47`（多 source_ranges）、`#48`（双状态 UI）、`#49`（端到端稳定性验收）
+- 导入功能蓝图：`Files 音频导入与本地转写`（需求 `#52`）；实现任务待该需求进入开发阶段后按本架构拆解。
 - 目标里程碑：`0.1.0`（60 秒可靠分片）与 `0.2.0`（增量转写、carry、文档与体验）

@@ -17,6 +17,8 @@ extension AACSegmentRecorder: RecordingCapturing {}
 
 @MainActor
 final class RecordingSessionCoordinator {
+    typealias ChunkPersistence = (AudioChunk, Date) async throws -> Void
+
     enum PresentationState: Equatable {
         case idle
         case recording
@@ -30,11 +32,13 @@ final class RecordingSessionCoordinator {
     enum CoordinatorError: LocalizedError {
         case sessionAlreadyActive
         case noActiveSession
+        case stopFinalizationUnavailable
 
         var errorDescription: String? {
             switch self {
             case .sessionAlreadyActive: "已有录音正在进行。"
             case .noActiveSession: "当前没有可操作的录音。"
+            case .stopFinalizationUnavailable: "录音停止结果不可用，无法完成收尾。"
             }
         }
     }
@@ -42,19 +46,30 @@ final class RecordingSessionCoordinator {
     private(set) var presentationState: PresentationState = .idle {
         didSet { onStateChanged?(presentationState) }
     }
+    private(set) var captureState: RecordingCaptureState = .idle
     private(set) var activeRecordingID: UUID?
     private(set) var isApplicationInBackground = false
     var onStateChanged: ((PresentationState) -> Void)?
+    /// Called after a closed chunk is durable. Processing can begin while
+    /// capture continues, so this callback is intentionally independent of
+    /// the aggregate Recording state.
+    var onChunkClosed: ((UUID, UUID) async -> Void)?
 
     private let repository: RecordingRepository
     private let capture: RecordingCapturing
     private let lowStorageGuard: LowStorageGuard
     private let now: () -> Date
+    private let persistChunk: ChunkPersistence
     private let enablesRemoteStopCommand: Bool
     private let captureEventContinuation: AsyncStream<AACSegmentRecorder.CaptureEvent>.Continuation
     private var stateMachine: RecordingStateMachine?
     private var activeGapID: UUID?
     private var persistedSegmentIDs: Set<UUID> = []
+    private var pendingSegments: [UUID: AACSegmentRecorder.Segment] = [:]
+    private var segmentPersistenceTask: Task<Result<Void, Error>, Never>?
+    private var segmentPersistenceOperationID: UUID?
+    private(set) var segmentPersistenceFailureMessage: String?
+    private var stoppedCaptureEndedAt: Date?
     private var remoteStopTarget: Any?
 
     init(
@@ -62,13 +77,17 @@ final class RecordingSessionCoordinator {
         capture: RecordingCapturing = AACSegmentRecorder(),
         lowStorageGuard: LowStorageGuard = LowStorageGuard(),
         enablesRemoteStopCommand: Bool = true,
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        persistChunk: ChunkPersistence? = nil
     ) {
         self.repository = repository
         self.capture = capture
         self.lowStorageGuard = lowStorageGuard
         self.enablesRemoteStopCommand = enablesRemoteStopCommand
         self.now = now
+        self.persistChunk = persistChunk ?? { [repository] chunk, date in
+            try await repository.addChunk(chunk, at: date)
+        }
         let (stream, continuation) = AsyncStream<AACSegmentRecorder.CaptureEvent>.makeStream()
         captureEventContinuation = continuation
         Task { @MainActor [weak self] in
@@ -96,6 +115,12 @@ final class RecordingSessionCoordinator {
         activeRecordingID = recording.id
         stateMachine = RecordingStateMachine(state: .recording)
         persistedSegmentIDs = []
+        pendingSegments = [:]
+        segmentPersistenceTask = nil
+        segmentPersistenceOperationID = nil
+        segmentPersistenceFailureMessage = nil
+        stoppedCaptureEndedAt = nil
+        captureState = .preparing
         presentationState = .recording
         try await repository.createRecording(recording, at: startedAt)
 
@@ -105,11 +130,16 @@ final class RecordingSessionCoordinator {
             .appendingPathComponent("audio", isDirectory: true)
         installCaptureCallbacks()
         do {
-            try await capture.start(in: directory, segmentDuration: 5 * 60)
+            try await capture.start(
+                in: directory,
+                segmentDuration: AACSegmentRecorder.defaultSegmentDuration
+            )
             installRemoteStopCommand()
+            captureState = .recording
             return recording.id
         } catch {
             _ = try? await repository.changeState(recordingID: recording.id, to: .failed, at: now())
+            captureState = .idle
             presentationState = .failed(error.localizedDescription)
             activeRecordingID = nil
             stateMachine = nil
@@ -123,8 +153,16 @@ final class RecordingSessionCoordinator {
         }
         let next = try machine.apply(.pause)
         try capture.pause()
-        try await repository.changeState(recordingID: recordingID, to: next, at: now())
+        let pausedAt = now()
+        try await openGap(
+            recordingID: recordingID,
+            reason: .userPause,
+            sample: capture.currentSample,
+            at: pausedAt
+        )
+        try await repository.changeState(recordingID: recordingID, to: next, at: pausedAt)
         stateMachine = machine
+        captureState = .paused
         presentationState = .paused
     }
 
@@ -137,53 +175,82 @@ final class RecordingSessionCoordinator {
         try await closeActiveGapIfNeeded(at: now(), sample: capture.currentSample)
         try await repository.changeState(recordingID: recordingID, to: next, at: now())
         stateMachine = machine
+        captureState = .recording
         presentationState = .recording
     }
 
-    func stop() async throws {
+    @discardableResult
+    func stop() async throws -> UUID {
         guard let recordingID = activeRecordingID, var machine = stateMachine else {
             throw CoordinatorError.noActiveSession
         }
-        let stopping = try machine.apply(.stopRequested)
-        stateMachine = machine
-        presentationState = .stopping
-        try await repository.changeState(recordingID: recordingID, to: stopping, at: now())
+
+        if machine.state == .stopping {
+            guard let endedAt = stoppedCaptureEndedAt else {
+                throw CoordinatorError.stopFinalizationUnavailable
+            }
+            return try await finalizeStoppedCapture(
+                recordingID: recordingID,
+                machine: machine,
+                endedAt: endedAt
+            )
+        }
+
         try await closeActiveGapIfNeeded(at: now(), sample: capture.currentSample)
+        let stopping = try machine.apply(.stopRequested)
+        try await repository.changeState(recordingID: recordingID, to: stopping, at: now())
+        stateMachine = machine
+        captureState = .stopping
+        presentationState = .stopping
 
         let segment = try capture.stop()
-        try await persist(segment: segment, recordingID: recordingID)
+        removeRemoteStopCommand()
+        stoppedCaptureEndedAt = segment.endedAt
+        enqueueForPersistence(segment)
+        return try await finalizeStoppedCapture(
+            recordingID: recordingID,
+            machine: machine,
+            endedAt: segment.endedAt
+        )
+    }
+
+    private func finalizeStoppedCapture(
+        recordingID: UUID,
+        machine: RecordingStateMachine,
+        endedAt: Date
+    ) async throws -> UUID {
+        var machine = machine
+        try await flushPendingSegments(recordingID: recordingID)
         let processing = try machine.apply(.captureStopped)
-        stateMachine = machine
         try await repository.changeState(
             recordingID: recordingID,
             to: processing,
-            endedAt: segment.endedAt,
-            at: segment.endedAt
+            endedAt: endedAt,
+            at: endedAt
         )
+        // The durable final chunk and legacy `.processing` projection are now
+        // committed. Release only capture-owned identity; processing remains
+        // addressable by its explicit Recording ID and durable jobs.
+        stateMachine = nil
+        activeRecordingID = nil
+        activeGapID = nil
+        stoppedCaptureEndedAt = nil
+        pendingSegments = [:]
+        segmentPersistenceTask = nil
+        segmentPersistenceOperationID = nil
+        captureState = .idle
+        // Keep the legacy single presentation useful until #48 consumes the
+        // orthogonal lifecycle API. This does not retain microphone identity.
         presentationState = .processing
-        removeRemoteStopCommand()
+        return recordingID
     }
 
-    func markProcessingCompleted() async throws {
-        guard let recordingID = activeRecordingID, var machine = stateMachine else {
-            throw CoordinatorError.noActiveSession
-        }
-        let complete = try machine.apply(.processingCompleted)
-        try await repository.changeState(recordingID: recordingID, to: complete, at: now())
-        stateMachine = nil
-        activeRecordingID = nil
-        presentationState = .idle
+    func markProcessingCompleted(recordingID: UUID) async throws {
+        try await finishProcessing(recordingID: recordingID, outcome: .completed)
     }
 
-    func markProcessingFailed(message: String) async throws {
-        guard let recordingID = activeRecordingID, var machine = stateMachine else {
-            throw CoordinatorError.noActiveSession
-        }
-        let failed = try machine.apply(.processingFailed)
-        try await repository.changeState(recordingID: recordingID, to: failed, at: now())
-        stateMachine = nil
-        activeRecordingID = nil
-        presentationState = .failed(message)
+    func markProcessingFailed(recordingID: UUID, message: String) async throws {
+        try await finishProcessing(recordingID: recordingID, outcome: .failed(message: message))
     }
 
     /// Applies a scheduler result to either the live session or a recovered
@@ -196,27 +263,28 @@ final class RecordingSessionCoordinator {
         let recording = try await repository.recording(id: recordingID)
         guard let recording else { throw CoordinatorError.noActiveSession }
 
-        var machine = stateMachine ?? RecordingStateMachine(state: recording.state)
+        // Never borrow the live capture state machine: it may belong to a
+        // newer Recording while this older Recording finishes in parallel.
+        guard activeRecordingID != recordingID else {
+            // A durable job outcome can coexist with active capture. The v1
+            // aggregate state remains capture-owned until stop; jobs retain
+            // the independent processing truth.
+            return
+        }
+        var machine = RecordingStateMachine(state: recording.state)
         switch outcome {
         case .completed:
+            guard recording.state != .complete else { return }
             let complete = try machine.apply(.processingCompleted)
             try await repository.changeState(recordingID: recordingID, to: complete, at: now())
-            if activeRecordingID == recordingID {
-                stateMachine = nil
-                activeRecordingID = nil
+            if activeRecordingID == nil {
                 presentationState = .idle
             }
         case let .failed(message):
+            guard recording.state != .failed else { return }
             let failed = try machine.apply(.processingFailed)
             try await repository.changeState(recordingID: recordingID, to: failed, at: now())
-            if activeRecordingID == recordingID {
-                // Capture is already stopped. Keeping this in-memory session
-                // active after a retryable processing failure prevents the
-                // user from starting a new recording, even though the failed
-                // Recording and its durable job/error remain available for a
-                // later explicit retry.
-                stateMachine = nil
-                activeRecordingID = nil
+            if activeRecordingID == nil {
                 presentationState = .failed(message)
             }
         }
@@ -225,13 +293,27 @@ final class RecordingSessionCoordinator {
     func retryProcessing(recordingID: UUID) async throws {
         let recording = try await repository.recording(id: recordingID)
         guard let recording else { throw CoordinatorError.noActiveSession }
-        var machine = stateMachine ?? RecordingStateMachine(state: recording.state)
+        guard activeRecordingID != recordingID else {
+            // The scheduler job is the processing source of truth while the
+            // aggregate Recording state remains capture-owned.
+            return
+        }
+        guard recording.state != .processing else { return }
+        var machine = RecordingStateMachine(state: recording.state)
         let processing = try machine.apply(.retryProcessing)
         try await repository.changeState(recordingID: recordingID, to: processing, at: now())
-        if activeRecordingID == recordingID {
-            stateMachine = machine
+        if activeRecordingID == nil {
             presentationState = .processing
         }
+    }
+
+    func lifecycleState(recordingID: UUID) async throws -> RecordingLifecycleState {
+        guard let recording = try await repository.recording(id: recordingID) else {
+            throw CoordinatorError.noActiveSession
+        }
+        let jobs = try await repository.jobs(recordingID: recordingID)
+        let liveCaptureState = activeRecordingID == recordingID ? captureState : nil
+        return recording.lifecycleState(jobs: jobs, liveCaptureState: liveCaptureState)
     }
 
     func applicationEnteredBackground() {
@@ -247,7 +329,12 @@ final class RecordingSessionCoordinator {
         capture.onSegmentClosed = { [weak self] segment in
             Task { @MainActor [weak self] in
                 guard let self, let recordingID = activeRecordingID else { return }
-                try? await persist(segment: segment, recordingID: recordingID)
+                enqueueForPersistence(segment)
+                do {
+                    try await flushPendingSegments(recordingID: recordingID)
+                } catch {
+                    segmentPersistenceFailureMessage = error.localizedDescription
+                }
             }
         }
         let continuation = captureEventContinuation
@@ -256,11 +343,71 @@ final class RecordingSessionCoordinator {
         }
     }
 
-    private func persist(segment: AACSegmentRecorder.Segment, recordingID: UUID) async throws {
-        guard persistedSegmentIDs.insert(segment.id).inserted else { return }
+    private func enqueueForPersistence(_ segment: AACSegmentRecorder.Segment) {
+        guard !persistedSegmentIDs.contains(segment.id) else { return }
+        pendingSegments[segment.id] = segment
+    }
+
+    private func flushPendingSegments(recordingID: UUID) async throws {
+        while !pendingSegments.isEmpty {
+            if let task = segmentPersistenceTask, let operationID = segmentPersistenceOperationID {
+                _ = await task.value
+                if segmentPersistenceOperationID == operationID {
+                    segmentPersistenceTask = nil
+                    segmentPersistenceOperationID = nil
+                }
+                continue
+            }
+
+            let operationID = UUID()
+            let task = Task { @MainActor [weak self] () -> Result<Void, Error> in
+                guard let self else { return .success(()) }
+                do {
+                    try await drainPendingSegments(recordingID: recordingID)
+                    return .success(())
+                } catch {
+                    return .failure(error)
+                }
+            }
+            segmentPersistenceOperationID = operationID
+            segmentPersistenceTask = task
+            let result = await task.value
+            if segmentPersistenceOperationID == operationID {
+                segmentPersistenceTask = nil
+                segmentPersistenceOperationID = nil
+            }
+            switch result {
+            case .success:
+                segmentPersistenceFailureMessage = nil
+            case let .failure(error):
+                segmentPersistenceFailureMessage = error.localizedDescription
+                throw error
+            }
+        }
+        segmentPersistenceFailureMessage = nil
+    }
+
+    private func drainPendingSegments(recordingID: UUID) async throws {
+        while let segment = pendingSegments.values.sorted(by: segmentPrecedes).first {
+            if persistedSegmentIDs.contains(segment.id) {
+                pendingSegments.removeValue(forKey: segment.id)
+                continue
+            }
+            let chunk = makeChunk(from: segment, recordingID: recordingID)
+            try await persistChunk(chunk, segment.endedAt)
+            await onChunkClosed?(recordingID, chunk.id)
+            persistedSegmentIDs.insert(segment.id)
+            pendingSegments.removeValue(forKey: segment.id)
+        }
+    }
+
+    private func makeChunk(
+        from segment: AACSegmentRecorder.Segment,
+        recordingID: UUID
+    ) -> AudioChunk {
         let rootURL = repository.rootURL
         let relativePath = relativePath(of: segment.url, under: rootURL)
-        let chunk = AudioChunk(
+        return AudioChunk(
             id: segment.id,
             recordingID: recordingID,
             relativePath: relativePath,
@@ -269,7 +416,19 @@ final class RecordingSessionCoordinator {
             startedAt: segment.startedAt,
             endedAt: segment.endedAt
         )
-        try await repository.addChunk(chunk, at: segment.endedAt)
+    }
+
+    private func segmentPrecedes(
+        _ lhs: AACSegmentRecorder.Segment,
+        _ rhs: AACSegmentRecorder.Segment
+    ) -> Bool {
+        if lhs.startSample != rhs.startSample {
+            return lhs.startSample < rhs.startSample
+        }
+        if lhs.endSample != rhs.endSample {
+            return lhs.endSample < rhs.endSample
+        }
+        return lhs.id.uuidString < rhs.id.uuidString
     }
 
     private func handleCaptureEvent(_ event: AACSegmentRecorder.CaptureEvent) async throws {
@@ -286,6 +445,7 @@ final class RecordingSessionCoordinator {
                 sample: event.sampleIndex,
                 at: event.occurredAt
             )
+            captureState = .interrupted
             presentationState = .interrupted
         case let .interruptionEnded(shouldResume):
             try await closeActiveGapIfNeeded(at: event.occurredAt, sample: event.sampleIndex)
@@ -296,6 +456,7 @@ final class RecordingSessionCoordinator {
             if next != previous {
                 try await repository.changeState(recordingID: recordingID, to: next, at: event.occurredAt)
             }
+            captureState = shouldResume ? .recording : .interrupted
             presentationState = shouldResume ? .recording : .interrupted
         case .routeChanged:
             try await recordPointGap(
@@ -330,8 +491,8 @@ final class RecordingSessionCoordinator {
             startedAt: date,
             endedAt: nil
         )
-        activeGapID = gap.id
         try await repository.openGap(gap, at: date)
+        activeGapID = gap.id
     }
 
     private func closeActiveGapIfNeeded(at date: Date, sample: Int64) async throws {
@@ -359,8 +520,14 @@ final class RecordingSessionCoordinator {
     }
 
     private func relativePath(of url: URL, under rootURL: URL) -> String {
-        let root = rootURL.standardizedFileURL.path
-        let path = url.standardizedFileURL.path
+        // Raw paths only. Both URLs derive from the same repository root, so
+        // their paths share an exact prefix. Symlink-aware normalization
+        // (standardizedFileURL, standardizingPath) rewrites the existing root
+        // /private/var → /var while leaving the child URL untouched on a real
+        // device, silently degrading every stored path to lastPathComponent.
+        var root = rootURL.path
+        if root.hasSuffix("/") { root.removeLast() }
+        let path = url.path
         guard path.hasPrefix(root + "/") else { return url.lastPathComponent }
         return String(path.dropFirst(root.count + 1))
     }

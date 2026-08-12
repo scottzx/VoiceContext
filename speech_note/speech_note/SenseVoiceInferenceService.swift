@@ -16,6 +16,7 @@ actor SenseVoiceInferenceService {
         let inputPowerDecibels: Float
         let inputPeakDecibels: Float
         let speechSpanCount: Int
+        let endsWithOpenSpeech: Bool
         let utteranceCount: Int
         let vadMilliseconds: Double
         let speakerEmbedding: SpeakerEmbeddingResult
@@ -83,40 +84,134 @@ actor SenseVoiceInferenceService {
     }
 
     func transcribe(recordingURL: URL) async throws -> Result {
-        let samples = try PCM16KMonoLoader.samples(from: recordingURL)
+        try await transcribe(recordingURLs: [recordingURL], startingAt: 0)
+    }
+
+    /// Decodes adjacent authoritative AAC chunks into one inference input.
+    /// The source files remain untouched; this is only the temporary model
+    /// input needed when VAD finds speech crossing a minute boundary.
+    func transcribe(recordingURLs: [URL], startingAt: Int64) async throws -> Result {
+        let samples = try recordingURLs.flatMap { try PCM16KMonoLoader.samples(from: $0) }
         let inputMetrics = AudioInputMetrics.from(samples: samples)
         let resourceRoot = try bundledModelResourceRoot()
-        let analysis = try await speechAnalysis.analyze(samples: samples, resourceRoot: resourceRoot)
-        try await lifecycleGate.beginMetalWork()
         cancellation.clearAbort()
-        let result = try await Task.detached(priority: .userInitiated) { [cancellation] in
-            try Self.run(samples: samples, resourceRoot: resourceRoot, cancellation: cancellation)
-        }.value
+        var nativeResults: [NativeResult] = []
+        var utteranceDuration: TimeInterval = 0
+        var voicedDuration: TimeInterval = 0
+        var speechSpanCount = 0
+        var utteranceCount = 0
+        var vadMilliseconds: Double = 0
+        var speakerEmbedding: SpeakerEmbeddingResult = .unavailable(reason: "未形成可用声纹")
+        var embeddingDimension: Int?
+        var embeddingRawNorm: Float?
+        var embeddingNorm: Float?
+        var embeddingMilliseconds: Double = 0
+        var lastSpeechEndSample: Int64?
+
+        for range in Self.analysisRanges(sampleCount: samples.count) {
+            let window = Array(samples[range])
+            let windowStartSample = startingAt + Int64(range.lowerBound)
+            let analysis: SpeechAnalysisService.Result
+            do {
+                analysis = try await speechAnalysis.analyze(
+                    samples: window,
+                    resourceRoot: resourceRoot,
+                    startingAt: windowStartSample
+                )
+            } catch let error as SpeechAnalysisService.AnalysisError {
+                guard case .noSpeechDetected = error else { throw error }
+                continue
+            }
+
+            utteranceDuration += analysis.utterances.reduce(0) { $0 + $1.duration }
+            voicedDuration += analysis.voicedDuration
+            speechSpanCount += analysis.spans.count
+            utteranceCount += analysis.utterances.count
+            vadMilliseconds += analysis.vadMilliseconds
+            speakerEmbedding = analysis.speakerEmbedding
+            embeddingDimension = analysis.embeddingDimension
+            embeddingRawNorm = analysis.embeddingRawNorm
+            embeddingNorm = analysis.embeddingNorm
+            embeddingMilliseconds += analysis.embeddingMilliseconds
+            lastSpeechEndSample = analysis.spans.last?.endSample ?? lastSpeechEndSample
+
+            for input in Self.inferenceInputs(from: analysis.utterances) {
+                try await lifecycleGate.beginMetalWork()
+                let result = try await Task.detached(priority: .userInitiated) { [cancellation] in
+                    try Self.run(samples: input, resourceRoot: resourceRoot, cancellation: cancellation)
+                }.value
+                nativeResults.append(result)
+            }
+        }
+        guard let lastResult = nativeResults.last else {
+            throw SpeechAnalysisService.AnalysisError.noSpeechDetected(inputMetrics)
+        }
+
+        let text = nativeResults
+            .map(\.text)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let loadMilliseconds = nativeResults.reduce(0) { $0 + $1.loadMilliseconds }
+        let inferenceMilliseconds = nativeResults.reduce(0) { $0 + $1.inferenceMilliseconds }
+        let audioDuration = Double(samples.count) / 16_000
 
         let metrics = await lifecycleGate.metrics()
         return Result(
-            text: result.text,
-            backend: result.backend,
-            audioDuration: Double(samples.count) / 16_000,
-            utteranceDuration: analysis.utterances.reduce(0) { $0 + $1.duration },
-            voicedDuration: analysis.voicedDuration,
-            loadMilliseconds: result.loadMilliseconds,
-            inferenceMilliseconds: result.inferenceMilliseconds,
-            realtimeFactor: result.realtimeFactor,
+            text: text,
+            backend: lastResult.backend,
+            audioDuration: audioDuration,
+            utteranceDuration: utteranceDuration,
+            voicedDuration: voicedDuration,
+            loadMilliseconds: loadMilliseconds,
+            inferenceMilliseconds: inferenceMilliseconds,
+            realtimeFactor: inferenceMilliseconds > 0
+                ? audioDuration / Double(inferenceMilliseconds / 1_000)
+                : 0,
             inputPowerDecibels: inputMetrics.rmsDecibels,
             inputPeakDecibels: inputMetrics.peakDecibels,
-            speechSpanCount: analysis.spans.count,
-            utteranceCount: analysis.utterances.count,
-            vadMilliseconds: analysis.vadMilliseconds,
-            speakerEmbedding: analysis.speakerEmbedding,
-            embeddingDimension: analysis.embeddingDimension,
-            embeddingRawNorm: analysis.embeddingRawNorm,
-            embeddingNorm: analysis.embeddingNorm,
-            embeddingMilliseconds: analysis.embeddingMilliseconds,
-            physicalFootprintBytes: result.physicalFootprintBytes,
+            speechSpanCount: speechSpanCount,
+            endsWithOpenSpeech: lastSpeechEndSample ?? 0
+                >= startingAt + Int64(samples.count) - Int64(0.75 * 16_000),
+            utteranceCount: utteranceCount,
+            vadMilliseconds: vadMilliseconds,
+            speakerEmbedding: speakerEmbedding,
+            embeddingDimension: embeddingDimension,
+            embeddingRawNorm: embeddingRawNorm,
+            embeddingNorm: embeddingNorm,
+            embeddingMilliseconds: embeddingMilliseconds,
+            physicalFootprintBytes: nativeResults.map(\.physicalFootprintBytes).max() ?? 0,
             thermalState: Self.thermalStateDescription(),
             submittedMetalWork: metrics.submittedMetalWork
         )
+    }
+
+    /// VAD already produces bounded utterances (15-second target, 25-second
+    /// hard cap). Keeping those boundaries for ASR prevents a legacy
+    /// multi-minute AudioChunk from becoming one unbounded Metal allocation.
+    nonisolated static func inferenceInputs(
+        from utterances: [SpeechAnalysisService.Utterance]
+    ) -> [[Float]] {
+        utterances.flatMap { utterance in
+            analysisRanges(
+                sampleCount: utterance.samples.count,
+                maximumSamples: Int(SpeechAnalysisService.hardMaximumUtteranceSamples)
+            ).map { range in
+                Array(utterance.samples[range])
+            }
+        }
+    }
+
+    /// Legacy recordings may contain five-minute physical chunks. Bound CPU
+    /// analysis to the same one-minute budget used by current capture so VAD
+    /// and speaker embedding cannot create an unbounded launch-time peak.
+    nonisolated static func analysisRanges(
+        sampleCount: Int,
+        maximumSamples: Int = Int(AACSegmentRecorder.targetSampleRate * 60)
+    ) -> [Range<Int>] {
+        guard sampleCount > 0, maximumSamples > 0 else { return [] }
+        return stride(from: 0, to: sampleCount, by: maximumSamples).map { start in
+            start..<min(start + maximumSamples, sampleCount)
+        }
     }
 
     func metrics() async -> InferenceLifecycleGate.Metrics {

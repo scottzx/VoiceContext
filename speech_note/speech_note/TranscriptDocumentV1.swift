@@ -1,5 +1,33 @@
 import Foundation
 
+private nonisolated enum TranscriptRFC3339DateCoding {
+    static func normalizedToMilliseconds(_ value: Date) -> Date {
+        let milliseconds = (value.timeIntervalSince1970 * 1_000).rounded()
+        return Date(timeIntervalSince1970: milliseconds / 1_000)
+    }
+
+    static func string(from value: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter.string(from: normalizedToMilliseconds(value))
+    }
+
+    static func date(from value: String) -> Date? {
+        let millisecondsFormatter = ISO8601DateFormatter()
+        millisecondsFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = millisecondsFormatter.date(from: value) {
+            return normalizedToMilliseconds(date)
+        }
+
+        // Transcript files written before millisecond precision used
+        // JSONEncoder's `.iso8601` strategy and therefore omitted fractions.
+        let legacyFormatter = ISO8601DateFormatter()
+        legacyFormatter.formatOptions = [.withInternetDateTime]
+        return legacyFormatter.date(from: value)
+    }
+}
+
 /// The canonical, local-first representation of a completed Recording.
 /// Markdown is always derived from this value; callers must not treat the
 /// rendered file as editable source data.
@@ -97,8 +125,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
     let schema: String
     let recordingID: UUID
     let kind: String
-    let state: String
-    let revision: Int
+    var state: String
+    var revision: Int
     let title: String?
     let tags: [String]
     let startedAt: Date
@@ -134,19 +162,21 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         recording: Recording,
         chunks: [AudioChunk],
         segmentTexts: [(chunkID: UUID, text: String)],
-        timezone: String = TimeZone.current.identifier
+        timezone: String = TimeZone.current.identifier,
+        state: RecordingState = .complete
     ) {
         self.schema = Self.schema
         recordingID = recording.id
         kind = recording.isMeeting ? "meeting" : "recording"
         // The document is written only by a successful transcription executor,
         // immediately before the Recording state machine advances to complete.
-        state = RecordingState.complete.rawValue
+        self.state = state.rawValue
         revision = 1
         title = recording.title
         tags = []
-        startedAt = recording.startedAt
-        endedAt = recording.endedAt
+        let normalizedStartedAt = TranscriptRFC3339DateCoding.normalizedToMilliseconds(recording.startedAt)
+        startedAt = normalizedStartedAt
+        endedAt = recording.endedAt.map(TranscriptRFC3339DateCoding.normalizedToMilliseconds)
         self.timezone = timezone
         language = "zh"
         audio = Audio(
@@ -166,13 +196,45 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
             return Segment(
                 id: Self.stableSegmentID(recordingID: recording.id, sequence: offset + 1),
                 sequence: offset + 1,
-                startedAt: recording.startedAt.addingTimeInterval(Double(milliseconds) / 1_000),
+                startedAt: TranscriptRFC3339DateCoding.normalizedToMilliseconds(
+                    normalizedStartedAt.addingTimeInterval(Double(milliseconds) / 1_000)
+                ),
                 offsetMilliseconds: milliseconds,
                 text: normalized,
                 sourceChunkID: value.chunkID,
                 speechSpanIDs: []
             )
         }
+    }
+
+    /// Adds one independently completed chunk to the existing local document.
+    /// Replacing source chunks makes retries idempotent, including the case
+    /// where a VAD boundary requires two adjacent chunks to be reprocessed.
+    func appending(
+        recording: Recording,
+        chunks: [AudioChunk],
+        text: String,
+        sourceChunkID: UUID,
+        replacingSourceChunkIDs: [UUID] = []
+    ) -> TranscriptDocumentV1 {
+        let replaced = Set(replacingSourceChunkIDs + [sourceChunkID])
+        let previous = segments
+            .filter { !replaced.contains($0.sourceChunkID) }
+            .map { ($0.sourceChunkID, $0.text) }
+        return TranscriptDocumentV1(
+            recording: recording,
+            chunks: chunks,
+            segmentTexts: previous + [(sourceChunkID, text)],
+            timezone: timezone,
+            state: .processing
+        )
+    }
+
+    func updatingState(_ state: RecordingState) -> TranscriptDocumentV1 {
+        var copy = self
+        copy.state = state.rawValue
+        copy.revision += 1
+        return copy
     }
 
     /// A deterministic ID keeps a regenerated first revision linkable before
@@ -256,10 +318,23 @@ actor TranscriptDocumentStore {
         // Foundation's automatic snake-case conversion (`recording_id`
         // becomes `recordingId`). Each wire key is declared explicitly above.
         encoder.keyEncodingStrategy = .useDefaultKeys
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .custom { value, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(TranscriptRFC3339DateCoding.string(from: value))
+        }
         decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .useDefaultKeys
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(String.self)
+            guard let date = TranscriptRFC3339DateCoding.date(from: value) else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Expected an RFC 3339 timestamp."
+                )
+            }
+            return date
+        }
     }
 
     func write(_ document: TranscriptDocumentV1) throws {

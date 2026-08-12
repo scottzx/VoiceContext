@@ -58,30 +58,107 @@ final class RecordingCoreModel {
         self.inferenceService = inferenceService
         transcriptionScheduler = ForegroundTranscriptionScheduler(
             repository: repository,
-            execute: { [repository, inferenceService] recordingID in
+            execute: { [repository, inferenceService, transcriptStore] recordingID in
                 let chunks = try await repository.chunks(recordingID: recordingID)
                     .filter { $0.state == .closed }
                     .sorted { $0.startSample < $1.startSample }
                 guard !chunks.isEmpty else {
                     throw SenseVoiceInferenceService.InferenceError.runtime("录音没有已关闭的音频分片")
                 }
-                var transcriptionResults: [(chunkID: UUID, text: String)] = []
-                for chunk in chunks {
-                    let result = try await inferenceService.transcribe(
-                        recordingURL: repository.rootURL.appendingPathComponent(chunk.relativePath)
-                    )
-                    transcriptionResults.append((chunkID: chunk.id, text: result.text))
-                }
                 guard let recording = try await repository.recording(id: recordingID) else {
                     throw SenseVoiceInferenceService.InferenceError.runtime("找不到待写入文稿的录音")
                 }
-                let document = TranscriptDocumentV1(
+
+                let jobs = try await repository.jobs(recordingID: recordingID)
+                let runningJob = jobs.last {
+                    $0.kind == .transcription && $0.state == .running
+                }
+
+                // Jobs created before minute-level processing have no chunk
+                // scope. Keep them as a one-time compatibility path.
+                guard let chunkID = runningJob?.chunkID else {
+                    var transcriptionResults: [(chunkID: UUID, text: String)] = []
+                    for chunk in chunks {
+                        let result = try await inferenceService.transcribe(
+                            recordingURL: repository.rootURL.appendingPathComponent(chunk.relativePath)
+                        )
+                        transcriptionResults.append((chunkID: chunk.id, text: result.text))
+                    }
+                    let document = TranscriptDocumentV1(
+                        recording: recording,
+                        chunks: chunks,
+                        segmentTexts: transcriptionResults
+                    )
+                    try document.requireContent()
+                    try await transcriptStore.write(document)
+                    return
+                }
+
+                guard let chunk = chunks.first(where: { $0.id == chunkID }) else {
+                    throw SenseVoiceInferenceService.InferenceError.runtime("找不到待转写的音频分片")
+                }
+                let previous = chunks.last {
+                    $0.endSample == chunk.startSample && $0.requiresContinuation
+                }
+                let sourceChunks = previous.map { [$0, chunk] } ?? [chunk]
+                let result = try await inferenceService.transcribe(
+                    recordingURLs: sourceChunks.map {
+                        repository.rootURL.appendingPathComponent($0.relativePath)
+                    },
+                    startingAt: sourceChunks[0].startSample
+                )
+                // The final-chunk rule must reflect whether capture has already
+                // stopped. This job may have started while the Recording was
+                // still active, and the value read above can predate the stop
+                // that closed the last chunk. Re-read at decision time so an
+                // open tail on the final chunk is committed, not left waiting
+                // for a successor that will never be closed.
+                let settledRecording = try await repository.recording(id: recordingID)
+                let isFinalChunk = settledRecording?.endedAt != nil && chunks.last?.id == chunk.id
+
+                if result.endsWithOpenSpeech && !isFinalChunk {
+                    _ = try await repository.setChunkContinuation(
+                        id: chunk.id,
+                        requiresContinuation: true,
+                        at: Date()
+                    )
+                    return
+                }
+
+                if let previous {
+                    _ = try await repository.setChunkContinuation(
+                        id: previous.id,
+                        requiresContinuation: false,
+                        at: Date()
+                    )
+                }
+                if isFinalChunk || chunk.requiresContinuation {
+                    // A final chunk has no successor to consume an open tail,
+                    // so its marker must not survive the finished Recording;
+                    // the second branch re-clears a marker that a prior run of
+                    // this chunk left behind.
+                    _ = try await repository.setChunkContinuation(
+                        id: chunk.id,
+                        requiresContinuation: false,
+                        at: Date()
+                    )
+                }
+
+                let document = try await transcriptStore.document(recordingID: recordingID)
+                let updated = document?.appending(
                     recording: recording,
                     chunks: chunks,
-                    segmentTexts: transcriptionResults
+                    text: result.text,
+                    sourceChunkID: previous?.id ?? chunk.id,
+                    replacingSourceChunkIDs: sourceChunks.map(\.id)
+                ) ?? TranscriptDocumentV1(
+                    recording: recording,
+                    chunks: sourceChunks,
+                    segmentTexts: [(previous?.id ?? chunk.id, result.text)],
+                    state: .processing
                 )
-                try document.requireContent()
-                try await transcriptStore.write(document)
+                try updated.requireContent()
+                try await transcriptStore.write(updated)
             }
         )
         coordinator.onStateChanged = { [weak self] state in
@@ -91,6 +168,16 @@ final class RecordingCoreModel {
             Task { @MainActor [weak self] in
                 self?.inputLevel = metrics.displayLevel
             }
+        }
+        coordinator.onChunkClosed = { [weak self] recordingID, chunkID in
+            guard let self else { return }
+            try? await self.transcriptionScheduler.enqueue(
+                recordingID: recordingID,
+                chunkID: chunkID,
+                onOutcome: { [weak self] outcome in
+                    await self?.applyTranscriptionOutcome(outcome)
+                }
+            )
         }
     }
 
@@ -143,15 +230,11 @@ final class RecordingCoreModel {
 
     func stop() async {
         do {
-            try await coordinator.stop()
-            if let recordingID = coordinator.activeRecordingID {
-                try await transcriptionScheduler.enqueue(
-                    recordingID: recordingID,
-                    onOutcome: { [weak self] outcome in
-                        await self?.applyTranscriptionOutcome(outcome)
-                    }
-                )
-            }
+            // The final under-60s chunk is closed and enqueued inside
+            // coordinator.stop() (via onChunkClosed). The minute-level queue
+            // owns transcription, so stop must not also enqueue a legacy
+            // whole-recording job with a nil chunkID.
+            _ = try await coordinator.stop()
         } catch {
             notice = error.localizedDescription
         }
@@ -162,7 +245,10 @@ final class RecordingCoreModel {
     /// driven by `ForegroundTranscriptionScheduler` after capture stops.
     func markProcessingCompleted() async {
         do {
-            try await coordinator.markProcessingCompleted()
+            guard let recordingID = snapshot.recording?.id else {
+                throw RecordingSessionCoordinator.CoordinatorError.noActiveSession
+            }
+            try await coordinator.markProcessingCompleted(recordingID: recordingID)
         } catch {
             notice = error.localizedDescription
         }
@@ -224,6 +310,7 @@ final class RecordingCoreModel {
     private func runRecovery() async {
         do {
             let result = try await repository.recoverUnfinished(at: Date())
+            try await enqueueHistoricalChunkJobs()
             try await transcriptionScheduler.resumePendingJobs(
                 onOutcome: { [weak self] outcome in
                     await self?.applyTranscriptionOutcome(outcome)
@@ -243,12 +330,116 @@ final class RecordingCoreModel {
         await refresh()
     }
 
+    /// Backfills old recordings into the same durable per-chunk queue used by
+    /// new captures. Complete recordings with an existing successful
+    /// transcript are left untouched; failed or never-processed recordings
+    /// are split into independently retryable closed-chunk jobs.
+    private func enqueueHistoricalChunkJobs() async throws {
+        let records = try await repository.recordings()
+        for recording in records {
+            guard recording.endedAt != nil else { continue }
+            let chunks = try await repository.chunks(recordingID: recording.id)
+                .filter { $0.state == .closed }
+                .sorted { $0.startSample < $1.startSample }
+            guard !chunks.isEmpty else { continue }
+
+            let jobs = try await repository.jobs(recordingID: recording.id)
+            let chunkJobIDs = Set(jobs.compactMap { job in
+                job.kind == .transcription ? job.chunkID : nil
+            })
+            let existingTranscript = try await transcriptStore.document(recordingID: recording.id)
+
+            // Some builds completed the canonical document but crashed before
+            // reconciling the Recording projection. A previous migration may
+            // also already have queued chunk jobs. The completed document is
+            // authoritative: retire every redundant transcription job before
+            // the scheduler resumes and repair the aggregate state.
+            if existingTranscript?.state == RecordingState.complete.rawValue {
+                let reconciledAt = Date()
+                for var job in jobs where
+                    job.kind == .transcription && job.state != .completed
+                {
+                    job.state = .completed
+                    job.lastError = "supersededByCompletedTranscript"
+                    job.updatedAt = reconciledAt
+                    try await repository.upsertJob(job, at: reconciledAt)
+                }
+                if recording.state != .complete {
+                    try await repository.changeState(
+                        recordingID: recording.id,
+                        to: .complete,
+                        endedAt: recording.endedAt,
+                        at: reconciledAt
+                    )
+                }
+                _ = try await repository.clearContinuationMarkersForCompletedRecording(
+                    recordingID: recording.id,
+                    at: reconciledAt
+                )
+                continue
+            }
+
+            // The old implementation used one whole-recording job. It must
+            // never race the durable chunk queue or run the long recording
+            // twice, whether the chunk jobs were created in this launch or a
+            // previous one.
+            for var legacyJob in jobs where
+                legacyJob.kind == .transcription &&
+                legacyJob.chunkID == nil &&
+                legacyJob.state != .completed
+            {
+                legacyJob.state = .completed
+                legacyJob.lastError = "supersededByChunkJobs"
+                legacyJob.updatedAt = Date()
+                try await repository.upsertJob(legacyJob, at: legacyJob.updatedAt)
+            }
+
+            // A durable per-chunk queue already exists and will be resumed
+            // below. Do not create duplicate jobs on repeated launches.
+            guard chunkJobIDs.isEmpty else { continue }
+
+            for chunk in chunks {
+                try await transcriptionScheduler.enqueue(
+                    recordingID: recording.id,
+                    chunkID: chunk.id,
+                    onOutcome: { [weak self] outcome in
+                        await self?.applyTranscriptionOutcome(outcome)
+                    }
+                )
+            }
+        }
+    }
+
     private func applyTranscriptionOutcome(_ outcome: ForegroundTranscriptionScheduler.Outcome) async {
         do {
-            try await coordinator.finishProcessing(
-                recordingID: outcome.recordingID,
-                outcome: outcome.state
-            )
+            switch outcome.state {
+            case .failed:
+                try await coordinator.finishProcessing(
+                    recordingID: outcome.recordingID,
+                    outcome: outcome.state
+                )
+            case .completed:
+                let jobs = try await repository.jobs(recordingID: outcome.recordingID)
+                    .filter { $0.kind == .transcription }
+                guard !jobs.isEmpty, jobs.allSatisfy({ $0.state == .completed }) else {
+                    await refresh()
+                    return
+                }
+                try await coordinator.finishProcessing(
+                    recordingID: outcome.recordingID,
+                    outcome: outcome.state
+                )
+                if let recording = try await repository.recording(id: outcome.recordingID),
+                   recording.state == .complete {
+                    _ = try await repository.clearContinuationMarkersForCompletedRecording(
+                        recordingID: outcome.recordingID,
+                        at: Date()
+                    )
+                    if let document = try await transcriptStore.document(recordingID: outcome.recordingID) {
+                        try await transcriptStore.write(document.updatingState(.complete))
+                    }
+                }
+            }
         } catch {
             // A scheduler failure must remain visible rather than being
             // converted into a completed Recording by a UI fallback.
@@ -406,7 +597,7 @@ final class RecordingCoreModel {
         let titles = [
             ("background-30min", "30 分钟后台连续（锁屏/切换 App）"),
             ("lockscreen-stop", "锁屏/控制中心停止入口"),
-            ("two-hour-chunks", "2 小时连续分片（约 5 分钟边界）"),
+            ("two-hour-chunks", "2 小时连续分片（60 秒边界，约 120 片）"),
             ("interruption-gap", "电话/Siri 中断产生 gap 且 UI 显示 interrupted"),
             ("route-gap", "蓝牙断连/路由变化产生显式 gap"),
             ("termination-recovery", "强制终止后恢复 interrupted 且重复恢复幂等"),

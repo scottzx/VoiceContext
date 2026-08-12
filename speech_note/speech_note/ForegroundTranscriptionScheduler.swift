@@ -11,7 +11,14 @@ actor ForegroundTranscriptionScheduler {
         }
 
         let recordingID: UUID
+        let chunkID: UUID?
         let state: State
+
+        init(recordingID: UUID, chunkID: UUID? = nil, state: State) {
+            self.recordingID = recordingID
+            self.chunkID = chunkID
+            self.state = state
+        }
     }
 
     typealias Executor = @Sendable (UUID) async throws -> Void
@@ -37,12 +44,29 @@ actor ForegroundTranscriptionScheduler {
 
     /// Adds a durable transcription job. The caller supplies the presentation
     /// callback because the scheduler deliberately has no UI dependency.
+    ///
+    /// The minute-level queue only creates chunk-scoped jobs. A nil `chunkID`
+    /// names the pre-incremental whole-recording job format: the outcome
+    /// handler attaches to an existing legacy job if one is present, but a new
+    /// one is never created for a Recording that has a durable chunk queue.
     func enqueue(
         recordingID: UUID,
+        chunkID: UUID? = nil,
         onOutcome: @escaping OutcomeHandler
     ) async throws {
         let jobs = try await repository.jobs(recordingID: recordingID)
-        if let existing = jobs.last(where: { $0.kind == .transcription }) {
+        guard let chunkID else {
+            if let legacy = jobs.last(where: { $0.kind == .transcription && $0.chunkID == nil }) {
+                outcomeHandlers[legacy.id] = onOutcome
+                guard legacy.state != .completed else { return }
+                if legacy.state == .failed {
+                    try await retry(job: legacy)
+                }
+                startDrainingIfPossible()
+            }
+            return
+        }
+        if let existing = jobs.last(where: { $0.kind == .transcription && $0.chunkID == chunkID }) {
             outcomeHandlers[existing.id] = onOutcome
             guard existing.state != .completed else { return }
             if existing.state == .failed {
@@ -53,6 +77,7 @@ actor ForegroundTranscriptionScheduler {
             let job = RecordingJob(
                 id: UUID(),
                 recordingID: recordingID,
+                chunkID: chunkID,
                 kind: .transcription,
                 state: .pending,
                 attemptCount: 0,
@@ -70,14 +95,21 @@ actor ForegroundTranscriptionScheduler {
     /// from `failed` to `processing`.
     func retry(
         recordingID: UUID,
+        chunkID: UUID? = nil,
         onOutcome: @escaping OutcomeHandler
     ) async throws {
         let jobs = try await repository.jobs(recordingID: recordingID)
-        guard let job = jobs.last(where: { $0.kind == .transcription }) else {
-            return try await enqueue(recordingID: recordingID, onOutcome: onOutcome)
+        let failedJobs = jobs.filter {
+            $0.kind == .transcription && $0.state == .failed && (chunkID == nil || $0.chunkID == chunkID)
         }
-        outcomeHandlers[job.id] = onOutcome
-        try await retry(job: job)
+        if failedJobs.isEmpty {
+            guard jobs.last(where: { $0.kind == .transcription && $0.chunkID == chunkID }) == nil else { return }
+            return try await enqueue(recordingID: recordingID, chunkID: chunkID, onOutcome: onOutcome)
+        }
+        for job in failedJobs {
+            outcomeHandlers[job.id] = onOutcome
+            try await retry(job: job)
+        }
         startDrainingIfPossible()
     }
 
@@ -178,6 +210,7 @@ actor ForegroundTranscriptionScheduler {
                 if let handler = outcomeHandlers.removeValue(forKey: job.id) {
                     await handler(.init(
                         recordingID: job.recordingID,
+                        chunkID: job.chunkID,
                         state: .failed(message: error.localizedDescription)
                     ))
                 }
@@ -198,7 +231,7 @@ actor ForegroundTranscriptionScheduler {
                 return
             }
             if let handler = outcomeHandlers.removeValue(forKey: job.id) {
-                await handler(.init(recordingID: job.recordingID, state: .completed))
+                await handler(.init(recordingID: job.recordingID, chunkID: job.chunkID, state: .completed))
             }
         }
     }

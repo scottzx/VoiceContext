@@ -2,6 +2,12 @@
 import Foundation
 
 nonisolated final class AACSegmentRecorder: @unchecked Sendable {
+    nonisolated static let targetSampleRate: Double = 16_000
+    nonisolated static let defaultSegmentLengthSamples: Int64 = 960_000
+    nonisolated static var defaultSegmentDuration: TimeInterval {
+        TimeInterval(defaultSegmentLengthSamples) / targetSampleRate
+    }
+
     nonisolated enum RecorderError: LocalizedError {
         case microphonePermissionDenied
         case noInputFormat
@@ -59,8 +65,9 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     private var audioConverter: AVAudioConverter?
     private var recordingFormat: AVAudioFormat?
     private var directory: URL?
-    private var segmentDurationSamples: Int64 = 5 * 60 * 16_000
-    private var boundaryPlanner = AACChunkBoundaryPlanner(segmentLengthSamples: 5 * 60 * 16_000)
+    private var boundaryPlanner = AACChunkBoundaryPlanner(
+        segmentLengthSamples: AACSegmentRecorder.defaultSegmentLengthSamples
+    )
     private var writtenSamples: Int64 = 0
     private var pendingPacketCount = 0
     private var tapInstalled = false
@@ -79,7 +86,10 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         statusLock.withLock { writtenSamples }
     }
 
-    func start(in directory: URL, segmentDuration: TimeInterval = 5 * 60) async throws {
+    func start(
+        in directory: URL,
+        segmentDuration: TimeInterval = AACSegmentRecorder.defaultSegmentDuration
+    ) async throws {
         guard !statusLock.withLock({ tapInstalled }) else { return }
         let permission = AVAudioApplication.shared.recordPermission
         if permission != .granted {
@@ -100,7 +110,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         }
         guard let targetFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
-            sampleRate: 16_000,
+            sampleRate: AACSegmentRecorder.targetSampleRate,
             channels: 1,
             interleaved: false
         ), let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
@@ -109,8 +119,8 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
 
         try writerQueue.sync {
             self.directory = directory
-            segmentDurationSamples = max(1, Int64(segmentDuration * targetFormat.sampleRate))
-            boundaryPlanner = AACChunkBoundaryPlanner(segmentLengthSamples: segmentDurationSamples)
+            let segmentLengthSamples = max(1, Int64(segmentDuration * targetFormat.sampleRate))
+            boundaryPlanner = AACChunkBoundaryPlanner(segmentLengthSamples: segmentLengthSamples)
             audioConverter = converter
             recordingFormat = targetFormat
             writtenSamples = 0
@@ -258,7 +268,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         let url = directory.appendingPathComponent("audio-\(id.uuidString.lowercased()).m4a")
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: 16_000,
+            AVSampleRateKey: AACSegmentRecorder.targetSampleRate,
             AVNumberOfChannelsKey: 1,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
         ]

@@ -147,6 +147,55 @@ struct speech_noteTests {
         #expect(utterances[1].samples.count == 10_000)
     }
 
+    @Test func senseVoicePreservesBoundedVADUtterancesAsSeparateMetalInputs() {
+        let utterances = [
+            SpeechAnalysisService.Utterance(
+                startSample: 0,
+                endSample: 160_000,
+                samples: Array(repeating: 0.1, count: 160_000),
+                speechSpans: [.init(startSample: 0, endSample: 160_000)]
+            ),
+            SpeechAnalysisService.Utterance(
+                startSample: 160_000,
+                endSample: 400_000,
+                samples: Array(repeating: 0.2, count: 240_000),
+                speechSpans: [.init(startSample: 160_000, endSample: 400_000)]
+            ),
+        ]
+
+        let inputs = SenseVoiceInferenceService.inferenceInputs(from: utterances)
+
+        #expect(inputs.map(\.count) == [160_000, 240_000])
+        #expect(inputs.count == utterances.count)
+    }
+
+    @Test func senseVoiceHardCapsContinuousSpeechBelowTheModelLimit() {
+        let hardLimit = Int(SpeechAnalysisService.hardMaximumUtteranceSamples)
+        let continuous = SpeechAnalysisService.Utterance(
+            startSample: 0,
+            endSample: Int64(hardLimit * 2 + 123),
+            samples: Array(repeating: 0.1, count: hardLimit * 2 + 123),
+            speechSpans: [.init(startSample: 0, endSample: Int64(hardLimit * 2 + 123))]
+        )
+
+        let inputs = SenseVoiceInferenceService.inferenceInputs(from: [continuous])
+
+        #expect(inputs.map(\.count) == [hardLimit, hardLimit, 123])
+        #expect(inputs.allSatisfy { $0.count <= hardLimit })
+    }
+
+    @Test func senseVoiceBoundsLegacyFiveMinuteChunksBeforeSpeechAnalysis() {
+        let minute = Int(AACSegmentRecorder.targetSampleRate * 60)
+
+        let ranges = SenseVoiceInferenceService.analysisRanges(sampleCount: minute * 5 + 123)
+
+        #expect(ranges.count == 6)
+        #expect(ranges.dropLast().allSatisfy { $0.count == minute })
+        #expect(ranges.last?.count == 123)
+        #expect(ranges.first?.lowerBound == 0)
+        #expect(ranges.last?.upperBound == minute * 5 + 123)
+    }
+
     @Test func utteranceAssemblyPreservesAbsoluteOffsetsAcrossChunks() {
         let chunks = [
             SpeechAnalysisService.SampleChunk(
@@ -207,6 +256,346 @@ struct speech_noteTests {
         ]
         let span = SpeechAnalysisService.SpeechSpan(startSample: 2_000, endSample: 10_000)
         #expect(SpeechAnalysisService.makeUtterances(from: [span], sourceChunks: chunks).isEmpty)
+    }
+
+    @Test func incrementalAssemblyCarriesOneUtteranceAcrossTwoMinuteChunks() throws {
+        let firstID = UUID()
+        let secondID = UUID()
+        let boundary: Int64 = 960_000
+        let utteranceStart: Int64 = 950_400
+        let utteranceEnd: Int64 = 979_200
+        let first = analyzedChunk(
+            id: firstID,
+            sequence: 0,
+            range: 0..<boundary,
+            speech: [utteranceStart..<boundary],
+            endsWithOpenSpeech: true
+        )
+        let second = analyzedChunk(
+            id: secondID,
+            sequence: 1,
+            range: boundary..<(2 * boundary),
+            speech: [boundary..<utteranceEnd],
+            endsWithOpenSpeech: false
+        )
+
+        let firstResult = try SpeechAnalysisService.assembleIncrementally(chunk: first)
+        let carry = try #require(firstResult.carry)
+        let secondResult = try SpeechAnalysisService.assembleIncrementally(
+            chunk: second,
+            carrying: carry
+        )
+        let utterance = try #require(secondResult.utterances.only)
+
+        #expect(firstResult.utterances.isEmpty)
+        #expect(secondResult.carry == nil)
+        #expect(utterance.startSample == utteranceStart)
+        #expect(utterance.endSample == utteranceEnd)
+        #expect(abs(utterance.duration - 1.8) < 0.000_1)
+        #expect(utterance.termination == .naturalPause)
+        #expect(utterance.sourceRanges == [
+            .init(
+                chunkID: firstID,
+                chunkSequence: 0,
+                localStartSample: utteranceStart,
+                localEndSample: boundary,
+                startSample: utteranceStart,
+                endSample: boundary
+            ),
+            .init(
+                chunkID: secondID,
+                chunkSequence: 1,
+                localStartSample: 0,
+                localEndSample: utteranceEnd - boundary,
+                startSample: boundary,
+                endSample: utteranceEnd
+            ),
+        ])
+    }
+
+    @Test func ordinaryAudioChunkBoundaryDoesNotFlushOpenSpeech() throws {
+        let boundary: Int64 = 960_000
+        let chunk = analyzedChunk(
+            sequence: 0,
+            range: 0..<boundary,
+            speech: [(boundary - 8_000)..<boundary],
+            endsWithOpenSpeech: true
+        )
+
+        let result = try SpeechAnalysisService.assembleIncrementally(chunk: chunk)
+        let carry = try #require(result.carry)
+
+        #expect(result.utterances.isEmpty)
+        #expect(carry.startSample == boundary - 8_000)
+        #expect(carry.endSample == boundary)
+        #expect(carry.sourceRanges.count == 1)
+        #expect(carry.sourceRanges[0].endSample == boundary)
+    }
+
+    @Test func incrementalAssemblyHardCutsAtTwentyFiveSecondsWithoutLosingShortTail() throws {
+        let sampleRate: Int64 = 16_000
+        let sourceEnd = 26 * sampleRate
+        let chunk = analyzedChunk(
+            sequence: 0,
+            range: 0..<(30 * sampleRate),
+            speech: [0..<sourceEnd],
+            endsWithOpenSpeech: false
+        )
+
+        let result = try SpeechAnalysisService.assembleIncrementally(
+            chunk: chunk,
+            isFinalChunk: true
+        )
+
+        #expect(result.carry == nil)
+        #expect(result.utterances.count == 2)
+        #expect(result.utterances[0].startSample == 0)
+        #expect(result.utterances[0].endSample == 25 * sampleRate)
+        #expect(result.utterances[0].termination == .hardLimit)
+        #expect(result.utterances[1].startSample == 25 * sampleRate)
+        #expect(result.utterances[1].endSample == sourceEnd)
+        #expect(result.utterances[1].duration == 1)
+        #expect(result.utterances[1].termination == .endOfRecording)
+        #expect(result.utterances.flatMap(\.sourceRanges).map { $0.endSample - $0.startSample }.reduce(0, +) == sourceEnd)
+        #expect(result.utterances[0].endSample == result.utterances[1].startSample)
+    }
+
+    @Test func shortCandidateIsNotTargetCutBeforeMinimumDuration() throws {
+        let sampleRate: Int64 = 16_000
+        let shortEnd = sampleRate
+        let nextStart = shortEnd + sampleRate / 2
+        let speechEnd = 26 * sampleRate
+        let chunk = analyzedChunk(
+            sequence: 0,
+            range: 0..<(30 * sampleRate),
+            speech: [0..<shortEnd, nextStart..<speechEnd],
+            endsWithOpenSpeech: false
+        )
+
+        let result = try SpeechAnalysisService.assembleIncrementally(
+            chunk: chunk,
+            isFinalChunk: true
+        )
+
+        #expect(result.utterances.count == 2)
+        #expect(result.utterances[0].startSample == 0)
+        #expect(result.utterances[0].endSample == 25 * sampleRate)
+        #expect(result.utterances[0].termination == .hardLimit)
+        #expect(!result.utterances.contains { utterance in
+            utterance.termination == .targetDuration
+                && utterance.endSample - utterance.startSample < 3 * sampleRate
+        })
+        #expect(result.utterances.last?.endSample == speechEnd)
+    }
+
+    @Test func eligibleCandidateUsesShortPauseAsTargetDurationCut() throws {
+        let sampleRate: Int64 = 16_000
+        let firstEnd = 4 * sampleRate
+        let nextStart = firstEnd + sampleRate / 2
+        let speechEnd = 16 * sampleRate
+        let chunk = analyzedChunk(
+            sequence: 0,
+            range: 0..<(20 * sampleRate),
+            speech: [0..<firstEnd, nextStart..<speechEnd],
+            endsWithOpenSpeech: false
+        )
+
+        let result = try SpeechAnalysisService.assembleIncrementally(
+            chunk: chunk,
+            isFinalChunk: true
+        )
+
+        #expect(result.utterances.count == 2)
+        #expect(result.utterances[0].startSample == 0)
+        #expect(result.utterances[0].endSample == firstEnd)
+        #expect(result.utterances[0].termination == .targetDuration)
+        #expect(result.utterances[1].startSample == nextStart)
+        #expect(result.utterances[1].endSample == speechEnd)
+        #expect(result.utterances[1].termination == .endOfRecording)
+    }
+
+    @Test func explicitGapsAndMissingAudioTerminateCarry() throws {
+        let boundary: Int64 = 960_000
+        let first = analyzedChunk(
+            sequence: 0,
+            range: 0..<boundary,
+            speech: [(boundary - 8_000)..<boundary],
+            endsWithOpenSpeech: true
+        )
+        let carry = try #require(
+            SpeechAnalysisService.assembleIncrementally(chunk: first).carry
+        )
+
+        for kind in [
+            SpeechAnalysisService.DiscontinuityKind.userPause,
+            .systemInterruption,
+        ] {
+            let next = analyzedChunk(
+                sequence: 1,
+                range: boundary..<(2 * boundary),
+                speech: [boundary..<(boundary + 8_000)],
+                endsWithOpenSpeech: false
+            )
+            let result = try SpeechAnalysisService.assembleIncrementally(
+                chunk: next,
+                carrying: carry,
+                discontinuities: [.init(
+                    kind: kind,
+                    startSample: boundary,
+                    endSample: boundary
+                )],
+                isFinalChunk: true
+            )
+            #expect(result.utterances.first?.termination == .discontinuity(kind))
+            #expect(result.utterances.first?.endSample == boundary)
+            #expect(result.utterances.dropFirst().first?.startSample == boundary)
+        }
+
+        let missingStart = boundary + 4_000
+        let afterMissingAudio = analyzedChunk(
+            sequence: 2,
+            range: missingStart..<(missingStart + boundary),
+            speech: [missingStart..<(missingStart + 8_000)],
+            endsWithOpenSpeech: false
+        )
+        let missingResult = try SpeechAnalysisService.assembleIncrementally(
+            chunk: afterMissingAudio,
+            carrying: carry,
+            isFinalChunk: true
+        )
+        #expect(missingResult.utterances.first?.termination == .discontinuity(.missingAudio))
+        #expect(missingResult.utterances.first?.endSample == boundary)
+        #expect(missingResult.utterances.dropFirst().first?.startSample == missingStart)
+
+        let gapStart: Int64 = 8_000
+        let gapEnd: Int64 = 12_000
+        let chunkWithMissingRange = analyzedChunk(
+            sequence: 3,
+            range: 0..<32_000,
+            speech: [0..<24_000],
+            endsWithOpenSpeech: false
+        )
+        let rangedMissingResult = try SpeechAnalysisService.assembleIncrementally(
+            chunk: chunkWithMissingRange,
+            discontinuities: [.init(
+                kind: .missingAudio,
+                startSample: gapStart,
+                endSample: gapEnd
+            )],
+            isFinalChunk: true
+        )
+        #expect(rangedMissingResult.utterances.count == 2)
+        #expect(rangedMissingResult.utterances[0].endSample == gapStart)
+        #expect(rangedMissingResult.utterances[0].termination == .discontinuity(.missingAudio))
+        #expect(rangedMissingResult.utterances[1].startSample == gapEnd)
+        #expect(rangedMissingResult.utterances.flatMap(\.sourceRanges).allSatisfy { range in
+            range.endSample <= gapStart || range.startSample >= gapEnd
+        })
+    }
+
+    @Test func incrementalCarryCanSpanMoreThanTwoChunks() throws {
+        let chunkLength: Int64 = 8 * 16_000
+        let ids = [UUID(), UUID(), UUID()]
+        var carry: SpeechAnalysisService.OpenUtteranceCarry?
+        var finalized: [SpeechAnalysisService.FinalizedUtterance] = []
+
+        for sequence in 0..<3 {
+            let start = Int64(sequence) * chunkLength
+            let end = start + chunkLength
+            let result = try SpeechAnalysisService.assembleIncrementally(
+                chunk: analyzedChunk(
+                    id: ids[sequence],
+                    sequence: sequence,
+                    range: start..<end,
+                    speech: [start..<end],
+                    endsWithOpenSpeech: sequence < 2
+                ),
+                carrying: carry
+            )
+            finalized.append(contentsOf: result.utterances)
+            carry = result.carry
+        }
+
+        let utterance = try #require(finalized.only)
+        #expect(carry == nil)
+        #expect(utterance.startSample == 0)
+        #expect(utterance.endSample == 3 * chunkLength)
+        #expect(utterance.duration == 24)
+        #expect(utterance.sourceRanges.map(\.chunkID) == ids)
+        #expect(utterance.sourceRanges.map(\.chunkSequence) == [0, 1, 2])
+        #expect(utterance.sourceRanges.map(\.startSample) == [0, chunkLength, 2 * chunkLength])
+        #expect(utterance.sourceRanges.map(\.endSample) == [chunkLength, 2 * chunkLength, 3 * chunkLength])
+    }
+
+    @Test func incrementalAssemblyReplayWithSameChunkAndCarryIsIdempotent() throws {
+        let boundary: Int64 = 960_000
+        let first = analyzedChunk(
+            sequence: 0,
+            range: 0..<boundary,
+            speech: [(boundary - 8_000)..<boundary],
+            endsWithOpenSpeech: true
+        )
+        let carry = try #require(
+            SpeechAnalysisService.assembleIncrementally(chunk: first).carry
+        )
+        let second = analyzedChunk(
+            sequence: 1,
+            range: boundary..<(2 * boundary),
+            speech: [boundary..<(boundary + 8_000)],
+            endsWithOpenSpeech: false
+        )
+
+        let firstAttempt = try SpeechAnalysisService.assembleIncrementally(
+            chunk: second,
+            carrying: carry,
+            isFinalChunk: true
+        )
+        let replay = try SpeechAnalysisService.assembleIncrementally(
+            chunk: second,
+            carrying: carry,
+            isFinalChunk: true
+        )
+
+        #expect(replay == firstAttempt)
+    }
+
+    @Test func incrementalCarryAndFinalizedMetadataSurviveCodableRecovery() throws {
+        let boundary: Int64 = 960_000
+        let first = analyzedChunk(
+            sequence: 0,
+            range: 0..<boundary,
+            speech: [(boundary - 8_000)..<boundary],
+            endsWithOpenSpeech: true
+        )
+        let carry = try #require(
+            SpeechAnalysisService.assembleIncrementally(chunk: first).carry
+        )
+        let carryData = try JSONEncoder().encode(carry)
+        let restoredCarry = try JSONDecoder().decode(
+            SpeechAnalysisService.OpenUtteranceCarry.self,
+            from: carryData
+        )
+        #expect(restoredCarry == carry)
+
+        let second = analyzedChunk(
+            sequence: 1,
+            range: boundary..<(2 * boundary),
+            speech: [boundary..<(boundary + 8_000)],
+            endsWithOpenSpeech: false
+        )
+        let finalized = try #require(
+            SpeechAnalysisService.assembleIncrementally(
+                chunk: second,
+                carrying: restoredCarry,
+                isFinalChunk: true
+            ).utterances.only
+        )
+        let finalizedData = try JSONEncoder().encode(finalized)
+        let restoredFinalized = try JSONDecoder().decode(
+            SpeechAnalysisService.FinalizedUtterance.self,
+            from: finalizedData
+        )
+        #expect(restoredFinalized == finalized)
     }
 
     @Test func unavailableEmbeddingNeverExposesASyntheticVector() {
@@ -319,4 +708,32 @@ struct speech_noteTests {
         await transcriber.enteredForeground()
     }
 
+    private func analyzedChunk(
+        id: UUID = UUID(),
+        sequence: Int,
+        range: Range<Int64>,
+        speech: [Range<Int64>],
+        endsWithOpenSpeech: Bool
+    ) -> SpeechAnalysisService.AnalyzedAudioChunk {
+        SpeechAnalysisService.AnalyzedAudioChunk(
+            id: id,
+            sequence: sequence,
+            startSample: range.lowerBound,
+            endSample: range.upperBound,
+            speechSpans: speech.map {
+                SpeechAnalysisService.SpeechSpan(
+                    startSample: $0.lowerBound,
+                    endSample: $0.upperBound
+                )
+            },
+            endsWithOpenSpeech: endsWithOpenSpeech
+        )
+    }
+
+}
+
+private extension Collection {
+    var only: Element? {
+        count == 1 ? first : nil
+    }
 }

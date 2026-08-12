@@ -1,5 +1,241 @@
 import AVFoundation
+import Combine
 import SwiftUI
+
+private enum RecordingTimeFilter: String, CaseIterable, Identifiable {
+    case all
+    case today
+    case lastSevenDays
+    case thisMonth
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: "全部时间"
+        case .today: "今天"
+        case .lastSevenDays: "最近 7 天"
+        case .thisMonth: "本月"
+        }
+    }
+
+    func includes(_ date: Date, calendar: Calendar = .current) -> Bool {
+        let now = Date()
+        switch self {
+        case .all:
+            return true
+        case .today:
+            return calendar.isDate(date, inSameDayAs: now)
+        case .lastSevenDays:
+            guard let start = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now)) else {
+                return false
+            }
+            return date >= start
+        case .thisMonth:
+            return calendar.isDate(date, equalTo: now, toGranularity: .month)
+        }
+    }
+}
+
+private struct RecordingDayGroup: Identifiable {
+    let date: Date
+    let recordings: [Recording]
+    var id: Date { date }
+}
+
+@MainActor
+final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
+    @Published private(set) var isPlaying = false
+    @Published private(set) var currentTime: TimeInterval = 0
+    @Published private(set) var duration: TimeInterval = 0
+    @Published private(set) var playbackRate: Float = 1
+    @Published private(set) var playbackError: String?
+
+    private struct Item {
+        let url: URL
+        let duration: TimeInterval
+    }
+
+    private var items: [Item] = []
+    private var player: AVAudioPlayer?
+    private var currentIndex = 0
+    private var currentItemOffset: TimeInterval = 0
+    private var timer: Timer?
+
+    var loadedItemCount: Int { items.count }
+    var residentPlayerCount: Int { player == nil ? 0 : 1 }
+
+    deinit { timer?.invalidate() }
+
+    func load(chunks: [AudioChunk], rootURL: URL) {
+        stop()
+        playbackError = nil
+        items = chunks.compactMap { chunk in
+            let url = rootURL.appendingPathComponent(chunk.relativePath)
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            let sampleCount = max(0, chunk.endSample - chunk.startSample)
+            return Item(
+                url: url,
+                duration: Double(sampleCount) / AACSegmentRecorder.targetSampleRate
+            )
+        }
+        duration = items.reduce(0) { $0 + $1.duration }
+        currentTime = 0
+    }
+
+    func togglePlayback() {
+        isPlaying ? pause() : play()
+    }
+
+    func play() {
+        guard !items.isEmpty else {
+            playbackError = "没有可播放的音频分片。"
+            return
+        }
+        if currentTime >= duration { seek(to: 0) }
+        playbackError = nil
+
+        // Recording leaves the shared session in the .record category, where
+        // AVAudioPlayer refuses to start without throwing. Switch to playback
+        // before the first player so a valid chunk is not silently ignored.
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .default)
+        try? session.setActive(true)
+
+        var skipped = 0
+        while currentIndex < items.count {
+            do {
+                let activePlayer = try prepareCurrentPlayer()
+                activePlayer.rate = playbackRate
+                if activePlayer.play() {
+                    isPlaying = true
+                    startTimer()
+                    if skipped > 0 {
+                        playbackError = "已跳过 \(skipped) 个无法读取的分片。"
+                    }
+                    return
+                }
+                // play() reports refusal through its return value rather than
+                // an exception. Treat it like a load failure so the user sees
+                // a readable state instead of silent unresponsiveness.
+                throw PlaybackFailure.couldNotStart
+            } catch {
+                skipped += 1
+                player = nil
+            }
+            currentIndex += 1
+            currentItemOffset = 0
+            updateCurrentTime()
+        }
+        isPlaying = false
+        stopTimer()
+        playbackError = skipped > 0
+            ? "音频无法播放：所有分片都不可读。"
+            : "音频无法播放。"
+    }
+
+    func pause() {
+        guard isPlaying else { return }
+        player?.pause()
+        currentItemOffset = player?.currentTime ?? currentItemOffset
+        isPlaying = false
+        stopTimer()
+        updateCurrentTime()
+    }
+
+    func stop() {
+        player?.stop()
+        player = nil
+        isPlaying = false
+        currentIndex = 0
+        currentItemOffset = 0
+        currentTime = 0
+        stopTimer()
+    }
+
+    func seek(by offset: TimeInterval) {
+        seek(to: min(max(0, currentTime + offset), duration))
+    }
+
+    func seek(to time: TimeInterval) {
+        guard !items.isEmpty else { return }
+        let wasPlaying = isPlaying
+        player?.pause()
+        player = nil
+        let target = min(max(0, time), duration)
+        var remaining = target
+        currentIndex = 0
+        while currentIndex < items.count - 1, remaining >= items[currentIndex].duration {
+            remaining -= items[currentIndex].duration
+            currentIndex += 1
+        }
+        currentItemOffset = min(remaining, items[currentIndex].duration)
+        currentTime = target
+        if wasPlaying { play() }
+    }
+
+    func setRate(_ rate: Float) {
+        playbackRate = rate
+        player?.rate = rate
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        guard player === self.player else { return }
+        self.player = nil
+        currentItemOffset = 0
+        guard currentIndex < items.count - 1 else {
+            finishPlayback()
+            return
+        }
+        currentIndex += 1
+        if isPlaying { play() }
+    }
+
+    private func prepareCurrentPlayer() throws -> AVAudioPlayer {
+        if let player { return player }
+        let nextPlayer = try AVAudioPlayer(contentsOf: items[currentIndex].url)
+        nextPlayer.delegate = self
+        nextPlayer.enableRate = true
+        nextPlayer.prepareToPlay()
+        nextPlayer.currentTime = min(currentItemOffset, nextPlayer.duration)
+        player = nextPlayer
+        return nextPlayer
+    }
+
+    private func finishPlayback() {
+        player = nil
+        isPlaying = false
+        currentTime = duration
+        stopTimer()
+    }
+
+    private func startTimer() {
+        stopTimer()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updateCurrentTime()
+            }
+        }
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func updateCurrentTime() {
+        guard !items.isEmpty else { return }
+        currentItemOffset = player?.currentTime ?? currentItemOffset
+        let completedDuration = items.prefix(currentIndex).reduce(0) { $0 + $1.duration }
+        currentTime = min(duration, completedDuration + currentItemOffset)
+    }
+}
+
+/// Playback refused to start without throwing; surfaced as a readable state
+/// rather than being treated as a completed timeline.
+private enum PlaybackFailure: Error {
+    case couldNotStart
+}
 
 /// The product-facing recording workspace. Its state is deliberately read
 /// from `RecordingCoreModel`, which in turn refreshes its snapshots from the
@@ -10,7 +246,7 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: RecordingCoreModel
     @State private var modelError: String?
-    @State private var selectedDate = Calendar.current.startOfDay(for: Date())
+    @State private var timeFilter: RecordingTimeFilter = .all
     @State private var isStartSheetPresented = false
     @State private var isSettingsPresented = false
     @State private var isRecordingScreenPresented = false
@@ -63,7 +299,8 @@ struct ContentView: View {
     private var workspace: some View {
         NavigationStack {
             recordsScreen
-                .navigationTitle("记录")
+                .navigationTitle("")
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("我的", systemImage: "person.circle") {
@@ -98,33 +335,52 @@ struct ContentView: View {
 
     private var recordsScreen: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                CalendarStrip(selectedDate: $selectedDate, recordings: model.recordings)
-
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(selectedDateTitle)
-                        .font(.headline)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 8)
-
-                    if recordingsForSelectedDate.isEmpty {
-                        ContentUnavailableView {
-                            Label("这一天还没有记录", systemImage: "waveform")
-                        } description: {
-                            Text("开始录音，保存一个念头或一次对话。")
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Spacer()
+                    Picker("时间筛选", selection: $timeFilter) {
+                        ForEach(RecordingTimeFilter.allCases) { filter in
+                            Text(filter.title).tag(filter)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 32)
-                    } else {
-                        ForEach(recordingsForSelectedDate) { recording in
-                            NavigationLink {
-                                RecordingDetailScreen(model: model, recordingID: recording.id)
-                            } label: {
-                                RecordingRow(recording: recording)
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityLabel("时间筛选")
+                }
+                .padding(.horizontal, 20)
+
+                if recordingGroups.isEmpty {
+                    ContentUnavailableView {
+                        Label("还没有记录", systemImage: "waveform")
+                    } description: {
+                        Text("开始录音，保存一个念头或一次对话。")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                } else {
+                    ForEach(recordingGroups) { group in
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(group.date.formatted(date: .complete, time: .omitted))
+                                    .font(.headline)
+                                Spacer()
+                                Text("\(group.recordings.count) 条记录")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("recording-row-\(recording.id.uuidString)")
-                            Divider().padding(.leading, 20)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 8)
+                            .padding(.bottom, 4)
+
+                            ForEach(group.recordings) { recording in
+                                NavigationLink {
+                                    RecordingDetailScreen(model: model, recordingID: recording.id)
+                                } label: {
+                                    RecordingRow(recording: recording)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("recording-row-\(recording.id.uuidString)")
+                                Divider().padding(.leading, 20)
+                            }
                         }
                     }
                 }
@@ -165,15 +421,16 @@ struct ContentView: View {
         .background(.bar)
     }
 
-    private var recordingsForSelectedDate: [Recording] {
-        model.recordings.filter {
-            Calendar.current.isDate($0.startedAt, inSameDayAs: selectedDate)
+    private var recordingGroups: [RecordingDayGroup] {
+        let filtered = model.recordings
+            .filter { timeFilter.includes($0.startedAt) }
+            .sorted { $0.startedAt > $1.startedAt }
+        let grouped = Dictionary(grouping: filtered) {
+            Calendar.current.startOfDay(for: $0.startedAt)
         }
-    }
-
-    private var selectedDateTitle: String {
-        if Calendar.current.isDateInToday(selectedDate) { return "今天的记录" }
-        return selectedDate.formatted(.dateTime.month(.wide).day().weekday(.wide))
+        return grouped.keys.sorted(by: >).map { date in
+            RecordingDayGroup(date: date, recordings: grouped[date] ?? [])
+        }
     }
 
     private func startupFailure(_ message: String) -> some View {
@@ -236,7 +493,7 @@ private struct RecordingDetailScreen: View {
     @State private var transcript: TranscriptDocumentV1?
     @State private var loadError: String?
     @State private var transcriptError: String?
-    @State private var player: AVAudioPlayer?
+    @StateObject private var timelinePlayer = RecordingAudioTimelinePlayer()
 
     var body: some View {
         ScrollView {
@@ -256,7 +513,7 @@ private struct RecordingDetailScreen: View {
             await loadDetail()
         }
         .onDisappear {
-            player?.stop()
+            timelinePlayer.stop()
         }
     }
 
@@ -304,27 +561,62 @@ private struct RecordingDetailScreen: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(playableChunks) { chunk in
-                    Button {
-                        togglePlayback(of: chunk)
-                    } label: {
-                        HStack {
-                            Label(
-                                player?.isPlaying == true ? "停止播放" : "播放录音",
-                                systemImage: player?.isPlaying == true ? "stop.fill" : "play.fill"
-                            )
-                            Spacer()
-                            Text(RecordingRow.duration(
-                                chunk.endedAt.timeIntervalSince(chunk.startedAt)
-                            ))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                        }
-                        .frame(minHeight: 44)
+                VStack(alignment: .leading, spacing: 12) {
+                    Slider(
+                        value: Binding(
+                            get: { timelinePlayer.currentTime },
+                            set: { timelinePlayer.seek(to: $0) }
+                        ),
+                        in: 0...max(timelinePlayer.duration, 0.01)
+                    )
+                    .tint(.red)
+                    .accessibilityLabel("音频时间轴")
+
+                    HStack {
+                        Text(RecordingRow.duration(timelinePlayer.currentTime))
+                        Spacer()
+                        Text(RecordingRow.duration(timelinePlayer.duration))
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.primary)
-                    .accessibilityLabel("播放音频分片")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+
+                    HStack(spacing: 22) {
+                        Button { timelinePlayer.seek(by: -15) } label: {
+                            Image(systemName: "gobackward.15")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        Button { timelinePlayer.togglePlayback() } label: {
+                            Image(systemName: timelinePlayer.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.title2)
+                                .frame(width: 52, height: 52)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.primary)
+                        Button { timelinePlayer.seek(by: 15) } label: {
+                            Image(systemName: "goforward.15")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        Menu {
+                            ForEach([Float(1), 1.25, 1.5, 2], id: \.self) { rate in
+                                Button("\(rate, specifier: "%.2g")×") {
+                                    timelinePlayer.setRate(rate)
+                                }
+                            }
+                        } label: {
+                            Text("\(timelinePlayer.playbackRate, specifier: "%.2g")×")
+                                .font(.subheadline.weight(.medium))
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .accessibilityElement(children: .contain)
+
+                    if let playbackError = timelinePlayer.playbackError {
+                        Label(playbackError, systemImage: "exclamationmark.triangle")
+                            .font(.subheadline)
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("playback-error")
+                    }
                 }
             }
         }
@@ -470,6 +762,7 @@ private struct RecordingDetailScreen: View {
             async let jobs = model.repository.jobs(recordingID: recordingID)
             chunks = try await storedChunks.sorted { $0.startSample < $1.startSample }
             transcriptionJob = try await jobs.last(where: { $0.kind == .transcription })
+            timelinePlayer.load(chunks: playableChunks, rootURL: model.repository.rootURL)
             loadError = nil
         } catch {
             loadError = "无法读取录音详情：\(error.localizedDescription)"
@@ -482,25 +775,6 @@ private struct RecordingDetailScreen: View {
         } catch {
             transcript = nil
             transcriptError = "文稿无法读取：\(error.localizedDescription)"
-        }
-    }
-
-    private func togglePlayback(of chunk: AudioChunk) {
-        if player?.isPlaying == true {
-            player?.stop()
-            player = nil
-            return
-        }
-
-        do {
-            let audio = try AVAudioPlayer(
-                contentsOf: model.repository.rootURL.appendingPathComponent(chunk.relativePath)
-            )
-            audio.prepareToPlay()
-            audio.play()
-            player = audio
-        } catch {
-            loadError = "音频无法播放：\(error.localizedDescription)"
         }
     }
 

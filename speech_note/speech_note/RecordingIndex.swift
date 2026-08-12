@@ -131,7 +131,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: [AudioChunk] = []
             try query(
-                "SELECT id, recording_id, relative_path, start_sample, end_sample, started_at, ended_at, state, retention_pinned, audio_removed_at FROM audio_chunks WHERE recording_id = ? ORDER BY start_sample",
+                "SELECT id, recording_id, relative_path, start_sample, end_sample, started_at, ended_at, state, retention_pinned, audio_removed_at, requires_continuation FROM audio_chunks WHERE recording_id = ? ORDER BY start_sample",
                 [.text(recordingID.uuidString)]
             ) { statement in
                 result.append(try decodeChunk(statement))
@@ -144,24 +144,25 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: [RecordingJob] = []
             try query(
-                "SELECT id, recording_id, kind, state, attempt_count, last_error, created_at, updated_at FROM recording_jobs WHERE recording_id = ? ORDER BY created_at",
+                "SELECT id, recording_id, chunk_id, kind, state, attempt_count, last_error, created_at, updated_at FROM recording_jobs WHERE recording_id = ? ORDER BY created_at",
                 [.text(recordingID.uuidString)]
             ) { statement in
                 guard
                     let id = UUID(uuidString: text(statement, 0)),
                     let ownerID = UUID(uuidString: text(statement, 1)),
-                    let kind = RecordingJobKind(rawValue: text(statement, 2)),
-                    let state = RecordingJobState(rawValue: text(statement, 3))
+                    let kind = RecordingJobKind(rawValue: text(statement, 3)),
+                    let state = RecordingJobState(rawValue: text(statement, 4))
                 else { throw IndexError.invalidRow("recording_jobs") }
                 result.append(RecordingJob(
                     id: id,
                     recordingID: ownerID,
+                    chunkID: optionalUUID(statement, 2),
                     kind: kind,
                     state: state,
-                    attemptCount: Int(sqlite3_column_int64(statement, 4)),
-                    lastError: optionalText(statement, 5),
-                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
-                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7))
+                    attemptCount: Int(sqlite3_column_int64(statement, 5)),
+                    lastError: optionalText(statement, 6),
+                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7)),
+                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 8))
                 ))
             }
             return result
@@ -175,25 +176,26 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: [RecordingJob] = []
             try query(
-                "SELECT id, recording_id, kind, state, attempt_count, last_error, created_at, updated_at FROM recording_jobs WHERE kind = ? ORDER BY created_at",
+                "SELECT id, recording_id, chunk_id, kind, state, attempt_count, last_error, created_at, updated_at FROM recording_jobs WHERE kind = ? ORDER BY created_at",
                 [.text(kind.rawValue)]
             ) { statement in
                 guard
                     let id = UUID(uuidString: text(statement, 0)),
                     let ownerID = UUID(uuidString: text(statement, 1)),
-                    let jobKind = RecordingJobKind(rawValue: text(statement, 2)),
-                    let state = RecordingJobState(rawValue: text(statement, 3))
+                    let jobKind = RecordingJobKind(rawValue: text(statement, 3)),
+                    let state = RecordingJobState(rawValue: text(statement, 4))
                 else { throw IndexError.invalidRow("recording_jobs") }
                 guard states.contains(state) else { return }
                 result.append(RecordingJob(
                     id: id,
                     recordingID: ownerID,
+                    chunkID: optionalUUID(statement, 2),
                     kind: jobKind,
                     state: state,
-                    attemptCount: Int(sqlite3_column_int64(statement, 4)),
-                    lastError: optionalText(statement, 5),
-                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
-                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7))
+                    attemptCount: Int(sqlite3_column_int64(statement, 5)),
+                    lastError: optionalText(statement, 6),
+                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7)),
+                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 8))
                 ))
             }
             return result
@@ -265,8 +267,15 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
 
     private func migrate() throws {
         let current = try scalarInt("PRAGMA user_version")
-        guard current <= 1 else {
-            throw IndexError.open("数据库版本 \(current) 高于当前应用支持的版本 1")
+        guard current <= 2 else {
+            throw IndexError.open("数据库版本 \(current) 高于当前应用支持的版本 2")
+        }
+        if current == 1 {
+            try execute("ALTER TABLE audio_chunks ADD COLUMN requires_continuation INTEGER NOT NULL DEFAULT 0")
+            try execute("ALTER TABLE recording_jobs ADD COLUMN chunk_id TEXT")
+            try execute("CREATE INDEX recording_jobs_chunk ON recording_jobs(recording_id, chunk_id)")
+            try execute("PRAGMA user_version = 2")
+            return
         }
         guard current == 0 else { return }
 
@@ -296,7 +305,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                     ended_at REAL NOT NULL,
                     state TEXT NOT NULL,
                     retention_pinned INTEGER NOT NULL DEFAULT 0,
-                    audio_removed_at REAL
+                    audio_removed_at REAL,
+                    requires_continuation INTEGER NOT NULL DEFAULT 0
                 )
                 """)
             try execute("CREATE INDEX audio_chunks_recording_sample ON audio_chunks(recording_id, start_sample)")
@@ -304,6 +314,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                 CREATE TABLE recording_jobs(
                     id TEXT PRIMARY KEY NOT NULL,
                     recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+                    chunk_id TEXT,
                     kind TEXT NOT NULL,
                     state TEXT NOT NULL,
                     attempt_count INTEGER NOT NULL,
@@ -332,7 +343,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                     kind TEXT NOT NULL
                 )
                 """)
-            try execute("PRAGMA user_version = 1")
+            try execute("CREATE INDEX recording_jobs_chunk ON recording_jobs(recording_id, chunk_id)")
+            try execute("PRAGMA user_version = 2")
             try execute("COMMIT")
         } catch {
             try? execute("ROLLBACK")
@@ -359,17 +371,22 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         case let .chunkClosed(chunk):
             try execute(
                 """
-                INSERT INTO audio_chunks(id, recording_id, relative_path, start_sample, end_sample, started_at, ended_at, state, retention_pinned, audio_removed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO audio_chunks(id, recording_id, relative_path, start_sample, end_sample, started_at, ended_at, state, retention_pinned, audio_removed_at, requires_continuation)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO NOTHING
                 """,
                 chunk.bindings
             )
+        case let .chunkContinuationChanged(chunkID, requiresContinuation):
+            try execute(
+                "UPDATE audio_chunks SET requires_continuation = ? WHERE id = ?",
+                [.int(requiresContinuation ? 1 : 0), .text(chunkID.uuidString)]
+            )
         case let .jobUpserted(job):
             try execute(
                 """
-                INSERT INTO recording_jobs(id, recording_id, kind, state, attempt_count, last_error, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO recording_jobs(id, recording_id, chunk_id, kind, state, attempt_count, last_error, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     state = excluded.state,
                     attempt_count = excluded.attempt_count,
@@ -446,7 +463,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
             endedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
             state: state,
             isPinned: sqlite3_column_int(statement, 8) != 0,
-            audioRemovedAt: optionalDate(statement, 9)
+            audioRemovedAt: optionalDate(statement, 9),
+            requiresContinuation: sqlite3_column_int(statement, 10) != 0
         )
     }
 
@@ -522,6 +540,10 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         sqlite3_column_type(statement, column) == SQLITE_NULL ? nil : text(statement, column)
     }
 
+    private func optionalUUID(_ statement: OpaquePointer, _ column: Int32) -> UUID? {
+        optionalText(statement, column).flatMap(UUID.init(uuidString:))
+    }
+
     private func optionalInt(_ statement: OpaquePointer, _ column: Int32) -> Int64? {
         sqlite3_column_type(statement, column) == SQLITE_NULL ? nil : sqlite3_column_int64(statement, column)
     }
@@ -539,6 +561,7 @@ private extension RecordingJournalEvent {
         case .recordingCreated: "recordingCreated"
         case .recordingStateChanged: "recordingStateChanged"
         case .chunkClosed: "chunkClosed"
+        case .chunkContinuationChanged: "chunkContinuationChanged"
         case .jobUpserted: "jobUpserted"
         case .gapOpened: "gapOpened"
         case .gapClosed: "gapClosed"
@@ -590,6 +613,7 @@ private extension AudioChunk {
             .text(state.rawValue),
             .int(isPinned ? 1 : 0),
             audioRemovedAt.sqliteValue,
+            .int(requiresContinuation ? 1 : 0),
         ]
     }
 }
@@ -599,6 +623,7 @@ private extension RecordingJob {
         [
             .text(id.uuidString),
             .text(recordingID.uuidString),
+            chunkID.map { .text($0.uuidString) } ?? .null,
             .text(kind.rawValue),
             .text(state.rawValue),
             .int(Int64(attemptCount)),

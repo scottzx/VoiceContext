@@ -4,7 +4,7 @@ import SherpaOnnxC
 /// CPU-only preparation for microphone input. Metal work remains owned by
 /// `SenseVoiceInferenceService` and is admitted through its lifecycle gate.
 actor SpeechAnalysisService {
-    struct SpeechSpan: Equatable, Sendable {
+    struct SpeechSpan: Codable, Equatable, Sendable {
         /// Absolute 16 kHz sample offsets in the recording, not offsets local
         /// to an AAC chunk or a VAD input buffer.
         let startSample: Int64
@@ -40,6 +40,85 @@ actor SpeechAnalysisService {
         let samples: [Float]
 
         var endSample: Int64 { startSample + Int64(samples.count) }
+    }
+
+    /// Exact provenance for one contiguous portion of an utterance. Absolute
+    /// offsets share the Recording's 16 kHz clock; local offsets address the
+    /// source AudioChunk without assuming a fixed chunk duration.
+    struct UtteranceSourceRange: Codable, Equatable, Sendable {
+        let chunkID: UUID
+        let chunkSequence: Int
+        let localStartSample: Int64
+        let localEndSample: Int64
+        let startSample: Int64
+        let endSample: Int64
+    }
+
+    /// Metadata produced by VAD for one closed AudioChunk. PCM remains in the
+    /// authoritative AAC and is decoded later from `sourceRanges` by ASR.
+    struct AnalyzedAudioChunk: Sendable {
+        let id: UUID
+        let sequence: Int
+        let startSample: Int64
+        let endSample: Int64
+        let speechSpans: [SpeechSpan]
+        let endsWithOpenSpeech: Bool
+    }
+
+    enum DiscontinuityKind: String, Codable, Equatable, Sendable {
+        case userPause
+        case systemInterruption
+        case routeChange
+        case missingAudio
+    }
+
+    /// A point boundary uses equal start/end samples. A non-empty range
+    /// represents audio which must never be silently filled or crossed.
+    struct UtteranceDiscontinuity: Codable, Equatable, Sendable {
+        let kind: DiscontinuityKind
+        let startSample: Int64
+        let endSample: Int64
+    }
+
+    struct OpenUtteranceCarry: Codable, Equatable, Sendable {
+        let startSample: Int64
+        var endSample: Int64
+        var speechSpans: [SpeechSpan]
+        var sourceRanges: [UtteranceSourceRange]
+
+        var duration: TimeInterval {
+            Double(endSample - startSample) / 16_000
+        }
+    }
+
+    enum UtteranceTermination: Codable, Equatable, Sendable {
+        case naturalPause
+        case targetDuration
+        case hardLimit
+        case discontinuity(DiscontinuityKind)
+        case endOfRecording
+    }
+
+    struct FinalizedUtterance: Codable, Equatable, Sendable {
+        let startSample: Int64
+        let endSample: Int64
+        let speechSpans: [SpeechSpan]
+        let sourceRanges: [UtteranceSourceRange]
+        let termination: UtteranceTermination
+
+        var duration: TimeInterval {
+            Double(endSample - startSample) / 16_000
+        }
+    }
+
+    struct IncrementalAssembly: Equatable, Sendable {
+        let utterances: [FinalizedUtterance]
+        let carry: OpenUtteranceCarry?
+    }
+
+    enum IncrementalAssemblyError: Error, Equatable {
+        case invalidChunkRange(startSample: Int64, endSample: Int64)
+        case invalidDiscontinuity(startSample: Int64, endSample: Int64)
     }
 
     struct Result: Sendable {
@@ -278,6 +357,292 @@ actor SpeechAnalysisService {
         }
         appendCurrent()
         return utterances
+    }
+
+    nonisolated static let targetMinimumUtteranceSamples: Int64 = 3 * 16_000
+    nonisolated static let targetMaximumUtteranceSamples: Int64 = 15 * 16_000
+    nonisolated static let hardMaximumUtteranceSamples: Int64 = 25 * 16_000
+    private nonisolated static let maximumMergeGapSamples: Int64 = Int64(0.75 * 16_000)
+
+    /// Incrementally assembles utterance metadata from one closed AudioChunk.
+    /// The function is intentionally stateless: persisting `carry` and feeding
+    /// it back with the next chunk makes retries deterministic without keeping
+    /// decoded PCM or rewriting authoritative AAC files.
+    nonisolated static func assembleIncrementally(
+        chunk: AnalyzedAudioChunk,
+        carrying carry: OpenUtteranceCarry? = nil,
+        discontinuities: [UtteranceDiscontinuity] = [],
+        isFinalChunk: Bool = false
+    ) throws -> IncrementalAssembly {
+        guard chunk.endSample > chunk.startSample else {
+            throw IncrementalAssemblyError.invalidChunkRange(
+                startSample: chunk.startSample,
+                endSample: chunk.endSample
+            )
+        }
+        for discontinuity in discontinuities where discontinuity.endSample < discontinuity.startSample {
+            throw IncrementalAssemblyError.invalidDiscontinuity(
+                startSample: discontinuity.startSample,
+                endSample: discontinuity.endSample
+            )
+        }
+
+        let partition = continuousRegions(
+            in: chunk.startSample..<chunk.endSample,
+            discontinuities: discontinuities
+        )
+        var utterances: [FinalizedUtterance] = []
+        var current = carry
+
+        if let existing = current,
+           existing.endSample != chunk.startSample || partition.leadingBoundary != nil {
+            utterances.append(finalize(
+                existing,
+                termination: .discontinuity(partition.leadingBoundary ?? .missingAudio)
+            ))
+            current = nil
+        }
+
+        for region in partition.regions {
+            let spans = normalizedSpans(chunk.speechSpans, clippedTo: region.range)
+            for span in spans {
+                append(
+                    span,
+                    from: chunk,
+                    current: &current,
+                    utterances: &utterances
+                )
+            }
+            if let boundary = region.boundaryAfter, let existing = current {
+                utterances.append(finalize(existing, termination: .discontinuity(boundary)))
+                current = nil
+            }
+        }
+
+        if let existing = current {
+            if isFinalChunk {
+                utterances.append(finalize(existing, termination: .endOfRecording))
+                current = nil
+            } else if !(chunk.endsWithOpenSpeech && existing.endSample == chunk.endSample) {
+                utterances.append(finalize(existing, termination: .naturalPause))
+                current = nil
+            }
+        }
+
+        return IncrementalAssembly(utterances: utterances, carry: current)
+    }
+
+    private struct ContinuousRegion {
+        let range: Range<Int64>
+        let boundaryAfter: DiscontinuityKind?
+    }
+
+    private nonisolated static func continuousRegions(
+        in chunkRange: Range<Int64>,
+        discontinuities: [UtteranceDiscontinuity]
+    ) -> (regions: [ContinuousRegion], leadingBoundary: DiscontinuityKind?) {
+        let relevant = discontinuities
+            .filter {
+                $0.endSample >= chunkRange.lowerBound
+                    && $0.startSample <= chunkRange.upperBound
+            }
+            .sorted {
+                if $0.startSample != $1.startSample {
+                    return $0.startSample < $1.startSample
+                }
+                return $0.endSample < $1.endSample
+            }
+        var regions: [ContinuousRegion] = []
+        var cursor = chunkRange.lowerBound
+        var leadingBoundary: DiscontinuityKind?
+
+        for discontinuity in relevant {
+            let boundaryStart = min(
+                chunkRange.upperBound,
+                max(chunkRange.lowerBound, discontinuity.startSample)
+            )
+            let boundaryEnd = min(
+                chunkRange.upperBound,
+                max(boundaryStart, discontinuity.endSample)
+            )
+            if boundaryStart <= cursor {
+                if cursor == chunkRange.lowerBound {
+                    leadingBoundary = leadingBoundary ?? discontinuity.kind
+                }
+                cursor = max(cursor, boundaryEnd)
+                continue
+            }
+            regions.append(ContinuousRegion(
+                range: cursor..<boundaryStart,
+                boundaryAfter: discontinuity.kind
+            ))
+            cursor = boundaryEnd
+        }
+        if cursor < chunkRange.upperBound {
+            regions.append(ContinuousRegion(range: cursor..<chunkRange.upperBound, boundaryAfter: nil))
+        }
+        return (regions, leadingBoundary)
+    }
+
+    private nonisolated static func normalizedSpans(
+        _ spans: [SpeechSpan],
+        clippedTo range: Range<Int64>
+    ) -> [SpeechSpan] {
+        let clipped = spans.compactMap { span -> SpeechSpan? in
+            let start = max(span.startSample, range.lowerBound)
+            let end = min(span.endSample, range.upperBound)
+            guard end > start else { return nil }
+            return SpeechSpan(startSample: start, endSample: end)
+        }.sorted {
+            if $0.startSample != $1.startSample {
+                return $0.startSample < $1.startSample
+            }
+            return $0.endSample < $1.endSample
+        }
+
+        var result: [SpeechSpan] = []
+        for span in clipped {
+            if let last = result.last, span.startSample < last.endSample {
+                result[result.count - 1] = SpeechSpan(
+                    startSample: last.startSample,
+                    endSample: max(last.endSample, span.endSample)
+                )
+            } else {
+                result.append(span)
+            }
+        }
+        return result
+    }
+
+    private nonisolated static func append(
+        _ span: SpeechSpan,
+        from chunk: AnalyzedAudioChunk,
+        current: inout OpenUtteranceCarry?,
+        utterances: inout [FinalizedUtterance]
+    ) {
+        var cursor = span.startSample
+        while cursor < span.endSample {
+            if let existing = current {
+                if span.endSample <= existing.endSample {
+                    cursor = span.endSample
+                    continue
+                }
+                let gap = cursor - existing.endSample
+                if gap > maximumMergeGapSamples {
+                    utterances.append(finalize(existing, termination: .naturalPause))
+                    current = nil
+                    continue
+                }
+
+                let proposedEnd = max(existing.endSample, span.endSample)
+                // A zero gap may be only a VAD or AudioChunk boundary. It is
+                // not a natural cut point, so continuous speech may extend
+                // beyond the 15-second target until the 25-second hard cap.
+                if gap > 0,
+                   existing.endSample - existing.startSample >= targetMinimumUtteranceSamples,
+                   proposedEnd - existing.startSample > targetMaximumUtteranceSamples {
+                    utterances.append(finalize(existing, termination: .targetDuration))
+                    current = nil
+                    continue
+                }
+
+                let hardEnd = existing.startSample + hardMaximumUtteranceSamples
+                if existing.endSample >= hardEnd {
+                    utterances.append(finalize(existing, termination: .hardLimit))
+                    current = nil
+                    continue
+                }
+                let pieceEnd = min(span.endSample, hardEnd)
+                var extended = existing
+                let speechStart = max(cursor, existing.endSample)
+                if pieceEnd > speechStart {
+                    extended.speechSpans.append(SpeechSpan(
+                        startSample: speechStart,
+                        endSample: pieceEnd
+                    ))
+                }
+                appendSourceCoverage(
+                    existing.endSample..<pieceEnd,
+                    from: chunk,
+                    to: &extended.sourceRanges
+                )
+                extended.endSample = max(existing.endSample, pieceEnd)
+                current = extended
+                cursor = pieceEnd
+                if extended.endSample - extended.startSample == hardMaximumUtteranceSamples {
+                    utterances.append(finalize(extended, termination: .hardLimit))
+                    current = nil
+                }
+            } else {
+                let pieceEnd = min(span.endSample, cursor + hardMaximumUtteranceSamples)
+                let sourceRange = makeSourceRange(cursor..<pieceEnd, from: chunk)
+                let next = OpenUtteranceCarry(
+                    startSample: cursor,
+                    endSample: pieceEnd,
+                    speechSpans: [SpeechSpan(startSample: cursor, endSample: pieceEnd)],
+                    sourceRanges: sourceRange.map { [$0] } ?? []
+                )
+                current = next
+                cursor = pieceEnd
+                if next.endSample - next.startSample == hardMaximumUtteranceSamples {
+                    utterances.append(finalize(next, termination: .hardLimit))
+                    current = nil
+                }
+            }
+        }
+    }
+
+    private nonisolated static func appendSourceCoverage(
+        _ range: Range<Int64>,
+        from chunk: AnalyzedAudioChunk,
+        to sourceRanges: inout [UtteranceSourceRange]
+    ) {
+        guard let next = makeSourceRange(range, from: chunk) else { return }
+        if let last = sourceRanges.last,
+           last.chunkID == next.chunkID,
+           last.endSample == next.startSample,
+           last.localEndSample == next.localStartSample {
+            sourceRanges[sourceRanges.count - 1] = UtteranceSourceRange(
+                chunkID: last.chunkID,
+                chunkSequence: last.chunkSequence,
+                localStartSample: last.localStartSample,
+                localEndSample: next.localEndSample,
+                startSample: last.startSample,
+                endSample: next.endSample
+            )
+        } else {
+            sourceRanges.append(next)
+        }
+    }
+
+    private nonisolated static func makeSourceRange(
+        _ range: Range<Int64>,
+        from chunk: AnalyzedAudioChunk
+    ) -> UtteranceSourceRange? {
+        let start = max(range.lowerBound, chunk.startSample)
+        let end = min(range.upperBound, chunk.endSample)
+        guard end > start else { return nil }
+        return UtteranceSourceRange(
+            chunkID: chunk.id,
+            chunkSequence: chunk.sequence,
+            localStartSample: start - chunk.startSample,
+            localEndSample: end - chunk.startSample,
+            startSample: start,
+            endSample: end
+        )
+    }
+
+    private nonisolated static func finalize(
+        _ carry: OpenUtteranceCarry,
+        termination: UtteranceTermination
+    ) -> FinalizedUtterance {
+        FinalizedUtterance(
+            startSample: carry.startSample,
+            endSample: carry.endSample,
+            speechSpans: carry.speechSpans,
+            sourceRanges: carry.sourceRanges,
+            termination: termination
+        )
     }
 
     private nonisolated static func samples(

@@ -10,6 +10,34 @@ nonisolated enum RecordingState: String, Codable, CaseIterable, Sendable {
     case failed
 }
 
+/// Microphone ownership for a Recording. This is deliberately independent of
+/// durable processing work: an idle capture can still have queued or running
+/// jobs, and a new Recording can capture while an older one is processing.
+nonisolated enum RecordingCaptureState: String, Codable, CaseIterable, Sendable {
+    case idle
+    case preparing
+    case recording
+    case paused
+    case interrupted
+    case stopping
+}
+
+nonisolated enum RecordingProcessingState: String, Codable, CaseIterable, Sendable {
+    case idle
+    case queued
+    case processing
+    case deferredUntilForeground
+    case lockedPendingPurchase
+    case needsAttention
+    case complete
+}
+
+nonisolated struct RecordingLifecycleState: Equatable, Sendable {
+    let recordingID: UUID
+    let capture: RecordingCaptureState
+    let processing: RecordingProcessingState
+}
+
 nonisolated enum RecordingJobKind: String, Codable, Sendable {
     case voiceActivityDetection
     case transcription
@@ -32,6 +60,7 @@ nonisolated enum AudioChunkState: String, Codable, Sendable {
 }
 
 nonisolated enum RecordingGapReason: String, Codable, Sendable {
+    case userPause
     case systemInterruption
     case routeChange
     case writeFailure
@@ -94,6 +123,9 @@ nonisolated struct AudioChunk: Codable, Equatable, Identifiable, Sendable {
     var state: AudioChunkState
     var isPinned: Bool
     var audioRemovedAt: Date?
+    /// VAD ended at the file boundary. The next contiguous chunk must be
+    /// included before this utterance is committed.
+    var requiresContinuation: Bool
 
     init(
         id: UUID = UUID(),
@@ -105,7 +137,8 @@ nonisolated struct AudioChunk: Codable, Equatable, Identifiable, Sendable {
         endedAt: Date,
         state: AudioChunkState = .closed,
         isPinned: Bool = false,
-        audioRemovedAt: Date? = nil
+        audioRemovedAt: Date? = nil,
+        requiresContinuation: Bool = false
     ) {
         self.id = id
         self.recordingID = recordingID
@@ -117,18 +150,80 @@ nonisolated struct AudioChunk: Codable, Equatable, Identifiable, Sendable {
         self.state = state
         self.isPinned = isPinned
         self.audioRemovedAt = audioRemovedAt
+        self.requiresContinuation = requiresContinuation
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, recordingID, relativePath, startSample, endSample, startedAt, endedAt
+        case state, isPinned, audioRemovedAt, requiresContinuation
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        recordingID = try container.decode(UUID.self, forKey: .recordingID)
+        relativePath = try container.decode(String.self, forKey: .relativePath)
+        startSample = try container.decode(Int64.self, forKey: .startSample)
+        endSample = try container.decode(Int64.self, forKey: .endSample)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        endedAt = try container.decode(Date.self, forKey: .endedAt)
+        state = try container.decode(AudioChunkState.self, forKey: .state)
+        isPinned = try container.decode(Bool.self, forKey: .isPinned)
+        audioRemovedAt = try container.decodeIfPresent(Date.self, forKey: .audioRemovedAt)
+        requiresContinuation = try container.decodeIfPresent(Bool.self, forKey: .requiresContinuation) ?? false
     }
 }
 
 nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     let recordingID: UUID
+    /// Nil is retained for the pre-incremental, whole-recording job format.
+    let chunkID: UUID?
     let kind: RecordingJobKind
     var state: RecordingJobState
     var attemptCount: Int
     var lastError: String?
     let createdAt: Date
     var updatedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        recordingID: UUID,
+        chunkID: UUID? = nil,
+        kind: RecordingJobKind,
+        state: RecordingJobState,
+        attemptCount: Int,
+        lastError: String?,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.id = id
+        self.recordingID = recordingID
+        self.chunkID = chunkID
+        self.kind = kind
+        self.state = state
+        self.attemptCount = attemptCount
+        self.lastError = lastError
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, recordingID, chunkID, kind, state, attemptCount, lastError, createdAt, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        recordingID = try container.decode(UUID.self, forKey: .recordingID)
+        chunkID = try container.decodeIfPresent(UUID.self, forKey: .chunkID)
+        kind = try container.decode(RecordingJobKind.self, forKey: .kind)
+        state = try container.decode(RecordingJobState.self, forKey: .state)
+        attemptCount = try container.decode(Int.self, forKey: .attemptCount)
+        lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
 }
 
 nonisolated struct RecordingGap: Codable, Equatable, Identifiable, Sendable {
@@ -141,10 +236,74 @@ nonisolated struct RecordingGap: Codable, Equatable, Identifiable, Sendable {
     var endedAt: Date?
 }
 
+extension Recording {
+    /// Compatibility projection for the v1 single `recordings.state` column.
+    /// Processing jobs remain the durable source of processing truth, so no
+    /// database migration is required merely to express the orthogonal model.
+    nonisolated var persistedCaptureState: RecordingCaptureState {
+        switch state {
+        case .recording: .recording
+        case .paused: .paused
+        case .interrupted: .interrupted
+        case .stopping: .stopping
+        case .processing, .complete, .failed: .idle
+        }
+    }
+
+    nonisolated func lifecycleState(
+        jobs: [RecordingJob],
+        liveCaptureState: RecordingCaptureState? = nil
+    ) -> RecordingLifecycleState {
+        RecordingLifecycleState(
+            recordingID: id,
+            capture: liveCaptureState ?? persistedCaptureState,
+            processing: RecordingProcessingState.resolve(
+                legacyRecordingState: state,
+                jobs: jobs
+            )
+        )
+    }
+}
+
+extension RecordingProcessingState {
+    nonisolated static func resolve(
+        legacyRecordingState: RecordingState,
+        jobs: [RecordingJob]
+    ) -> RecordingProcessingState {
+        if jobs.contains(where: { $0.state == .failed }) {
+            return .needsAttention
+        }
+        if jobs.contains(where: { $0.state == .running }) {
+            return .processing
+        }
+        let pendingJobs = jobs.filter { $0.state == .pending }
+        if pendingJobs.contains(where: { $0.lastError == "lockedPendingPurchase" }) {
+            return .lockedPendingPurchase
+        }
+        if pendingJobs.contains(where: { $0.lastError == "deferredUntilForeground" }) {
+            return .deferredUntilForeground
+        }
+        if !pendingJobs.isEmpty {
+            return .queued
+        }
+        if !jobs.isEmpty, jobs.allSatisfy({ $0.state == .completed }) {
+            return .complete
+        }
+
+        return switch legacyRecordingState {
+        case .processing: .processing
+        case .complete: .complete
+        case .failed: .needsAttention
+        case .recording, .paused, .interrupted, .stopping: .idle
+        }
+    }
+}
+
 nonisolated enum RecordingJournalPayload: Codable, Equatable, Sendable {
     case recordingCreated(Recording)
     case recordingStateChanged(recordingID: UUID, state: RecordingState, endedAt: Date?)
     case chunkClosed(AudioChunk)
+    case chunkContinuationChanged(chunkID: UUID, requiresContinuation: Bool)
     case jobUpserted(RecordingJob)
     case gapOpened(RecordingGap)
     case gapClosed(gapID: UUID, endSample: Int64, endedAt: Date)

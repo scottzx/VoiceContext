@@ -57,6 +57,47 @@ actor RecordingRepository {
         try persist(.init(occurredAt: date, payload: .chunkClosed(chunk)))
     }
 
+    func setChunkContinuation(
+        id: UUID,
+        requiresContinuation: Bool,
+        at date: Date
+    ) throws -> RecordingJournalEvent {
+        try persist(.init(
+            occurredAt: date,
+            payload: .chunkContinuationChanged(
+                chunkID: id,
+                requiresContinuation: requiresContinuation
+            )
+        ))
+    }
+
+    /// A completed Recording has no chunk left to continue an open tail, so any
+    /// remaining cross-chunk marker is stale. Only clears markers after the
+    /// Recording is durably complete: while jobs are still pending, a marker on
+    /// an earlier chunk legitimately tells its successor to include the tail.
+    /// Returns the cleared chunk IDs (empty for an in-progress Recording).
+    @discardableResult
+    func clearContinuationMarkersForCompletedRecording(
+        recordingID: UUID,
+        at date: Date
+    ) throws -> [UUID] {
+        guard let recording = try index.recording(id: recordingID),
+              recording.endedAt != nil,
+              recording.state == .complete else { return [] }
+        let marked = try index.chunks(recordingID: recordingID)
+            .filter { $0.requiresContinuation }
+        for chunk in marked {
+            try persist(.init(
+                occurredAt: date,
+                payload: .chunkContinuationChanged(
+                    chunkID: chunk.id,
+                    requiresContinuation: false
+                )
+            ))
+        }
+        return marked.map(\.id)
+    }
+
     @discardableResult
     func upsertJob(_ job: RecordingJob, at date: Date) throws -> RecordingJournalEvent {
         try persist(.init(occurredAt: date, payload: .jobUpserted(job)))
@@ -159,17 +200,25 @@ actor RecordingRepository {
             let transcriptionJobs = try index.jobs(recordingID: recording.id)
                 .filter { $0.kind == .transcription }
             guard let job = transcriptionJobs.last else {
-                let pending = RecordingJob(
-                    id: UUID(),
-                    recordingID: recording.id,
-                    kind: .transcription,
-                    state: .pending,
-                    attemptCount: 0,
-                    lastError: nil,
-                    createdAt: date,
-                    updatedAt: date
-                )
-                try upsertJob(pending, at: date)
+                // The minute-level queue restores a stopped Recording as one
+                // durable job per closed chunk, never as a legacy
+                // whole-recording job that would transcribe it a second time.
+                let closedChunks = try index.chunks(recordingID: recording.id)
+                    .filter { $0.state == .closed }
+                    .sorted { $0.startSample < $1.startSample }
+                for chunk in closedChunks {
+                    try upsertJob(RecordingJob(
+                        id: UUID(),
+                        recordingID: recording.id,
+                        chunkID: chunk.id,
+                        kind: .transcription,
+                        state: .pending,
+                        attemptCount: 0,
+                        lastError: nil,
+                        createdAt: date,
+                        updatedAt: date
+                    ), at: date)
+                }
                 continue
             }
 
@@ -184,6 +233,10 @@ actor RecordingRepository {
                 try upsertJob(pending, at: date)
             case .completed:
                 try changeState(recordingID: recording.id, to: .complete, at: date)
+                try clearContinuationMarkersForCompletedRecording(
+                    recordingID: recording.id,
+                    at: date
+                )
             case .failed:
                 try changeState(recordingID: recording.id, to: .failed, at: date)
             }

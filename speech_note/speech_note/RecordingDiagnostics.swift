@@ -7,6 +7,7 @@ nonisolated enum RecordingIntegrityIssue: Codable, Equatable, Sendable {
     case unexplainedMissingSamples(previousChunkID: UUID, nextChunkID: UUID, missingSamples: Int64)
     case missingAudioFile(chunkID: UUID, relativePath: String)
     case unreadableAudioFile(chunkID: UUID, relativePath: String)
+    case unindexedAudioFile(relativePath: String)
 }
 
 nonisolated struct RecordingDiagnostics: Sendable {
@@ -75,7 +76,37 @@ nonisolated struct RecordingDiagnostics: Sendable {
     func inspect(recordingID: UUID, repository: RecordingRepository) async throws -> [RecordingIntegrityIssue] {
         let chunks = try await repository.chunks(recordingID: recordingID)
         let gaps = try await repository.gaps(recordingID: recordingID)
-        return inspect(chunks: chunks, gaps: gaps, rootURL: repository.rootURL)
+        var issues = inspect(chunks: chunks, gaps: gaps, rootURL: repository.rootURL)
+
+        let audioDirectory = repository.rootURL
+            .appendingPathComponent("Recordings", isDirectory: true)
+            .appendingPathComponent(recordingID.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent("audio", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: audioDirectory.path) else {
+            return issues
+        }
+
+        let indexedPaths = Set(chunks.map {
+            repository.rootURL
+                .appendingPathComponent($0.relativePath)
+                .standardizedFileURL.path
+        })
+        let rootPath = repository.rootURL.standardizedFileURL.path
+        let audioFiles = try FileManager.default.contentsOfDirectory(
+            at: audioDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        for url in audioFiles
+            where url.pathExtension.lowercased() == "m4a"
+                && !indexedPaths.contains(url.standardizedFileURL.path) {
+            let path = url.standardizedFileURL.path
+            let relativePath = path.hasPrefix(rootPath + "/")
+                ? String(path.dropFirst(rootPath.count + 1))
+                : url.lastPathComponent
+            issues.append(.unindexedAudioFile(relativePath: relativePath))
+        }
+        return issues
     }
 
     private static func avAudioIsReadable(_ url: URL) -> Bool {
@@ -113,7 +144,7 @@ nonisolated struct RecordingValidationReport: Codable, Equatable, Sendable {
             "| \(check.title) | \(check.outcome.rawValue) | \(check.notes.replacingOccurrences(of: "|", with: "\\|")) |"
         }.joined(separator: "\n")
         let issues = integrityIssues.isEmpty
-            ? "- 未发现索引、样本边界或音频可读性问题。"
+            ? "- 未发现索引、样本边界、音频可读性或未入索引 AAC 问题。"
             : integrityIssues.map { "- \(String(describing: $0))" }.joined(separator: "\n")
         return """
         # 0.1.0 录音核心验证报告

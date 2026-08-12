@@ -62,7 +62,7 @@
 | `VCCaptureDock` | 首页底部独立红色圆形录音钮；首次 / 空状态显示可见文案 | `safeAreaInset(edge: .bottom)` + `Button` | 可见直径 60–64 pt，实际命中区 ≥ 72 pt；无渐变、发光或橙色替代 |
 | `VCVoiceCapsule` | 个人短记录的平面行变体；标题、首句、时长、时间 | 与 `VCRecordRow` 共用视图结构、模型和导航 | 不新增 `recordingType`，不使用独立彩色卡片；完整行可点 |
 | `VCAudioPlayer` | 进度、当前/总时长、播放、15 秒快退/快进、倍速 | `AVAudioPlayer`/播放协调器的 View | 音频已清理时保留位置但改为说明卡；全部控制有可访问标签 |
-| `VCCalendarStrip` | 横向七天日期；今天有中性环，选中为 Ink 实底白字 | `ScrollView(.horizontal)` + `Button` | 每日标签含完整日期与记录数；不以周几缩写作为唯一信息 |
+| `VCRecordTimeFilter` | 全量记录流上的原生时间筛选菜单 | `Picker(.menu)` | 默认显示全部记录并按日期从新到旧分组；筛选不改变 Recording 主对象 |
 | `VCRecordRow` | 平面全宽行；标题、时间、元数据、状态文字、细分隔线 | `NavigationLink(value:)` | 行高度 ≥ 64 pt；完整 cell 可点；处理状态有文本且不只依赖颜色 |
 | `VCInfoNotice` | 左侧语义色线、图标、标题、说明与动作 | `ContentUnavailableView` 的局部样式 / `GroupBox` | 用于权限、后台、iCloud、失败、试用；VoiceOver 先朗读事实再读操作 |
 | `VCRetentionCard` | 音频时长、到期日、可切换长期保留 | `Toggle` + confirmation dialog | 关闭长期保留时明确回到默认 7 天；音频清理后禁用播放但保留文稿 |
@@ -74,7 +74,7 @@
 | 页面 | 建议根视图 | 主要组件 | 交互、数据与状态锚点 |
 |---|---|---|---|
 | 首次引导 | `NavigationStack` + paged `TabView` | `VCInfoNotice`、主/次按钮 | 权限、iCloud、试用分步骤；拒绝权限仍可进入只读记录页 |
-| 记录（日历首页） | `NavigationStack` + `ScrollView` / `List` | `VCCalendarStrip`、`VCRecordRow`、`VCCaptureDock`、`VCRecordingBar` | `selectedDate` 过滤同一 `Recording` 集合；个人笔记和会议同一平面列表；右上角「我的」；无底部多 Tab |
+| 记录首页 | `NavigationStack` + `ScrollView` / `List` | `VCRecordTimeFilter`、`VCRecordRow`、`VCCaptureDock`、`VCRecordingBar` | 全量 `Recording` 集合按日期分组并默认新到旧；时间菜单只负责筛选；个人笔记和会议同一平面列表；右上角「我的」；无底部多 Tab |
 | 开始记录 | `.sheet` + `ScrollView` | 首屏直接录音、可选字段、会议 toggle | 直接开始在字段之前；标题 / 参与人 / 标签全部可选；`isMeeting` 为真才显示主题与纯文本议程；无附件控件 |
 | 录音中 | `RecordingView` | `VCStatusChip`、时长、电平、实时文稿、底部暂停/结束 | 个人独白不显示参与人表单；实时文稿是可选增量；后台回前台时显示积压而非假装已处理 |
 | 停止确认和处理 | sheet 或导航目的地 | 破坏性确认、进度、`VCInfoNotice` | 先安全关闭分片；处理拆成转写、分人、生成文档；失败可重试，音频已保存 |
@@ -114,7 +114,7 @@ enum SpeakerIdentityState { case unknown, suspected(name: String), confirmed(nam
 - 所有可点击控件实际命中区域不小于 44×44 pt；录音停止按钮和「开始记录」不得在滚动后不可达。
 - 支持至少 `.accessibility3` 的 Dynamic Type：列表行和必要控制面板可纵向增长，日期选择可横向滚动，元数据允许换行。
 - 每个 SF Symbol 均有 `accessibilityLabel`；状态 chip 使用文字、图标与颜色三重表达。录音时长用可读时间（如「12 分 48 秒」）而非逐字数字噪声。
-- VoiceOver 焦点顺序：导航 → 录音状态条 → 日期 → 记录流 → 固定开始记录入口。详情顺序为标题 → 播放器 → 文稿 → 元数据。状态变化用礼貌 announcement，停止确认用明确的破坏性语义。
+- VoiceOver 焦点顺序：导航 → 录音状态条 → 时间筛选 → 按日期分组的记录流 → 固定开始记录入口。详情顺序为标题 → 播放器 → 文稿 → 元数据。状态变化用礼貌 announcement，停止确认用明确的破坏性语义。
 - 深色模式只替换 token，不反转警告与状态语义；正文和表面最少保持 WCAG AA 的 4.5:1 对比度。
 - Reduce Motion 下关闭录音红点脉冲与电平循环；用「正在录音」和静态条形高度继续传达状态。
 
