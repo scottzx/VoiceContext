@@ -60,7 +60,8 @@ nonisolated enum SpeakerIdentityLabeling {
 /// One meeting-local speaker after offline recluster, optionally matched to a
 /// historical archive identity. Candidate embeddings stay processing-only until
 /// the user confirms.
-nonisolated struct MeetingSpeakerBinding: Equatable, Sendable, Codable {
+nonisolated struct MeetingSpeakerBinding: Equatable, Sendable, Codable, Identifiable {
+    public var id: String { temporaryLabel }
     let temporaryLabel: String
     var state: SpeakerIdentityState
     /// Eligible, L2-normalized embeddings for this meeting cluster.

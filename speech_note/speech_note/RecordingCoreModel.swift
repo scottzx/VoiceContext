@@ -129,6 +129,8 @@ final class RecordingCoreModel {
     let folderCatalogStore: FolderCatalogStore
     private let folderiCloudMirror: FolderiCloudMirror
     private(set) var folderCatalog: FolderCatalogDocument = .empty()
+    let clientCatalogStore: ClientCatalogStore
+    private(set) var clientCatalog: ClientCatalogDocument = .empty()
     private let transcriptionScheduler: ForegroundTranscriptionScheduler
     let trialEntitlement: TrialEntitlementController
     private let trialLedger: TrialQuotaLedger
@@ -152,6 +154,7 @@ final class RecordingCoreModel {
         skillPackSeeder = PublicSkillPackSeeder(rootURL: rootURL)
         folderCatalogStore = FolderCatalogStore(rootURL: rootURL)
         folderiCloudMirror = FolderiCloudMirror(localRootURL: rootURL)
+        clientCatalogStore = ClientCatalogStore(rootURL: rootURL)
         coordinator = RecordingSessionCoordinator(repository: repository, capture: recorder)
         let lifecycleGate = InferenceLifecycleGate()
         let inferenceService = SenseVoiceInferenceService(lifecycleGate: lifecycleGate)
@@ -1092,6 +1095,54 @@ final class RecordingCoreModel {
         throw FolderCatalogError.emptyName
     }
 
+    // MARK: - Client Profiles & Voiceprints
+
+    var clients: [ClientProfile] { clientCatalog.clients }
+
+    func client(id: UUID) -> ClientProfile? {
+        clientCatalog.clients.first(where: { $0.id == id })
+    }
+
+    func client(forVoiceprintID voiceprintID: UUID) -> ClientProfile? {
+        clientCatalog.clients.first(where: { $0.voiceprintIdentityID == voiceprintID })
+    }
+
+    @discardableResult
+    func upsertClient(_ client: ClientProfile) async -> ClientCatalogDocument {
+        do {
+            clientCatalog = try await clientCatalogStore.upsertClient(client)
+            await refresh()
+            return clientCatalog
+        } catch {
+            notice = "保存客户档案失败：\(error.localizedDescription)"
+            return clientCatalog
+        }
+    }
+
+    @discardableResult
+    func deleteClient(id: UUID) async -> ClientCatalogDocument {
+        do {
+            clientCatalog = try await clientCatalogStore.deleteClient(id: id)
+            await refresh()
+            return clientCatalog
+        } catch {
+            notice = "删除客户档案失败：\(error.localizedDescription)"
+            return clientCatalog
+        }
+    }
+
+    @discardableResult
+    func linkClientVoiceprint(clientID: UUID, voiceprintID: UUID?) async -> ClientCatalogDocument {
+        do {
+            clientCatalog = try await clientCatalogStore.linkVoiceprint(clientID: clientID, voiceprintID: voiceprintID)
+            await refresh()
+            return clientCatalog
+        } catch {
+            notice = "关联声纹失败：\(error.localizedDescription)"
+            return clientCatalog
+        }
+    }
+
     // MARK: - Recovery evidence
 
     func recoverOnLaunch() async {
@@ -1591,6 +1642,12 @@ final class RecordingCoreModel {
             folderCatalog = try await folderCatalogStore.load()
         } catch {
             notice = "读取文件夹失败：\(error.localizedDescription)"
+        }
+
+        do {
+            clientCatalog = try await clientCatalogStore.load()
+        } catch {
+            // Client catalog load failure does not block session
         }
 
         var recordingID = activeRecordingID

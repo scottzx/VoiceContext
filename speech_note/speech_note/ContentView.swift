@@ -4,40 +4,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import PhotosUI
 
-private enum RecordingTimeFilter: String, CaseIterable, Identifiable {
-    case all
-    case today
-    case lastSevenDays
-    case thisMonth
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .all: "全部时间"
-        case .today: "今天"
-        case .lastSevenDays: "最近 7 天"
-        case .thisMonth: "本月"
-        }
-    }
-
-    func includes(_ date: Date, calendar: Calendar = .current) -> Bool {
-        let now = Date()
-        switch self {
-        case .all:
-            return true
-        case .today:
-            return calendar.isDate(date, inSameDayAs: now)
-        case .lastSevenDays:
-            guard let start = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now)) else {
-                return false
-            }
-            return date >= start
-        case .thisMonth:
-            return calendar.isDate(date, equalTo: now, toGranularity: .month)
-        }
-    }
-}
 
 private struct RecordingDayGroup: Identifiable {
     let date: Date
@@ -264,13 +230,14 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: RecordingCoreModel
     @State private var modelError: String?
-    @State private var timeFilter: RecordingTimeFilter = .all
-    /// `nil` means show the full list (list-first home). A concrete day is an optional calendar filter.
-    @State private var selectedDate: Date? = nil
+    @State private var filterCriteria = RecordingFilterCriteria()
+    @State private var isFilterSheetPresented = false
+    @State private var isClientManagerPresented = false
+    @State private var isNewFolderAlertPresented = false
+    @State private var newFolderNameInput = ""
     @State private var searchQuery = ""
     @State private var searchHits: [TranscriptSearchHit] = []
     @State private var isSearching = false
-    @State private var folderFilter: FolderListFilter = .all
     @State private var isFolderManagerPresented = false
     @State private var moveRecordingID: UUID?
     @State private var isStartSheetPresented = false
@@ -338,9 +305,6 @@ struct ContentView: View {
     }
 
     /// Widget / deep-link entry into the start-recording flow.
-    /// Denied mic → in-app explanation sheet (no silent failure).
-    /// Granted → start capture with minimal interruption.
-    /// Undetermined → start sheet so the user explicitly begins (permission prompt only then).
     private func handleWidgetStartRecording() {
         openStartRecording = false
         if modelError != nil { return }
@@ -371,20 +335,69 @@ struct ContentView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Menu {
-                            Button("文件", systemImage: "folder") {
-                                isImportPickerPresented = true
+                            Section("管理") {
+                                Button {
+                                    isClientManagerPresented = true
+                                } label: {
+                                    Label("客户档案与声纹", systemImage: "person.2")
+                                }
+                                Button {
+                                    newFolderNameInput = ""
+                                    isNewFolderAlertPresented = true
+                                } label: {
+                                    Label("新建文件夹…", systemImage: "folder.badge.plus")
+                                }
+                                Button {
+                                    isFolderManagerPresented = true
+                                } label: {
+                                    Label("管理文件夹…", systemImage: "folder")
+                                }
                             }
-                            .accessibilityIdentifier("import-from-files")
-                            Button("照片与视频", systemImage: "photo.on.rectangle") {
-                                isPhotosPickerPresented = true
+                            Section("导入") {
+                                Button {
+                                    isImportPickerPresented = true
+                                } label: {
+                                    Label("导入音频文件…", systemImage: "waveform")
+                                }
+                                Button {
+                                    isPhotosPickerPresented = true
+                                } label: {
+                                    Label("导入相册视频…", systemImage: "photo.on.rectangle")
+                                }
                             }
-                            .accessibilityIdentifier("import-from-photos")
+                            Section("文件夹快速切换") {
+                                Button {
+                                    filterCriteria.folderFilter = .all
+                                } label: {
+                                    Label("全部文件夹", systemImage: filterCriteria.folderFilter == .all ? "checkmark" : "tray.full")
+                                }
+                                Button {
+                                    filterCriteria.folderFilter = .uncategorized
+                                } label: {
+                                    Label("未分类", systemImage: filterCriteria.folderFilter == .uncategorized ? "checkmark" : "tray")
+                                }
+                                if !model.folders.isEmpty {
+                                    ForEach(model.folders) { folder in
+                                        Button {
+                                            filterCriteria.folderFilter = .folder(folder.id)
+                                        } label: {
+                                            Label(
+                                                folder.name,
+                                                systemImage: {
+                                                    if case .folder(let id) = filterCriteria.folderFilter, id == folder.id {
+                                                        return "checkmark"
+                                                    }
+                                                    return "folder"
+                                                }()
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         } label: {
-                            Label("导入", systemImage: "square.and.arrow.down")
+                            Label("工作台与导入", systemImage: "square.grid.2x2")
                         }
-                        .accessibilityLabel("导入")
-                        .accessibilityHint("从文件或照片与视频导入，离线转写")
-                        .accessibilityIdentifier("import-audio")
+                        .accessibilityLabel("工作台与导入")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("我的", systemImage: "person.circle") {
@@ -412,11 +425,28 @@ struct ContentView: View {
                     captureDock
                 }
         }
+        .sheet(isPresented: $isFilterSheetPresented) {
+            RecordingFilterSheet(model: model, criteria: $filterCriteria)
+        }
+        .sheet(isPresented: $isClientManagerPresented) {
+            ClientManagementScreen(model: model)
+        }
         .sheet(isPresented: $isStartSheetPresented) {
             StartRecordingSheet(model: model)
         }
         .sheet(isPresented: $isSettingsPresented) {
             SettingsScreen(model: model, reduceMotion: reduceMotion)
+        }
+        .alert("新建文件夹", isPresented: $isNewFolderAlertPresented) {
+            TextField("文件夹名称", text: $newFolderNameInput)
+            Button("取消", role: .cancel) {}
+            Button("创建") {
+                let name = newFolderNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return }
+                Task {
+                    _ = try? await model.createFolder(named: name)
+                }
+            }
         }
         .fileImporter(
             isPresented: $isImportPickerPresented,
@@ -457,12 +487,13 @@ struct ContentView: View {
 
     private var recordsScreen: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
+                // Search bar + Filter button
+                HStack(spacing: 10) {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(.secondary)
-                        TextField("搜索转写内容", text: $searchQuery)
+                        TextField("搜索转写内容与标签…", text: $searchQuery)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .accessibilityLabel("搜索转写内容")
@@ -483,69 +514,64 @@ struct ContentView: View {
                     .padding(.vertical, 10)
                     .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
 
-                    Picker("时间筛选", selection: $timeFilter) {
-                        ForEach(RecordingTimeFilter.allCases) { filter in
-                            Text(filter.title).tag(filter)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .accessibilityLabel("时间筛选")
-                }
-                .padding(.horizontal, 20)
-
-                HStack(spacing: 12) {
-                    Menu {
-                        Button {
-                            folderFilter = .all
-                        } label: {
-                            Label("全部文件夹", systemImage: folderFilter == .all ? "checkmark" : "tray.full")
-                        }
-                        Button {
-                            folderFilter = .uncategorized
-                        } label: {
-                            Label("未分类", systemImage: folderFilter == .uncategorized ? "checkmark" : "tray")
-                        }
-                        if !model.folders.isEmpty {
-                            Divider()
-                            ForEach(model.folders) { folder in
-                                Button {
-                                    folderFilter = .folder(folder.id)
-                                } label: {
-                                    Label(
-                                        folder.name,
-                                        systemImage: {
-                                            if case .folder(let id) = folderFilter, id == folder.id {
-                                                return "checkmark"
-                                            }
-                                            return "folder"
-                                        }()
-                                    )
-                                }
+                    Button {
+                        isFilterSheetPresented = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: filterCriteria.isFiltered ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                                .font(.body)
+                            Text("筛选")
+                                .font(.subheadline.weight(.medium))
+                            if filterCriteria.isFiltered {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(width: 6, height: 6)
                             }
                         }
-                        Divider()
-                        Button("管理文件夹…") {
-                            isFolderManagerPresented = true
-                        }
-                    } label: {
-                        Label(folderFilterLabel, systemImage: "folder")
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(filterCriteria.isFiltered ? Color.primary.opacity(0.08) : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(filterCriteria.isFiltered ? Color.primary : Color.secondary)
                     }
-                    .accessibilityLabel("文件夹筛选")
-                    .accessibilityIdentifier("folder-filter-menu")
-
-                    Button("管理") {
-                        isFolderManagerPresented = true
-                    }
-                    .accessibilityIdentifier("folder-manage-button")
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("筛选记录")
+                    .accessibilityIdentifier("recording-filter-button")
                 }
                 .padding(.horizontal, 20)
 
-                if trimmedSearchQuery.isEmpty {
-                    CalendarStrip(
-                        selectedDate: $selectedDate,
-                        recordings: filteredRecordings
-                    )
+                // Active filter chips
+                if filterCriteria.isFiltered {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            if filterCriteria.timePreset != .all {
+                                filterChip(
+                                    title: filterCriteria.timePreset == .custom
+                                        ? "\(filterCriteria.customStartDate.formatted(date: .numeric, time: .omitted)) ~ \(filterCriteria.customEndDate.formatted(date: .numeric, time: .omitted))"
+                                        : filterCriteria.timePreset.title
+                                ) {
+                                    filterCriteria.timePreset = .all
+                                }
+                            }
+                            if filterCriteria.folderFilter != .all {
+                                filterChip(title: folderFilterName(filterCriteria.folderFilter)) {
+                                    filterCriteria.folderFilter = .all
+                                }
+                            }
+                            if filterCriteria.originFilter != .all {
+                                filterChip(title: filterCriteria.originFilter.title) {
+                                    filterCriteria.originFilter = .all
+                                }
+                            }
+                            Button("重置") {
+                                filterCriteria = RecordingFilterCriteria()
+                            }
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                        }
+                        .padding(.horizontal, 20)
+                    }
                 }
 
                 if !trimmedSearchQuery.isEmpty {
@@ -602,10 +628,7 @@ struct ContentView: View {
         .onChange(of: searchQuery) { _, _ in
             Task { await refreshSearchHits() }
         }
-        .onChange(of: timeFilter) { _, _ in
-            Task { await refreshSearchHits() }
-        }
-        .onChange(of: folderFilter) { _, _ in
+        .onChange(of: filterCriteria) { _, _ in
             Task { await refreshSearchHits() }
         }
         .onChange(of: model.recordings) { _, _ in
@@ -618,7 +641,7 @@ struct ContentView: View {
             await refreshSearchHits()
         }
         .sheet(isPresented: $isFolderManagerPresented) {
-            FolderManagerSheet(model: model, folderFilter: $folderFilter)
+            FolderManagerSheet(model: model, folderFilter: $filterCriteria.folderFilter)
         }
         .sheet(isPresented: Binding(
             get: { moveRecordingID != nil },
@@ -627,6 +650,31 @@ struct ContentView: View {
             if let moveRecordingID {
                 MoveToFolderSheet(model: model, recordingID: moveRecordingID)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func filterChip(title: String, onRemove: @escaping () -> Void) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.medium))
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.bold))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.primary.opacity(0.08))
+        .clipShape(Capsule())
+    }
+
+    private func folderFilterName(_ filter: RecordingFolderFilter) -> String {
+        switch filter {
+        case .all: "全部文件夹"
+        case .uncategorized: "未分类"
+        case .folder(let id): model.folders.first(where: { $0.id == id })?.name ?? "文件夹"
         }
     }
 
@@ -704,7 +752,6 @@ struct ContentView: View {
         .accessibilityIdentifier("capture-dock")
     }
 
-
     private func importPickedPhotoVideo(_ item: PhotosPickerItem) async {
         do {
             guard let movie = try await item.loadTransferable(type: ImportPickedMovie.self) else {
@@ -730,12 +777,14 @@ struct ContentView: View {
         let byTime = Dictionary(uniqueKeysWithValues: model.recordings.map { ($0.id, $0) })
         return searchHits.filter { hit in
             guard let recording = byTime[hit.recordingID] else { return false }
-            return timeFilter.includes(recording.startedAt)
+            return filterCriteria.matches(recording: recording, folderID: model.folderID(for: recording.id))
         }
     }
 
     private var filteredRecordings: [Recording] {
-        model.recordings.filter { timeFilter.includes($0.startedAt) }
+        model.recordings.filter {
+            filterCriteria.matches(recording: $0, folderID: model.folderID(for: $0.id))
+        }
     }
 
     @MainActor
@@ -760,7 +809,7 @@ struct ContentView: View {
     }
 
     private var folderNavigationTitle: String {
-        switch folderFilter {
+        switch filterCriteria.folderFilter {
         case .all:
             return "全部录音"
         case .uncategorized:
@@ -770,23 +819,9 @@ struct ContentView: View {
         }
     }
 
-    private var folderFilterLabel: String {
-        switch folderFilter {
-        case .all:
-            return "全部文件夹"
-        case .uncategorized:
-            return "未分类"
-        case .folder(let id):
-            return model.folders.first(where: { $0.id == id })?.name ?? "文件夹"
-        }
-    }
-
     private var emptyListTitle: String {
-        if filteredRecordings.isEmpty {
+        if model.recordings.isEmpty {
             return "还没有记录"
-        }
-        if selectedDate != nil {
-            return "这一天还没有记录"
         }
         return "没有符合筛选的记录"
     }
@@ -795,23 +830,12 @@ struct ContentView: View {
         if model.recordings.isEmpty {
             return "开始录音，保存一个念头或一次对话。也可从左上角导入文件或相册视频。"
         }
-        if folderFilter != .all {
-            return "这个文件夹还没有记录。可在列表项上长按「移动到文件夹」。"
-        }
-        if selectedDate != nil {
-            return "点日历上的「全部」看所有记录，或开始一条新录音。"
-        }
-        return "换一个时间范围，或开始一条新录音。"
+        return "换一个时间范围或筛选条件，或开始一条新录音。"
     }
 
     private var recordingGroups: [RecordingDayGroup] {
         let calendar = Calendar.current
-        let filtered = filteredRecordings
-            .filter { recording in
-                guard let selectedDate else { return true }
-                return calendar.isDate(recording.startedAt, inSameDayAs: selectedDate)
-            }
-            .sorted { $0.startedAt > $1.startedAt }
+        let filtered = filteredRecordings.sorted { $0.startedAt > $1.startedAt }
         let grouped = Dictionary(grouping: filtered) {
             calendar.startOfDay(for: $0.startedAt)
         }
@@ -1084,6 +1108,7 @@ private struct StartRecordingSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var isMeeting = false
+    @State private var selectedClientIDs: Set<UUID> = []
     @State private var microphonePermission = MicrophoneAccess.recordPermission
     let model: RecordingCoreModel
 
@@ -1127,6 +1152,40 @@ private struct StartRecordingSheet: View {
                     TextField("标题", text: $title)
                         .textInputAutocapitalization(.sentences)
                     Toggle("这是一次会议", isOn: $isMeeting)
+                }
+
+                if isMeeting, !model.clients.isEmpty {
+                    Section("预选参会客户") {
+                        ForEach(model.clients) { client in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(client.name)
+                                        .font(.body)
+                                    if !client.displaySubtitle.isEmpty {
+                                        Text(client.displaySubtitle)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                if selectedClientIDs.contains(client.id) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.primary)
+                                } else {
+                                    Image(systemName: "circle")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if selectedClientIDs.contains(client.id) {
+                                    selectedClientIDs.remove(client.id)
+                                } else {
+                                    selectedClientIDs.insert(client.id)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if let notice = model.notice {
@@ -1489,6 +1548,18 @@ private struct SettingsScreen: View {
             List {
                 if TrialQuotaLedger.isManualTrialEnabled {
                     TrialQuotaSettingsSection(trial: model.trialEntitlement)
+                }
+
+                Section("界面语言") {
+                    Picker("语言 / Language", selection: Binding(
+                        get: { AppLanguageCenter.shared.selectedLanguage },
+                        set: { AppLanguageCenter.shared.selectedLanguage = $0 }
+                    )) {
+                        ForEach(AppLanguage.allCases) { lang in
+                            Text(lang.displayName).tag(lang)
+                        }
+                    }
+                    .accessibilityIdentifier("settings-app-language")
                 }
 
                 Section("转写") {

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 /// Supported languages in VoiceContext.
 enum AppLanguage: String, CaseIterable, Identifiable {
@@ -23,7 +24,20 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 final class AppLanguageCenter: ObservableObject {
     static let shared = AppLanguageCenter()
 
-    @AppStorage("app_preferred_language") var selectedLanguage: AppLanguage = .followSystem
+    @Published var selectedLanguage: AppLanguage {
+        didSet {
+            UserDefaults.standard.set(selectedLanguage.rawValue, forKey: "app_preferred_language")
+        }
+    }
+
+    private init() {
+        if let raw = UserDefaults.standard.string(forKey: "app_preferred_language"),
+           let lang = AppLanguage(rawValue: raw) {
+            self.selectedLanguage = lang
+        } else {
+            self.selectedLanguage = .followSystem
+        }
+    }
 
     var currentLocale: Locale {
         switch selectedLanguage {
