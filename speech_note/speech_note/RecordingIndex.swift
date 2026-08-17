@@ -27,6 +27,12 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         let relativePath: String
     }
 
+    nonisolated struct ImportedPurgeCandidate: Equatable, Sendable {
+        let assetID: UUID
+        let recordingID: UUID
+        let relativePath: String
+    }
+
     fileprivate enum Value {
         case text(String)
         case double(Double)
@@ -103,7 +109,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: Recording?
             try query(
-                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at FROM recordings WHERE id = ?",
+                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode FROM recordings WHERE id = ?",
                 [.text(id.uuidString)]
             ) { statement in
                 result = try decodeRecording(statement)
@@ -116,7 +122,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: [Recording] = []
             try query(
-                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at FROM recordings ORDER BY started_at"
+                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode FROM recordings ORDER BY started_at"
             ) { statement in
                 let recording = try decodeRecording(statement)
                 if states == nil || states?.contains(recording.state) == true {
@@ -144,26 +150,10 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: [RecordingJob] = []
             try query(
-                "SELECT id, recording_id, chunk_id, kind, state, attempt_count, last_error, created_at, updated_at FROM recording_jobs WHERE recording_id = ? ORDER BY created_at",
+                "SELECT id, recording_id, chunk_id, processing_range_id, kind, state, attempt_count, last_error, created_at, updated_at FROM recording_jobs WHERE recording_id = ? ORDER BY created_at",
                 [.text(recordingID.uuidString)]
             ) { statement in
-                guard
-                    let id = UUID(uuidString: text(statement, 0)),
-                    let ownerID = UUID(uuidString: text(statement, 1)),
-                    let kind = RecordingJobKind(rawValue: text(statement, 3)),
-                    let state = RecordingJobState(rawValue: text(statement, 4))
-                else { throw IndexError.invalidRow("recording_jobs") }
-                result.append(RecordingJob(
-                    id: id,
-                    recordingID: ownerID,
-                    chunkID: optionalUUID(statement, 2),
-                    kind: kind,
-                    state: state,
-                    attemptCount: Int(sqlite3_column_int64(statement, 5)),
-                    lastError: optionalText(statement, 6),
-                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7)),
-                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 8))
-                ))
+                result.append(try decodeJob(statement))
             }
             return result
         }
@@ -176,27 +166,47 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: [RecordingJob] = []
             try query(
-                "SELECT id, recording_id, chunk_id, kind, state, attempt_count, last_error, created_at, updated_at FROM recording_jobs WHERE kind = ? ORDER BY created_at",
+                "SELECT id, recording_id, chunk_id, processing_range_id, kind, state, attempt_count, last_error, created_at, updated_at FROM recording_jobs WHERE kind = ? ORDER BY created_at",
                 [.text(kind.rawValue)]
             ) { statement in
-                guard
-                    let id = UUID(uuidString: text(statement, 0)),
-                    let ownerID = UUID(uuidString: text(statement, 1)),
-                    let jobKind = RecordingJobKind(rawValue: text(statement, 3)),
-                    let state = RecordingJobState(rawValue: text(statement, 4))
-                else { throw IndexError.invalidRow("recording_jobs") }
-                guard states.contains(state) else { return }
-                result.append(RecordingJob(
-                    id: id,
-                    recordingID: ownerID,
-                    chunkID: optionalUUID(statement, 2),
-                    kind: jobKind,
-                    state: state,
-                    attemptCount: Int(sqlite3_column_int64(statement, 5)),
-                    lastError: optionalText(statement, 6),
-                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7)),
-                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 8))
-                ))
+                let job = try decodeJob(statement)
+                guard states.contains(job.state) else { return }
+                result.append(job)
+            }
+            return result
+        }
+    }
+
+    func importedAudioAsset(recordingID: UUID) throws -> ImportedAudioAsset? {
+        try lock.withLock {
+            var result: ImportedAudioAsset?
+            try query(
+                """
+                SELECT id, recording_id, relative_path, source_filename, source_uttype, duration_seconds,
+                       sample_rate, channel_count, byte_count, total_samples, imported_at, audio_removed_at,
+                       is_standardized
+                FROM imported_audio_assets WHERE recording_id = ?
+                """,
+                [.text(recordingID.uuidString)]
+            ) { statement in
+                result = try decodeImportedAsset(statement)
+            }
+            return result
+        }
+    }
+
+    func processingRanges(recordingID: UUID) throws -> [ProcessingRange] {
+        try lock.withLock {
+            var result: [ProcessingRange] = []
+            try query(
+                """
+                SELECT id, recording_id, asset_id, sequence, start_sample, end_sample, state,
+                       requires_continuation, attempt_count, last_error, created_at, updated_at
+                FROM processing_ranges WHERE recording_id = ? ORDER BY sequence
+                """,
+                [.text(recordingID.uuidString)]
+            ) { statement in
+                result.append(try decodeProcessingRange(statement))
             }
             return result
         }
@@ -259,6 +269,36 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         }
     }
 
+    /// Expired Files-imported private assets share Recording retention with mic audio.
+    func importedPurgeCandidates(at date: Date) throws -> [ImportedPurgeCandidate] {
+        try lock.withLock {
+            var result: [ImportedPurgeCandidate] = []
+            try query(
+                """
+                SELECT a.id, a.recording_id, a.relative_path
+                FROM imported_audio_assets a
+                JOIN recordings r ON r.id = a.recording_id
+                WHERE r.retention_expires_at <= ?
+                  AND r.retention_pinned = 0
+                  AND a.audio_removed_at IS NULL
+                ORDER BY a.imported_at
+                """,
+                [.double(date.timeIntervalSince1970)]
+            ) { statement in
+                guard
+                    let assetID = UUID(uuidString: text(statement, 0)),
+                    let recordingID = UUID(uuidString: text(statement, 1))
+                else { throw IndexError.invalidRow("imported purge candidate") }
+                result.append(ImportedPurgeCandidate(
+                    assetID: assetID,
+                    recordingID: recordingID,
+                    relativePath: text(statement, 2)
+                ))
+            }
+            return result
+        }
+    }
+
     var appliedEventCount: Int {
         lock.withLock {
             Int((try? scalarInt("SELECT COUNT(*) FROM journal_events")) ?? 0)
@@ -267,89 +307,208 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
 
     private func migrate() throws {
         let current = try scalarInt("PRAGMA user_version")
-        guard current <= 2 else {
-            throw IndexError.open("数据库版本 \(current) 高于当前应用支持的版本 2")
+        guard current <= 5 else {
+            throw IndexError.open("数据库版本 \(current) 高于当前应用支持的版本 5")
+        }
+        if current == 0 {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try createSchemaV3()
+                try execute("PRAGMA user_version = 5")
+                try execute("COMMIT")
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
+            return
         }
         if current == 1 {
             try execute("ALTER TABLE audio_chunks ADD COLUMN requires_continuation INTEGER NOT NULL DEFAULT 0")
             try execute("ALTER TABLE recording_jobs ADD COLUMN chunk_id TEXT")
             try execute("CREATE INDEX recording_jobs_chunk ON recording_jobs(recording_id, chunk_id)")
             try execute("PRAGMA user_version = 2")
-            return
         }
-        guard current == 0 else { return }
+        let afterV2 = try scalarInt("PRAGMA user_version")
+        if afterV2 == 2 {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try execute("ALTER TABLE recordings ADD COLUMN origin TEXT NOT NULL DEFAULT 'microphone'")
+                try execute("ALTER TABLE recordings ADD COLUMN source_filename TEXT")
+                try execute("ALTER TABLE recordings ADD COLUMN source_uttype TEXT")
+                try execute("ALTER TABLE recording_jobs ADD COLUMN processing_range_id TEXT")
+                try execute("CREATE INDEX recording_jobs_range ON recording_jobs(recording_id, processing_range_id)")
+                try execute("""
+                    CREATE TABLE imported_audio_assets(
+                        id TEXT PRIMARY KEY NOT NULL,
+                        recording_id TEXT NOT NULL UNIQUE REFERENCES recordings(id) ON DELETE CASCADE,
+                        relative_path TEXT NOT NULL UNIQUE,
+                        source_filename TEXT NOT NULL,
+                        source_uttype TEXT NOT NULL,
+                        duration_seconds REAL NOT NULL,
+                        sample_rate REAL,
+                        channel_count INTEGER,
+                        byte_count INTEGER,
+                        total_samples INTEGER NOT NULL,
+                        imported_at REAL NOT NULL,
+                        audio_removed_at REAL
+                    )
+                    """)
+                try execute("""
+                    CREATE TABLE processing_ranges(
+                        id TEXT PRIMARY KEY NOT NULL,
+                        recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+                        asset_id TEXT NOT NULL REFERENCES imported_audio_assets(id) ON DELETE CASCADE,
+                        sequence INTEGER NOT NULL,
+                        start_sample INTEGER NOT NULL,
+                        end_sample INTEGER NOT NULL,
+                        state TEXT NOT NULL,
+                        requires_continuation INTEGER NOT NULL DEFAULT 0,
+                        attempt_count INTEGER NOT NULL DEFAULT 0,
+                        last_error TEXT,
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL,
+                        UNIQUE(recording_id, sequence)
+                    )
+                    """)
+                try execute("CREATE INDEX processing_ranges_recording_sequence ON processing_ranges(recording_id, sequence)")
+                try execute("PRAGMA user_version = 3")
+                try execute("COMMIT")
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
+        }
+        let afterV3 = try scalarInt("PRAGMA user_version")
+        if afterV3 == 3 {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try execute("ALTER TABLE imported_audio_assets ADD COLUMN is_standardized INTEGER NOT NULL DEFAULT 0")
+                try execute("PRAGMA user_version = 4")
+                try execute("COMMIT")
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
+        }
+        let afterV4 = try scalarInt("PRAGMA user_version")
+        if afterV4 == 4 {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try execute("ALTER TABLE recordings ADD COLUMN language_mode TEXT NOT NULL DEFAULT 'zh_en_bilingual'")
+                try execute("PRAGMA user_version = 5")
+                try execute("COMMIT")
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
+        }
+    }
 
-        try execute("BEGIN IMMEDIATE")
-        do {
-            try execute("""
-                CREATE TABLE recordings(
-                    id TEXT PRIMARY KEY NOT NULL,
-                    started_at REAL NOT NULL,
-                    ended_at REAL,
-                    title TEXT,
-                    is_meeting INTEGER NOT NULL,
-                    state TEXT NOT NULL,
-                    retention_expires_at REAL NOT NULL,
-                    retention_pinned INTEGER NOT NULL,
-                    updated_at REAL NOT NULL
-                )
-                """)
-            try execute("""
-                CREATE TABLE audio_chunks(
-                    id TEXT PRIMARY KEY NOT NULL,
-                    recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
-                    relative_path TEXT NOT NULL UNIQUE,
-                    start_sample INTEGER NOT NULL,
-                    end_sample INTEGER NOT NULL,
-                    started_at REAL NOT NULL,
-                    ended_at REAL NOT NULL,
-                    state TEXT NOT NULL,
-                    retention_pinned INTEGER NOT NULL DEFAULT 0,
-                    audio_removed_at REAL,
-                    requires_continuation INTEGER NOT NULL DEFAULT 0
-                )
-                """)
-            try execute("CREATE INDEX audio_chunks_recording_sample ON audio_chunks(recording_id, start_sample)")
-            try execute("""
-                CREATE TABLE recording_jobs(
-                    id TEXT PRIMARY KEY NOT NULL,
-                    recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
-                    chunk_id TEXT,
-                    kind TEXT NOT NULL,
-                    state TEXT NOT NULL,
-                    attempt_count INTEGER NOT NULL,
-                    last_error TEXT,
-                    created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL
-                )
-                """)
-            try execute("CREATE INDEX recording_jobs_recording_state ON recording_jobs(recording_id, state)")
-            try execute("""
-                CREATE TABLE recording_gaps(
-                    id TEXT PRIMARY KEY NOT NULL,
-                    recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
-                    reason TEXT NOT NULL,
-                    start_sample INTEGER NOT NULL,
-                    end_sample INTEGER,
-                    started_at REAL NOT NULL,
-                    ended_at REAL
-                )
-                """)
-            try execute("CREATE INDEX recording_gaps_recording_sample ON recording_gaps(recording_id, start_sample)")
-            try execute("""
-                CREATE TABLE journal_events(
-                    event_id TEXT PRIMARY KEY NOT NULL,
-                    occurred_at REAL NOT NULL,
-                    kind TEXT NOT NULL
-                )
-                """)
-            try execute("CREATE INDEX recording_jobs_chunk ON recording_jobs(recording_id, chunk_id)")
-            try execute("PRAGMA user_version = 2")
-            try execute("COMMIT")
-        } catch {
-            try? execute("ROLLBACK")
-            throw error
-        }
+    private func createSchemaV3() throws {
+        try execute("""
+            CREATE TABLE recordings(
+                id TEXT PRIMARY KEY NOT NULL,
+                started_at REAL NOT NULL,
+                ended_at REAL,
+                title TEXT,
+                is_meeting INTEGER NOT NULL,
+                state TEXT NOT NULL,
+                retention_expires_at REAL NOT NULL,
+                retention_pinned INTEGER NOT NULL,
+                updated_at REAL NOT NULL,
+                origin TEXT NOT NULL DEFAULT 'microphone',
+                source_filename TEXT,
+                source_uttype TEXT,
+                language_mode TEXT NOT NULL DEFAULT 'zh_en_bilingual'
+            )
+            """)
+        try execute("""
+            CREATE TABLE audio_chunks(
+                id TEXT PRIMARY KEY NOT NULL,
+                recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+                relative_path TEXT NOT NULL UNIQUE,
+                start_sample INTEGER NOT NULL,
+                end_sample INTEGER NOT NULL,
+                started_at REAL NOT NULL,
+                ended_at REAL NOT NULL,
+                state TEXT NOT NULL,
+                retention_pinned INTEGER NOT NULL DEFAULT 0,
+                audio_removed_at REAL,
+                requires_continuation INTEGER NOT NULL DEFAULT 0
+            )
+            """)
+        try execute("CREATE INDEX audio_chunks_recording_sample ON audio_chunks(recording_id, start_sample)")
+        try execute("""
+            CREATE TABLE recording_jobs(
+                id TEXT PRIMARY KEY NOT NULL,
+                recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+                chunk_id TEXT,
+                processing_range_id TEXT,
+                kind TEXT NOT NULL,
+                state TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL,
+                last_error TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """)
+        try execute("CREATE INDEX recording_jobs_recording_state ON recording_jobs(recording_id, state)")
+        try execute("CREATE INDEX recording_jobs_chunk ON recording_jobs(recording_id, chunk_id)")
+        try execute("CREATE INDEX recording_jobs_range ON recording_jobs(recording_id, processing_range_id)")
+        try execute("""
+            CREATE TABLE recording_gaps(
+                id TEXT PRIMARY KEY NOT NULL,
+                recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+                reason TEXT NOT NULL,
+                start_sample INTEGER NOT NULL,
+                end_sample INTEGER,
+                started_at REAL NOT NULL,
+                ended_at REAL
+            )
+            """)
+        try execute("CREATE INDEX recording_gaps_recording_sample ON recording_gaps(recording_id, start_sample)")
+        try execute("""
+            CREATE TABLE journal_events(
+                event_id TEXT PRIMARY KEY NOT NULL,
+                occurred_at REAL NOT NULL,
+                kind TEXT NOT NULL
+            )
+            """)
+        try execute("""
+            CREATE TABLE imported_audio_assets(
+                id TEXT PRIMARY KEY NOT NULL,
+                recording_id TEXT NOT NULL UNIQUE REFERENCES recordings(id) ON DELETE CASCADE,
+                relative_path TEXT NOT NULL UNIQUE,
+                source_filename TEXT NOT NULL,
+                source_uttype TEXT NOT NULL,
+                duration_seconds REAL NOT NULL,
+                sample_rate REAL,
+                channel_count INTEGER,
+                byte_count INTEGER,
+                total_samples INTEGER NOT NULL,
+                imported_at REAL NOT NULL,
+                audio_removed_at REAL,
+                is_standardized INTEGER NOT NULL DEFAULT 0
+            )
+            """)
+        try execute("""
+            CREATE TABLE processing_ranges(
+                id TEXT PRIMARY KEY NOT NULL,
+                recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+                asset_id TEXT NOT NULL REFERENCES imported_audio_assets(id) ON DELETE CASCADE,
+                sequence INTEGER NOT NULL,
+                start_sample INTEGER NOT NULL,
+                end_sample INTEGER NOT NULL,
+                state TEXT NOT NULL,
+                requires_continuation INTEGER NOT NULL DEFAULT 0,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                UNIQUE(recording_id, sequence)
+            )
+            """)
+        try execute("CREATE INDEX processing_ranges_recording_sequence ON processing_ranges(recording_id, sequence)")
     }
 
     private func applyPayload(_ payload: RecordingJournalPayload, occurredAt: Date) throws {
@@ -357,8 +516,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         case let .recordingCreated(recording):
             try execute(
                 """
-                INSERT INTO recordings(id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO recordings(id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO NOTHING
                 """,
                 recording.bindings
@@ -385,8 +544,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         case let .jobUpserted(job):
             try execute(
                 """
-                INSERT INTO recording_jobs(id, recording_id, chunk_id, kind, state, attempt_count, last_error, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO recording_jobs(id, recording_id, chunk_id, processing_range_id, kind, state, attempt_count, last_error, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     state = excluded.state,
                     attempt_count = excluded.attempt_count,
@@ -424,6 +583,79 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                 "UPDATE audio_chunks SET state = ?, audio_removed_at = ? WHERE id = ?",
                 [.text(AudioChunkState.audioRemoved.rawValue), .double(removedAt.timeIntervalSince1970), .text(chunkID.uuidString)]
             )
+        case let .recordingTitleChanged(recordingID, title):
+            try execute(
+                "UPDATE recordings SET title = ?, updated_at = ? WHERE id = ?",
+                [title.sqliteValue, .double(occurredAt.timeIntervalSince1970), .text(recordingID.uuidString)]
+            )
+        case let .importedAudioAssetCreated(asset):
+            try execute(
+                """
+                INSERT INTO imported_audio_assets(
+                    id, recording_id, relative_path, source_filename, source_uttype, duration_seconds,
+                    sample_rate, channel_count, byte_count, total_samples, imported_at, audio_removed_at,
+                    is_standardized
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO NOTHING
+                """,
+                asset.bindings
+            )
+        case let .importedAudioAssetUpdated(asset):
+            try execute(
+                """
+                UPDATE imported_audio_assets SET
+                    relative_path = ?,
+                    source_filename = ?,
+                    source_uttype = ?,
+                    duration_seconds = ?,
+                    sample_rate = ?,
+                    channel_count = ?,
+                    byte_count = ?,
+                    total_samples = ?,
+                    audio_removed_at = ?,
+                    is_standardized = ?
+                WHERE id = ?
+                """,
+                [
+                    .text(asset.relativePath),
+                    .text(asset.sourceFilename),
+                    .text(asset.sourceUTType),
+                    .double(asset.durationSeconds),
+                    asset.sampleRate.map(RecordingIndex.Value.double) ?? .null,
+                    asset.channelCount.map { .int(Int64($0)) } ?? .null,
+                    asset.byteCount.map(RecordingIndex.Value.int) ?? .null,
+                    .int(asset.totalSamples),
+                    asset.audioRemovedAt.sqliteValue,
+                    .int(asset.isStandardized ? 1 : 0),
+                    .text(asset.id.uuidString),
+                ]
+            )
+        case let .importedAudioAssetRemoved(assetID, removedAt):
+            try execute(
+                "UPDATE imported_audio_assets SET audio_removed_at = ? WHERE id = ?",
+                [.double(removedAt.timeIntervalSince1970), .text(assetID.uuidString)]
+            )
+        case let .processingRangeUpserted(range):
+            try execute(
+                """
+                INSERT INTO processing_ranges(
+                    id, recording_id, asset_id, sequence, start_sample, end_sample, state,
+                    requires_continuation, attempt_count, last_error, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    state = excluded.state,
+                    requires_continuation = excluded.requires_continuation,
+                    attempt_count = excluded.attempt_count,
+                    last_error = excluded.last_error,
+                    updated_at = excluded.updated_at
+                """,
+                range.bindings
+            )
+        case let .processingRangeContinuationChanged(rangeID, requiresContinuation):
+            try execute(
+                "UPDATE processing_ranges SET requires_continuation = ? WHERE id = ?",
+                [.int(requiresContinuation ? 1 : 0), .text(rangeID.uuidString)]
+            )
         }
     }
 
@@ -432,6 +664,9 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
             let id = UUID(uuidString: text(statement, 0)),
             let state = RecordingState(rawValue: text(statement, 5))
         else { throw IndexError.invalidRow("recordings") }
+        let origin = RecordingOrigin(rawValue: optionalText(statement, 9) ?? "") ?? .microphone
+        let languageMode = TranscriptionLanguageMode(rawValue: optionalText(statement, 12) ?? "")
+            ?? .zhEnBilingual
         return Recording(
             id: id,
             startedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
@@ -443,7 +678,77 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                 expiresAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
                 isPinned: sqlite3_column_int(statement, 7) != 0
             ),
-            updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 8))
+            updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 8)),
+            origin: origin,
+            sourceFilename: optionalText(statement, 10),
+            sourceUTType: optionalText(statement, 11),
+            languageMode: languageMode
+        )
+    }
+
+    private func decodeJob(_ statement: OpaquePointer) throws -> RecordingJob {
+        guard
+            let id = UUID(uuidString: text(statement, 0)),
+            let ownerID = UUID(uuidString: text(statement, 1)),
+            let kind = RecordingJobKind(rawValue: text(statement, 4)),
+            let state = RecordingJobState(rawValue: text(statement, 5))
+        else { throw IndexError.invalidRow("recording_jobs") }
+        return RecordingJob(
+            id: id,
+            recordingID: ownerID,
+            chunkID: optionalUUID(statement, 2),
+            processingRangeID: optionalUUID(statement, 3),
+            kind: kind,
+            state: state,
+            attemptCount: Int(sqlite3_column_int64(statement, 6)),
+            lastError: optionalText(statement, 7),
+            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 8)),
+            updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 9))
+        )
+    }
+
+    private func decodeImportedAsset(_ statement: OpaquePointer) throws -> ImportedAudioAsset {
+        guard
+            let id = UUID(uuidString: text(statement, 0)),
+            let recordingID = UUID(uuidString: text(statement, 1))
+        else { throw IndexError.invalidRow("imported_audio_assets") }
+        return ImportedAudioAsset(
+            id: id,
+            recordingID: recordingID,
+            relativePath: text(statement, 2),
+            sourceFilename: text(statement, 3),
+            sourceUTType: text(statement, 4),
+            durationSeconds: sqlite3_column_double(statement, 5),
+            sampleRate: optionalDouble(statement, 6),
+            channelCount: optionalInt(statement, 7).map(Int.init),
+            byteCount: optionalInt(statement, 8),
+            totalSamples: sqlite3_column_int64(statement, 9),
+            importedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 10)),
+            audioRemovedAt: optionalDate(statement, 11),
+            isStandardized: sqlite3_column_int(statement, 12) != 0
+        )
+    }
+
+    private func decodeProcessingRange(_ statement: OpaquePointer) throws -> ProcessingRange {
+        guard
+            let id = UUID(uuidString: text(statement, 0)),
+            let recordingID = UUID(uuidString: text(statement, 1)),
+            let assetID = UUID(uuidString: text(statement, 2)),
+            let state = ProcessingRangeState(rawValue: text(statement, 6))
+        else { throw IndexError.invalidRow("processing_ranges") }
+        return ProcessingRange(
+            id: id,
+            recordingID: recordingID,
+            assetID: assetID,
+            sequence: Int(sqlite3_column_int64(statement, 3)),
+            startSample: sqlite3_column_int64(statement, 4),
+            endSample: sqlite3_column_int64(statement, 5),
+            state: state,
+            requiresContinuation: sqlite3_column_int(statement, 7) != 0,
+            attemptCount: Int(sqlite3_column_int64(statement, 8)),
+            lastError: optionalText(statement, 9),
+            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 10)),
+            updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 11))
         )
     }
 
@@ -544,6 +849,10 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         optionalText(statement, column).flatMap(UUID.init(uuidString:))
     }
 
+    private func optionalDouble(_ statement: OpaquePointer, _ column: Int32) -> Double? {
+        sqlite3_column_type(statement, column) == SQLITE_NULL ? nil : sqlite3_column_double(statement, column)
+    }
+
     private func optionalInt(_ statement: OpaquePointer, _ column: Int32) -> Int64? {
         sqlite3_column_type(statement, column) == SQLITE_NULL ? nil : sqlite3_column_int64(statement, column)
     }
@@ -568,6 +877,12 @@ private extension RecordingJournalEvent {
         case .retentionChanged: "retentionChanged"
         case .chunkPinChanged: "chunkPinChanged"
         case .chunkAudioRemoved: "chunkAudioRemoved"
+        case .recordingTitleChanged: "recordingTitleChanged"
+        case .importedAudioAssetCreated: "importedAudioAssetCreated"
+        case .importedAudioAssetUpdated: "importedAudioAssetUpdated"
+        case .importedAudioAssetRemoved: "importedAudioAssetRemoved"
+        case .processingRangeUpserted: "processingRangeUpserted"
+        case .processingRangeContinuationChanged: "processingRangeContinuationChanged"
         }
     }
 }
@@ -596,6 +911,10 @@ private extension Recording {
             .double(retention.expiresAt.timeIntervalSince1970),
             .int(retention.isPinned ? 1 : 0),
             .double(updatedAt.timeIntervalSince1970),
+            .text(origin.rawValue),
+            sourceFilename.sqliteValue,
+            sourceUTType.sqliteValue,
+            .text(languageMode.rawValue),
         ]
     }
 }
@@ -624,8 +943,48 @@ private extension RecordingJob {
             .text(id.uuidString),
             .text(recordingID.uuidString),
             chunkID.map { .text($0.uuidString) } ?? .null,
+            processingRangeID.map { .text($0.uuidString) } ?? .null,
             .text(kind.rawValue),
             .text(state.rawValue),
+            .int(Int64(attemptCount)),
+            lastError.sqliteValue,
+            .double(createdAt.timeIntervalSince1970),
+            .double(updatedAt.timeIntervalSince1970),
+        ]
+    }
+}
+
+private extension ImportedAudioAsset {
+    nonisolated var bindings: [RecordingIndex.Value] {
+        [
+            .text(id.uuidString),
+            .text(recordingID.uuidString),
+            .text(relativePath),
+            .text(sourceFilename),
+            .text(sourceUTType),
+            .double(durationSeconds),
+            sampleRate.map(RecordingIndex.Value.double) ?? .null,
+            channelCount.map { .int(Int64($0)) } ?? .null,
+            byteCount.map(RecordingIndex.Value.int) ?? .null,
+            .int(totalSamples),
+            .double(importedAt.timeIntervalSince1970),
+            audioRemovedAt.sqliteValue,
+            .int(isStandardized ? 1 : 0),
+        ]
+    }
+}
+
+private extension ProcessingRange {
+    nonisolated var bindings: [RecordingIndex.Value] {
+        [
+            .text(id.uuidString),
+            .text(recordingID.uuidString),
+            .text(assetID.uuidString),
+            .int(Int64(sequence)),
+            .int(startSample),
+            .int(endSample),
+            .text(state.rawValue),
+            .int(requiresContinuation ? 1 : 0),
             .int(Int64(attemptCount)),
             lastError.sqliteValue,
             .double(createdAt.timeIntervalSince1970),

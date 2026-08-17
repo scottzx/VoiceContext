@@ -8,7 +8,7 @@
 | 日期 | 2026-08-11 |
 | 来源 | iPhone 15 Pro 真机录音验证与用户反馈 |
 | 关联设计 | `DESIGN.md`、`docs/architecture/incremental-transcription.md`、`docs/architecture/recording-core.md` |
-| 当前状态 | 已确认范围；待按本文逐项修复并回归 |
+| 当前状态 | 已在 8789516 修复 BUG-01/02/03；看板 #51 已关闭；建议真机 >60s 冒烟确认 |
 
 ## 1. 问题摘要
 

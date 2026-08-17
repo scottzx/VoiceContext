@@ -1,0 +1,61 @@
+{
+  "schema": "voice-context/transcript@1",
+  "recording_id": "BA485C93-6D6E-42E9-ADDA-B8DA50B2CA7C",
+  "kind": "recording",
+  "state": "complete",
+  "revision": 1,
+  "title": "Schema Fixture",
+  "tags": ["fixture"],
+  "started_at": "2026-08-05T07:00:00.125Z",
+  "ended_at": "2026-08-05T07:02:00.125Z",
+  "timezone": "Asia/Shanghai",
+  "language": "zh",
+  "audio": {
+    "local_only": true,
+    "available_on_this_device": true,
+    "retention": "seven_days"
+  },
+  "speech_spans": [],
+  "speakers": [],
+  "segments": [
+    {
+      "id": "BA485C93-6D6E-42E9-ADDA-B8DA00000001",
+      "sequence": 1,
+      "started_at": "2026-08-05T07:00:00.125Z",
+      "offset_milliseconds": 0,
+      "text": "第一分钟的文本。",
+      "start_sample": 0,
+      "end_sample": 960000,
+      "source_chunk_id": "D1765381-81EC-4761-BDDF-8978200D4197",
+      "source_ranges": [
+        {
+          "source_kind": "audio_chunk",
+          "source_id": "D1765381-81EC-4761-BDDF-8978200D4197",
+          "start_sample": 0,
+          "end_sample": 960000
+        }
+      ],
+      "speech_span_ids": []
+    },
+    {
+      "id": "BA485C93-6D6E-42E9-ADDA-B8DA00000002",
+      "sequence": 2,
+      "started_at": "2026-08-05T07:01:00.125Z",
+      "offset_milliseconds": 60000,
+      "text": "第二分钟的文本。",
+      "start_sample": 960000,
+      "end_sample": 1920000,
+      "source_chunk_id": "E2765381-81EC-4761-BDDF-8978200D4198",
+      "source_ranges": [
+        {
+          "source_kind": "audio_chunk",
+          "source_id": "E2765381-81EC-4761-BDDF-8978200D4198",
+          "start_sample": 960000,
+          "end_sample": 1920000
+        }
+      ],
+      "speech_span_ids": []
+    }
+  ],
+  "gaps": []
+}

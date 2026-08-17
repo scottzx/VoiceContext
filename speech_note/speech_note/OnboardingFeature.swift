@@ -1,10 +1,11 @@
 import AVFAudio
+import AVFoundation
 import SwiftUI
 
 /// The choices made during first launch. They are intentionally kept separate
 /// from the eventual iCloud implementation: opting in must never make local
 /// recording depend on a cloud account or network.
-struct OnboardingPreferences {
+nonisolated struct OnboardingPreferences {
     static let completedKey = "onboarding.completed"
     static let documentSyncKey = "onboarding.documentSyncEnabled"
     static let encryptedVoiceprintSyncKey = "onboarding.encryptedVoiceprintSyncEnabled"
@@ -38,12 +39,71 @@ enum OnboardingStep: Int, CaseIterable {
     case trial
 }
 
+/// Shared microphone-boundary helpers for onboarding, settings, and start UX.
+/// Permission prompts never start capture; only an explicit start action may.
+///
+/// Own enum avoids naming `AVAudioApplication.RecordPermission`, which does not
+/// exist as a nested type on iPhoneOS 26.5 (`NS_SWIFT_NAME` imports it as the
+/// awkward lowercase `AVAudioApplication.recordPermission`). Values are read
+/// from `AVAudioApplication.shared.recordPermission` via pattern matching.
+enum MicrophonePermission: Equatable, Sendable {
+    case undetermined
+    case denied
+    case granted
+
+    static var current: MicrophonePermission {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted: .granted
+        case .denied: .denied
+        case .undetermined: .undetermined
+        @unknown default: .undetermined
+        }
+    }
+}
+
+enum MicrophoneAccess {
+    typealias Permission = MicrophonePermission
+
+    static var recordPermission: Permission { Permission.current }
+
+    static var isDenied: Bool { recordPermission == .denied }
+    static var isGranted: Bool { recordPermission == .granted }
+
+    static let deniedBrowseMessage = "麦克风权限未允许。你仍可浏览已有记录和文稿。"
+    static let deniedStartMessage = "未获得麦克风权限，无法开始录音。你仍可浏览记录；可在系统设置中允许麦克风。"
+    static let undeterminedHint = "只有在你点按“开始录音”后才会采集麦克风。"
+
+    static var settingsURL: URL {
+        URL(string: UIApplication.openSettingsURLString)!
+    }
+
+    static func description(for permission: Permission) -> String {
+        switch permission {
+        case .granted: "已允许"
+        case .denied: "未允许；仍可浏览记录"
+        case .undetermined: "尚未请求"
+        }
+    }
+
+    /// Requests the system permission prompt when undetermined. Never opens a
+    /// capture session — callers must still wait for an explicit start action.
+    @discardableResult
+    static func requestPermissionIfNeeded() async -> Permission {
+        let current = recordPermission
+        if current != .undetermined { return current }
+        let granted = await withCheckedContinuation { continuation in
+            AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
+        }
+        return granted ? .granted : .denied
+    }
+}
+
 struct OnboardingFlowView: View {
     @AppStorage(OnboardingPreferences.completedKey) private var hasCompleted = false
     @AppStorage(OnboardingPreferences.documentSyncKey) private var documentSyncEnabled = false
     @AppStorage(OnboardingPreferences.encryptedVoiceprintSyncKey) private var encryptedVoiceprintSyncEnabled = false
     @State private var step: OnboardingStep = .privacy
-    @State private var microphonePermission = AVAudioApplication.shared.recordPermission
+    @State private var microphonePermission = MicrophoneAccess.recordPermission
 
     var body: some View {
         NavigationStack {
@@ -104,6 +164,7 @@ struct OnboardingFlowView: View {
                 OnboardingFact(symbol: "lock", text: "录音、转写和说话人处理在设备本地完成。")
                 OnboardingFact(symbol: "calendar", text: "原始音频默认保留 7 天；你可逐条选择长期保留。")
                 OnboardingFact(symbol: "icloud", text: "iCloud 只可能同步文本和结构化文档，从不上传原始音频。")
+                OnboardingFact(symbol: "record.circle", text: "录音时始终显示状态和可独立操作的停止入口。")
             }
 
             Spacer()
@@ -126,14 +187,14 @@ struct OnboardingFlowView: View {
         VStack(alignment: .leading, spacing: 24) {
             Spacer(minLength: 20)
 
-            Text("第 1 步，共 3 步")
+            Text(TrialQuotaLedger.isManualTrialEnabled ? "第 1 步，共 3 步" : "第 1 步，共 2 步")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("让 VoiceContext 听见你主动开始的记录。")
                     .font(.title2.weight(.semibold))
-                Text("只有在你点按“开始录音”后才会采集麦克风。你可以随时在系统设置中更改授权。")
+                Text(MicrophoneAccess.undeterminedHint + " 你可以随时在系统设置中更改授权。")
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
@@ -152,21 +213,24 @@ struct OnboardingFlowView: View {
             Spacer()
 
             if microphonePermission == .denied {
-                Text("麦克风权限尚未允许。你可以继续浏览，或前往系统设置授权。")
+                Text(MicrophoneAccess.deniedBrowseMessage)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                Link("前往系统设置", destination: URL(string: UIApplication.openSettingsURLString)!)
+                Link("前往系统设置", destination: MicrophoneAccess.settingsURL)
                     .buttonStyle(.bordered)
                     .frame(maxWidth: .infinity, minHeight: 44)
             } else if microphonePermission == .granted {
                 Label("麦克风已允许", systemImage: "checkmark.circle")
                     .foregroundStyle(.secondary)
             } else {
-                Button("允许麦克风") { requestMicrophonePermission() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.primary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
+                Button("允许麦克风") {
+                    Task { await requestMicrophonePermission() }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.primary)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .accessibilityHint("只请求权限，不会开始录音")
             }
 
             if microphonePermission == .granted {
@@ -178,11 +242,12 @@ struct OnboardingFlowView: View {
                 Button("暂不允许") { step = .iCloud }
                     .buttonStyle(.bordered)
                     .frame(maxWidth: .infinity, minHeight: 52)
+                    .accessibilityHint("继续引导且不开始录音")
             }
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 24)
-        .onAppear { microphonePermission = AVAudioApplication.shared.recordPermission }
+        .onAppear { microphonePermission = MicrophoneAccess.recordPermission }
     }
 
     private var iCloudStep: some View {
@@ -208,19 +273,30 @@ struct OnboardingFlowView: View {
             }
 
             Section {
-                Text("当前版本会保存你的选择；同步功能可用后才会按此选择工作。iCloud 不可用时，文档仍保存在本机。")
+                Text("公开文档与加密声纹同步相互独立。iCloud 不可用时，加密档案只保留在本机，不阻塞录音与转写。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .safeAreaInset(edge: .bottom) {
-            Button("继续") { step = .trial }
+            Button(TrialQuotaLedger.isManualTrialEnabled ? "继续" : "开始使用") {
+                if TrialQuotaLedger.isManualTrialEnabled {
+                    step = .trial
+                } else {
+                    completeOnboarding()
+                }
+            }
                 .buttonStyle(.borderedProminent)
                 .tint(.primary)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
                 .background(.bar)
+                .accessibilityHint(
+                    TrialQuotaLedger.isManualTrialEnabled
+                        ? "继续了解试用"
+                        : "进入记录页，不会自动开始录音"
+                )
         }
     }
 
@@ -233,14 +309,14 @@ struct OnboardingFlowView: View {
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("60 分钟免费本地转写。")
+                Text("首次打开后 72 小时免费试用。")
                     .font(.title2.weight(.semibold))
-                Text("额度按实际提交给 SenseVoice 的语音时长计算；静音、暂停和未提交模型的录音不计入。")
+                Text("试用自首次打开应用起连续计时，期内转写不按语音秒扣减；到期后可一次性永久解锁。")
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
 
-            Label("额度用尽后仍可录音和保存音频；转写会等待永久解锁。", systemImage: "lock.open")
+            Label("试用到期后仍可录音和保存音频；转写会等待永久解锁。", systemImage: "lock.open")
                 .font(.subheadline)
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -252,17 +328,14 @@ struct OnboardingFlowView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.primary)
                 .frame(maxWidth: .infinity, minHeight: 52)
+                .accessibilityHint("进入记录页，不会自动开始录音")
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 24)
     }
 
-    private func requestMicrophonePermission() {
-        AVAudioApplication.requestRecordPermission { granted in
-            DispatchQueue.main.async {
-                microphonePermission = granted ? .granted : .denied
-            }
-        }
+    private func requestMicrophonePermission() async {
+        microphonePermission = await MicrophoneAccess.requestPermissionIfNeeded()
     }
 
     private func completeOnboarding() {
@@ -271,7 +344,7 @@ struct OnboardingFlowView: View {
 }
 
 struct PrivacyAndPermissionsView: View {
-    @State private var microphonePermission = AVAudioApplication.shared.recordPermission
+    @State private var microphonePermission = MicrophoneAccess.recordPermission
 
     var body: some View {
         List {
@@ -292,15 +365,35 @@ struct PrivacyAndPermissionsView: View {
 
             Section {
                 LabeledContent("麦克风") {
-                    Text(permissionDescription)
+                    Text(MicrophoneAccess.description(for: microphonePermission))
                         .foregroundStyle(.secondary)
                 }
 
                 if microphonePermission == .denied {
-                    Link("前往系统设置", destination: URL(string: UIApplication.openSettingsURLString)!)
+                    Text(MicrophoneAccess.deniedBrowseMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Link("前往系统设置", destination: MicrophoneAccess.settingsURL)
                 }
+
+                Text("从「照片与视频」导入时，系统选择器只共享你选中的视频；应用会抽取音轨并在本地转写。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             } header: {
                 Text("权限")
+            }
+
+            Section {
+                Text("语音备忘录：在「语音备忘录」中分享/存储到「文件」，再回到 VoiceContext 用「导入 → 文件」选择该音频。v1 不提供 Share Extension。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Text("相册视频：首页「导入 → 照片与视频」选择视频；不设产品时长上限，长视频会抽取音轨后排队处理。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("导入说明")
+            } footer: {
+                Text("不支持的格式会显示可读错误，且不会创建半残录音记录。")
             }
 
             Section {
@@ -311,16 +404,7 @@ struct PrivacyAndPermissionsView: View {
             }
         }
         .navigationTitle("隐私与权限")
-        .onAppear { microphonePermission = AVAudioApplication.shared.recordPermission }
-    }
-
-    private var permissionDescription: String {
-        switch microphonePermission {
-        case .granted: "已允许"
-        case .denied: "未允许；仍可浏览记录"
-        case .undetermined: "尚未请求"
-        @unknown default: "状态未知"
-        }
+        .onAppear { microphonePermission = MicrophoneAccess.recordPermission }
     }
 }
 
@@ -328,29 +412,52 @@ struct ThirdPartyLicensesView: View {
     var body: some View {
         List {
             Section {
-                Text("以下归因内置在 App 中，可离线查看。外部许可链接仅用于查阅原始文本；不会影响本地录音和文稿。")
+                Text("以下归因与审核清单内置在 App 中，可离线查看。外部许可链接仅用于查阅原始文本；不会影响本地录音和文稿。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
-            ForEach(ThirdPartyAttribution.catalog) { attribution in
-                NavigationLink {
-                    ThirdPartyLicenseDetailView(attribution: attribution)
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(attribution.name)
-                            .font(.body.weight(.medium))
-                        Text(attribution.summary)
-                            .font(.subheadline)
+            Section("法律审核清单") {
+                ForEach(LegalReviewChecklist.items) { item in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(item.title)
+                                .font(.body.weight(.medium))
+                            Spacer(minLength: 8)
+                            Text(item.statusLabel)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(item.status == .pendingLegalReview ? Color.orange : Color.secondary)
+                        }
+                        Text(item.detail)
+                            .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
+                    .accessibilityElement(children: .combine)
+                }
+
+                if LegalReviewChecklist.blocksCommercialRelease {
+                    Label("商业发布前须关闭全部“待法律审核”项。", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                        .font(.footnote)
                 }
             }
 
-            Section("发布前审核") {
-                Label("SenseVoice / FunASR 模型商业许可仍需法律审核后才能发布。", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
+            Section("第三方归因") {
+                ForEach(ThirdPartyAttribution.catalog) { attribution in
+                    NavigationLink {
+                        ThirdPartyLicenseDetailView(attribution: attribution)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(attribution.name)
+                                .font(.body.weight(.medium))
+                            Text(attribution.summary)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
             }
         }
         .navigationTitle("第三方许可与归因")
@@ -372,6 +479,99 @@ private struct OnboardingFact: View {
     }
 }
 
+enum LegalReviewStatus: String, Sendable {
+    case recorded
+    case pendingLegalReview
+    case satisfied
+
+    var label: String {
+        switch self {
+        case .recorded: "已记录"
+        case .pendingLegalReview: "待法律审核"
+        case .satisfied: "已满足"
+        }
+    }
+}
+
+struct LegalReviewChecklistItem: Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String
+    let detail: String
+    let status: LegalReviewStatus
+    let relatedAttributionName: String?
+
+    var statusLabel: String { status.label }
+}
+
+enum LegalReviewChecklist {
+    static let items: [LegalReviewChecklistItem] = [
+        .init(
+            id: "funasr-model-license",
+            title: "SenseVoice / FunASR 模型商业许可",
+            detail: "商业发布前须完成 FunASR Model License 法律审核并留下结论。",
+            status: .pendingLegalReview,
+            relatedAttributionName: "SenseVoice Small / FunASR"
+        ),
+        .init(
+            id: "transcribe-cpp-mit",
+            title: "transcribe.cpp MIT 归因",
+            detail: "发布包保留版权声明与 MIT 许可文本。",
+            status: .recorded,
+            relatedAttributionName: "transcribe.cpp"
+        ),
+        .init(
+            id: "sherpa-onnx-apache",
+            title: "sherpa-onnx Apache 2.0 NOTICE",
+            detail: "遵守 Apache 2.0 的 NOTICE 与归因要求。",
+            status: .recorded,
+            relatedAttributionName: "sherpa-onnx"
+        ),
+        .init(
+            id: "onnxruntime-mit",
+            title: "ONNX Runtime MIT 归因",
+            detail: "发布时保留版权与许可文本。",
+            status: .recorded,
+            relatedAttributionName: "ONNX Runtime"
+        ),
+        .init(
+            id: "silero-vad-mit",
+            title: "Silero VAD MIT 归因",
+            detail: "发布时保留版权与许可文本。",
+            status: .recorded,
+            relatedAttributionName: "Silero VAD"
+        ),
+        .init(
+            id: "camplusplus-license",
+            title: "CAM++ / 3D-Speaker 许可复核",
+            detail: "发布前复核模型与上游依赖的适用许可。",
+            status: .pendingLegalReview,
+            relatedAttributionName: "CAM++ / 3D-Speaker"
+        ),
+        .init(
+            id: "offline-attribution-ui",
+            title: "应用内离线归因页",
+            detail: "设置页可离线浏览全部运行时与模型归因，不依赖网络。",
+            status: .satisfied,
+            relatedAttributionName: nil
+        ),
+        .init(
+            id: "microphone-usage-copy",
+            title: "麦克风用途说明",
+            detail: "Info.plist NSMicrophoneUsageDescription 说明仅在用户主动开始后录音。",
+            status: .satisfied,
+            relatedAttributionName: nil
+        ),
+    ]
+
+    static var blocksCommercialRelease: Bool {
+        items.contains { $0.status == .pendingLegalReview }
+    }
+
+    static var attributionNamesCovered: Set<String> {
+        Set(items.compactMap(\.relatedAttributionName))
+    }
+}
+
 struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
     let name: String
     let summary: String
@@ -379,6 +579,8 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
     let sourceURL: URL
     let licenseURL: URL
     let reviewStatus: String
+    /// Short notice readable offline; not a substitute for the full license text.
+    let offlineLicenseText: String
 
     var id: String { name }
 
@@ -389,7 +591,10 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             license: "FunASR Model License",
             sourceURL: URL(string: "https://huggingface.co/FunAudioLLM/SenseVoiceSmall")!,
             licenseURL: URL(string: "https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE")!,
-            reviewStatus: "商业发布前须完成 FunASR 模型许可法律审核。"
+            reviewStatus: "商业发布前须完成 FunASR 模型许可法律审核。",
+            offlineLicenseText: """
+            FunASR Model License 约束模型权重的使用与分发。VoiceContext 仅在设备本地推理 SenseVoice Small；商业发布前必须完成法律审核并保留审核结论。完整条款见许可原文链接。
+            """
         ),
         .init(
             name: "transcribe.cpp",
@@ -397,7 +602,10 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             license: "MIT License",
             sourceURL: URL(string: "https://github.com/handy-computer/transcribe.cpp")!,
             licenseURL: URL(string: "https://opensource.org/license/mit")!,
-            reviewStatus: "已记录为 MIT 许可；发布时保留版权与许可文本。"
+            reviewStatus: "已记录为 MIT 许可；发布时保留版权与许可文本。",
+            offlineLicenseText: """
+            MIT License：在保留版权声明与许可声明的前提下，允许使用、复制、修改、合并、发布、分发、再许可和/或出售软件副本。软件按“原样”提供，不附带明示或暗示担保。
+            """
         ),
         .init(
             name: "sherpa-onnx",
@@ -405,7 +613,10 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             license: "Apache License 2.0",
             sourceURL: URL(string: "https://github.com/k2-fsa/sherpa-onnx")!,
             licenseURL: URL(string: "https://github.com/k2-fsa/sherpa-onnx/blob/master/LICENSE")!,
-            reviewStatus: "发布时须遵守 Apache 2.0 的 NOTICE 与归因要求。"
+            reviewStatus: "发布时须遵守 Apache 2.0 的 NOTICE 与归因要求。",
+            offlineLicenseText: """
+            Apache License 2.0：允许使用、修改与分发，条件包括保留版权、许可、NOTICE 声明，并说明对文件的重大修改。专利授权随贡献提供；商标权不授予。完整条款见许可原文。
+            """
         ),
         .init(
             name: "ONNX Runtime",
@@ -413,7 +624,10 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             license: "MIT License",
             sourceURL: URL(string: "https://github.com/microsoft/onnxruntime")!,
             licenseURL: URL(string: "https://github.com/microsoft/onnxruntime/blob/main/LICENSE")!,
-            reviewStatus: "已记录为 MIT 许可；发布时保留版权与许可文本。"
+            reviewStatus: "已记录为 MIT 许可；发布时保留版权与许可文本。",
+            offlineLicenseText: """
+            MIT License：在保留版权声明与许可声明的前提下，允许使用、复制、修改、合并、发布、分发、再许可和/或出售软件副本。软件按“原样”提供，不附带明示或暗示担保。
+            """
         ),
         .init(
             name: "Silero VAD",
@@ -421,7 +635,10 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             license: "MIT License",
             sourceURL: URL(string: "https://github.com/snakers4/silero-vad")!,
             licenseURL: URL(string: "https://github.com/snakers4/silero-vad/blob/master/LICENSE")!,
-            reviewStatus: "已记录为 MIT 许可；发布时保留版权与许可文本。"
+            reviewStatus: "已记录为 MIT 许可；发布时保留版权与许可文本。",
+            offlineLicenseText: """
+            MIT License：在保留版权声明与许可声明的前提下，允许使用、复制、修改、合并、发布、分发、再许可和/或出售软件副本。软件按“原样”提供，不附带明示或暗示担保。
+            """
         ),
         .init(
             name: "CAM++ / 3D-Speaker",
@@ -429,7 +646,10 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             license: "项目 LICENSE（发布前复核）",
             sourceURL: URL(string: "https://github.com/modelscope/3D-Speaker")!,
             licenseURL: URL(string: "https://github.com/modelscope/3D-Speaker/blob/main/LICENSE")!,
-            reviewStatus: "发布前应由法务复核模型与上游依赖的适用许可。"
+            reviewStatus: "发布前应由法务复核模型与上游依赖的适用许可。",
+            offlineLicenseText: """
+            上游项目以其仓库 LICENSE 为准。VoiceContext 仅在设备本地使用说话人 embedding；商业发布前须复核许可兼容性并保留结论。完整条款见许可原文链接。
+            """
         ),
     ]
 }
@@ -442,6 +662,12 @@ private struct ThirdPartyLicenseDetailView: View {
             Section("归因") {
                 LabeledContent("用途", value: attribution.summary)
                 LabeledContent("许可", value: attribution.license)
+            }
+
+            Section("离线许可说明") {
+                Text(attribution.offlineLicenseText.trimmingCharacters(in: .whitespacesAndNewlines))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             Section("审核状态") {

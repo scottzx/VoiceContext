@@ -46,7 +46,7 @@ struct RecordingCoreTests {
 
         let index = try RecordingIndex(url: root.appendingPathComponent("index.sqlite"))
 
-        #expect(index.schemaVersion == 2)
+        #expect(index.schemaVersion == 5)
         #expect(index.appliedEventCount == 0)
     }
 
@@ -430,6 +430,111 @@ struct RecordingCoreTests {
         #expect(completedJob.attemptCount == 2)
         #expect(await executor.recordingIDs == [recording.id])
         #expect(await outcomes.values == [.init(recordingID: recording.id, state: .completed)])
+    }
+
+    @Test func schedulerAdmissionDefersThermalWithoutSubmittingMetalWork() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let recording = Recording(startedAt: .distantPast, state: .processing)
+        try await repository.createRecording(recording, at: recording.startedAt)
+        let gate = InferenceLifecycleGate()
+        let executor = SchedulerExecutorProbe()
+        let scheduler = ForegroundTranscriptionScheduler(
+            repository: repository,
+            lifecycleGate: gate,
+            admissionPolicy: TranscriptionAdmissionPolicy(
+                thermalState: { .serious },
+                isPurchaseLocked: { false }
+            )
+        ) { recordingID in
+            try await gate.beginMetalWork()
+            await executor.record(recordingID)
+            await gate.endMetalWork()
+        }
+
+        try await scheduler.enqueue(recordingID: recording.id, chunkID: UUID()) { _ in }
+        await scheduler.waitForIdle()
+
+        #expect(await executor.recordingIDs.isEmpty)
+        #expect(await gate.metrics().submittedMetalWork == 0)
+        let job = try #require(await repository.jobs(recordingID: recording.id).first)
+        #expect(job.state == .pending)
+        #expect(job.attemptCount == 0)
+        #expect(job.lastError == "deferredUntilThermalImproves")
+    }
+
+    @Test func schedulerAdmissionLocksPendingPurchaseWithoutSubmittingMetalWork() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let recording = Recording(startedAt: .distantPast, state: .processing)
+        try await repository.createRecording(recording, at: recording.startedAt)
+        let gate = InferenceLifecycleGate()
+        let executor = SchedulerExecutorProbe()
+        let scheduler = ForegroundTranscriptionScheduler(
+            repository: repository,
+            lifecycleGate: gate,
+            admissionPolicy: TranscriptionAdmissionPolicy(
+                thermalState: { .nominal },
+                isPurchaseLocked: { true }
+            )
+        ) { recordingID in
+            try await gate.beginMetalWork()
+            await executor.record(recordingID)
+            await gate.endMetalWork()
+        }
+
+        try await scheduler.enqueue(recordingID: recording.id, chunkID: UUID()) { _ in }
+        await scheduler.waitForIdle()
+
+        #expect(await executor.recordingIDs.isEmpty)
+        #expect(await gate.metrics().submittedMetalWork == 0)
+        let job = try #require(await repository.jobs(recordingID: recording.id).first)
+        #expect(job.state == .pending)
+        #expect(job.lastError == "lockedPendingPurchase")
+        #expect(
+            RecordingProcessingState.resolve(
+                legacyRecordingState: .processing,
+                jobs: [job]
+            ) == .lockedPendingPurchase
+        )
+    }
+
+    @Test func duplicateForegroundAndResumePendingJobsDoesNotDoubleRun() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let recording = Recording(startedAt: .distantPast, state: .processing)
+        try await repository.createRecording(recording, at: recording.startedAt)
+        let createdAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let running = RecordingJob(
+            id: UUID(),
+            recordingID: recording.id,
+            chunkID: UUID(),
+            kind: .transcription,
+            state: .running,
+            attemptCount: 1,
+            lastError: nil,
+            createdAt: createdAt,
+            updatedAt: createdAt
+        )
+        try await repository.upsertJob(running, at: createdAt)
+        let executor = SchedulerExecutorProbe()
+        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { recordingID in
+            await executor.record(recordingID)
+        }
+
+        try await scheduler.resumePendingJobs { _ in }
+        try await scheduler.resumePendingJobs { _ in }
+        await scheduler.enteredForeground()
+        await scheduler.enteredForeground()
+        await scheduler.waitForIdle()
+
+        #expect(await executor.recordingIDs == [recording.id])
+        let job = try #require(await repository.jobs(recordingID: recording.id).first)
+        #expect(job.state == .completed)
+        #expect(job.attemptCount == 2)
     }
 
     @Test @MainActor func processingOutcomeCompletesShortRecordingAndKeepsNoSpeechFailureVisible() async throws {
@@ -848,7 +953,9 @@ struct RecordingCoreTests {
         #expect(capture.stopCount == 1)
         #expect(await persistence.attemptedChunkIDs == [storedChunk.id, storedChunk.id])
         #expect(storedChunk.endSample == 320_000)
-        #expect(coordinator.presentationState == .processing)
+        #expect(coordinator.presentationState == .idle)
+        #expect(coordinator.captureState == .idle)
+        #expect(coordinator.activeRecordingID == nil)
         #expect(try await repository.recording(id: recordingID)?.state == .processing)
     }
 
@@ -942,6 +1049,78 @@ struct RecordingCoreTests {
         ])
     }
 
+    @Test func presentationProgressSeparatesCaptureFromProcessingAndReportsTranscribedUpTo() {
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(125),
+            state: .processing
+        )
+        let pending = RecordingJob(
+            id: UUID(),
+            recordingID: recording.id,
+            chunkID: UUID(),
+            kind: .transcription,
+            state: .pending,
+            attemptCount: 0,
+            lastError: "deferredUntilForeground",
+            createdAt: startedAt,
+            updatedAt: startedAt
+        )
+        let progress = RecordingPresentationProgress.resolve(
+            recording: recording,
+            jobs: [pending],
+            liveCaptureState: nil,
+            lastFinalizedTranscriptSample: 96_000,
+            sampleRate: 16_000
+        )
+        #expect(progress.capture == .idle)
+        #expect(progress.processing == .deferredUntilForeground)
+        #expect(progress.transcribedUpTo == 6)
+        #expect(progress.outstandingItemCount == 1)
+        #expect(progress.canRetry == false)
+        #expect(RecordingStatusStyle.transcribedUpToText(progress.transcribedUpTo) == "已转写至 +0:06")
+        #expect(RecordingStatusStyle.outstandingItemsText(progress.outstandingItemCount) == "还剩 1 项")
+        #expect(RecordingStatusStyle.processingText(for: .needsAttention).contains("重试"))
+        #expect(RecordingStatusStyle.processingText(for: .complete) == "全部完成")
+    }
+
+    @Test @MainActor func stopReleasesCaptureChromeWhileRecordingKeepsProcessingState() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+        let firstID = try await coordinator.start()
+        capture.currentSample = 16_000
+        try await coordinator.stop()
+
+        #expect(coordinator.presentationState == .idle)
+        #expect(coordinator.captureState == .idle)
+        #expect(coordinator.activeRecordingID == nil)
+        #expect(try await repository.recording(id: firstID)?.state == .processing)
+
+        let secondID = try await coordinator.start()
+        #expect(secondID != firstID)
+        #expect(coordinator.presentationState == .recording)
+        #expect(coordinator.activeRecordingID == secondID)
+        #expect(try await coordinator.lifecycleState(recordingID: firstID) == .init(
+            recordingID: firstID,
+            capture: .idle,
+            processing: .processing
+        ))
+        #expect(try await coordinator.lifecycleState(recordingID: secondID) == .init(
+            recordingID: secondID,
+            capture: .recording,
+            processing: .idle
+        ))
+    }
+
     @Test func illegalRecordingStateTransitionsAreRejected() throws {
         var machine = RecordingStateMachine(state: .recording)
         #expect(try machine.apply(.pause) == .paused)
@@ -1017,7 +1196,9 @@ struct RecordingCoreTests {
 
         try await coordinator.stop()
         #expect(capture.stopCount == 1)
-        #expect(coordinator.presentationState == .processing)
+        #expect(coordinator.presentationState == .idle)
+        #expect(coordinator.captureState == .idle)
+        #expect(coordinator.activeRecordingID == nil)
         #expect(try await repository.recording(id: recordingID)?.state == .processing)
         let gaps = try await repository.gaps(recordingID: recordingID)
         #expect(gaps.count == 1)
@@ -1341,6 +1522,987 @@ struct RecordingCoreTests {
         #expect(decoded.segments.first?.offsetMilliseconds == 1_000)
     }
 
+    @Test func transcriptSchemaFixturePassesRoundTripAndMarkdownConsistency() async throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/transcript_v1_schema_fixture.json")
+        let fixtureData = try Data(contentsOf: fixtureURL)
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try TranscriptDocumentStore(rootURL: root)
+        let recordingID = UUID(uuidString: "BA485C93-6D6E-42E9-ADDA-B8DA50B2CA7C")!
+        try fixtureData.write(to: await store.jsonURL(for: recordingID))
+
+        let document = try #require(await store.document(recordingID: recordingID))
+        #expect(document.schema == TranscriptDocumentV1.schema)
+        #expect(document.revision == 1)
+        #expect(document.segments.map(\.sequence) == [1, 2])
+        #expect(document.segments.map(\.offsetMilliseconds) == [0, 60_000])
+        #expect(document.segments.map(\.text) == ["第一分钟的文本。", "第二分钟的文本。"])
+        #expect(document.segments.map(\.startSample) == [0, 960_000])
+        #expect(document.segments.map(\.endSample) == [960_000, 1_920_000])
+        #expect(document.segments[0].sourceRanges.map(\.sourceID) == [
+            UUID(uuidString: "D1765381-81EC-4761-BDDF-8978200D4197")!
+        ])
+
+        try await store.write(document)
+        let reloaded = try #require(await store.document(recordingID: recordingID))
+        #expect(reloaded == document)
+        let markdown = try #require(await store.markdown(recordingID: recordingID))
+        #expect(markdown == TranscriptMarkdownRenderer.render(reloaded))
+        #expect(markdown.contains("schema: voice-context/transcript@1"))
+        #expect(markdown.contains("revision: 1"))
+        #expect(markdown.contains("第一分钟的文本。"))
+        #expect(markdown.contains("第二分钟的文本。"))
+    }
+
+    @Test func transcriptSequenceIsDerivedByChunkStartTimeNotSubmissionOrder() {
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(120),
+            state: .processing
+        )
+        let later = AudioChunk(
+            id: UUID(uuidString: "20000000-0000-0000-0000-000000000002")!,
+            recordingID: recording.id,
+            relativePath: "Recordings/later.m4a",
+            startSample: 960_000,
+            endSample: 1_920_000,
+            startedAt: startedAt.addingTimeInterval(60),
+            endedAt: startedAt.addingTimeInterval(120)
+        )
+        let earlier = AudioChunk(
+            id: UUID(uuidString: "20000000-0000-0000-0000-000000000001")!,
+            recordingID: recording.id,
+            relativePath: "Recordings/earlier.m4a",
+            startSample: 0,
+            endSample: 960_000,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(60)
+        )
+        let document = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [later, earlier],
+            // Intentionally reversed relative to absolute time.
+            segmentTexts: [
+                (chunkID: later.id, text: "后到的一分钟"),
+                (chunkID: earlier.id, text: "先发生的一分钟"),
+            ],
+            language: "zh",
+            state: .processing
+        )
+
+        #expect(document.segments.map(\.sequence) == [1, 2])
+        #expect(document.segments.map(\.sourceChunkID) == [earlier.id, later.id])
+        #expect(document.segments.map(\.offsetMilliseconds) == [0, 60_000])
+        #expect(document.segments.map(\.text) == ["先发生的一分钟", "后到的一分钟"])
+    }
+
+    @Test func transcriptAppendIsIdempotentAndBumpsRevisionWithoutDuplicateSegments() {
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(120),
+            state: .processing
+        )
+        let first = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/first.m4a",
+            startSample: 0,
+            endSample: 960_000,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(60)
+        )
+        let second = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/second.m4a",
+            startSample: 960_000,
+            endSample: 1_920_000,
+            startedAt: startedAt.addingTimeInterval(60),
+            endedAt: startedAt.addingTimeInterval(120)
+        )
+        let initial = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [first, second],
+            segmentTexts: [(chunkID: first.id, text: "第一段")],
+            language: "zh",
+            state: .processing
+        )
+        let once = initial.appending(
+            recording: recording,
+            chunks: [first, second],
+            text: "第二段",
+            sourceChunkID: second.id
+        )
+        let retry = once.appending(
+            recording: recording,
+            chunks: [first, second],
+            text: "第二段-重试",
+            sourceChunkID: second.id,
+            replacingSourceChunkIDs: [second.id]
+        )
+
+        #expect(initial.revision == 1)
+        #expect(once.revision == 2)
+        #expect(retry.revision == 3)
+        #expect(once.segments.count == 2)
+        #expect(retry.segments.count == 2)
+        #expect(retry.segments.map(\.text) == ["第一段", "第二段-重试"])
+        #expect(retry.segments.map(\.sequence) == [1, 2])
+    }
+
+    @Test func transcriptCrossChunkSegmentStoresOrderedSourceRangesAndAbsoluteBounds() {
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(120),
+            state: .processing
+        )
+        let first = AudioChunk(
+            id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            recordingID: recording.id,
+            relativePath: "Recordings/a.m4a",
+            startSample: 0,
+            endSample: 960_000,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(60)
+        )
+        let second = AudioChunk(
+            id: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            recordingID: recording.id,
+            relativePath: "Recordings/b.m4a",
+            startSample: 960_000,
+            endSample: 1_920_000,
+            startedAt: startedAt.addingTimeInterval(60),
+            endedAt: startedAt.addingTimeInterval(120)
+        )
+        let ranges = [
+            TranscriptDocumentV1.SourceRange(
+                sourceKind: .audioChunk,
+                sourceID: first.id,
+                startSample: 950_400,
+                endSample: 960_000
+            ),
+            TranscriptDocumentV1.SourceRange(
+                sourceKind: .audioChunk,
+                sourceID: second.id,
+                startSample: 960_000,
+                endSample: 979_200
+            ),
+        ]
+        let document = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [first, second],
+            segmentDrafts: [
+                TranscriptDocumentV1.SegmentDraft(
+                    text: "跨分片一句话",
+                    sourceRanges: ranges
+                )
+            ],
+            language: "zh",
+            state: .processing
+        )
+
+        #expect(document.segments.count == 1)
+        let segment = document.segments[0]
+        #expect(segment.startSample == 950_400)
+        #expect(segment.endSample == 979_200)
+        #expect(segment.offsetMilliseconds == 59_400)
+        #expect(segment.sourceRanges.map(\.sourceID) == [first.id, second.id])
+        #expect(segment.sourceRanges.map(\.startSample) == [950_400, 960_000])
+        #expect(segment.sourceRanges.map(\.endSample) == [960_000, 979_200])
+        #expect(segment.sourceChunkID == first.id)
+        #expect(segment.playbackStartTime == 950_400.0 / 16_000)
+    }
+
+    @Test func transcriptLegacySourceChunkIDMigratesAndRollbackDualWrites() async throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/transcript_v1_legacy_source_chunk_fixture.json")
+        let fixtureData = try Data(contentsOf: fixtureURL)
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try TranscriptDocumentStore(rootURL: root)
+        let recordingID = UUID(uuidString: "BA485C93-6D6E-42E9-ADDA-B8DA50B2CA7C")!
+        let chunkID = UUID(uuidString: "D1765381-81EC-4761-BDDF-8978200D4197")!
+        try fixtureData.write(to: await store.jsonURL(for: recordingID))
+
+        let migrated = try #require(await store.document(recordingID: recordingID))
+        #expect(migrated.segments.count == 1)
+        #expect(migrated.segments[0].sourceChunkID == chunkID)
+        #expect(migrated.segments[0].sourceRanges.count == 1)
+        #expect(migrated.segments[0].sourceRanges[0].sourceID == chunkID)
+        #expect(migrated.segments[0].sourceRanges[0].sourceKind == .audioChunk)
+        #expect(migrated.segments[0].startSample == 0)
+        #expect(migrated.segments[0].text == "旧版单一 source_chunk_id。")
+        #expect(migrated.legacyRollbackSegments().map(\.sourceChunkID) == [chunkID])
+
+        try await store.write(migrated)
+        let encoded = try String(contentsOf: await store.jsonURL(for: recordingID), encoding: .utf8)
+        #expect(encoded.contains("\"source_ranges\""))
+        #expect(encoded.contains("\"source_chunk_id\""))
+        #expect(encoded.contains(chunkID.uuidString))
+
+        let reloaded = try #require(await store.document(recordingID: recordingID))
+        #expect(reloaded == migrated)
+        #expect(reloaded.segments[0].text == migrated.segments[0].text)
+        #expect(reloaded.segments[0].offsetMilliseconds == migrated.segments[0].offsetMilliseconds)
+        let markdown = try #require(await store.markdown(recordingID: recordingID))
+        #expect(markdown.contains("旧版单一 source_chunk_id。"))
+        #expect(markdown.contains("schema: voice-context/transcript@1"))
+    }
+
+    @Test func transcriptRetryByStableSampleIdentityDoesNotDuplicateSegments() {
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(120),
+            state: .processing
+        )
+        let first = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/first.m4a",
+            startSample: 0,
+            endSample: 960_000,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(60)
+        )
+        let second = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/second.m4a",
+            startSample: 960_000,
+            endSample: 1_920_000,
+            startedAt: startedAt.addingTimeInterval(60),
+            endedAt: startedAt.addingTimeInterval(120)
+        )
+        let ranges = [
+            TranscriptDocumentV1.SourceRange(
+                sourceKind: .audioChunk,
+                sourceID: first.id,
+                startSample: 950_400,
+                endSample: 960_000
+            ),
+            TranscriptDocumentV1.SourceRange(
+                sourceKind: .audioChunk,
+                sourceID: second.id,
+                startSample: 960_000,
+                endSample: 979_200
+            ),
+        ]
+        let draft = TranscriptDocumentV1.SegmentDraft(
+            text: "跨分片原文",
+            sourceRanges: ranges
+        )
+        let initial = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [first, second],
+            segmentDrafts: [draft],
+            language: "zh",
+            state: .processing
+        )
+        let retry = initial.appending(
+            recording: recording,
+            chunks: [first, second],
+            draft: TranscriptDocumentV1.SegmentDraft(
+                text: "跨分片重试",
+                sourceRanges: ranges
+            ),
+            replacingSourceIDs: [first.id, second.id]
+        )
+        let sameIdentity = retry.appending(
+            recording: recording,
+            chunks: [first, second],
+            draft: TranscriptDocumentV1.SegmentDraft(
+                text: "跨分片再次重试",
+                startSample: 950_400,
+                endSample: 979_200,
+                sourceRanges: ranges
+            )
+        )
+
+        #expect(initial.segments.count == 1)
+        #expect(retry.segments.count == 1)
+        #expect(sameIdentity.segments.count == 1)
+        #expect(retry.segments[0].text == "跨分片重试")
+        #expect(sameIdentity.segments[0].text == "跨分片再次重试")
+        #expect(sameIdentity.segments[0].id == initial.segments[0].id)
+        #expect(sameIdentity.revision == 3)
+    }
+
+    @Test func transcriptTimelineExportAndDeleteCleanupHandleMultipleSourceRanges() {
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(120),
+            state: .complete
+        )
+        let first = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let second = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let third = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+        let document = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [
+                AudioChunk(
+                    id: first,
+                    recordingID: recording.id,
+                    relativePath: "Recordings/a.m4a",
+                    startSample: 0,
+                    endSample: 960_000,
+                    startedAt: startedAt,
+                    endedAt: startedAt.addingTimeInterval(60)
+                ),
+                AudioChunk(
+                    id: second,
+                    recordingID: recording.id,
+                    relativePath: "Recordings/b.m4a",
+                    startSample: 960_000,
+                    endSample: 1_920_000,
+                    startedAt: startedAt.addingTimeInterval(60),
+                    endedAt: startedAt.addingTimeInterval(120)
+                ),
+                AudioChunk(
+                    id: third,
+                    recordingID: recording.id,
+                    relativePath: "Recordings/c.m4a",
+                    startSample: 1_920_000,
+                    endSample: 2_880_000,
+                    startedAt: startedAt.addingTimeInterval(120),
+                    endedAt: startedAt.addingTimeInterval(180)
+                ),
+            ],
+            segmentDrafts: [
+                TranscriptDocumentV1.SegmentDraft(
+                    text: "跨片",
+                    sourceRanges: [
+                        .init(sourceID: first, startSample: 950_400, endSample: 960_000),
+                        .init(sourceID: second, startSample: 960_000, endSample: 979_200),
+                    ]
+                ),
+                TranscriptDocumentV1.SegmentDraft(
+                    text: "单片",
+                    sourceRanges: [
+                        .init(sourceID: third, startSample: 2_000_000, endSample: 2_100_000),
+                    ]
+                ),
+            ],
+            language: "zh"
+        )
+
+        #expect(document.segment(atPlaybackTime: 950_400.0 / 16_000)?.text == "跨片")
+        #expect(document.segment(atPlaybackTime: 2_050_000.0 / 16_000)?.text == "单片")
+        #expect(document.segmentForErrorLocation(sourceID: second)?.text == "跨片")
+        #expect(document.exportSourceIDs() == [first, second, third])
+
+        let afterPartialDelete = document.updatingAudioAvailability(availableSourceIDs: [third])
+        #expect(afterPartialDelete.audio.availableOnThisDevice == true)
+        #expect(afterPartialDelete.revision == document.revision + 1)
+
+        let afterFullDelete = document.updatingAudioAvailability(availableSourceIDs: [])
+        #expect(afterFullDelete.audio.availableOnThisDevice == false)
+        #expect(afterFullDelete.segments.map(\.text) == ["跨片", "单片"])
+    }
+
+    @Test func transcriptStoreWriteLeavesNoHalfFilesAndIsReconstructible() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200.125)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(60),
+            title: "原子写入",
+            state: .processing
+        )
+        let chunk = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/atomic.m4a",
+            startSample: 0,
+            endSample: 960_000,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(60)
+        )
+        let document = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [chunk],
+            segmentTexts: [(chunkID: chunk.id, text: "原子写入文本")],
+            timezone: "Asia/Shanghai",
+            language: "zh"
+        )
+        let store = try TranscriptDocumentStore(rootURL: root)
+        try await store.write(document)
+
+        let transcriptsRoot = await store.rootURL
+        let names = try FileManager.default.contentsOfDirectory(atPath: transcriptsRoot.path)
+        #expect(names.allSatisfy { !$0.hasSuffix(".writing") })
+        #expect(names.contains("\(recording.id.uuidString).json"))
+        #expect(names.contains("\(recording.id.uuidString).md"))
+
+        let decoded = try #require(await store.document(recordingID: recording.id))
+        #expect(decoded == document)
+        let markdown = try #require(await store.markdown(recordingID: recording.id))
+        #expect(markdown == TranscriptMarkdownRenderer.render(decoded))
+        #expect(markdown.contains("2026-08-05T07:00:00.125Z"))
+    }
+
+    @Test func schedulerProcessesSameRecordingChunksInStartSampleOrderDespiteCreatedAtSkew() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(120),
+            state: .processing
+        )
+        try await repository.createRecording(recording, at: startedAt)
+        let firstChunk = AudioChunk(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            recordingID: recording.id,
+            relativePath: "Recordings/first.m4a",
+            startSample: 0,
+            endSample: 960_000,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(60)
+        )
+        let secondChunk = AudioChunk(
+            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            recordingID: recording.id,
+            relativePath: "Recordings/second.m4a",
+            startSample: 960_000,
+            endSample: 1_920_000,
+            startedAt: startedAt.addingTimeInterval(60),
+            endedAt: startedAt.addingTimeInterval(120)
+        )
+        try await repository.addChunk(firstChunk, at: firstChunk.endedAt)
+        try await repository.addChunk(secondChunk, at: secondChunk.endedAt)
+
+        // Persist the later chunk's job with an earlier createdAt to prove the
+        // scheduler orders by chunk start sample, not job creation skew.
+        let laterCreated = startedAt.addingTimeInterval(1)
+        let earlierCreated = startedAt.addingTimeInterval(2)
+        try await repository.upsertJob(
+            RecordingJob(
+                id: UUID(),
+                recordingID: recording.id,
+                chunkID: secondChunk.id,
+                kind: .transcription,
+                state: .pending,
+                attemptCount: 0,
+                lastError: nil,
+                createdAt: laterCreated,
+                updatedAt: laterCreated
+            ),
+            at: laterCreated
+        )
+        try await repository.upsertJob(
+            RecordingJob(
+                id: UUID(),
+                recordingID: recording.id,
+                chunkID: firstChunk.id,
+                kind: .transcription,
+                state: .pending,
+                attemptCount: 0,
+                lastError: nil,
+                createdAt: earlierCreated,
+                updatedAt: earlierCreated
+            ),
+            at: earlierCreated
+        )
+
+        let order = SchedulerChunkOrderProbe()
+        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { recordingID in
+            let jobs = try await repository.jobs(recordingID: recordingID)
+            let running = try #require(jobs.first { $0.state == .running })
+            let chunkID = try #require(running.chunkID)
+            await order.record(chunkID)
+        }
+
+        try await scheduler.resumePendingJobs { _ in }
+        await scheduler.waitForIdle()
+
+        #expect(await order.chunkIDs == [firstChunk.id, secondChunk.id])
+        let jobs = try await repository.jobs(recordingID: recording.id)
+        #expect(jobs.count == 2)
+        #expect(jobs.allSatisfy { $0.state == .completed })
+    }
+
+    @Test func schedulerDrainsMultipleRecordingsFIFOWhileThermalDeferDoesNotFailJobs() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let older = Recording(
+            id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            startedAt: Date(timeIntervalSince1970: 1_785_913_200),
+            endedAt: Date(timeIntervalSince1970: 1_785_913_260),
+            state: .processing
+        )
+        let newer = Recording(
+            id: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            startedAt: Date(timeIntervalSince1970: 1_785_913_300),
+            endedAt: Date(timeIntervalSince1970: 1_785_913_360),
+            state: .processing
+        )
+        try await repository.createRecording(older, at: older.startedAt)
+        try await repository.createRecording(newer, at: newer.startedAt)
+        let olderChunk = UUID(uuidString: "AAAAAAAA-0000-0000-0000-000000000001")!
+        let newerChunk = UUID(uuidString: "BBBBBBBB-0000-0000-0000-000000000001")!
+
+        let thermal = ThermalStateProbe(initial: .serious)
+        let gate = InferenceLifecycleGate()
+        let order = SchedulerChunkOrderProbe()
+        let scheduler = ForegroundTranscriptionScheduler(
+            repository: repository,
+            lifecycleGate: gate,
+            admissionPolicy: TranscriptionAdmissionPolicy(
+                thermalState: { thermal.current() },
+                isPurchaseLocked: { false }
+            )
+        ) { recordingID in
+            try await gate.beginMetalWork()
+            let jobs = try await repository.jobs(recordingID: recordingID)
+            let running = try #require(jobs.first { $0.state == .running })
+            let chunkID = try #require(running.chunkID)
+            await order.record(chunkID)
+            await gate.endMetalWork()
+        }
+
+        try await scheduler.enqueue(recordingID: older.id, chunkID: olderChunk) { _ in }
+        try await scheduler.enqueue(recordingID: newer.id, chunkID: newerChunk) { _ in }
+        await scheduler.waitForIdle()
+
+        // Thermal degradation keeps jobs pending; it must not mark them failed
+        // or submit Metal work.
+        #expect(await order.chunkIDs.isEmpty)
+        #expect(await gate.metrics().submittedMetalWork == 0)
+        #expect(try await repository.jobs(recordingID: older.id)[0].state == .pending)
+        #expect(try await repository.jobs(recordingID: newer.id)[0].state == .pending)
+        #expect(try await repository.jobs(recordingID: older.id)[0].lastError == "deferredUntilThermalImproves")
+
+        thermal.set(.nominal)
+        await scheduler.enteredForeground()
+        await scheduler.waitForIdle()
+
+        #expect(await order.chunkIDs == [olderChunk, newerChunk])
+        #expect(try await repository.jobs(recordingID: older.id)[0].state == .completed)
+        #expect(try await repository.jobs(recordingID: newer.id)[0].state == .completed)
+        #expect(await gate.metrics().peakInFlightMetalWork <= 1)
+    }
+
+
+    /// #49: start a new Recording while an older one is still processing or
+    /// failed. Capture chrome, durable jobs, transcript segments, and the
+    /// global Metal gate must stay isolated; same-Recording chunks remain
+    /// ordered and Metal in-flight never exceeds 1.
+    @Test @MainActor func dualRecordingIsolationKeepsJobsMetalAndCaptureSeparated() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+
+        let processingStarted = Date(timeIntervalSince1970: 1_785_913_200)
+        let processing = Recording(
+            id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            startedAt: processingStarted,
+            endedAt: processingStarted.addingTimeInterval(120),
+            state: .processing
+        )
+        let failedStarted = Date(timeIntervalSince1970: 1_785_913_100)
+        let failed = Recording(
+            id: UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")!,
+            startedAt: failedStarted,
+            endedAt: failedStarted.addingTimeInterval(60),
+            state: .failed
+        )
+        try await repository.createRecording(failed, at: failed.startedAt)
+        try await repository.createRecording(processing, at: processing.startedAt)
+
+        let processingChunkA = AudioChunk(
+            id: UUID(uuidString: "AAAAAAAA-0000-0000-0000-000000000001")!,
+            recordingID: processing.id,
+            relativePath: "Recordings/processing-a.m4a",
+            startSample: 0,
+            endSample: 960_000,
+            startedAt: processingStarted,
+            endedAt: processingStarted.addingTimeInterval(60)
+        )
+        let processingChunkB = AudioChunk(
+            id: UUID(uuidString: "AAAAAAAA-0000-0000-0000-000000000002")!,
+            recordingID: processing.id,
+            relativePath: "Recordings/processing-b.m4a",
+            startSample: 960_000,
+            endSample: 1_920_000,
+            startedAt: processingStarted.addingTimeInterval(60),
+            endedAt: processingStarted.addingTimeInterval(120)
+        )
+        let failedChunk = AudioChunk(
+            id: UUID(uuidString: "FFFFFFFF-0000-0000-0000-000000000001")!,
+            recordingID: failed.id,
+            relativePath: "Recordings/failed.m4a",
+            startSample: 0,
+            endSample: 960_000,
+            startedAt: failedStarted,
+            endedAt: failedStarted.addingTimeInterval(60)
+        )
+        try await repository.addChunk(processingChunkA, at: processingChunkA.endedAt)
+        try await repository.addChunk(processingChunkB, at: processingChunkB.endedAt)
+        try await repository.addChunk(failedChunk, at: failedChunk.endedAt)
+
+        try await repository.upsertJob(
+            RecordingJob(
+                id: UUID(),
+                recordingID: failed.id,
+                chunkID: failedChunk.id,
+                kind: .transcription,
+                state: .failed,
+                attemptCount: 1,
+                lastError: SchedulerTestError.noSpeech.localizedDescription,
+                createdAt: failedStarted,
+                updatedAt: failed.endedAt!
+            ),
+            at: failed.endedAt!
+        )
+
+        // Live capture of a third Recording must succeed while older work exists.
+        let liveID = try await coordinator.start()
+        #expect(liveID != processing.id)
+        #expect(liveID != failed.id)
+        #expect(coordinator.captureState == .recording)
+        #expect(coordinator.presentationState == .recording)
+        #expect(coordinator.activeRecordingID == liveID)
+
+        let gate = InferenceLifecycleGate()
+        let order = SchedulerChunkOrderProbe()
+        let held = MetalHoldBarrier()
+        let scheduler = ForegroundTranscriptionScheduler(
+            repository: repository,
+            lifecycleGate: gate
+        ) { recordingID in
+            try await gate.beginMetalWork()
+            let jobs = try await repository.jobs(recordingID: recordingID)
+            let running = try #require(jobs.first { $0.state == .running })
+            let chunkID = try #require(running.chunkID)
+            await order.record(chunkID)
+            // Hold briefly so a peer drain would observe metalBusy if it raced.
+            await held.holdBriefly()
+            await gate.endMetalWork()
+        }
+
+        // Retry the failed Recording while the new capture is live; it must not
+        // reclaim the microphone or cross into the live Recording's jobs.
+        try await coordinator.retryProcessing(recordingID: failed.id)
+        try await scheduler.retry(recordingID: failed.id) { _ in }
+        try await scheduler.enqueue(recordingID: processing.id, chunkID: processingChunkB.id) { _ in }
+        try await scheduler.enqueue(recordingID: processing.id, chunkID: processingChunkA.id) { _ in }
+        await scheduler.waitForIdle()
+
+        #expect(coordinator.activeRecordingID == liveID)
+        #expect(coordinator.captureState == .recording)
+        #expect(coordinator.presentationState == .recording)
+        #expect(capture.startCount == 1)
+        #expect(capture.stopCount == 0)
+
+        // Same-Recording chunks stay start-sample ordered; failed retry runs as
+        // its own Recording without contaminating the live capture identity.
+        let observed = await order.chunkIDs
+        let processingOrder = observed.filter {
+            $0 == processingChunkA.id || $0 == processingChunkB.id
+        }
+        #expect(processingOrder == [processingChunkA.id, processingChunkB.id])
+        #expect(observed.contains(failedChunk.id))
+        #expect(Set(observed) == [failedChunk.id, processingChunkA.id, processingChunkB.id])
+        #expect(await gate.metrics().peakInFlightMetalWork <= 1)
+        #expect(try await repository.jobs(recordingID: processing.id).allSatisfy { $0.state == .completed })
+        #expect(try await repository.jobs(recordingID: failed.id).allSatisfy { $0.state == .completed })
+        #expect(try await repository.jobs(recordingID: liveID).isEmpty)
+
+        // Stop releases mic chrome immediately; older completed jobs stay put.
+        capture.currentSample = 16_000
+        try await coordinator.stop()
+        #expect(coordinator.captureState == .idle)
+        #expect(coordinator.presentationState == .idle)
+        #expect(coordinator.activeRecordingID == nil)
+        #expect(capture.stopCount == 1)
+        #expect(try await repository.recording(id: liveID)?.state == .processing)
+        #expect(try await repository.jobs(recordingID: processing.id).count == 2)
+        #expect(try await repository.jobs(recordingID: failed.id).count == 1)
+    }
+
+    /// #49: thermal defer keeps Metal dark but must never block a new capture
+    /// session or mark durable jobs failed.
+    @Test @MainActor func thermalDeferLeavesCaptureFreeAndKeepsJobsPending() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+        let older = Recording(
+            startedAt: Date(timeIntervalSince1970: 1_785_913_200),
+            endedAt: Date(timeIntervalSince1970: 1_785_913_260),
+            state: .processing
+        )
+        try await repository.createRecording(older, at: older.startedAt)
+        let chunkID = UUID(uuidString: "CCCCCCCC-0000-0000-0000-000000000001")!
+
+        let thermal = ThermalStateProbe(initial: .serious)
+        let gate = InferenceLifecycleGate()
+        let scheduler = ForegroundTranscriptionScheduler(
+            repository: repository,
+            lifecycleGate: gate,
+            admissionPolicy: TranscriptionAdmissionPolicy(
+                thermalState: { thermal.current() },
+                isPurchaseLocked: { false }
+            )
+        ) { _ in
+            try await gate.beginMetalWork()
+            await gate.endMetalWork()
+        }
+
+        try await scheduler.enqueue(recordingID: older.id, chunkID: chunkID) { _ in }
+        await scheduler.waitForIdle()
+        #expect(try await repository.jobs(recordingID: older.id)[0].state == .pending)
+        #expect(try await repository.jobs(recordingID: older.id)[0].lastError == "deferredUntilThermalImproves")
+        #expect(await gate.metrics().submittedMetalWork == 0)
+
+        let liveID = try await coordinator.start()
+        #expect(liveID != older.id)
+        #expect(coordinator.captureState == .recording)
+        #expect(capture.startCount == 1)
+
+        thermal.set(.nominal)
+        await scheduler.enteredForeground()
+        await scheduler.waitForIdle()
+        #expect(try await repository.jobs(recordingID: older.id)[0].state == .completed)
+        #expect(coordinator.activeRecordingID == liveID)
+        #expect(coordinator.captureState == .recording)
+    }
+
+    /// #49: source_ranges seek helpers must honour half-open sample windows,
+    /// land in the nearest prior segment across gaps, and resolve error
+    /// locations through any range of a cross-chunk utterance.
+    @Test func sourceRangesSeekHelpersCoverBoundariesGapsAndErrorLocations() {
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(180),
+            state: .complete
+        )
+        let first = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let second = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let third = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+        let document = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [
+                AudioChunk(
+                    id: first,
+                    recordingID: recording.id,
+                    relativePath: "Recordings/a.m4a",
+                    startSample: 0,
+                    endSample: 960_000,
+                    startedAt: startedAt,
+                    endedAt: startedAt.addingTimeInterval(60)
+                ),
+                AudioChunk(
+                    id: second,
+                    recordingID: recording.id,
+                    relativePath: "Recordings/b.m4a",
+                    startSample: 960_000,
+                    endSample: 1_920_000,
+                    startedAt: startedAt.addingTimeInterval(60),
+                    endedAt: startedAt.addingTimeInterval(120)
+                ),
+                AudioChunk(
+                    id: third,
+                    recordingID: recording.id,
+                    relativePath: "Recordings/c.m4a",
+                    startSample: 1_920_000,
+                    endSample: 2_880_000,
+                    startedAt: startedAt.addingTimeInterval(120),
+                    endedAt: startedAt.addingTimeInterval(180)
+                ),
+            ],
+            segmentDrafts: [
+                TranscriptDocumentV1.SegmentDraft(
+                    text: "跨片连续",
+                    sourceRanges: [
+                        .init(sourceID: first, startSample: 940_000, endSample: 960_000),
+                        .init(sourceID: second, startSample: 960_000, endSample: 1_000_000),
+                    ]
+                ),
+                TranscriptDocumentV1.SegmentDraft(
+                    text: "间隙后",
+                    sourceRanges: [
+                        .init(sourceID: third, startSample: 2_100_000, endSample: 2_200_000),
+                    ]
+                ),
+            ],
+            language: "zh"
+        )
+
+        #expect(document.segments.count == 2)
+        #expect(document.segments[0].playbackStartTime == 940_000.0 / 16_000)
+        #expect(document.segments[0].playbackEndTime == 1_000_000.0 / 16_000)
+
+        // Inclusive start of the first range.
+        #expect(document.segment(atPlaybackTime: 940_000.0 / 16_000)?.text == "跨片连续")
+        // Sample inside the second range of the same utterance.
+        #expect(document.segment(atPlaybackTime: 980_000.0 / 16_000)?.text == "跨片连续")
+        // Half-open end: endSample itself is outside the segment window and
+        // falls into the gap before the next utterance.
+        #expect(document.segment(atPlaybackTime: 1_000_000.0 / 16_000)?.text == "跨片连续")
+        // Deep gap before the later utterance still resolves to the prior one.
+        #expect(document.segment(atPlaybackTime: 1_500_000.0 / 16_000)?.text == "跨片连续")
+        #expect(document.segment(atPlaybackTime: 2_150_000.0 / 16_000)?.text == "间隙后")
+
+        #expect(document.segmentsReferencing(sourceID: first).map(\.text) == ["跨片连续"])
+        #expect(document.segmentsReferencing(sourceID: second).map(\.text) == ["跨片连续"])
+        #expect(document.segmentForErrorLocation(sourceID: first)?.text == "跨片连续")
+        #expect(document.segmentForErrorLocation(sourceID: second)?.text == "跨片连续")
+        #expect(document.segmentForErrorLocation(sourceID: third)?.text == "间隙后")
+        #expect(document.exportSourceIDs() == [first, second, third])
+    }
+
+    /// #49: model fail + retry must not invent duplicate segments, even when a
+    /// second Recording is being captured in parallel.
+    @Test func failedModelRetryDoesNotDuplicateSegmentsAcrossIsolatedRecordings() {
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let older = Recording(
+            id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(60),
+            state: .processing
+        )
+        let newer = Recording(
+            id: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            startedAt: startedAt.addingTimeInterval(120),
+            state: .recording
+        )
+        let olderChunk = UUID(uuidString: "AAAAAAAA-0000-0000-0000-000000000001")!
+        let newerChunk = UUID(uuidString: "BBBBBBBB-0000-0000-0000-000000000001")!
+
+        let olderChunks = [
+            AudioChunk(
+                id: olderChunk,
+                recordingID: older.id,
+                relativePath: "Recordings/older.m4a",
+                startSample: 0,
+                endSample: 960_000,
+                startedAt: older.startedAt,
+                endedAt: older.endedAt!
+            ),
+        ]
+        var olderDoc = TranscriptDocumentV1(
+            recording: older,
+            chunks: olderChunks,
+            segmentDrafts: [],
+            language: "zh"
+        )
+        let draft = TranscriptDocumentV1.SegmentDraft(
+            text: "重试成功",
+            sourceRanges: [
+                .init(sourceID: olderChunk, startSample: 16_000, endSample: 48_000),
+            ]
+        )
+        olderDoc = olderDoc.appending(
+            recording: older,
+            chunks: olderChunks,
+            draft: draft,
+            replacingSourceIDs: [olderChunk]
+        )
+        olderDoc = olderDoc.appending(
+            recording: older,
+            chunks: olderChunks,
+            draft: draft,
+            replacingSourceIDs: [olderChunk]
+        )
+        #expect(olderDoc.segments.count == 1)
+        #expect(olderDoc.segments[0].text == "重试成功")
+        // Empty draft start is revision 1; each idempotent append bumps once.
+        #expect(olderDoc.revision == 3)
+
+        let newerDoc = TranscriptDocumentV1(
+            recording: newer,
+            chunks: [
+                AudioChunk(
+                    id: newerChunk,
+                    recordingID: newer.id,
+                    relativePath: "Recordings/newer.m4a",
+                    startSample: 0,
+                    endSample: 160_000,
+                    startedAt: newer.startedAt,
+                    endedAt: newer.startedAt.addingTimeInterval(10)
+                ),
+            ],
+            segmentDrafts: [
+                TranscriptDocumentV1.SegmentDraft(
+                    text: "新录音片段",
+                    sourceRanges: [
+                        .init(sourceID: newerChunk, startSample: 0, endSample: 32_000),
+                    ]
+                ),
+            ],
+            language: "zh"
+        )
+        #expect(newerDoc.segments.map(\.text) == ["新录音片段"])
+        #expect(Set(olderDoc.segments.map(\.id)).isDisjoint(with: Set(newerDoc.segments.map(\.id))))
+        #expect(olderDoc.exportSourceIDs() == [olderChunk])
+        #expect(newerDoc.exportSourceIDs() == [newerChunk])
+    }
+
+    @Test @MainActor func closedChunkEnqueuesWithoutWaitingForRecordingStop() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+        let enqueued = SchedulerChunkOrderProbe()
+        coordinator.onChunkClosed = { _, chunkID in
+            await enqueued.record(chunkID)
+        }
+
+        let recordingID = try await coordinator.start()
+        let closed = AACSegmentRecorder.Segment(
+            id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
+            url: root.appendingPathComponent("Recordings/\(recordingID.uuidString)/minute.m4a"),
+            startSample: 0,
+            endSample: 960_000,
+            startedAt: Date(timeIntervalSince1970: 1_785_913_200),
+            endedAt: Date(timeIntervalSince1970: 1_785_913_260)
+        )
+        try FileManager.default.createDirectory(
+            at: closed.url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data([0x00]).write(to: closed.url)
+        capture.emitClosedSegment(closed)
+
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, await enqueued.chunkIDs.isEmpty {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(await enqueued.chunkIDs == [closed.id])
+        #expect(coordinator.captureState == .recording)
+        #expect(coordinator.activeRecordingID == recordingID)
+        let chunks = try await repository.chunks(recordingID: recordingID)
+        #expect(chunks.contains { $0.id == closed.id && $0.state == .closed })
+    }
+
     @Test @MainActor func playerSurfacesReadableErrorInsteadOfSilentFailure() throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1478,6 +2640,43 @@ private actor SchedulerOutcomeProbe {
 
     func record(_ outcome: ForegroundTranscriptionScheduler.Outcome) {
         values.append(outcome)
+    }
+}
+
+private actor MetalHoldBarrier {
+    func holdBriefly() async {
+        try? await Task.sleep(for: .milliseconds(15))
+    }
+}
+
+private actor SchedulerChunkOrderProbe {
+    private(set) var chunkIDs: [UUID] = []
+
+    func record(_ chunkID: UUID) {
+        chunkIDs.append(chunkID)
+    }
+}
+
+/// Sync box so `TranscriptionAdmissionPolicy` can sample thermal state without
+/// crossing an actor boundary from its synchronous evaluator.
+private final class ThermalStateProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var state: ProcessInfo.ThermalState
+
+    init(initial: ProcessInfo.ThermalState) {
+        state = initial
+    }
+
+    func current() -> ProcessInfo.ThermalState {
+        lock.lock()
+        defer { lock.unlock() }
+        return state
+    }
+
+    func set(_ state: ProcessInfo.ThermalState) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.state = state
     }
 }
 

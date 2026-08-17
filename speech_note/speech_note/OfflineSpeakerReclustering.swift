@@ -1,0 +1,456 @@
+import Foundation
+
+/// One short window retained for post-meeting re-clustering. Embeddings stay
+/// in this processing-only value; the public transcript stores turns/labels,
+/// never raw vectors.
+nonisolated struct OfflineSpeakerObservation: Equatable, Sendable {
+    let startSample: Int64
+    let endSample: Int64
+    let embedding: SpeakerEmbeddingResult
+    let exclusionReasons: [SpeakerWindow.ExclusionReason]
+    /// Meeting-local online label when one was assigned; used only as provenance
+    /// when offline re-clustering renumbers speakers.
+    let onlineTemporaryLabel: String?
+
+    var isEligibleForClustering: Bool {
+        exclusionReasons.isEmpty && embedding.vector != nil
+    }
+}
+
+/// Stable, meeting-local turn after offline cosine agglomerative clustering.
+/// `speaker` is nil for unknown/unreliable windows (overlap, low quality, or
+/// failed embeddings). Online temporary labels are retained for audit only.
+nonisolated struct SpeakerTurn: Codable, Equatable, Sendable {
+    let speaker: String?
+    let startSample: Int64
+    let endSample: Int64
+    let onlineTemporaryLabels: [String]
+
+    var isUnknown: Bool { speaker == nil }
+
+    private enum CodingKeys: String, CodingKey {
+        case speaker
+        case startSample = "start_sample"
+        case endSample = "end_sample"
+        case onlineTemporaryLabels = "online_temporary_labels"
+    }
+}
+
+/// FR-SPK-004: after capture ends, re-cluster every eligible short window with
+/// cosine-distance agglomerative clustering. No speaker count is required.
+/// Short singleton jumps are smoothed, adjacent same-speaker windows collapse
+/// into turns, and IDs are renumbered by first appearance while keeping the
+/// online temporary labels as provenance.
+nonisolated enum OfflineSpeakerReclustering {
+    struct Result: Equatable, Sendable {
+        let speakers: [String]
+        let turns: [SpeakerTurn]
+        /// Per-observation offline labels (`nil` = unknown), aligned with input.
+        let labels: [String?]
+    }
+
+    /// Minimum cosine similarity required to merge two clusters. Matches the
+    /// online "likely same speaker" floor so uncertain similarities do not
+    /// force a merge without presetting a speaker count.
+    static let mergeSimilarityThreshold = SpeakerSimilarity.likelySameSpeakerThreshold
+
+    /// A run this short that disagrees with both temporal neighbors is treated
+    /// as a labeling jump and reassigned to the surrounding speaker.
+    static let shortJumpMaxWindows = 1
+
+    static func recluster(
+        _ observations: [OfflineSpeakerObservation],
+        mergeSimilarityThreshold: Float = mergeSimilarityThreshold,
+        shortJumpMaxWindows: Int = shortJumpMaxWindows
+    ) -> Result {
+        guard !observations.isEmpty else {
+            return Result(speakers: [], turns: [], labels: [])
+        }
+
+        let ordered = observations.enumerated().sorted { lhs, rhs in
+            if lhs.element.startSample != rhs.element.startSample {
+                return lhs.element.startSample < rhs.element.startSample
+            }
+            return lhs.offset < rhs.offset
+        }
+
+        var clusterOfObservation = Array(repeating: -1, count: observations.count)
+        var clusters: [Cluster] = []
+
+        // Seed every eligible window as its own cluster; merges below discover
+        // the speaker count without a preset k.
+        for item in ordered {
+            let observation = item.element
+            guard observation.isEligibleForClustering,
+                  let vector = normalized(observation.embedding.vector!) else {
+                continue
+            }
+            let id = clusters.count
+            clusters.append(Cluster(centroid: vector, memberCount: 1))
+            clusterOfObservation[item.offset] = id
+        }
+
+        agglomerate(
+            clusters: &clusters,
+            clusterOfObservation: &clusterOfObservation,
+            mergeSimilarityThreshold: mergeSimilarityThreshold
+        )
+
+        var rawLabels: [String?] = observations.indices.map { index in
+            let clusterID = clusterOfObservation[index]
+            guard clusterID >= 0 else { return nil }
+            return TemporarySpeakerLabeling.temporaryLabel(id: clusterID + 1)
+        }
+
+        smoothShortJumps(
+            labels: &rawLabels,
+            observations: observations,
+            maxJumpWindows: shortJumpMaxWindows
+        )
+
+        let (speakers, remapped) = renumberByFirstAppearance(labels: rawLabels)
+        let turns = makeTurns(
+            observations: observations,
+            labels: remapped
+        )
+        return Result(speakers: speakers, turns: turns, labels: remapped)
+    }
+
+    // MARK: - Agglomerative clustering
+
+    private struct Cluster {
+        var centroid: [Float]
+        var memberCount: Int
+    }
+
+    private static func agglomerate(
+        clusters: inout [Cluster],
+        clusterOfObservation: inout [Int],
+        mergeSimilarityThreshold: Float
+    ) {
+        guard clusters.count > 1 else { return }
+
+        while true {
+            var bestSimilarity: Float = -Float.greatestFiniteMagnitude
+            var bestPair: (Int, Int)?
+            for i in 0..<clusters.count {
+                for j in (i + 1)..<clusters.count {
+                    guard let similarity = SpeakerSimilarity.cosineSimilarity(
+                        clusters[i].centroid,
+                        clusters[j].centroid
+                    ) else { continue }
+                    if similarity > bestSimilarity {
+                        bestSimilarity = similarity
+                        bestPair = (i, j)
+                    }
+                }
+            }
+
+            guard let (i, j) = bestPair, bestSimilarity >= mergeSimilarityThreshold else {
+                break
+            }
+
+            let merged = merge(clusters[i], clusters[j])
+            let keep = min(i, j)
+            let drop = max(i, j)
+            clusters[keep] = merged
+            clusters.remove(at: drop)
+
+            for index in clusterOfObservation.indices {
+                let current = clusterOfObservation[index]
+                if current == drop {
+                    clusterOfObservation[index] = keep
+                } else if current > drop {
+                    clusterOfObservation[index] = current - 1
+                }
+            }
+        }
+    }
+
+    private static func merge(_ lhs: Cluster, _ rhs: Cluster) -> Cluster {
+        let total = lhs.memberCount + rhs.memberCount
+        guard total > 0 else { return lhs }
+        let weighted = zip(lhs.centroid, rhs.centroid).map { left, right in
+            (left * Float(lhs.memberCount) + right * Float(rhs.memberCount)) / Float(total)
+        }
+        guard let centroid = normalized(weighted) else { return lhs }
+        return Cluster(centroid: centroid, memberCount: total)
+    }
+
+    // MARK: - Smoothing / turns / renumber
+
+    private static func smoothShortJumps(
+        labels: inout [String?],
+        observations: [OfflineSpeakerObservation],
+        maxJumpWindows: Int
+    ) {
+        guard maxJumpWindows > 0, labels.count == observations.count else { return }
+        let order = observations.indices.sorted {
+            if observations[$0].startSample != observations[$1].startSample {
+                return observations[$0].startSample < observations[$1].startSample
+            }
+            return $0 < $1
+        }
+        guard order.count >= 3 else { return }
+
+        var index = 1
+        while index < order.count - 1 {
+            let currentLabel = labels[order[index]]
+            guard let currentLabel else {
+                index += 1
+                continue
+            }
+
+            var runEnd = index
+            while runEnd + 1 < order.count,
+                  labels[order[runEnd + 1]] == currentLabel {
+                runEnd += 1
+            }
+            let runLength = runEnd - index + 1
+            let leftLabel = labels[order[index - 1]]
+            let rightIndex = runEnd + 1
+            let rightLabel = rightIndex < order.count ? labels[order[rightIndex]] : nil
+
+            if runLength <= maxJumpWindows,
+               let leftLabel,
+               leftLabel == rightLabel,
+               leftLabel != currentLabel {
+                for offset in index...runEnd {
+                    labels[order[offset]] = leftLabel
+                }
+            }
+            index = runEnd + 1
+        }
+    }
+
+    private static func renumberByFirstAppearance(
+        labels: [String?]
+    ) -> (speakers: [String], remapped: [String?]) {
+        var map: [String: String] = [:]
+        var speakers: [String] = []
+        var nextID = 1
+        let remapped: [String?] = labels.map { label in
+            guard let label else { return nil }
+            if let existing = map[label] { return existing }
+            let stable = TemporarySpeakerLabeling.temporaryLabel(id: nextID)
+            nextID += 1
+            map[label] = stable
+            speakers.append(stable)
+            return stable
+        }
+        return (speakers, remapped)
+    }
+
+    private static func makeTurns(
+        observations: [OfflineSpeakerObservation],
+        labels: [String?]
+    ) -> [SpeakerTurn] {
+        let order = observations.indices.sorted {
+            if observations[$0].startSample != observations[$1].startSample {
+                return observations[$0].startSample < observations[$1].startSample
+            }
+            return $0 < $1
+        }
+        guard let first = order.first else { return [] }
+
+        var turns: [SpeakerTurn] = []
+        var runLabel = labels[first]
+        var runStart = observations[first].startSample
+        var runEnd = observations[first].endSample
+        var provenance = Set(observations[first].onlineTemporaryLabel.map { [$0] } ?? [])
+
+        for index in order.dropFirst() {
+            let label = labels[index]
+            let observation = observations[index]
+            if label == runLabel {
+                runEnd = max(runEnd, observation.endSample)
+                if let online = observation.onlineTemporaryLabel {
+                    provenance.insert(online)
+                }
+                continue
+            }
+            turns.append(
+                SpeakerTurn(
+                    speaker: runLabel,
+                    startSample: runStart,
+                    endSample: runEnd,
+                    onlineTemporaryLabels: provenance.sorted()
+                )
+            )
+            runLabel = label
+            runStart = observation.startSample
+            runEnd = observation.endSample
+            provenance = Set(observation.onlineTemporaryLabel.map { [$0] } ?? [])
+        }
+        turns.append(
+            SpeakerTurn(
+                speaker: runLabel,
+                startSample: runStart,
+                endSample: runEnd,
+                onlineTemporaryLabels: provenance.sorted()
+            )
+        )
+        return turns
+    }
+
+    private static func normalized(_ vector: [Float]) -> [Float]? {
+        let squared = vector.reduce(Float.zero) { $0 + $1 * $1 }
+        let norm = sqrt(squared)
+        guard vector.allSatisfy(\.isFinite), norm.isFinite, norm > 0 else { return nil }
+        let values = vector.map { $0 / norm }
+        guard values.allSatisfy(\.isFinite) else { return nil }
+        return values
+    }
+}
+
+/// Builds offline observations from short windows + online assignments. Used by
+/// analysis and by the post-recording recluster pass.
+nonisolated enum OfflineSpeakerObservationBuilder {
+    static func make(
+        windows: [SpeakerWindow],
+        embeddings: [SpeakerEmbeddingResult],
+        assignments: [TemporarySpeakerAssignment]
+    ) -> [OfflineSpeakerObservation] {
+        let count = min(windows.count, min(embeddings.count, assignments.count))
+        return (0..<count).map { index in
+            OfflineSpeakerObservation(
+                startSample: windows[index].startSample,
+                endSample: windows[index].endSample,
+                embedding: embeddings[index],
+                exclusionReasons: windows[index].exclusionReasons,
+                onlineTemporaryLabel: assignments[index].temporarySpeakerLabel
+            )
+        }
+    }
+}
+
+/// Post-meeting pass: decode closed chunks, collect short-window embeddings on
+/// CPU (CAM++), then replace the online temporary roster with stable turns.
+/// Does not submit SenseVoice / Metal work.
+enum OfflineSpeakerReclusterPass {
+    struct PassResult: Equatable, Sendable {
+        let recluster: OfflineSpeakerReclustering.Result
+        let observations: [OfflineSpeakerObservation]
+    }
+
+    enum PassError: LocalizedError {
+        case missingResource(String)
+        case missingManifest
+
+        var errorDescription: String? {
+            switch self {
+            case let .missingResource(name):
+                "离线重聚类缺少模型：\(name)。"
+            case .missingManifest:
+                "离线重聚类找不到 ModelManifest.json。"
+            }
+        }
+    }
+
+    static func bundledResourceRoot(bundle: Bundle = .main) throws -> URL {
+        guard let manifestURL = bundle.url(forResource: "ModelManifest", withExtension: "json") else {
+            throw PassError.missingManifest
+        }
+        return manifestURL.deletingLastPathComponent()
+    }
+
+    static func run(
+        chunkURLs: [(url: URL, startSample: Int64)],
+        resourceRoot: URL
+    ) async throws -> PassResult {
+        try await Task.detached(priority: .userInitiated) {
+            try runSync(chunkURLs: chunkURLs, resourceRoot: resourceRoot)
+        }.value
+    }
+
+    /// Files-import path: decode the private asset in 60s windows (same budget
+    /// as ProcessingRange) so multi-minute imports recluster without loading
+    /// the whole file as one array when possible.
+    static func runImportedAsset(
+        url: URL,
+        totalSamples: Int64,
+        resourceRoot: URL
+    ) async throws -> PassResult {
+        try await Task.detached(priority: .userInitiated) {
+            try runImportedAssetSync(
+                url: url,
+                totalSamples: totalSamples,
+                resourceRoot: resourceRoot
+            )
+        }.value
+    }
+
+    /// Shared with ProcessingRange planning so offline recluster covers every
+    /// imported logical window (20s / 81s / 5min) without a second policy.
+    nonisolated static func importWindows(
+        totalSamples: Int64
+    ) -> [(startSample: Int64, endSample: Int64)] {
+        ProcessingRangePlanner.plan(totalSamples: totalSamples).map {
+            (startSample: $0.startSample, endSample: $0.endSample)
+        }
+    }
+
+    nonisolated private static func runSync(
+        chunkURLs: [(url: URL, startSample: Int64)],
+        resourceRoot: URL
+    ) throws -> PassResult {
+        try ensureSpeakerModels(resourceRoot: resourceRoot)
+
+        var observations: [OfflineSpeakerObservation] = []
+        for chunk in chunkURLs {
+            let samples = try PCM16KMonoLoader.samples(from: chunk.url)
+            guard !samples.isEmpty else { continue }
+            // Fresh online clusterer per chunk mirrors the live path so
+            // provenance shows the unstable temporary IDs offline corrects.
+            let analysis = try SpeechAnalysisService.collectSpeakerObservations(
+                samples: samples,
+                resourceRoot: resourceRoot,
+                startingAt: chunk.startSample
+            )
+            observations.append(contentsOf: analysis)
+        }
+        let recluster = OfflineSpeakerReclustering.recluster(observations)
+        return PassResult(recluster: recluster, observations: observations)
+    }
+
+    nonisolated private static func runImportedAssetSync(
+        url: URL,
+        totalSamples: Int64,
+        resourceRoot: URL
+    ) throws -> PassResult {
+        try ensureSpeakerModels(resourceRoot: resourceRoot)
+        guard totalSamples > 0 else {
+            return PassResult(recluster: .init(speakers: [], turns: [], labels: []), observations: [])
+        }
+
+        var observations: [OfflineSpeakerObservation] = []
+        let windows = importWindows(totalSamples: totalSamples)
+        for window in windows {
+            let samples = try ImportAudioRangeDecoder.samples(
+                from: url,
+                startSample: window.startSample,
+                endSample: window.endSample
+            )
+            guard !samples.isEmpty else { continue }
+            let analysis = try SpeechAnalysisService.collectSpeakerObservations(
+                samples: samples,
+                resourceRoot: resourceRoot,
+                startingAt: window.startSample
+            )
+            observations.append(contentsOf: analysis)
+        }
+        let recluster = OfflineSpeakerReclustering.recluster(observations)
+        return PassResult(recluster: recluster, observations: observations)
+    }
+
+    nonisolated private static func ensureSpeakerModels(resourceRoot: URL) throws {
+        let speakerModel = resourceRoot.appending(path: "3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx")
+        let vadModel = resourceRoot.appending(path: "silero_vad.onnx")
+        guard FileManager.default.fileExists(atPath: speakerModel.path) else {
+            throw PassError.missingResource(speakerModel.lastPathComponent)
+        }
+        guard FileManager.default.fileExists(atPath: vadModel.path) else {
+            throw PassError.missingResource(vadModel.lastPathComponent)
+        }
+    }
+}

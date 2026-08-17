@@ -110,7 +110,8 @@ final class RecordingSessionCoordinator {
         let recording = Recording(
             startedAt: startedAt,
             title: title,
-            isMeeting: isMeeting
+            isMeeting: isMeeting,
+            languageMode: TranscriptionLanguageMode.current
         )
         activeRecordingID = recording.id
         stateMachine = RecordingStateMachine(state: .recording)
@@ -239,9 +240,10 @@ final class RecordingSessionCoordinator {
         segmentPersistenceTask = nil
         segmentPersistenceOperationID = nil
         captureState = .idle
-        // Keep the legacy single presentation useful until #48 consumes the
-        // orthogonal lifecycle API. This does not retain microphone identity.
-        presentationState = .processing
+        // Capture identity is fully released. Remaining transcription is
+        // addressable via Recording ID + durable jobs; UI must not present
+        // this as an active microphone session.
+        presentationState = .idle
         return recordingID
     }
 
@@ -302,8 +304,10 @@ final class RecordingSessionCoordinator {
         var machine = RecordingStateMachine(state: recording.state)
         let processing = try machine.apply(.retryProcessing)
         try await repository.changeState(recordingID: recordingID, to: processing, at: now())
+        // Retry must not reclaim global capture chrome. Processing progress
+        // belongs to the Recording detail / list row.
         if activeRecordingID == nil {
-            presentationState = .processing
+            presentationState = .idle
         }
     }
 

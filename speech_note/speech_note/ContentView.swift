@@ -1,6 +1,8 @@
 import AVFoundation
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
+import PhotosUI
 
 private enum RecordingTimeFilter: String, CaseIterable, Identifiable {
     case all
@@ -80,6 +82,22 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
             )
         }
         duration = items.reduce(0) { $0 + $1.duration }
+        currentTime = 0
+    }
+
+    /// Continuous timeline for one Files-imported private asset.
+    func load(assetURL: URL, durationSeconds: TimeInterval) {
+        stop()
+        playbackError = nil
+        guard FileManager.default.fileExists(atPath: assetURL.path) else {
+            items = []
+            duration = 0
+            currentTime = 0
+            playbackError = "导入音频暂不可用。"
+            return
+        }
+        items = [Item(url: assetURL, duration: max(0, durationSeconds))]
+        duration = max(0, durationSeconds)
         currentTime = 0
     }
 
@@ -247,12 +265,26 @@ struct ContentView: View {
     @State private var model: RecordingCoreModel
     @State private var modelError: String?
     @State private var timeFilter: RecordingTimeFilter = .all
+    /// `nil` means show the full list (list-first home). A concrete day is an optional calendar filter.
+    @State private var selectedDate: Date? = nil
+    @State private var searchQuery = ""
+    @State private var searchHits: [TranscriptSearchHit] = []
+    @State private var isSearching = false
+    @State private var folderFilter: FolderListFilter = .all
+    @State private var isFolderManagerPresented = false
+    @State private var moveRecordingID: UUID?
     @State private var isStartSheetPresented = false
+    @State private var isImportPickerPresented = false
+    @State private var isPhotosPickerPresented = false
+    @State private var selectedPhotoVideoItem: PhotosPickerItem?
     @State private var isSettingsPresented = false
     @State private var isRecordingScreenPresented = false
+    /// Set by the home-screen Record Widget deep link (`voicecontext://start-recording`).
+    @Binding private var openStartRecording: Bool
     private let isRecordingDetailFixtureEnabled: Bool
 
-    init() {
+    init(openStartRecording: Binding<Bool> = .constant(false)) {
+        _openStartRecording = openStartRecording
         isRecordingDetailFixtureEnabled = ProcessInfo.processInfo.arguments.contains("-uiTestingSeedRecordingDetail")
         if isRecordingDetailFixtureEnabled {
             let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -286,22 +318,74 @@ struct ContentView: View {
             model.scenePhaseChanged(to: ScenePhaseLike(phase))
         }
         .onChange(of: model.captureIsActive) { _, isActive in
-            isRecordingScreenPresented = isActive
+            if isActive {
+                isRecordingScreenPresented = true
+            }
         }
         .task {
             if isRecordingDetailFixtureEnabled {
                 await installRecordingDetailFixture()
             }
             await model.recoverOnLaunch()
+            if openStartRecording {
+                handleWidgetStartRecording()
+            }
+        }
+        .onChange(of: openStartRecording) { _, shouldOpen in
+            guard shouldOpen else { return }
+            handleWidgetStartRecording()
+        }
+    }
+
+    /// Widget / deep-link entry into the start-recording flow.
+    /// Denied mic → in-app explanation sheet (no silent failure).
+    /// Granted → start capture with minimal interruption.
+    /// Undetermined → start sheet so the user explicitly begins (permission prompt only then).
+    private func handleWidgetStartRecording() {
+        openStartRecording = false
+        if modelError != nil { return }
+        if model.captureIsActive || model.presentation == .stopping {
+            isRecordingScreenPresented = true
+            return
+        }
+        switch MicrophoneAccess.recordPermission {
+        case .denied:
+            isStartSheetPresented = true
+        case .granted:
+            Task {
+                await model.start(title: "", isMeeting: false)
+                if !model.captureIsActive {
+                    isStartSheetPresented = true
+                }
+            }
+        case .undetermined:
+            isStartSheetPresented = true
         }
     }
 
     private var workspace: some View {
         NavigationStack {
             recordsScreen
-                .navigationTitle("")
+                .navigationTitle(folderNavigationTitle)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Menu {
+                            Button("文件", systemImage: "folder") {
+                                isImportPickerPresented = true
+                            }
+                            .accessibilityIdentifier("import-from-files")
+                            Button("照片与视频", systemImage: "photo.on.rectangle") {
+                                isPhotosPickerPresented = true
+                            }
+                            .accessibilityIdentifier("import-from-photos")
+                        } label: {
+                            Label("导入", systemImage: "square.and.arrow.down")
+                        }
+                        .accessibilityLabel("导入")
+                        .accessibilityHint("从文件或照片与视频导入，离线转写")
+                        .accessibilityIdentifier("import-audio")
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("我的", systemImage: "person.circle") {
                             isSettingsPresented = true
@@ -310,8 +394,18 @@ struct ContentView: View {
                     }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if model.captureIsActive {
-                        RecordingBar(model: model, reduceMotion: reduceMotion)
+                    VStack(spacing: 0) {
+                        if let activity = model.importActivity {
+                            ImportActivityBanner(activity: activity)
+                        } else if let notice = model.notice,
+                                  notice.hasPrefix("导入")
+                                    || notice.hasPrefix("已导入")
+                                    || notice.hasPrefix("已有导入") {
+                            ImportNoticeBanner(text: notice)
+                        }
+                        if model.showsSessionChrome {
+                            RecordingBar(model: model, reduceMotion: reduceMotion)
+                        }
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -323,6 +417,34 @@ struct ContentView: View {
         }
         .sheet(isPresented: $isSettingsPresented) {
             SettingsScreen(model: model, reduceMotion: reduceMotion)
+        }
+        .fileImporter(
+            isPresented: $isImportPickerPresented,
+            allowedContentTypes: ImportAudioSupportedTypes.contentTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case let .success(urls):
+                guard let url = urls.first else { return }
+                Task {
+                    _ = await model.importAudio(from: url)
+                }
+            case let .failure(error):
+                model.presentNotice("选择文件失败：\(error.localizedDescription)")
+            }
+        }
+        .photosPicker(
+            isPresented: $isPhotosPickerPresented,
+            selection: $selectedPhotoVideoItem,
+            matching: .videos,
+            photoLibrary: .shared()
+        )
+        .onChange(of: selectedPhotoVideoItem) { _, item in
+            guard let item else { return }
+            Task {
+                await importPickedPhotoVideo(item)
+                selectedPhotoVideoItem = nil
+            }
         }
         .fullScreenCover(isPresented: $isRecordingScreenPresented) {
             RecordingScreen(
@@ -336,8 +458,31 @@ struct ContentView: View {
     private var recordsScreen: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Spacer()
+                HStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                        TextField("搜索转写内容", text: $searchQuery)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .accessibilityLabel("搜索转写内容")
+                            .accessibilityIdentifier("transcript-search-field")
+                        if !searchQuery.isEmpty {
+                            Button {
+                                searchQuery = ""
+                                searchHits = []
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("清除搜索")
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+
                     Picker("时间筛选", selection: $timeFilter) {
                         ForEach(RecordingTimeFilter.allCases) { filter in
                             Text(filter.title).tag(filter)
@@ -348,11 +493,68 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 20)
 
-                if recordingGroups.isEmpty {
+                HStack(spacing: 12) {
+                    Menu {
+                        Button {
+                            folderFilter = .all
+                        } label: {
+                            Label("全部文件夹", systemImage: folderFilter == .all ? "checkmark" : "tray.full")
+                        }
+                        Button {
+                            folderFilter = .uncategorized
+                        } label: {
+                            Label("未分类", systemImage: folderFilter == .uncategorized ? "checkmark" : "tray")
+                        }
+                        if !model.folders.isEmpty {
+                            Divider()
+                            ForEach(model.folders) { folder in
+                                Button {
+                                    folderFilter = .folder(folder.id)
+                                } label: {
+                                    Label(
+                                        folder.name,
+                                        systemImage: {
+                                            if case .folder(let id) = folderFilter, id == folder.id {
+                                                return "checkmark"
+                                            }
+                                            return "folder"
+                                        }()
+                                    )
+                                }
+                            }
+                        }
+                        Divider()
+                        Button("管理文件夹…") {
+                            isFolderManagerPresented = true
+                        }
+                    } label: {
+                        Label(folderFilterLabel, systemImage: "folder")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .accessibilityLabel("文件夹筛选")
+                    .accessibilityIdentifier("folder-filter-menu")
+
+                    Button("管理") {
+                        isFolderManagerPresented = true
+                    }
+                    .accessibilityIdentifier("folder-manage-button")
+                }
+                .padding(.horizontal, 20)
+
+                if trimmedSearchQuery.isEmpty {
+                    CalendarStrip(
+                        selectedDate: $selectedDate,
+                        recordings: filteredRecordings
+                    )
+                }
+
+                if !trimmedSearchQuery.isEmpty {
+                    searchResultsSection
+                } else if recordingGroups.isEmpty {
                     ContentUnavailableView {
-                        Label("还没有记录", systemImage: "waveform")
+                        Label(emptyListTitle, systemImage: "waveform")
                     } description: {
-                        Text("开始录音，保存一个念头或一次对话。")
+                        Text(emptyListDescription)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 32)
@@ -375,10 +577,18 @@ struct ContentView: View {
                                 NavigationLink {
                                     RecordingDetailScreen(model: model, recordingID: recording.id)
                                 } label: {
-                                    RecordingRow(recording: recording)
+                                    RecordingRow(
+                                        recording: recording,
+                                        folderName: model.folderName(for: recording.id)
+                                    )
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("recording-row-\(recording.id.uuidString)")
+                                .contextMenu {
+                                    Button("移动到文件夹") {
+                                        moveRecordingID = recording.id
+                                    }
+                                }
                                 Divider().padding(.leading, 20)
                             }
                         }
@@ -389,18 +599,89 @@ struct ContentView: View {
             .padding(.bottom, 20)
         }
         .background(Color(uiColor: .systemBackground))
+        .onChange(of: searchQuery) { _, _ in
+            Task { await refreshSearchHits() }
+        }
+        .onChange(of: timeFilter) { _, _ in
+            Task { await refreshSearchHits() }
+        }
+        .onChange(of: folderFilter) { _, _ in
+            Task { await refreshSearchHits() }
+        }
+        .onChange(of: model.recordings) { _, _ in
+            Task { await refreshSearchHits() }
+        }
+        .onChange(of: model.folderCatalog) { _, _ in
+            Task { await refreshSearchHits() }
+        }
+        .task(id: trimmedSearchQuery) {
+            await refreshSearchHits()
+        }
+        .sheet(isPresented: $isFolderManagerPresented) {
+            FolderManagerSheet(model: model, folderFilter: $folderFilter)
+        }
+        .sheet(isPresented: Binding(
+            get: { moveRecordingID != nil },
+            set: { if !$0 { moveRecordingID = nil } }
+        )) {
+            if let moveRecordingID {
+                MoveToFolderSheet(model: model, recordingID: moveRecordingID)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var searchResultsSection: some View {
+        if isSearching && searchHits.isEmpty {
+            ProgressView("正在搜索…")
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+        } else if filteredSearchHits.isEmpty {
+            ContentUnavailableView {
+                Label("没有找到相关转写", systemImage: "magnifyingglass")
+            } description: {
+                Text("试试其他关键词，或清空搜索查看全部记录。")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 32)
+            .accessibilityIdentifier("transcript-search-empty")
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("\(filteredSearchHits.count) 条结果")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 4)
+                ForEach(filteredSearchHits) { hit in
+                    NavigationLink {
+                        RecordingDetailScreen(
+                            model: model,
+                            recordingID: hit.recordingID,
+                            highlightQuery: trimmedSearchQuery,
+                            scrollToSegmentID: hit.firstMatchingSegmentID
+                        )
+                    } label: {
+                        TranscriptSearchResultRow(hit: hit)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("search-hit-\(hit.recordingID.uuidString)")
+                    Divider().padding(.leading, 20)
+                }
+            }
+        }
     }
 
     private var captureDock: some View {
-        VStack(spacing: 6) {
+        let micHeld = model.captureIsActive || model.presentation == .stopping
+        return VStack(spacing: 6) {
             Button {
                 isStartSheetPresented = true
             } label: {
                 ZStack {
                     Circle()
-                        .fill(.red)
+                        .fill(micHeld ? Color.secondary.opacity(0.35) : Color.red)
                         .frame(width: 64, height: 64)
-                    Image(systemName: "mic.fill")
+                    Image(systemName: micHeld ? "stop.fill" : "mic.fill")
                         .font(.system(size: 24, weight: .medium))
                         .foregroundStyle(.white)
                 }
@@ -408,10 +689,11 @@ struct ContentView: View {
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("开始录音")
-            .accessibilityHint("可选择性填写标题和会议字段")
+            .disabled(micHeld)
+            .accessibilityLabel(micHeld ? "录音进行中" : "开始录音")
+            .accessibilityHint(micHeld ? "当前麦克风仍被占用，请先停止" : "可选择性填写标题和会议字段")
 
-            Text("开始录音")
+            Text(micHeld ? "录音中" : "开始录音")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.primary)
         }
@@ -419,14 +701,119 @@ struct ContentView: View {
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
         .background(.bar)
+        .accessibilityIdentifier("capture-dock")
+    }
+
+
+    private func importPickedPhotoVideo(_ item: PhotosPickerItem) async {
+        do {
+            guard let movie = try await item.loadTransferable(type: ImportPickedMovie.self) else {
+                model.presentNotice("导入失败：无法读取所选视频")
+                return
+            }
+            let base = (movie.url.lastPathComponent as NSString).deletingPathExtension
+            let suggested = base.isEmpty ? "相册视频.mov" : "\(base).mov"
+            _ = await model.importVideoAudio(
+                from: movie.url,
+                sourceFilename: suggested
+            )
+        } catch {
+            model.presentNotice("导入失败：\(error.localizedDescription)")
+        }
+    }
+
+    private var trimmedSearchQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var filteredSearchHits: [TranscriptSearchHit] {
+        let byTime = Dictionary(uniqueKeysWithValues: model.recordings.map { ($0.id, $0) })
+        return searchHits.filter { hit in
+            guard let recording = byTime[hit.recordingID] else { return false }
+            return timeFilter.includes(recording.startedAt)
+        }
+    }
+
+    private var filteredRecordings: [Recording] {
+        model.recordings.filter { timeFilter.includes($0.startedAt) }
+    }
+
+    @MainActor
+    private func refreshSearchHits() async {
+        let query = trimmedSearchQuery
+        guard !query.isEmpty else {
+            searchHits = []
+            isSearching = false
+            return
+        }
+        isSearching = true
+        do {
+            let hits = try await model.searchTranscripts(query: query)
+            guard query == trimmedSearchQuery else { return }
+            searchHits = hits
+        } catch {
+            guard query == trimmedSearchQuery else { return }
+            searchHits = []
+            model.presentNotice("搜索失败：\(error.localizedDescription)")
+        }
+        isSearching = false
+    }
+
+    private var folderNavigationTitle: String {
+        switch folderFilter {
+        case .all:
+            return "全部录音"
+        case .uncategorized:
+            return "未分类"
+        case .folder(let id):
+            return model.folders.first(where: { $0.id == id })?.name ?? "文件夹"
+        }
+    }
+
+    private var folderFilterLabel: String {
+        switch folderFilter {
+        case .all:
+            return "全部文件夹"
+        case .uncategorized:
+            return "未分类"
+        case .folder(let id):
+            return model.folders.first(where: { $0.id == id })?.name ?? "文件夹"
+        }
+    }
+
+    private var emptyListTitle: String {
+        if filteredRecordings.isEmpty {
+            return "还没有记录"
+        }
+        if selectedDate != nil {
+            return "这一天还没有记录"
+        }
+        return "没有符合筛选的记录"
+    }
+
+    private var emptyListDescription: String {
+        if model.recordings.isEmpty {
+            return "开始录音，保存一个念头或一次对话。也可从左上角导入文件或相册视频。"
+        }
+        if folderFilter != .all {
+            return "这个文件夹还没有记录。可在列表项上长按「移动到文件夹」。"
+        }
+        if selectedDate != nil {
+            return "点日历上的「全部」看所有记录，或开始一条新录音。"
+        }
+        return "换一个时间范围，或开始一条新录音。"
     }
 
     private var recordingGroups: [RecordingDayGroup] {
-        let filtered = model.recordings
-            .filter { timeFilter.includes($0.startedAt) }
+        let calendar = Calendar.current
+        let filtered = filteredRecordings
+            .filter { recording in
+                guard let selectedDate else { return true }
+                return calendar.isDate(recording.startedAt, inSameDayAs: selectedDate)
+            }
             .sorted { $0.startedAt > $1.startedAt }
         let grouped = Dictionary(grouping: filtered) {
-            Calendar.current.startOfDay(for: $0.startedAt)
+            calendar.startOfDay(for: $0.startedAt)
         }
         return grouped.keys.sorted(by: >).map { date in
             RecordingDayGroup(date: date, recordings: grouped[date] ?? [])
@@ -481,352 +868,98 @@ struct ContentView: View {
     }
 }
 
-/// A deliberately small, truthful detail surface for the recordings that the
-/// capture pipeline already persists. Full transcript editing belongs to #28,
-/// but a completed or failed recording must never be a dead-end in the list.
-private struct RecordingDetailScreen: View {
-    let model: RecordingCoreModel
-    let recordingID: UUID
-
-    @State private var chunks: [AudioChunk] = []
-    @State private var transcriptionJob: RecordingJob?
-    @State private var transcript: TranscriptDocumentV1?
-    @State private var loadError: String?
-    @State private var transcriptError: String?
-    @StateObject private var timelinePlayer = RecordingAudioTimelinePlayer()
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                status
-                audio
-                document
-                processing
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 20)
-        }
-        .background(Color(uiColor: .systemBackground))
-        .navigationTitle(currentRecording.isMeeting ? "会议详情" : "录音详情")
-        .navigationBarTitleDisplayMode(.inline)
-        .task(id: currentRecording.updatedAt) {
-            await loadDetail()
-        }
-        .onDisappear {
-            timelinePlayer.stop()
-        }
-    }
-
-    private var currentRecording: Recording {
-        model.recordings.first(where: { $0.id == recordingID })
-            ?? Recording(id: recordingID, startedAt: .distantPast, state: .failed)
-    }
-
-    private var playableChunks: [AudioChunk] {
-        chunks.filter {
-            $0.state == .closed &&
-                FileManager.default.fileExists(
-                    atPath: model.repository.rootURL.appendingPathComponent($0.relativePath).path
-                )
-        }
-    }
-
-    private var status: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(currentRecording.title?.isEmpty == false
-                 ? currentRecording.title!
-                 : (currentRecording.isMeeting ? "未命名会议" : "未命名录音"))
-                .font(.title3.weight(.semibold))
-
-            Text(metadata)
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
-
-            Label(statusText, systemImage: statusSymbol)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(statusColor)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(currentRecording.title ?? "未命名录音")，\(metadata)，\(statusText)")
-    }
-
-    @ViewBuilder
-    private var audio: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("音频")
-                .font(.headline)
-
-            if playableChunks.isEmpty {
-                Label("音频暂不可用", systemImage: "waveform.slash")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    Slider(
-                        value: Binding(
-                            get: { timelinePlayer.currentTime },
-                            set: { timelinePlayer.seek(to: $0) }
-                        ),
-                        in: 0...max(timelinePlayer.duration, 0.01)
-                    )
-                    .tint(.red)
-                    .accessibilityLabel("音频时间轴")
-
-                    HStack {
-                        Text(RecordingRow.duration(timelinePlayer.currentTime))
-                        Spacer()
-                        Text(RecordingRow.duration(timelinePlayer.duration))
-                    }
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-
-                    HStack(spacing: 22) {
-                        Button { timelinePlayer.seek(by: -15) } label: {
-                            Image(systemName: "gobackward.15")
-                                .frame(minWidth: 44, minHeight: 44)
-                        }
-                        Button { timelinePlayer.togglePlayback() } label: {
-                            Image(systemName: timelinePlayer.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.title2)
-                                .frame(width: 52, height: 52)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.primary)
-                        Button { timelinePlayer.seek(by: 15) } label: {
-                            Image(systemName: "goforward.15")
-                                .frame(minWidth: 44, minHeight: 44)
-                        }
-                        Menu {
-                            ForEach([Float(1), 1.25, 1.5, 2], id: \.self) { rate in
-                                Button("\(rate, specifier: "%.2g")×") {
-                                    timelinePlayer.setRate(rate)
-                                }
-                            }
-                        } label: {
-                            Text("\(timelinePlayer.playbackRate, specifier: "%.2g")×")
-                                .font(.subheadline.weight(.medium))
-                                .frame(minWidth: 44, minHeight: 44)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .accessibilityElement(children: .contain)
-
-                    if let playbackError = timelinePlayer.playbackError {
-                        Label(playbackError, systemImage: "exclamationmark.triangle")
-                            .font(.subheadline)
-                            .foregroundStyle(.red)
-                            .accessibilityIdentifier("playback-error")
-                    }
-                }
-            }
-        }
-    }
-
-    private var document: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("文稿")
-                .font(.headline)
-            if let transcript {
-                Text("逐字稿 · revision \(transcript.revision)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                ForEach(transcript.segments) { segment in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("+\(transcriptOffset(segment.offsetMilliseconds))")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                        Text(segment.text)
-                            .font(.body)
-                    }
-                    .padding(.vertical, 8)
-                }
-            } else {
-                Text(currentRecording.state == .processing
-                     ? "正在生成本地文稿。"
-                     : "这条录音尚无可读取的本地文稿。")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let transcriptError {
-                Label(transcriptError, systemImage: "exclamationmark.triangle")
-                    .font(.subheadline)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("transcript-read-error")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var processing: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("处理状态")
-                .font(.headline)
-
-            if let transcriptionJob {
-                LabeledContent("转写") {
-                    Text(jobStateText(transcriptionJob.state))
-                        .foregroundStyle(jobColor(transcriptionJob.state))
-                }
-                LabeledContent("尝试次数") {
-                    Text("\(transcriptionJob.attemptCount)")
-                        .monospacedDigit()
-                }
-                if let message = transcriptionJob.lastError, !message.isEmpty {
-                    Label(message, systemImage: "exclamationmark.triangle")
-                        .font(.subheadline)
-                        .foregroundStyle(.red)
-                }
-            } else {
-                Text("尚未创建转写任务。")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            if currentRecording.state == .failed {
-                Button("重新处理") {
-                    Task { await model.retryTranscription(recordingID: recordingID) }
-                }
-                .buttonStyle(.bordered)
-                .tint(.primary)
-                .accessibilityHint("重新提交本地转写任务")
-            }
-
-            if let loadError {
-                Label(loadError, systemImage: "exclamationmark.triangle")
-                    .font(.subheadline)
-                    .foregroundStyle(.red)
-            }
-        }
-    }
-
-    private var metadata: String {
-        let time = currentRecording.startedAt.formatted(date: .abbreviated, time: .shortened)
-        let duration = currentRecording.endedAt.map {
-            RecordingRow.duration($0.timeIntervalSince(currentRecording.startedAt))
-        } ?? "录制中"
-        return "\(time) · \(duration)"
-    }
-
-    private var statusText: String {
-        switch currentRecording.state {
-        case .recording: "正在录音"
-        case .paused: "已暂停"
-        case .interrupted: "录音中断，需要注意"
-        case .stopping: "正在停止"
-        case .processing: "正在处理"
-        case .complete: "已完成"
-        case .failed: "需要注意"
-        }
-    }
-
-    private var statusSymbol: String {
-        switch currentRecording.state {
-        case .recording: "record.circle.fill"
-        case .paused: "pause.circle.fill"
-        case .interrupted, .failed: "exclamationmark.triangle.fill"
-        case .stopping: "stop.circle"
-        case .processing: "hourglass"
-        case .complete: "checkmark.circle"
-        }
-    }
-
-    private var statusColor: Color {
-        switch currentRecording.state {
-        case .recording, .failed: .red
-        case .paused, .interrupted, .processing: .orange
-        case .stopping, .complete: .secondary
-        }
-    }
-
-    private func jobStateText(_ state: RecordingJobState) -> String {
-        switch state {
-        case .pending: "等待处理"
-        case .running: "正在处理"
-        case .completed: "已完成"
-        case .failed: "处理失败"
-        }
-    }
-
-    private func jobColor(_ state: RecordingJobState) -> Color {
-        switch state {
-        case .pending, .running: .orange
-        case .completed: .secondary
-        case .failed: .red
-        }
-    }
-
-    private func loadDetail() async {
-        do {
-            async let storedChunks = model.repository.chunks(recordingID: recordingID)
-            async let jobs = model.repository.jobs(recordingID: recordingID)
-            chunks = try await storedChunks.sorted { $0.startSample < $1.startSample }
-            transcriptionJob = try await jobs.last(where: { $0.kind == .transcription })
-            timelinePlayer.load(chunks: playableChunks, rootURL: model.repository.rootURL)
-            loadError = nil
-        } catch {
-            loadError = "无法读取录音详情：\(error.localizedDescription)"
-            return
-        }
-
-        do {
-            transcript = try await model.transcript(recordingID: recordingID)
-            transcriptError = nil
-        } catch {
-            transcript = nil
-            transcriptError = "文稿无法读取：\(error.localizedDescription)"
-        }
-    }
-
-    private func transcriptOffset(_ milliseconds: Int) -> String {
-        let minutes = milliseconds / 60_000
-        let seconds = milliseconds / 1_000 % 60
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
-}
-
+/// Optional day filter above the all-recordings list. Default selection is
+/// 「全部」 so the calendar never owns the home mental model (FR-ADD-IA-002).
 private struct CalendarStrip: View {
-    @Binding var selectedDate: Date
+    @Binding var selectedDate: Date?
     let recordings: [Recording]
 
     private let calendar = Calendar.current
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(days, id: \.self) { day in
-                    let isSelected = calendar.isDate(day, inSameDayAs: selectedDate)
-                    let count = recordings.filter { calendar.isDate($0.startedAt, inSameDayAs: day) }.count
-                    Button {
-                        selectedDate = day
-                    } label: {
-                        VStack(spacing: 4) {
-                            Text(day.formatted(.dateTime.weekday(.narrow)))
-                                .font(.caption.weight(.medium))
-                            Text(day.formatted(.dateTime.day()))
-                                .font(.headline.monospacedDigit())
-                            Text(count == 0 ? " " : "\(count) 条")
-                                .font(.caption2)
-                                .lineLimit(1)
-                        }
-                        .frame(width: 48, height: 68)
-                        .foregroundStyle(isSelected ? .white : .primary)
-                        .background {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("按日期过滤")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
+                .accessibilityHidden(true)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    allDaysChip
+
+                    ForEach(days, id: \.self) { day in
+                        let isSelected = selectedDate.map { calendar.isDate(day, inSameDayAs: $0) } ?? false
+                        let count = recordings.filter { calendar.isDate($0.startedAt, inSameDayAs: day) }.count
+                        Button {
                             if isSelected {
-                                Capsule().fill(.primary)
-                            } else if calendar.isDateInToday(day) {
-                                Capsule().stroke(Color.secondary, lineWidth: 1)
+                                selectedDate = nil
+                            } else {
+                                selectedDate = day
+                            }
+                        } label: {
+                            VStack(spacing: 4) {
+                                Text(day.formatted(.dateTime.weekday(.narrow)))
+                                    .font(.caption.weight(.medium))
+                                Text(day.formatted(.dateTime.day()))
+                                    .font(.headline.monospacedDigit())
+                                Text(count == 0 ? " " : "\(count) 条")
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                            }
+                            .frame(width: 48, height: 68)
+                            .foregroundStyle(isSelected ? .white : .primary)
+                            .background {
+                                if isSelected {
+                                    Capsule().fill(.primary)
+                                } else if calendar.isDateInToday(day) {
+                                    Capsule().stroke(Color.secondary, lineWidth: 1)
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(day.formatted(.dateTime.year().month().day().weekday(.wide)))
+                        .accessibilityValue(count == 0 ? "没有记录" : "\(count) 条记录")
+                        .accessibilityHint(isSelected ? "再次点击可清除日期过滤" : "过滤到这一天")
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(day.formatted(.dateTime.year().month().day().weekday(.wide)))
-                    .accessibilityValue(count == 0 ? "没有记录" : "\(count) 条记录")
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("calendar-day-filter")
+    }
+
+    private var allDaysChip: some View {
+        let isSelected = selectedDate == nil
+        return Button {
+            selectedDate = nil
+        } label: {
+            VStack(spacing: 4) {
+                Text("全部")
+                    .font(.caption.weight(.semibold))
+                Text("\(recordings.count)")
+                    .font(.headline.monospacedDigit())
+                Text("条")
+                    .font(.caption2)
+            }
+            .frame(width: 48, height: 68)
+            .foregroundStyle(isSelected ? .white : .primary)
+            .background {
+                if isSelected {
+                    Capsule().fill(.primary)
+                } else {
+                    Capsule().stroke(Color.secondary, lineWidth: 1)
                 }
             }
-            .padding(.horizontal, 20)
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("全部日期")
+        .accessibilityValue("\(recordings.count) 条记录")
+        .accessibilityHint("清除日期过滤，显示全部录音列表")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("calendar-filter-all")
     }
 
     private var days: [Date] {
@@ -837,12 +970,13 @@ private struct CalendarStrip: View {
 
 private struct RecordingRow: View {
     let recording: Recording
+    var folderName: String? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: statusSymbol)
+            Image(systemName: RecordingStatusStyle.symbolName(for: recording.state))
                 .font(.title3)
-                .foregroundStyle(statusColor)
+                .foregroundStyle(RecordingStatusStyle.color(for: recording.state))
                 .frame(width: 24)
                 .accessibilityHidden(true)
 
@@ -855,9 +989,12 @@ private struct RecordingRow: View {
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary)
                 if recording.state != .complete {
-                    Label(statusText, systemImage: statusSymbol)
+                    Label(
+                        RecordingStatusStyle.text(for: recording.state),
+                        systemImage: RecordingStatusStyle.symbolName(for: recording.state)
+                    )
                         .font(.caption)
-                        .foregroundStyle(statusColor)
+                        .foregroundStyle(RecordingStatusStyle.color(for: recording.state))
                 }
             }
             Spacer(minLength: 8)
@@ -870,11 +1007,16 @@ private struct RecordingRow: View {
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(recording.title?.isEmpty == false ? recording.title! : defaultTitle)，\(metadata)，\(statusText)")
+        .accessibilityLabel("\(recording.title?.isEmpty == false ? recording.title! : defaultTitle)，\(metadata)，\(RecordingStatusStyle.text(for: recording.state))")
     }
 
     private var defaultTitle: String {
-        recording.isMeeting ? "未命名会议" : "未命名录音"
+        if recording.origin == .importedAudio {
+            return recording.sourceFilename.map {
+                ($0 as NSString).deletingPathExtension
+            } ?? "导入音频"
+        }
+        return recording.isMeeting ? "未命名会议" : "未命名录音"
     }
 
     private var metadata: String {
@@ -885,45 +1027,56 @@ private struct RecordingRow: View {
         } else {
             duration = "录制中"
         }
-        return "\(time) · \(duration)"
-    }
-
-    private var statusText: String {
-        switch recording.state {
-        case .recording: "正在录音"
-        case .paused: "已暂停"
-        case .interrupted: "录音中断，需要注意"
-        case .stopping: "正在停止"
-        case .processing: "正在处理"
-        case .complete: "已完成"
-        case .failed: "需要注意"
+        let folderSuffix: String
+        if let folderName, !folderName.isEmpty {
+            folderSuffix = " · \(folderName)"
+        } else {
+            folderSuffix = ""
         }
-    }
-
-    private var statusSymbol: String {
-        switch recording.state {
-        case .recording: "record.circle.fill"
-        case .paused: "pause.circle.fill"
-        case .interrupted, .failed: "exclamationmark.triangle.fill"
-        case .stopping: "stop.circle"
-        case .processing: "hourglass"
-        case .complete: "checkmark.circle"
+        if recording.origin == .importedAudio {
+            let source = recording.sourceFilename ?? "导入音频"
+            return "\(time) · \(duration) · 导入 · \(source)\(folderSuffix)"
         }
-    }
-
-    private var statusColor: Color {
-        switch recording.state {
-        case .recording, .failed: .red
-        case .paused, .interrupted, .processing: .orange
-        case .stopping, .complete: .secondary
-        }
+        return "\(time) · \(duration)\(folderSuffix)"
     }
 
     fileprivate static func duration(_ interval: TimeInterval) -> String {
-        let seconds = max(0, Int(interval))
-        return seconds >= 3_600
-            ? String(format: "%d:%02d:%02d", seconds / 3_600, seconds / 60 % 60, seconds % 60)
-            : String(format: "%d:%02d", seconds / 60, seconds % 60)
+        RecordingStatusStyle.formatDuration(interval)
+    }
+}
+
+private struct TranscriptSearchResultRow: View {
+    let hit: TranscriptSearchHit
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "text.magnifyingglass")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(hit.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                Text(hit.excerpt)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(hit.title)，\(hit.excerpt)")
     }
 }
 
@@ -931,24 +1084,41 @@ private struct StartRecordingSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var isMeeting = false
+    @State private var microphonePermission = MicrophoneAccess.recordPermission
     let model: RecordingCoreModel
 
     var body: some View {
         NavigationStack {
             Form {
+                if microphonePermission == .denied {
+                    Section {
+                        Label(MicrophoneAccess.deniedStartMessage, systemImage: "mic.slash")
+                            .foregroundStyle(.secondary)
+                        Link("前往系统设置", destination: MicrophoneAccess.settingsURL)
+                    } header: {
+                        Text("权限受限")
+                    } footer: {
+                        Text("拒绝麦克风后仍可浏览、导出已有记录；不会自动再次请求权限。")
+                    }
+                }
+
                 Section {
                     Button {
                         Task {
                             await model.start(title: title, isMeeting: isMeeting)
+                            microphonePermission = MicrophoneAccess.recordPermission
                             if model.captureIsActive { dismiss() }
                         }
                     } label: {
-                        Label("直接开始录音", systemImage: "mic.fill")
+                        Label(
+                            microphonePermission == .denied ? "重试开始录音" : "直接开始录音",
+                            systemImage: "mic.fill"
+                        )
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.primary)
-                    .accessibilityHint("不填写以下字段也可以开始")
+                    .accessibilityHint("不填写以下字段也可以开始；未点击不会录音")
                 } footer: {
                     Text("标题和会议字段都可以在录音结束后补充。")
                 }
@@ -963,6 +1133,9 @@ private struct StartRecordingSheet: View {
                     Section {
                         Label(notice, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.red)
+                        if notice == MicrophoneAccess.deniedStartMessage {
+                            Link("前往系统设置", destination: MicrophoneAccess.settingsURL)
+                        }
                     }
                 }
             }
@@ -973,6 +1146,7 @@ private struct StartRecordingSheet: View {
                     Button("取消") { dismiss() }
                 }
             }
+            .onAppear { microphonePermission = MicrophoneAccess.recordPermission }
         }
         .presentationDetents([.medium])
     }
@@ -1013,17 +1187,43 @@ private struct RecordingScreen: View {
             .background(Color(uiColor: .systemBackground))
         }
         .interactiveDismissDisabled()
-        .onChange(of: model.captureIsActive) { _, active in
-            if !active { isPresented = false }
+        .onChange(of: model.presentation) { _, state in
+            switch state {
+            case .idle, .failed, .processing:
+                isPresented = false
+            case .recording, .paused, .interrupted, .stopping:
+                break
+            }
         }
     }
 
     private var status: some View {
-        Label(statusText, systemImage: statusSymbol)
+        VStack(spacing: 8) {
+            Label(
+                RecordingStatusStyle.text(for: model.presentation),
+                systemImage: RecordingStatusStyle.symbolName(for: model.presentation)
+            )
             .font(.headline)
-            .foregroundStyle(statusColor)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("录音状态：\(statusText)")
+            .foregroundStyle(RecordingStatusStyle.color(for: model.presentation))
+            .accessibilityLabel("录音状态：\(RecordingStatusStyle.text(for: model.presentation))")
+
+            if let progress = model.sessionProgress {
+                Text(RecordingStatusStyle.progressDetailText(
+                    for: progress,
+                    isInBackground: model.isInBackground
+                ))
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .accessibilityLabel(
+                    RecordingStatusStyle.progressDetailText(
+                        for: progress,
+                        isInBackground: model.isInBackground
+                    )
+                )
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private var timer: some View {
@@ -1068,51 +1268,25 @@ private struct RecordingScreen: View {
                     .frame(minWidth: 88, minHeight: 52)
             }
             .buttonStyle(.bordered)
-            .disabled(model.presentation == .interrupted)
-            .accessibilityHint(model.presentation == .interrupted ? "系统中断期间不可暂停" : "")
+            .disabled(model.presentation == .interrupted || model.presentation == .stopping)
+            .accessibilityHint(
+                model.presentation == .interrupted
+                    ? "系统中断期间不可暂停"
+                    : (model.presentation == .stopping ? "正在安全停止，请稍候" : "")
+            )
 
             Button(role: .destructive) {
                 Task { await model.stop() }
             } label: {
-                Label("停止", systemImage: "stop.fill")
+                Label(model.presentation == .stopping ? "停止中" : "停止", systemImage: "stop.fill")
                     .frame(minWidth: 88, minHeight: 52)
             }
             .buttonStyle(.borderedProminent)
             .tint(.red)
-            .accessibilityLabel("停止录音")
+            .disabled(model.presentation == .stopping)
+            .accessibilityLabel(model.presentation == .stopping ? "正在安全停止" : "停止录音")
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: model.presentation)
-    }
-
-    private var statusText: String {
-        switch model.presentation {
-        case .recording: "正在录音"
-        case .paused: "已暂停"
-        case .interrupted: "已中断，等待恢复"
-        case .stopping: "正在安全停止"
-        case .processing: "正在处理"
-        case .idle, .failed: "录音已结束"
-        }
-    }
-
-    private var statusSymbol: String {
-        switch model.presentation {
-        case .recording: "record.circle.fill"
-        case .paused: "pause.circle.fill"
-        case .interrupted: "exclamationmark.triangle.fill"
-        case .stopping: "stop.circle"
-        case .processing: "hourglass"
-        case .idle, .failed: "checkmark.circle"
-        }
-    }
-
-    private var statusColor: Color {
-        switch model.presentation {
-        case .recording: .red
-        case .paused, .interrupted, .processing: .orange
-        case .stopping, .idle: .secondary
-        case .failed: .red
-        }
     }
 
     private var elapsedText: String {
@@ -1134,79 +1308,258 @@ private struct RecordingScreen: View {
     }
 }
 
-private struct RecordingBar: View {
+struct RecordingBar: View {
     let model: RecordingCoreModel
     let reduceMotion: Bool
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "record.circle.fill")
-                .foregroundStyle(.red)
-                .symbolEffect(.pulse, isActive: !reduceMotion && model.presentation == .recording)
+            Image(systemName: RecordingStatusStyle.symbolName(for: model.presentation))
+                .foregroundStyle(RecordingStatusStyle.color(for: model.presentation))
+                .symbolEffect(
+                    .pulse,
+                    isActive: !reduceMotion && model.presentation == .recording
+                )
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(barTitle)
+                Text(RecordingStatusStyle.barTitle(for: model.presentation))
                     .font(.subheadline.weight(.semibold))
-                Text("\(elapsedText) · \(backlogText)")
+                Text("\(elapsedText) · \(statusDetailText)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(barTitle)，已录制 \(elapsedAccessibility)，\(backlogText)")
+            .accessibilityLabel(
+                "\(RecordingStatusStyle.barTitle(for: model.presentation))，已录制 \(elapsedAccessibility)，\(statusDetailText)"
+            )
 
             Spacer(minLength: 4)
 
-            Button(role: .destructive) {
-                Task { await model.stop() }
-            } label: {
-                Label("停止", systemImage: "stop.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(minWidth: 54, minHeight: 44)
+            if showsStopControl {
+                Button(role: .destructive) {
+                    Task { await model.stop() }
+                } label: {
+                    Label(model.presentation == .stopping ? "停止中" : "停止", systemImage: "stop.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(minWidth: 54, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .disabled(model.presentation == .stopping)
+                .accessibilityLabel(
+                    model.presentation == .stopping ? "正在安全停止" : "停止录音"
+                )
             }
-            .buttonStyle(.bordered)
-            .tint(.red)
-            .accessibilityLabel("停止录音")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color.red.opacity(0.08))
+        .background(barBackground)
         .overlay(alignment: .bottom) { Divider() }
+        .accessibilityIdentifier("global-recording-bar")
     }
 
-    private var barTitle: String {
+    private var showsStopControl: Bool {
         switch model.presentation {
-        case .recording: "正在录音"
-        case .paused: "录音已暂停"
-        case .interrupted: "录音已中断"
-        default: "录音状态变化中"
+        case .recording, .paused, .interrupted, .stopping:
+            true
+        case .processing, .idle, .failed:
+            false
         }
     }
 
-    private var backlogText: String {
-        model.isInBackground ? "录音继续，转写待前台处理" : "转写将在停止后处理"
+    private var barBackground: Color {
+        switch model.presentation {
+        case .recording, .paused, .interrupted:
+            Color.red.opacity(0.08)
+        case .stopping:
+            Color.orange.opacity(0.10)
+        case .processing, .idle, .failed:
+            Color(uiColor: .secondarySystemBackground)
+        }
+    }
+
+    private var statusDetailText: String {
+        if let progress = model.sessionProgress {
+            return RecordingStatusStyle.progressDetailText(
+                for: progress,
+                isInBackground: model.isInBackground
+            )
+        }
+        return switch model.presentation {
+        case .stopping:
+            "正在安全保存"
+        case .recording, .paused, .interrupted:
+            model.isInBackground ? "录音继续，转写待前台处理" : "分钟级增量转写"
+        case .processing, .idle, .failed:
+            "可返回记录查看进度"
+        }
     }
 
     private var elapsedText: String {
-        guard let recording = model.snapshot.recording else { return "00:00" }
-        return RecordingRow.duration(Date().timeIntervalSince(recording.startedAt))
+        guard let recording = model.snapshot.recording else {
+            if let active = model.recordings.first(where: {
+                $0.state == .processing || $0.state == .stopping
+            }) {
+                let end = active.endedAt ?? Date()
+                return RecordingStatusStyle.formatDuration(end.timeIntervalSince(active.startedAt))
+            }
+            return "00:00"
+        }
+        let end = recording.endedAt ?? Date()
+        return RecordingStatusStyle.formatDuration(end.timeIntervalSince(recording.startedAt))
     }
 
     private var elapsedAccessibility: String {
         guard let recording = model.snapshot.recording else { return "0 分 0 秒" }
-        let seconds = max(0, Int(Date().timeIntervalSince(recording.startedAt)))
+        let end = recording.endedAt ?? Date()
+        let seconds = max(0, Int(end.timeIntervalSince(recording.startedAt)))
         return "\(seconds / 60) 分 \(seconds % 60) 秒"
+    }
+}
+
+
+private struct ImportActivityBanner: View {
+    let activity: ImportActivity
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(activity.statusText)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.primary)
+                Text("导入在后台处理，不影响麦克风录音")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(.ultraThinMaterial)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("import-activity-banner")
+    }
+}
+
+private struct ImportNoticeBanner: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: text.hasPrefix("导入失败") || text.hasPrefix("已有导入")
+                  ? "exclamationmark.triangle"
+                  : "checkmark.circle")
+                .foregroundStyle(text.hasPrefix("导入失败") ? Color.orange : Color.secondary)
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(.ultraThinMaterial)
+        .accessibilityIdentifier("import-notice-banner")
     }
 }
 
 private struct SettingsScreen: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(OnboardingPreferences.documentSyncKey) private var documentSyncEnabled = false
+    @AppStorage(OnboardingPreferences.encryptedVoiceprintSyncKey) private var encryptedVoiceprintSyncEnabled = false
+    @AppStorage(TranscriptionLanguageMode.preferenceKey) private var languageModeRaw =
+        TranscriptionLanguageMode.zhEnBilingual.rawValue
+    @State private var syncStatus = DocumentSyncStatusCenter.shared
     let model: RecordingCoreModel
     let reduceMotion: Bool
+
+    private var languageModeBinding: Binding<TranscriptionLanguageMode> {
+        Binding(
+            get: { TranscriptionLanguageMode(rawValue: languageModeRaw) ?? .zhEnBilingual },
+            set: { languageModeRaw = $0.rawValue }
+        )
+    }
 
     var body: some View {
         NavigationStack {
             List {
+                if TrialQuotaLedger.isManualTrialEnabled {
+                    TrialQuotaSettingsSection(trial: model.trialEntitlement)
+                }
+
+                Section("转写") {
+                    Picker("语言模式", selection: languageModeBinding) {
+                        ForEach(TranscriptionLanguageMode.allCases) { mode in
+                            Text(mode.settingsTitle).tag(mode)
+                        }
+                    }
+                    .accessibilityIdentifier("settings-language-mode")
+                    Text("中英双语为默认，由模型自动识别。英语优先将新任务偏向英文解码。仅影响之后开始的新录音与新导入；已完成文稿不会自动重跑。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("同步") {
+                    if let attention = syncStatus.attention {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label(attention.title, systemImage: "exclamationmark.triangle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color(red: 1.0, green: 0.62, blue: 0.04))
+                                .accessibilityIdentifier("sync-needs-attention")
+                            Text(attention.message)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            if !attention.conflictRelativePaths.isEmpty {
+                                Text(attention.conflictRelativePaths.joined(separator: "\n"))
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .textSelection(.enabled)
+                            }
+                            Text("状态：\(DocumentSyncAttention.needsAttentionState)。本地录音不受影响。")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Button("清除提示") {
+                                syncStatus.clearAttention()
+                            }
+                            .font(.footnote)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    Toggle("同步 Markdown 与 JSON 文档", isOn: $documentSyncEnabled)
+                    Text("公开 VoiceContext 文档（含文件夹归类元数据）；原始音频与明文声纹永不进入公开目录。iCloud 不可用时仍保存在本机。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Toggle("同步加密的已确认声纹档案", isOn: $encryptedVoiceprintSyncEnabled)
+                    Text("AES-GCM 加密后写入私有 iCloud 路径；关闭同步时不保留云端档案。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Codex Skill") {
+                    NavigationLink {
+                        CodexSkillSettingsView(model: model)
+                    } label: {
+                        Label("会议纪要 Skill", systemImage: "sparkles")
+                    }
+                    Text("仅 complete 会议可生成纪要；Skill 与模板写入本机 VoiceContext，iCloud 可用时再镜像。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("导入") {
+                    Label("文件：选择 m4a / wav / mp3 等音频", systemImage: "folder")
+                    Label("照片与视频：抽取视频音轨后导入", systemImage: "photo.on.rectangle")
+                    Text("语音备忘录请先「存储到文件」，再通过「导入 → 文件」选择。v1 不含 Share Extension。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Text("长视频无产品时长上限；导入与转写排队进行，不阻塞新的麦克风录音。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("隐私与许可") {
                     Label("录音和文稿默认保存在本机", systemImage: "lock")
 
@@ -1252,12 +1605,106 @@ private struct SettingsScreen: View {
                     Button("完成") { dismiss() }
                 }
             }
+            .onChange(of: encryptedVoiceprintSyncEnabled) { _, enabled in
+                guard !enabled else { return }
+                // Acceptance: 关闭同步无云档案 — remove private cloud copy promptly.
+                Task.detached {
+                    guard let url = try? VoiceprintArchiveStorage.defaultURL() else { return }
+                    let result = EncryptedVoiceprintiCloudMirror.publish(
+                        localEncryptedURL: url,
+                        configuration: EncryptedVoiceprintiCloudMirror.Configuration(
+                            isEncryptedVoiceprintSyncEnabled: { false }
+                        )
+                    )
+                    await MainActor.run {
+                        DocumentSyncStatusCenter.shared.record(voiceprint: result)
+                    }
+                }
+            }
             .safeAreaInset(edge: .top, spacing: 0) {
-                if model.captureIsActive {
+                if model.showsSessionChrome {
                     RecordingBar(model: model, reduceMotion: reduceMotion)
                 }
             }
         }
+    }
+}
+
+private struct CodexSkillSettingsView: View {
+    let model: RecordingCoreModel
+    @State private var statusMessage: String?
+    @State private var isSeeding = false
+
+    var body: some View {
+        List {
+            Section("本机公开目录") {
+                Text("Skill 与默认模板导出到 Documents/VoiceContext（文件 App → 我的 iPhone → VoiceContext）。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                LabeledContent("Skill") {
+                    Text("Skill/generate-meeting-minutes")
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                LabeledContent("模板") {
+                    Text("Templates/default-meeting-minutes.md")
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
+
+            Section("操作") {
+                Button {
+                    Task {
+                        isSeeding = true
+                        defer { isSeeding = false }
+                        do {
+                            let result = try await model.seedSkillPack()
+                            let mirrorNote: String
+                            if let mirror = result.iCloudMirror {
+                                switch mirror.destination {
+                                case .iCloud:
+                                    mirrorNote = "；已尝试镜像到 iCloud Documents"
+                                case .localOnly:
+                                    mirrorNote = "；iCloud 未就绪，仅本机"
+                                case .skipped:
+                                    mirrorNote = "；本次跳过 iCloud"
+                                }
+                            } else {
+                                mirrorNote = ""
+                            }
+                            statusMessage = "已导出 \(result.copiedFileCount) 个文件到 VoiceContext\(mirrorNote)"
+                        } catch {
+                            statusMessage = "导出失败：\(error.localizedDescription)"
+                        }
+                    }
+                } label: {
+                    if isSeeding {
+                        ProgressView()
+                    } else {
+                        Label("导出 / 刷新 Skill 与模板", systemImage: "square.and.arrow.down")
+                    }
+                }
+                .disabled(isSeeding)
+                .accessibilityIdentifier("seed-skill-pack")
+            }
+
+            if let statusMessage {
+                Section {
+                    Text(statusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Mac Codex") {
+                Text("在 Mac 上指向 VoiceContext/Skill/generate-meeting-minutes，或复制该目录到 Codex skills。详见 docs/features/generate-meeting-minutes-skill.md。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Codex Skill")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -1354,33 +1801,21 @@ private struct RecordingCoreValidationScreen: View {
     private var validationStateText: String {
         switch model.presentation {
         case .idle: "未开始"
-        case .recording: "正在录音"
-        case .paused: "已暂停"
-        case .interrupted: "已中断"
-        case .stopping: "正在停止"
-        case .processing: "正在处理"
         case let .failed(message): "失败：\(message)"
+        default: RecordingStatusStyle.text(for: model.presentation)
         }
     }
 
     private var validationStateSymbol: String {
         switch model.presentation {
         case .idle: "circle.dashed"
-        case .recording: "record.circle.fill"
-        case .paused: "pause.circle.fill"
-        case .interrupted: "exclamationmark.triangle.fill"
-        case .stopping: "stop.circle"
-        case .processing: "hourglass"
         case .failed: "xmark.octagon.fill"
+        default: RecordingStatusStyle.symbolName(for: model.presentation)
         }
     }
 
     private var validationStateColor: Color {
-        switch model.presentation {
-        case .recording, .failed: .red
-        case .paused, .interrupted, .processing: .orange
-        case .idle, .stopping: .secondary
-        }
+        RecordingStatusStyle.color(for: model.presentation)
     }
 
     private func validationGapText(_ gap: RecordingGap) -> String {
@@ -1404,3 +1839,181 @@ private extension ScenePhaseLike {
 #Preview {
     ContentView()
 }
+
+private struct FolderManagerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let model: RecordingCoreModel
+    @Binding var folderFilter: FolderListFilter
+    @State private var newFolderName = ""
+    @State private var renameTarget: RecordingFolder?
+    @State private var renameText = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("新建文件夹") {
+                    HStack {
+                        TextField("文件夹名称", text: $newFolderName)
+                            .accessibilityIdentifier("folder-create-field")
+                        Button("创建") {
+                            Task { await createFolder() }
+                        }
+                        .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("folder-create-button")
+                    }
+                }
+
+                Section("已有文件夹") {
+                    if model.folders.isEmpty {
+                        Text("还没有文件夹")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.folders) { folder in
+                            HStack {
+                                Button {
+                                    folderFilter = .folder(folder.id)
+                                    dismiss()
+                                } label: {
+                                    Label(folder.name, systemImage: "folder")
+                                }
+                                Spacer()
+                                Button("重命名") {
+                                    renameTarget = folder
+                                    renameText = folder.name
+                                }
+                                .font(.footnote)
+                            }
+                            .accessibilityIdentifier("folder-row-\(folder.id.uuidString)")
+                        }
+                        .onDelete { indexSet in
+                            Task { await deleteFolders(at: indexSet) }
+                        }
+                    }
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .foregroundStyle(.orange)
+                            .font(.footnote)
+                    }
+                }
+            }
+            .navigationTitle("文件夹")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+            .alert(
+                "重命名文件夹",
+                isPresented: Binding(
+                    get: { renameTarget != nil },
+                    set: { if !$0 { renameTarget = nil } }
+                )
+            ) {
+                TextField("名称", text: $renameText)
+                Button("取消", role: .cancel) { renameTarget = nil }
+                Button("保存") {
+                    Task { await renameFolder() }
+                }
+            } message: {
+                Text("删除文件夹不会删除录音，记录会回到未分类。")
+            }
+        }
+    }
+
+    @MainActor
+    private func createFolder() async {
+        do {
+            _ = try await model.createFolder(named: newFolderName)
+            newFolderName = ""
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func renameFolder() async {
+        guard let renameTarget else { return }
+        do {
+            _ = try await model.renameFolder(id: renameTarget.id, to: renameText)
+            self.renameTarget = nil
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func deleteFolders(at offsets: IndexSet) async {
+        for index in offsets {
+            let folder = model.folders[index]
+            do {
+                _ = try await model.deleteFolder(id: folder.id)
+                if case .folder(let id) = folderFilter, id == folder.id {
+                    folderFilter = .all
+                }
+                errorMessage = nil
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct MoveToFolderSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let model: RecordingCoreModel
+    let recordingID: UUID
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Button {
+                    Task { await move(to: nil) }
+                } label: {
+                    Label("未分类", systemImage: "tray")
+                }
+                .accessibilityIdentifier("move-to-uncategorized")
+
+                ForEach(model.folders) { folder in
+                    Button {
+                        Task { await move(to: folder.id) }
+                    } label: {
+                        Label(folder.name, systemImage: "folder")
+                    }
+                    .accessibilityIdentifier("move-to-\(folder.id.uuidString)")
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .foregroundStyle(.orange)
+                        .font(.footnote)
+                }
+            }
+            .navigationTitle("移动到文件夹")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func move(to folderID: UUID?) async {
+        do {
+            _ = try await model.moveRecording(recordingID, toFolder: folderID)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+

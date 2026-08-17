@@ -8,3 +8,5 @@ build/
 speech_note/build/
 xcuserdata/
 *.xcuserstate
+__pycache__/
+*.pyc

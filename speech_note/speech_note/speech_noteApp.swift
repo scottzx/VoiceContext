@@ -10,6 +10,8 @@ import SwiftUI
 @main
 struct speech_noteApp: App {
     @AppStorage(OnboardingPreferences.completedKey) private var hasCompletedOnboarding = false
+    /// Stashed across cold start / onboarding so Widget taps are not lost.
+    @State private var pendingStartRecording = false
 
     init() {
         guard ProcessInfo.processInfo.arguments.contains("-uiTestingResetOnboarding") else { return }
@@ -21,10 +23,16 @@ struct speech_noteApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if hasCompletedOnboarding {
-                ContentView()
-            } else {
-                OnboardingFlowView()
+            Group {
+                if hasCompletedOnboarding {
+                    ContentView(openStartRecording: $pendingStartRecording)
+                } else {
+                    OnboardingFlowView()
+                }
+            }
+            .onOpenURL { url in
+                guard AppDeepLink.parse(url) == .startRecording else { return }
+                pendingStartRecording = true
             }
         }
     }

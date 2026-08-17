@@ -5,10 +5,12 @@
 ## 产品文档
 
 - [VoiceContext v1 产品需求文档（PRD）](./PRD.md)：v1 产品边界、用户流程、信息架构、页面清单、状态矩阵、功能需求、验收标准，以及原型任务 `#39` / `#40` 的输入与交付定义。
+- [消费级对标增补 PRD](./PRD-consumer-parity-addendum.md)：相对离线转写竞品的增补需求（执行基线；含首次打开起 72 小时试用、文件夹 iCloud、视频无上限、v1 不做 Share Extension）。
 - [v1 信息架构与低保真原型](./design/v1/information-architecture.md)：已通过的统一 Recording 页面树、流程、状态矩阵与可点击低保真交付。
 - [v1 设计系统与高保真原型](./design/v1/design-system.md)：个人语言记事本、多人对话与会议共用的视觉 token、语音胶囊、音频播放器、SwiftUI 标注、无障碍要求与高保真原型入口。
 - [0.1.0 录音核心设计](./architecture/recording-core.md)：可靠采集、60 秒 AudioChunk、journal、恢复、gap 与音频保留边界。
 - [0.2.0 分钟级增量转写设计](./architecture/incremental-transcription.md)：closed chunk 立即入队、跨 chunk carry/source ranges、前后台门禁、录音与处理解耦及幂等恢复。
+- [generate-meeting-minutes Codex Skill](./features/generate-meeting-minutes-skill.md)：公开 VoiceContext Skill/模板导出、Mac Codex 安装与端到端验证（`#33`）。
 
 ## 文档约定
 

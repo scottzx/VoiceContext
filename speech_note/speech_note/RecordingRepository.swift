@@ -8,7 +8,18 @@ actor RecordingRepository {
 
     nonisolated struct RetentionResult: Equatable, Sendable {
         let removedChunkIDs: [UUID]
+        let removedImportedAssetIDs: [UUID]
         let reclaimedBytes: Int64
+
+        init(
+            removedChunkIDs: [UUID],
+            removedImportedAssetIDs: [UUID] = [],
+            reclaimedBytes: Int64
+        ) {
+            self.removedChunkIDs = removedChunkIDs
+            self.removedImportedAssetIDs = removedImportedAssetIDs
+            self.reclaimedBytes = reclaimedBytes
+        }
     }
 
     let rootURL: URL
@@ -127,6 +138,72 @@ actor RecordingRepository {
         ))
     }
 
+    func setRecordingTitle(
+        recordingID: UUID,
+        title: String?,
+        at date: Date
+    ) throws {
+        let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        try persist(.init(
+            occurredAt: date,
+            payload: .recordingTitleChanged(
+                recordingID: recordingID,
+                title: (trimmed?.isEmpty == false) ? trimmed : nil
+            )
+        ))
+    }
+
+    @discardableResult
+    func addImportedAudioAsset(_ asset: ImportedAudioAsset, at date: Date) throws -> RecordingJournalEvent {
+        try persist(.init(occurredAt: date, payload: .importedAudioAssetCreated(asset)))
+    }
+
+    @discardableResult
+    func upsertProcessingRange(_ range: ProcessingRange, at date: Date) throws -> RecordingJournalEvent {
+        try persist(.init(occurredAt: date, payload: .processingRangeUpserted(range)))
+    }
+
+    func setProcessingRangeContinuation(
+        id: UUID,
+        requiresContinuation: Bool,
+        at date: Date
+    ) throws -> RecordingJournalEvent {
+        try persist(.init(
+            occurredAt: date,
+            payload: .processingRangeContinuationChanged(
+                rangeID: id,
+                requiresContinuation: requiresContinuation
+            )
+        ))
+    }
+
+    /// Persists an imported Recording, its private asset, and logical ranges.
+    func commitImportedAudio(
+        recording: Recording,
+        asset: ImportedAudioAsset,
+        ranges: [ProcessingRange],
+        at date: Date
+    ) throws {
+        try createRecording(recording, at: date)
+        try addImportedAudioAsset(asset, at: date)
+        for range in ranges {
+            try upsertProcessingRange(range, at: date)
+        }
+    }
+
+    func importedAudioAsset(recordingID: UUID) throws -> ImportedAudioAsset? {
+        try index.importedAudioAsset(recordingID: recordingID)
+    }
+
+    @discardableResult
+    func updateImportedAudioAsset(_ asset: ImportedAudioAsset, at date: Date) throws -> RecordingJournalEvent {
+        try persist(.init(occurredAt: date, payload: .importedAudioAssetUpdated(asset)))
+    }
+
+    func processingRanges(recordingID: UUID) throws -> [ProcessingRange] {
+        try index.processingRanges(recordingID: recordingID)
+    }
+
     func setChunkPinned(id: UUID, isPinned: Bool, at date: Date) throws {
         try persist(.init(
             occurredAt: date,
@@ -200,24 +277,42 @@ actor RecordingRepository {
             let transcriptionJobs = try index.jobs(recordingID: recording.id)
                 .filter { $0.kind == .transcription }
             guard let job = transcriptionJobs.last else {
-                // The minute-level queue restores a stopped Recording as one
-                // durable job per closed chunk, never as a legacy
-                // whole-recording job that would transcribe it a second time.
-                let closedChunks = try index.chunks(recordingID: recording.id)
-                    .filter { $0.state == .closed }
-                    .sorted { $0.startSample < $1.startSample }
-                for chunk in closedChunks {
-                    try upsertJob(RecordingJob(
-                        id: UUID(),
-                        recordingID: recording.id,
-                        chunkID: chunk.id,
-                        kind: .transcription,
-                        state: .pending,
-                        attemptCount: 0,
-                        lastError: nil,
-                        createdAt: date,
-                        updatedAt: date
-                    ), at: date)
+                // Files imports restore one durable job per ProcessingRange.
+                // Microphone captures restore one job per closed AudioChunk.
+                // Never create a legacy whole-recording job here.
+                if recording.origin == .importedAudio {
+                    let ranges = try index.processingRanges(recordingID: recording.id)
+                        .sorted { $0.sequence < $1.sequence }
+                    for range in ranges where range.state != .completed {
+                        try upsertJob(RecordingJob(
+                            id: UUID(),
+                            recordingID: recording.id,
+                            processingRangeID: range.id,
+                            kind: .transcription,
+                            state: .pending,
+                            attemptCount: 0,
+                            lastError: nil,
+                            createdAt: date,
+                            updatedAt: date
+                        ), at: date)
+                    }
+                } else {
+                    let closedChunks = try index.chunks(recordingID: recording.id)
+                        .filter { $0.state == .closed }
+                        .sorted { $0.startSample < $1.startSample }
+                    for chunk in closedChunks {
+                        try upsertJob(RecordingJob(
+                            id: UUID(),
+                            recordingID: recording.id,
+                            chunkID: chunk.id,
+                            kind: .transcription,
+                            state: .pending,
+                            attemptCount: 0,
+                            lastError: nil,
+                            createdAt: date,
+                            updatedAt: date
+                        ), at: date)
+                    }
                 }
                 continue
             }
@@ -251,6 +346,7 @@ actor RecordingRepository {
     func purgeExpiredAudio(at date: Date) throws -> RetentionResult {
         let candidates = try index.purgeCandidates(at: date)
         var removed: [UUID] = []
+        var removedImported: [UUID] = []
         var reclaimedBytes: Int64 = 0
 
         for candidate in candidates {
@@ -266,7 +362,35 @@ actor RecordingRepository {
             ))
             removed.append(candidate.chunkID)
         }
-        return RetentionResult(removedChunkIDs: removed, reclaimedBytes: reclaimedBytes)
+
+        // Files imports keep one private asset (source or standardized). Retention
+        // matches microphone audio: expired + unpinned Recording removes media only.
+        let importedCandidates = try index.importedPurgeCandidates(at: date)
+        for candidate in importedCandidates {
+            let url = rootURL.appendingPathComponent(candidate.relativePath)
+            if fileManager.fileExists(atPath: url.path) {
+                let attributes = try fileManager.attributesOfItem(atPath: url.path)
+                reclaimedBytes += (attributes[.size] as? NSNumber)?.int64Value ?? 0
+                try fileManager.removeItem(at: url)
+            }
+            // Best-effort: clear empty per-recording import directory.
+            let folder = url.deletingLastPathComponent()
+            if let remaining = try? fileManager.contentsOfDirectory(atPath: folder.path),
+               remaining.isEmpty {
+                try? fileManager.removeItem(at: folder)
+            }
+            try persist(.init(
+                occurredAt: date,
+                payload: .importedAudioAssetRemoved(assetID: candidate.assetID, removedAt: date)
+            ))
+            removedImported.append(candidate.assetID)
+        }
+
+        return RetentionResult(
+            removedChunkIDs: removed,
+            removedImportedAssetIDs: removedImported,
+            reclaimedBytes: reclaimedBytes
+        )
     }
 
     var schemaVersion: Int {

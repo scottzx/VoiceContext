@@ -17,9 +17,6 @@ final class OnboardingUITests: XCTestCase {
 
         app.buttons["暂不允许"].tap()
         XCTAssertTrue(app.switches["同步 Markdown 与 JSON 文档"].waitForExistence(timeout: 3))
-        app.buttons["继续"].tap()
-
-        XCTAssertTrue(app.staticTexts["60 分钟免费本地转写。"].waitForExistence(timeout: 3))
         app.buttons["开始使用"].tap()
         XCTAssertTrue(app.navigationBars["记录"].waitForExistence(timeout: 3))
     }

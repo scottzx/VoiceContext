@@ -131,6 +131,15 @@ actor SpeechAnalysisService {
         let embeddingRawNorm: Float?
         let embeddingNorm: Float?
         let embeddingMilliseconds: Double
+        /// Online meeting-local labels for eligible short windows. Invalid or
+        /// failed windows are `未知说话人` and never invent a cluster.
+        let temporarySpeakerAssignments: [TemporarySpeakerAssignment]
+        /// Distinct temporary roster entries such as `说话人 1` for the
+        /// transcript document. Unknown is intentionally omitted.
+        let temporarySpeakers: [String]
+        /// Short-window observations retained so a completed Recording can run
+        /// offline re-clustering without inventing embeddings.
+        let speakerObservations: [OfflineSpeakerObservation]
     }
 
     enum AnalysisError: LocalizedError {
@@ -168,6 +177,25 @@ actor SpeechAnalysisService {
         }.value
     }
 
+    /// CPU-only short-window observations for offline re-clustering. Empty when
+    /// VAD finds no speech; never fabricates embeddings on CAM++ failure.
+    nonisolated static func collectSpeakerObservations(
+        samples: [Float],
+        resourceRoot: URL,
+        startingAt startSample: Int64 = 0
+    ) throws -> [OfflineSpeakerObservation] {
+        do {
+            return try run(
+                samples: samples,
+                resourceRoot: resourceRoot,
+                startingAt: startSample
+            ).speakerObservations
+        } catch let error as AnalysisError {
+            if case .noSpeechDetected = error { return [] }
+            throw error
+        }
+    }
+
     private nonisolated static func run(
         samples: [Float],
         resourceRoot: URL,
@@ -180,7 +208,7 @@ actor SpeechAnalysisService {
             throw AnalysisError.missingResource("silero_vad.onnx")
         }
         guard FileManager.default.fileExists(atPath: speakerModel.path) else {
-            throw AnalysisError.missingResource("CAM++")
+            throw AnalysisError.missingResource("3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx")
         }
 
         let vadStartedAt = Date()
@@ -201,10 +229,26 @@ actor SpeechAnalysisService {
 
         let voicedDuration = spans.reduce(0) { $0 + $1.duration }
         let embeddingStartedAt = Date()
-        let embedding = computeEmbedding(
-            from: utterances.flatMap(\.samples),
+        let windows = SpeakerWindowing.makeWindows(from: utterances)
+        let windowEmbeddings = CAMPlusShortWindowEmbedder.embed(
+            windows: windows,
             modelURL: speakerModel
         )
+        var clusterer = OnlineTemporarySpeakerClusterer()
+        let temporarySpeakerAssignments = TemporarySpeakerLabeling.assign(
+            windows: windows,
+            embeddings: windowEmbeddings,
+            clusterer: &clusterer
+        )
+        let temporarySpeakers = TemporarySpeakerLabeling.roster(
+            from: temporarySpeakerAssignments
+        )
+        let speakerObservations = OfflineSpeakerObservationBuilder.make(
+            windows: windows,
+            embeddings: windowEmbeddings,
+            assignments: temporarySpeakerAssignments
+        )
+        let embedding = representativeEmbedding(from: windowEmbeddings)
         let embeddingMilliseconds = Date().timeIntervalSince(embeddingStartedAt) * 1_000
 
         return Result(
@@ -216,7 +260,10 @@ actor SpeechAnalysisService {
             embeddingDimension: embedding.dimension,
             embeddingRawNorm: embedding.rawNorm,
             embeddingNorm: embedding.norm,
-            embeddingMilliseconds: embeddingMilliseconds
+            embeddingMilliseconds: embeddingMilliseconds,
+            temporarySpeakerAssignments: temporarySpeakerAssignments,
+            temporarySpeakers: temporarySpeakers,
+            speakerObservations: speakerObservations
         )
     }
 
@@ -663,6 +710,29 @@ actor SpeechAnalysisService {
             if cursor == range.upperBound { return result }
         }
         return nil
+    }
+
+    /// Keeps the existing diagnostic embedding fields populated from the first
+    /// successful short-window CAM++ vector. Failures stay unavailable.
+    private nonisolated static func representativeEmbedding(
+        from embeddings: [SpeakerEmbeddingResult]
+    ) -> (result: SpeakerEmbeddingResult, dimension: Int?, rawNorm: Float?, norm: Float?) {
+        for embedding in embeddings {
+            guard let vector = embedding.vector else { continue }
+            let normalized = normalizedEmbedding(from: vector)
+            if case .embedding = normalized.result {
+                return (
+                    normalized.result,
+                    vector.count,
+                    normalized.rawNorm,
+                    normalized.norm
+                )
+            }
+        }
+        if let unavailable = embeddings.first, case .unavailable = unavailable {
+            return (unavailable, nil, nil, nil)
+        }
+        return (.unavailable(reason: "有效语音时长不足，CAM++ 未就绪"), nil, nil, nil)
     }
 
     private nonisolated static func computeEmbedding(

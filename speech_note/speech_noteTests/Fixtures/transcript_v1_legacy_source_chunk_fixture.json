@@ -1,0 +1,32 @@
+{
+  "schema": "voice-context/transcript@1",
+  "recording_id": "BA485C93-6D6E-42E9-ADDA-B8DA50B2CA7C",
+  "kind": "recording",
+  "state": "complete",
+  "revision": 1,
+  "title": "Legacy Source Chunk",
+  "tags": [],
+  "started_at": "2026-08-05T07:00:00.125Z",
+  "ended_at": "2026-08-05T07:01:00.125Z",
+  "timezone": "Asia/Shanghai",
+  "language": "zh",
+  "audio": {
+    "local_only": true,
+    "available_on_this_device": true,
+    "retention": "seven_days"
+  },
+  "speech_spans": [],
+  "speakers": [],
+  "segments": [
+    {
+      "id": "BA485C93-6D6E-42E9-ADDA-B8DA00000001",
+      "sequence": 1,
+      "started_at": "2026-08-05T07:00:00.125Z",
+      "offset_milliseconds": 0,
+      "text": "旧版单一 source_chunk_id。",
+      "source_chunk_id": "D1765381-81EC-4761-BDDF-8978200D4197",
+      "speech_span_ids": []
+    }
+  ],
+  "gaps": []
+}

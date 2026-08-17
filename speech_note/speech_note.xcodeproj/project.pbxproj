@@ -11,6 +11,7 @@
 		D2155B260000000000000002 /* TranscribeCpp.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = D2155B270000000000000001 /* TranscribeCpp.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		D2155B260000000000000003 /* SherpaOnnx.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D2155B270000000000000002 /* SherpaOnnx.xcframework */; };
 		D2155B260000000000000004 /* OnnxRuntime.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D2155B270000000000000003 /* OnnxRuntime.xcframework */; };
+		A70WDG010000000000000005 /* RecordWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A70WDG010000000000000001 /* RecordWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -28,6 +29,13 @@
 			remoteGlobalIDString = D2155AF83020A7E100F29231;
 			remoteInfo = speech_note;
 		};
+		A70WDG010000000000000006 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D2155AF13020A7E100F29231 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A70WDG010000000000000003;
+			remoteInfo = RecordWidgetExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -42,6 +50,17 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A70WDG010000000000000004 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A70WDG010000000000000005 /* RecordWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -51,6 +70,7 @@
 		D2155B270000000000000001 /* TranscribeCpp.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = TranscribeCpp.xcframework; sourceTree = "<group>"; };
 		D2155B270000000000000002 /* SherpaOnnx.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = SherpaOnnx.xcframework; sourceTree = "<group>"; };
 		D2155B270000000000000003 /* OnnxRuntime.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = OnnxRuntime.xcframework; sourceTree = "<group>"; };
+		A70WDG010000000000000001 /* RecordWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RecordWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -58,8 +78,22 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				speech_note.entitlements,
+				"VoiceContextPack/Skill/generate-meeting-minutes/fixtures/complete-meeting/transcript.json",
+				"VoiceContextPack/Skill/generate-meeting-minutes/fixtures/complete-meeting/transcript.md",
+				"VoiceContextPack/Skill/generate-meeting-minutes/fixtures/json-only/transcript.json",
+				"VoiceContextPack/Skill/generate-meeting-minutes/fixtures/md-only/transcript.md",
+				"VoiceContextPack/Skill/generate-meeting-minutes/fixtures/processing-meeting/transcript.json",
+				"VoiceContextPack/Skill/generate-meeting-minutes/fixtures/processing-meeting/transcript.md",
 			);
 			target = D2155AF83020A7E100F29231 /* speech_note */;
+		};
+		A70WDG01000000000000000E /* Exceptions for "RecordWidget" folder in "RecordWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A70WDG010000000000000003 /* RecordWidgetExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -80,6 +114,14 @@
 		D2155B173020A7E300F29231 /* speech_noteUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = speech_noteUITests;
+			sourceTree = "<group>";
+		};
+		A70WDG010000000000000002 /* RecordWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A70WDG01000000000000000E /* Exceptions for "RecordWidget" folder in "RecordWidgetExtension" target */,
+			);
+			path = RecordWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -109,6 +151,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A70WDG010000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -116,6 +165,7 @@
 			isa = PBXGroup;
 			children = (
 				D2155AFB3020A7E100F29231 /* speech_note */,
+				A70WDG010000000000000002 /* RecordWidget */,
 				D2155B0D3020A7E300F29231 /* speech_noteTests */,
 				D2155B173020A7E300F29231 /* speech_noteUITests */,
 				D2155B290000000000000001 /* speech_note/Frameworks */,
@@ -127,6 +177,7 @@
 			isa = PBXGroup;
 			children = (
 				D2155AF93020A7E100F29231 /* speech_note.app */,
+				A70WDG010000000000000001 /* RecordWidgetExtension.appex */,
 				D2155B0A3020A7E300F29231 /* speech_noteTests.xctest */,
 				D2155B143020A7E300F29231 /* speech_noteUITests.xctest */,
 			);
@@ -154,10 +205,12 @@
 				D2155AF63020A7E100F29231 /* Frameworks */,
 				D2155AF73020A7E100F29231 /* Resources */,
 				D2155B280000000000000001 /* Embed Frameworks */,
+				A70WDG010000000000000004 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A70WDG010000000000000007 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				D2155AFB3020A7E100F29231 /* speech_note */,
@@ -215,6 +268,28 @@
 			productReference = D2155B143020A7E300F29231 /* speech_noteUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		A70WDG010000000000000003 /* RecordWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70WDG01000000000000000B /* Build configuration list for PBXNativeTarget "RecordWidgetExtension" */;
+			buildPhases = (
+				A70WDG010000000000000009 /* Sources */,
+				A70WDG010000000000000008 /* Frameworks */,
+				A70WDG01000000000000000A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A70WDG010000000000000002 /* RecordWidget */,
+			);
+			name = RecordWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = RecordWidgetExtension;
+			productReference = A70WDG010000000000000001 /* RecordWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -225,6 +300,9 @@
 				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
+					A70WDG010000000000000003 = {
+						CreatedOnToolsVersion = 26.6;
+					};
 					D2155AF83020A7E100F29231 = {
 						CreatedOnToolsVersion = 26.6;
 					};
@@ -253,6 +331,7 @@
 			projectRoot = "";
 			targets = (
 				D2155AF83020A7E100F29231 /* speech_note */,
+				A70WDG010000000000000003 /* RecordWidgetExtension */,
 				D2155B093020A7E300F29231 /* speech_noteTests */,
 				D2155B133020A7E300F29231 /* speech_noteUITests */,
 			);
@@ -275,6 +354,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		D2155B123020A7E300F29231 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70WDG01000000000000000A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -305,6 +391,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A70WDG010000000000000009 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -318,6 +411,11 @@
 			target = D2155AF83020A7E100F29231 /* speech_note */;
 			targetProxy = D2155B153020A7E300F29231 /* PBXContainerItemProxy */;
 		};
+		A70WDG010000000000000007 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A70WDG010000000000000003 /* RecordWidgetExtension */;
+			targetProxy = A70WDG010000000000000006 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -327,7 +425,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 3HJ3R6SXAL;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -368,7 +466,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 3HJ3R6SXAL;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -613,6 +711,64 @@
 			};
 			name = Release;
 		};
+		A70WDG01000000000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 3HJ3R6SXAL;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RecordWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "录音";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "YiJie.speech-note.RecordWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A70WDG01000000000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 3HJ3R6SXAL;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RecordWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "录音";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "YiJie.speech-note.RecordWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -648,6 +804,15 @@
 			buildConfigurations = (
 				D2155B263020A7E300F29231 /* Debug */,
 				D2155B273020A7E300F29231 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A70WDG01000000000000000B /* Build configuration list for PBXNativeTarget "RecordWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A70WDG01000000000000000C /* Debug */,
+				A70WDG01000000000000000D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -106,26 +106,17 @@ nonisolated enum SpeakerWindowing {
     }
 }
 
-/// The native CAM++ call for an already quality-filtered short window. Model
+/// The native CAM++ call for already quality-filtered short windows. Model
 /// failures deliberately preserve an unavailable result instead of providing
-/// a synthetic stand-in vector.
+/// a synthetic stand-in vector. One extractor is reused for the whole batch so
+/// online labeling stays practical during recording.
 nonisolated enum CAMPlusShortWindowEmbedder {
     static func embed(
         windows: [SpeakerWindow],
         modelURL: URL
     ) -> [SpeakerEmbeddingResult] {
-        windows.map { window in
-            guard window.isEligibleForClustering else {
-                return .unavailable(reason: "该短窗未通过说话人聚类质量检查")
-            }
-            return embedding(from: window.samples, modelURL: modelURL)
-        }
-    }
+        guard !windows.isEmpty else { return [] }
 
-    private static func embedding(
-        from samples: [Float],
-        modelURL: URL
-    ) -> SpeakerEmbeddingResult {
         var config = SherpaOnnxSpeakerEmbeddingExtractorConfig()
         config.num_threads = 1
         config.debug = 0
@@ -138,13 +129,39 @@ nonisolated enum CAMPlusShortWindowEmbedder {
             }
         }
         guard let extractor else {
-            return .unavailable(reason: "CAM++ 初始化失败")
+            return Array(
+                repeating: .unavailable(reason: "CAM++ 初始化失败"),
+                count: windows.count
+            )
         }
         defer { SherpaOnnxDestroySpeakerEmbeddingExtractor(extractor) }
 
         let dimension = Int(SherpaOnnxSpeakerEmbeddingExtractorDim(extractor))
-        guard dimension > 0,
-              let stream = SherpaOnnxSpeakerEmbeddingExtractorCreateStream(extractor) else {
+        guard dimension > 0 else {
+            return Array(
+                repeating: .unavailable(reason: "CAM++ 返回了无效向量维度"),
+                count: windows.count
+            )
+        }
+
+        return windows.map { window in
+            guard window.isEligibleForClustering else {
+                return .unavailable(reason: "该短窗未通过说话人聚类质量检查")
+            }
+            return embedding(
+                from: window.samples,
+                extractor: extractor,
+                dimension: dimension
+            )
+        }
+    }
+
+    private static func embedding(
+        from samples: [Float],
+        extractor: OpaquePointer,
+        dimension: Int
+    ) -> SpeakerEmbeddingResult {
+        guard let stream = SherpaOnnxSpeakerEmbeddingExtractorCreateStream(extractor) else {
             return .unavailable(reason: "CAM++ 无法创建短窗 embedding 输入")
         }
         defer { SherpaOnnxDestroyOnlineStream(stream) }
@@ -173,6 +190,88 @@ nonisolated enum CAMPlusShortWindowEmbedder {
             return .unavailable(reason: "CAM++ 短窗 embedding 归一化失败")
         }
         return .embedding(normalized)
+    }
+}
+
+
+/// One short-window online label. Temporary cluster IDs are meeting-local only
+/// and must never be treated as confirmed long-term identities.
+nonisolated struct TemporarySpeakerAssignment: Equatable, Sendable {
+    let startSample: Int64
+    let endSample: Int64
+    let assignment: OnlineTemporarySpeakerClusterer.Assignment
+
+    var displayLabel: String {
+        TemporarySpeakerLabeling.displayLabel(for: assignment)
+    }
+
+    var temporarySpeakerLabel: String? {
+        guard case let .temporaryCluster(id) = assignment else { return nil }
+        return TemporarySpeakerLabeling.temporaryLabel(id: id)
+    }
+}
+
+/// Maps online cluster assignments to the temporary labels shown while a
+/// Recording is still in progress (FR-SPK-003). Ambiguous or failed windows
+/// stay `未知说话人` and never invent a cluster.
+nonisolated enum TemporarySpeakerLabeling {
+    static let unknownLabel = "未知说话人"
+
+    static func temporaryLabel(id: Int) -> String {
+        "说话人 \(id)"
+    }
+
+    static func displayLabel(
+        for assignment: OnlineTemporarySpeakerClusterer.Assignment
+    ) -> String {
+        switch assignment {
+        case let .temporaryCluster(id):
+            temporaryLabel(id: id)
+        case .unknown:
+            unknownLabel
+        }
+    }
+
+    static func assign(
+        windows: [SpeakerWindow],
+        embeddings: [SpeakerEmbeddingResult],
+        clusterer: inout OnlineTemporarySpeakerClusterer
+    ) -> [TemporarySpeakerAssignment] {
+        let count = min(windows.count, embeddings.count)
+        return (0..<count).map { index in
+            let window = windows[index]
+            return TemporarySpeakerAssignment(
+                startSample: window.startSample,
+                endSample: window.endSample,
+                assignment: clusterer.assign(window: window, embedding: embeddings[index])
+            )
+        }
+    }
+
+    /// Document roster for online temporary labels. Unknown windows are display
+    /// states, not roster entries.
+    static func roster(from assignments: [TemporarySpeakerAssignment]) -> [String] {
+        let ids = Set(assignments.compactMap { assignment -> Int? in
+            guard case let .temporaryCluster(id) = assignment.assignment else { return nil }
+            return id
+        }).sorted()
+        return ids.map(temporaryLabel(id:))
+    }
+
+    static func mergeRosters(_ lhs: [String], _ rhs: [String]) -> [String] {
+        let labels = Set(lhs + rhs)
+        return labels.sorted { lhsLabel, rhsLabel in
+            speakerSortKey(lhsLabel) < speakerSortKey(rhsLabel)
+        }
+    }
+
+    private static func speakerSortKey(_ label: String) -> (Int, String) {
+        let prefix = "说话人 "
+        guard label.hasPrefix(prefix),
+              let value = Int(label.dropFirst(prefix.count)) else {
+            return (Int.max, label)
+        }
+        return (value, label)
     }
 }
 

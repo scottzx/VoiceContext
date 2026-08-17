@@ -90,6 +90,13 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
     var state: RecordingState
     var retention: AudioRetention
     var updatedAt: Date
+    /// Capture vs Files import. Absent in older journal rows → microphone.
+    var origin: RecordingOrigin
+    var sourceFilename: String?
+    var sourceUTType: String?
+    /// SenseVoice language mode snapshotted when this Recording was created.
+    /// Settings changes must not rewrite completed / in-flight transcripts.
+    var languageMode: TranscriptionLanguageMode
 
     init(
         id: UUID = UUID(),
@@ -99,7 +106,11 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
         isMeeting: Bool = false,
         state: RecordingState = .recording,
         retention: AudioRetention? = nil,
-        updatedAt: Date? = nil
+        updatedAt: Date? = nil,
+        origin: RecordingOrigin = .microphone,
+        sourceFilename: String? = nil,
+        sourceUTType: String? = nil,
+        languageMode: TranscriptionLanguageMode = .zhEnBilingual
     ) {
         self.id = id
         self.startedAt = startedAt
@@ -109,6 +120,32 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
         self.state = state
         self.retention = retention ?? .standard(startedAt: startedAt)
         self.updatedAt = updatedAt ?? startedAt
+        self.origin = origin
+        self.sourceFilename = sourceFilename
+        self.sourceUTType = sourceUTType
+        self.languageMode = languageMode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, startedAt, endedAt, title, isMeeting, state, retention, updatedAt
+        case origin, sourceFilename, sourceUTType, languageMode
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        endedAt = try container.decodeIfPresent(Date.self, forKey: .endedAt)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        isMeeting = try container.decode(Bool.self, forKey: .isMeeting)
+        state = try container.decode(RecordingState.self, forKey: .state)
+        retention = try container.decode(AudioRetention.self, forKey: .retention)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        origin = try container.decodeIfPresent(RecordingOrigin.self, forKey: .origin) ?? .microphone
+        sourceFilename = try container.decodeIfPresent(String.self, forKey: .sourceFilename)
+        sourceUTType = try container.decodeIfPresent(String.self, forKey: .sourceUTType)
+        languageMode = try container.decodeIfPresent(TranscriptionLanguageMode.self, forKey: .languageMode)
+            ?? .zhEnBilingual
     }
 }
 
@@ -179,6 +216,8 @@ nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
     let recordingID: UUID
     /// Nil is retained for the pre-incremental, whole-recording job format.
     let chunkID: UUID?
+    /// Files-import logical range job. Mutually exclusive with `chunkID`.
+    let processingRangeID: UUID?
     let kind: RecordingJobKind
     var state: RecordingJobState
     var attemptCount: Int
@@ -190,6 +229,7 @@ nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
         id: UUID = UUID(),
         recordingID: UUID,
         chunkID: UUID? = nil,
+        processingRangeID: UUID? = nil,
         kind: RecordingJobKind,
         state: RecordingJobState,
         attemptCount: Int,
@@ -197,9 +237,11 @@ nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
         createdAt: Date,
         updatedAt: Date
     ) {
+        precondition(chunkID == nil || processingRangeID == nil, "chunkID and processingRangeID are mutually exclusive")
         self.id = id
         self.recordingID = recordingID
         self.chunkID = chunkID
+        self.processingRangeID = processingRangeID
         self.kind = kind
         self.state = state
         self.attemptCount = attemptCount
@@ -209,7 +251,7 @@ nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, recordingID, chunkID, kind, state, attemptCount, lastError, createdAt, updatedAt
+        case id, recordingID, chunkID, processingRangeID, kind, state, attemptCount, lastError, createdAt, updatedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -217,6 +259,7 @@ nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
         id = try container.decode(UUID.self, forKey: .id)
         recordingID = try container.decode(UUID.self, forKey: .recordingID)
         chunkID = try container.decodeIfPresent(UUID.self, forKey: .chunkID)
+        processingRangeID = try container.decodeIfPresent(UUID.self, forKey: .processingRangeID)
         kind = try container.decode(RecordingJobKind.self, forKey: .kind)
         state = try container.decode(RecordingJobState.self, forKey: .state)
         attemptCount = try container.decode(Int.self, forKey: .attemptCount)
@@ -265,6 +308,52 @@ extension Recording {
     }
 }
 
+
+/// User-facing progress derived from durable jobs + transcript, never from
+/// chunk file boundaries or local animation timers.
+nonisolated struct RecordingPresentationProgress: Equatable, Sendable {
+    let capture: RecordingCaptureState
+    let processing: RecordingProcessingState
+    /// Absolute timeline position of the latest finalized transcript sample.
+    let transcribedUpTo: TimeInterval?
+    /// Outstanding durable work units (pending + running). UI must not label
+    /// these as chunks or 60-second file boundaries.
+    let outstandingItemCount: Int
+
+    var canRetry: Bool { processing == .needsAttention }
+
+    var hasTranscriptProgress: Bool { transcribedUpTo != nil }
+
+    nonisolated static func resolve(
+        recording: Recording,
+        jobs: [RecordingJob],
+        liveCaptureState: RecordingCaptureState? = nil,
+        lastFinalizedTranscriptSample: Int64? = nil,
+        sampleRate: Double = 16_000
+    ) -> RecordingPresentationProgress {
+        let lifecycle = recording.lifecycleState(jobs: jobs, liveCaptureState: liveCaptureState)
+        let outstanding = jobs.filter { $0.state == .pending || $0.state == .running }.count
+        let transcribedUpTo: TimeInterval?
+        if let sample = lastFinalizedTranscriptSample, sample > 0, sampleRate > 0 {
+            transcribedUpTo = TimeInterval(sample) / sampleRate
+        } else {
+            transcribedUpTo = nil
+        }
+        return RecordingPresentationProgress(
+            capture: lifecycle.capture,
+            processing: lifecycle.processing,
+            transcribedUpTo: transcribedUpTo,
+            outstandingItemCount: outstanding
+        )
+    }
+
+    nonisolated static func lastFinalizedSample(
+        segmentEndSamples: [Int64]
+    ) -> Int64? {
+        segmentEndSamples.max().flatMap { $0 > 0 ? $0 : nil }
+    }
+}
+
 extension RecordingProcessingState {
     nonisolated static func resolve(
         legacyRecordingState: RecordingState,
@@ -310,6 +399,12 @@ nonisolated enum RecordingJournalPayload: Codable, Equatable, Sendable {
     case retentionChanged(recordingID: UUID, retention: AudioRetention)
     case chunkPinChanged(chunkID: UUID, isPinned: Bool)
     case chunkAudioRemoved(chunkID: UUID, removedAt: Date)
+    case recordingTitleChanged(recordingID: UUID, title: String?)
+    case importedAudioAssetCreated(ImportedAudioAsset)
+    case importedAudioAssetUpdated(ImportedAudioAsset)
+    case importedAudioAssetRemoved(assetID: UUID, removedAt: Date)
+    case processingRangeUpserted(ProcessingRange)
+    case processingRangeContinuationChanged(rangeID: UUID, requiresContinuation: Bool)
 }
 
 nonisolated struct RecordingJournalEvent: Codable, Equatable, Identifiable, Sendable {

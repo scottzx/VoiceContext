@@ -6,6 +6,8 @@ import Foundation
 actor SenseVoiceInferenceService {
     struct Result: Sendable {
         let text: String
+        let rawText: String
+        let detectedLanguage: String
         let backend: String
         let audioDuration: TimeInterval
         let utteranceDuration: TimeInterval
@@ -24,6 +26,8 @@ actor SenseVoiceInferenceService {
         let embeddingRawNorm: Float?
         let embeddingNorm: Float?
         let embeddingMilliseconds: Double
+        /// Meeting-local temporary roster collected during online clustering.
+        let temporarySpeakers: [String]
         let physicalFootprintBytes: UInt64
         let thermalState: String
         let submittedMetalWork: Int
@@ -32,6 +36,7 @@ actor SenseVoiceInferenceService {
     enum InferenceError: LocalizedError {
         case invalidPCMFormat(sampleRate: Double, channels: AVAudioChannelCount)
         case runtime(String)
+        case emptyTranscript
         case abortedForBackground
 
         var errorDescription: String? {
@@ -40,15 +45,21 @@ actor SenseVoiceInferenceService {
                 "转写输入必须是 16 kHz 单声道 PCM（收到 \(sampleRate) Hz / \(channels) 声道）。"
             case let .runtime(message):
                 "SenseVoice 运行失败：\(message)"
+            case .emptyTranscript:
+                "SenseVoice 返回空文本，保留录音以便重试。"
             case .abortedForBackground:
                 "App 进入后台，已停止尚未完成的转写。"
             }
         }
     }
 
-    private let lifecycleGate = InferenceLifecycleGate()
+    private let lifecycleGate: InferenceLifecycleGate
     private let cancellation = InferenceCancellationFlag()
     private let speechAnalysis = SpeechAnalysisService()
+
+    init(lifecycleGate: InferenceLifecycleGate = InferenceLifecycleGate()) {
+        self.lifecycleGate = lifecycleGate
+    }
 
     struct BackgroundGateProbe: Sendable {
         let rejected: Bool
@@ -64,8 +75,10 @@ actor SenseVoiceInferenceService {
         let rejected: Bool
         do {
             try await lifecycleGate.beginMetalWork()
+            await lifecycleGate.endMetalWork()
             rejected = false
-        } catch InferenceLifecycleGate.Rejection.appIsBackgrounded {
+        } catch InferenceLifecycleGate.Rejection.appIsBackgrounded,
+                InferenceLifecycleGate.Rejection.metalBusy {
             rejected = true
         } catch {
             rejected = false
@@ -83,15 +96,40 @@ actor SenseVoiceInferenceService {
         await lifecycleGate.enteredForeground()
     }
 
-    func transcribe(recordingURL: URL) async throws -> Result {
-        try await transcribe(recordingURLs: [recordingURL], startingAt: 0)
+    func transcribe(
+        recordingURL: URL,
+        languageMode: TranscriptionLanguageMode = .zhEnBilingual
+    ) async throws -> Result {
+        try await transcribe(
+            recordingURLs: [recordingURL],
+            startingAt: 0,
+            languageMode: languageMode
+        )
     }
 
     /// Decodes adjacent authoritative AAC chunks into one inference input.
     /// The source files remain untouched; this is only the temporary model
     /// input needed when VAD finds speech crossing a minute boundary.
-    func transcribe(recordingURLs: [URL], startingAt: Int64) async throws -> Result {
+    func transcribe(
+        recordingURLs: [URL],
+        startingAt: Int64,
+        languageMode: TranscriptionLanguageMode = .zhEnBilingual
+    ) async throws -> Result {
         let samples = try recordingURLs.flatMap { try PCM16KMonoLoader.samples(from: $0) }
+        return try await transcribe(
+            samples: samples,
+            startingAt: startingAt,
+            languageMode: languageMode
+        )
+    }
+
+    /// Runs VAD + SenseVoice on an already-normalized 16 kHz mono window.
+    /// Used by Files-import ProcessingRange jobs that decode by range.
+    func transcribe(
+        samples: [Float],
+        startingAt: Int64,
+        languageMode: TranscriptionLanguageMode = .zhEnBilingual
+    ) async throws -> Result {
         let inputMetrics = AudioInputMetrics.from(samples: samples)
         let resourceRoot = try bundledModelResourceRoot()
         cancellation.clearAbort()
@@ -106,6 +144,7 @@ actor SenseVoiceInferenceService {
         var embeddingRawNorm: Float?
         var embeddingNorm: Float?
         var embeddingMilliseconds: Double = 0
+        var temporarySpeakers: [String] = []
         var lastSpeechEndSample: Int64?
 
         for range in Self.analysisRanges(sampleCount: samples.count) {
@@ -133,13 +172,29 @@ actor SenseVoiceInferenceService {
             embeddingRawNorm = analysis.embeddingRawNorm
             embeddingNorm = analysis.embeddingNorm
             embeddingMilliseconds += analysis.embeddingMilliseconds
+            temporarySpeakers = TemporarySpeakerLabeling.mergeRosters(
+                temporarySpeakers,
+                analysis.temporarySpeakers
+            )
             lastSpeechEndSample = analysis.spans.last?.endSample ?? lastSpeechEndSample
 
             for input in Self.inferenceInputs(from: analysis.utterances) {
                 try await lifecycleGate.beginMetalWork()
-                let result = try await Task.detached(priority: .userInitiated) { [cancellation] in
-                    try Self.run(samples: input, resourceRoot: resourceRoot, cancellation: cancellation)
-                }.value
+                let result: NativeResult
+                do {
+                    result = try await Task.detached(priority: .userInitiated) { [cancellation] in
+                        try Self.run(
+                            samples: input,
+                            resourceRoot: resourceRoot,
+                            cancellation: cancellation,
+                            languageMode: languageMode
+                        )
+                    }.value
+                } catch {
+                    await lifecycleGate.endMetalWork()
+                    throw error
+                }
+                await lifecycleGate.endMetalWork()
                 nativeResults.append(result)
             }
         }
@@ -147,10 +202,11 @@ actor SenseVoiceInferenceService {
             throw SpeechAnalysisService.AnalysisError.noSpeechDetected(inputMetrics)
         }
 
-        let text = nativeResults
-            .map(\.text)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        let text = nativeResults.map(\.text).joined(separator: " ")
+        let rawText = nativeResults.map(\.rawText).joined(separator: " ")
+        let detectedLanguage = nativeResults
+            .map(\.detectedLanguage)
+            .first(where: { !$0.isEmpty }) ?? ""
         let loadMilliseconds = nativeResults.reduce(0) { $0 + $1.loadMilliseconds }
         let inferenceMilliseconds = nativeResults.reduce(0) { $0 + $1.inferenceMilliseconds }
         let audioDuration = Double(samples.count) / 16_000
@@ -158,6 +214,8 @@ actor SenseVoiceInferenceService {
         let metrics = await lifecycleGate.metrics()
         return Result(
             text: text,
+            rawText: rawText,
+            detectedLanguage: detectedLanguage,
             backend: lastResult.backend,
             audioDuration: audioDuration,
             utteranceDuration: utteranceDuration,
@@ -179,6 +237,7 @@ actor SenseVoiceInferenceService {
             embeddingRawNorm: embeddingRawNorm,
             embeddingNorm: embeddingNorm,
             embeddingMilliseconds: embeddingMilliseconds,
+            temporarySpeakers: temporarySpeakers,
             physicalFootprintBytes: nativeResults.map(\.physicalFootprintBytes).max() ?? 0,
             thermalState: Self.thermalStateDescription(),
             submittedMetalWork: metrics.submittedMetalWork
@@ -238,7 +297,8 @@ actor SenseVoiceInferenceService {
     nonisolated private static func run(
         samples: [Float],
         resourceRoot: URL,
-        cancellation: InferenceCancellationFlag
+        cancellation: InferenceCancellationFlag,
+        languageMode: TranscriptionLanguageMode
     ) throws -> NativeResult {
         let modelURL = resourceRoot.appending(path: "SenseVoiceSmall-Q8_0.gguf")
         var loadParams = transcribe_model_load_params()
@@ -265,9 +325,20 @@ actor SenseVoiceInferenceService {
 
         var runParams = transcribe_run_params()
         transcribe_run_params_init(&runParams)
-        let runStatus = "zh".withCString { language in
-            runParams.language = language
-            return samples.withUnsafeBufferPointer {
+        // NULL language asks the model to autodetect (中英双语).
+        // "en" forces SenseVoice English LID for 英语优先.
+        let languageHint = languageMode.senseVoiceLanguageHint
+        let runStatus: transcribe_status
+        if let languageHint {
+            runStatus = languageHint.withCString { languagePointer in
+                runParams.language = languagePointer
+                return samples.withUnsafeBufferPointer {
+                    transcribe_run(session, $0.baseAddress, Int32($0.count), &runParams)
+                }
+            }
+        } else {
+            runParams.language = nil
+            runStatus = samples.withUnsafeBufferPointer {
                 transcribe_run(session, $0.baseAddress, Int32($0.count), &runParams)
             }
         }
@@ -278,6 +349,13 @@ actor SenseVoiceInferenceService {
             throw InferenceError.runtime(statusDescription(runStatus))
         }
         let text = String(cString: transcribe_full_text(session))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            throw InferenceError.emptyTranscript
+        }
+        let rawText = String(cString: transcribe_raw_text(session))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let detectedLanguage = String(cString: transcribe_detected_language(session))
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         var timings = transcribe_timings()
@@ -293,6 +371,8 @@ actor SenseVoiceInferenceService {
 
         return NativeResult(
             text: text,
+            rawText: rawText,
+            detectedLanguage: detectedLanguage,
             backend: backend,
             loadMilliseconds: timings.load_ms,
             inferenceMilliseconds: inferenceMilliseconds,
@@ -328,6 +408,8 @@ actor SenseVoiceInferenceService {
 
     private struct NativeResult: Sendable {
         let text: String
+        let rawText: String
+        let detectedLanguage: String
         let backend: String
         let loadMilliseconds: Float
         let inferenceMilliseconds: Float

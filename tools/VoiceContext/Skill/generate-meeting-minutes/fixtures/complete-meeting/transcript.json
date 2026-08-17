@@ -1,0 +1,86 @@
+{
+  "schema": "voice-context/transcript@1",
+  "recording_id": "BA485C93-6D6E-42E9-ADDA-B8DA50B2CA7C",
+  "kind": "meeting",
+  "state": "complete",
+  "revision": 3,
+  "title": "产品评审",
+  "tags": [
+    "项目A"
+  ],
+  "started_at": "2026-08-03T10:30:00.123+08:00",
+  "ended_at": "2026-08-03T11:42:18.456+08:00",
+  "timezone": "Asia/Shanghai",
+  "language": "zh",
+  "audio": {
+    "local_only": true,
+    "available_on_this_device": true,
+    "retention": "keep"
+  },
+  "speech_spans": [],
+  "speakers": [
+    "张三（已确认）",
+    "疑似李四"
+  ],
+  "speaker_turns": [
+    {
+      "speaker": "张三（已确认）",
+      "start_sample": 0,
+      "end_sample": 192000,
+      "online_temporary_labels": [
+        "说话人 1"
+      ]
+    },
+    {
+      "speaker": "疑似李四",
+      "start_sample": 192000,
+      "end_sample": 320000,
+      "online_temporary_labels": [
+        "说话人 2"
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "id": "BA485C93-6D6E-42E9-ADDA-B8DA00000001",
+      "sequence": 1,
+      "started_at": "2026-08-03T10:42:08.520+08:00",
+      "offset_milliseconds": 728520,
+      "text": "我们今天先把产品边界确定下来。",
+      "start_sample": 0,
+      "end_sample": 192000,
+      "source_chunk_id": "D1765381-81EC-4761-BDDF-8978200D4197",
+      "source_ranges": [
+        {
+          "source_kind": "audio_chunk",
+          "source_id": "D1765381-81EC-4761-BDDF-8978200D4197",
+          "start_sample": 0,
+          "end_sample": 192000
+        }
+      ],
+      "speech_span_ids": [],
+      "speaker": "张三（已确认）"
+    },
+    {
+      "id": "BA485C93-6D6E-42E9-ADDA-B8DA00000002",
+      "sequence": 2,
+      "started_at": "2026-08-03T10:42:15.110+08:00",
+      "offset_milliseconds": 735110,
+      "text": "我觉得首版可以只做 iPhone。",
+      "start_sample": 192000,
+      "end_sample": 320000,
+      "source_chunk_id": "E2765381-81EC-4761-BDDF-8978200D4198",
+      "source_ranges": [
+        {
+          "source_kind": "audio_chunk",
+          "source_id": "E2765381-81EC-4761-BDDF-8978200D4198",
+          "start_sample": 192000,
+          "end_sample": 320000
+        }
+      ],
+      "speech_span_ids": [],
+      "speaker": "疑似李四"
+    }
+  ],
+  "gaps": []
+}

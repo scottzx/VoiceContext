@@ -12,11 +12,18 @@ actor ForegroundTranscriptionScheduler {
 
         let recordingID: UUID
         let chunkID: UUID?
+        let processingRangeID: UUID?
         let state: State
 
-        init(recordingID: UUID, chunkID: UUID? = nil, state: State) {
+        init(
+            recordingID: UUID,
+            chunkID: UUID? = nil,
+            processingRangeID: UUID? = nil,
+            state: State
+        ) {
             self.recordingID = recordingID
             self.chunkID = chunkID
+            self.processingRangeID = processingRangeID
             self.state = state
         }
     }
@@ -25,6 +32,8 @@ actor ForegroundTranscriptionScheduler {
     typealias OutcomeHandler = @Sendable (Outcome) async -> Void
 
     private let repository: RecordingRepository
+    private let lifecycleGate: InferenceLifecycleGate
+    private let admissionPolicy: TranscriptionAdmissionPolicy
     private let execute: Executor
     private let now: @Sendable () -> Date
     private var acceptsForegroundWork = true
@@ -34,10 +43,14 @@ actor ForegroundTranscriptionScheduler {
 
     init(
         repository: RecordingRepository,
+        lifecycleGate: InferenceLifecycleGate = InferenceLifecycleGate(),
+        admissionPolicy: TranscriptionAdmissionPolicy = TranscriptionAdmissionPolicy(),
         now: @escaping @Sendable () -> Date = Date.init,
         execute: @escaping Executor
     ) {
         self.repository = repository
+        self.lifecycleGate = lifecycleGate
+        self.admissionPolicy = admissionPolicy
         self.now = now
         self.execute = execute
     }
@@ -52,11 +65,43 @@ actor ForegroundTranscriptionScheduler {
     func enqueue(
         recordingID: UUID,
         chunkID: UUID? = nil,
+        processingRangeID: UUID? = nil,
         onOutcome: @escaping OutcomeHandler
     ) async throws {
+        precondition(chunkID == nil || processingRangeID == nil, "chunk and range jobs are mutually exclusive")
         let jobs = try await repository.jobs(recordingID: recordingID)
+        if let processingRangeID {
+            if let existing = jobs.last(where: {
+                $0.kind == .transcription && $0.processingRangeID == processingRangeID
+            }) {
+                outcomeHandlers[existing.id] = onOutcome
+                guard existing.state != .completed else { return }
+                if existing.state == .failed {
+                    try await retry(job: existing)
+                }
+            } else {
+                let date = now()
+                let job = RecordingJob(
+                    id: UUID(),
+                    recordingID: recordingID,
+                    processingRangeID: processingRangeID,
+                    kind: .transcription,
+                    state: .pending,
+                    attemptCount: 0,
+                    lastError: nil,
+                    createdAt: date,
+                    updatedAt: date
+                )
+                outcomeHandlers[job.id] = onOutcome
+                try await repository.upsertJob(job, at: date)
+            }
+            startDrainingIfPossible()
+            return
+        }
         guard let chunkID else {
-            if let legacy = jobs.last(where: { $0.kind == .transcription && $0.chunkID == nil }) {
+            if let legacy = jobs.last(where: {
+                $0.kind == .transcription && $0.chunkID == nil && $0.processingRangeID == nil
+            }) {
                 outcomeHandlers[legacy.id] = onOutcome
                 guard legacy.state != .completed else { return }
                 if legacy.state == .failed {
@@ -96,13 +141,31 @@ actor ForegroundTranscriptionScheduler {
     func retry(
         recordingID: UUID,
         chunkID: UUID? = nil,
+        processingRangeID: UUID? = nil,
         onOutcome: @escaping OutcomeHandler
     ) async throws {
         let jobs = try await repository.jobs(recordingID: recordingID)
-        let failedJobs = jobs.filter {
-            $0.kind == .transcription && $0.state == .failed && (chunkID == nil || $0.chunkID == chunkID)
+        let failedJobs = jobs.filter { job in
+            guard job.kind == .transcription, job.state == .failed else { return false }
+            if let processingRangeID {
+                return job.processingRangeID == processingRangeID
+            }
+            if let chunkID {
+                return job.chunkID == chunkID
+            }
+            return true
         }
         if failedJobs.isEmpty {
+            if let processingRangeID {
+                guard jobs.last(where: {
+                    $0.kind == .transcription && $0.processingRangeID == processingRangeID
+                }) == nil else { return }
+                return try await enqueue(
+                    recordingID: recordingID,
+                    processingRangeID: processingRangeID,
+                    onOutcome: onOutcome
+                )
+            }
             guard jobs.last(where: { $0.kind == .transcription && $0.chunkID == chunkID }) == nil else { return }
             return try await enqueue(recordingID: recordingID, chunkID: chunkID, onOutcome: onOutcome)
         }
@@ -115,17 +178,25 @@ actor ForegroundTranscriptionScheduler {
 
     /// A running Metal job is interrupted, rather than failed, when the app
     /// backgrounds. Its pending record retains the retryable work item.
-    func enteredBackground() {
+    func enteredBackground() async {
         acceptsForegroundWork = false
         drainTask?.cancel()
+        await lifecycleGate.enteredBackground()
     }
 
-    func enteredForeground() {
+    func enteredForeground() async {
         acceptsForegroundWork = true
+        await lifecycleGate.enteredForeground()
         if drainTask != nil {
             restartAfterCurrentDrain = true
             return
         }
+        startDrainingIfPossible()
+    }
+
+    /// Re-evaluates admission after purchase unlock or thermal recovery without
+    /// requiring a scene-phase transition.
+    func requestDrain() {
         startDrainingIfPossible()
     }
 
@@ -156,7 +227,54 @@ actor ForegroundTranscriptionScheduler {
         }
     }
 
+    /// Same-Recording checkpoints run in absolute chunk order even when job
+    /// `createdAt` values were recovered out of order. Distinct Recordings keep
+    /// FIFO by `createdAt` so an old backlog does not jump ahead of newer work
+    /// beyond ordinary queue order — and never blocks capture.
+    private func nextPendingJob() async throws -> RecordingJob? {
+        let pending = try await repository.jobs(
+            kind: .transcription,
+            states: [.pending]
+        )
+        guard !pending.isEmpty else { return nil }
+
+        var startSampleByChunk: [UUID: Int64] = [:]
+        var startSampleByRange: [UUID: Int64] = [:]
+        var loadedRecordings = Set<UUID>()
+        for job in pending {
+            guard loadedRecordings.insert(job.recordingID).inserted else { continue }
+            let chunks = try await repository.chunks(recordingID: job.recordingID)
+            for chunk in chunks {
+                startSampleByChunk[chunk.id] = chunk.startSample
+            }
+            // Range lookup is best-effort: a microphone-only Recording has none,
+            // and a transient read miss must not scramble chunk start-sample order.
+            if let ranges = try? await repository.processingRanges(recordingID: job.recordingID) {
+                for range in ranges {
+                    startSampleByRange[range.id] = range.startSample
+                }
+            }
+        }
+
+        return pending.sorted { lhs, rhs in
+            if lhs.recordingID == rhs.recordingID {
+                let left = lhs.processingRangeID.flatMap { startSampleByRange[$0] }
+                    ?? lhs.chunkID.flatMap { startSampleByChunk[$0] }
+                    ?? Int64.max
+                let right = rhs.processingRangeID.flatMap { startSampleByRange[$0] }
+                    ?? rhs.chunkID.flatMap { startSampleByChunk[$0] }
+                    ?? Int64.max
+                if left != right { return left < right }
+                if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }.first
+    }
+
     private func retry(job: RecordingJob) async throws {
+
         var pending = job
         pending.state = .pending
         pending.lastError = nil
@@ -182,10 +300,22 @@ actor ForegroundTranscriptionScheduler {
         }
 
         while acceptsForegroundWork, !Task.isCancelled {
-            guard var job = try? await repository.jobs(
-                kind: .transcription,
-                states: [.pending]
-            ).first else { return }
+            guard var job = try? await nextPendingJob() else { return }
+
+            switch admissionPolicy.evaluate() {
+            case .admit:
+                break
+            case let .deferInference(reason):
+                job.lastError = reason
+                job.updatedAt = now()
+                _ = try? await repository.upsertJob(job, at: job.updatedAt)
+                return
+            case .lockedPendingPurchase:
+                job.lastError = "lockedPendingPurchase"
+                job.updatedAt = now()
+                _ = try? await repository.upsertJob(job, at: job.updatedAt)
+                return
+            }
 
             job.state = .running
             job.attemptCount += 1
@@ -194,6 +324,21 @@ actor ForegroundTranscriptionScheduler {
             do {
                 try await repository.upsertJob(job, at: job.updatedAt)
                 try await execute(job.recordingID)
+            } catch let rejection as InferenceLifecycleGate.Rejection {
+                job.state = .pending
+                job.lastError = rejection == .appIsBackgrounded
+                    ? "deferredUntilForeground"
+                    : "deferredUntilMetalAvailable"
+                job.updatedAt = now()
+                _ = try? await repository.upsertJob(job, at: job.updatedAt)
+                // Background must stop Metal submission. A transient metalBusy
+                // leaves the job pending and continues so another Recording's
+                // work is not stranded behind a contended gate.
+                if rejection == .appIsBackgrounded {
+                    return
+                }
+                await Task.yield()
+                continue
             } catch {
                 if Task.isCancelled || !acceptsForegroundWork {
                     job.state = .pending
@@ -211,6 +356,7 @@ actor ForegroundTranscriptionScheduler {
                     await handler(.init(
                         recordingID: job.recordingID,
                         chunkID: job.chunkID,
+                        processingRangeID: job.processingRangeID,
                         state: .failed(message: error.localizedDescription)
                     ))
                 }
@@ -231,7 +377,12 @@ actor ForegroundTranscriptionScheduler {
                 return
             }
             if let handler = outcomeHandlers.removeValue(forKey: job.id) {
-                await handler(.init(recordingID: job.recordingID, chunkID: job.chunkID, state: .completed))
+                await handler(.init(
+                    recordingID: job.recordingID,
+                    chunkID: job.chunkID,
+                    processingRangeID: job.processingRangeID,
+                    state: .completed
+                ))
             }
         }
     }

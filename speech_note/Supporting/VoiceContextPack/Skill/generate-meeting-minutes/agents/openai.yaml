@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate Meeting Minutes"
+  short_description: "Turn a complete VoiceContext meeting transcript into templated minutes"
+  default_prompt: "Generate meeting minutes from this complete VoiceContext meeting transcript using the selected template. Prefer transcript.json, stop if state is not complete, never modify the source transcript, and write only under generated/."

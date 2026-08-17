@@ -6,7 +6,7 @@
 - Owner：Human product owner / Agent implementation
 - 来源需求：`#3`、`#4`、`#5`、`#52`，继承顶层 `#1`
 - 对应功能模块：录音与本地数据 / 60 秒录音分片与前后台生命周期、录音与处理正交生命周期；本地语音智能 / VAD、跨分片 carry 与 utterance 组装、SenseVoice 分钟级增量转写调度；开放文档与产品体验 / TranscriptDocumentV1、source_ranges 与 Markdown
-- 最后更新：2026-08-11
+- 最后更新：2026-08-12
 
 ## 背景与问题
 
@@ -250,7 +250,7 @@ Transcript segment 使用 `source_ranges: [SourceRange]`，不再以单一 `sour
 
 ## 待确认项
 
-- `source_ranges` 是在 `voice-context/transcript@1` 内做向后兼容扩展，还是升级为新 schema version；由 TranscriptDocument 契约任务在实现前给出迁移结论。
+- ~~`source_ranges` 是在 `voice-context/transcript@1` 内做向后兼容扩展，还是升级为新 schema version~~：**已确认（`#47`）**——保持 `voice-context/transcript@1`，以加法字段 `source_ranges` / `start_sample` / `end_sample` 扩展；读取器将旧 `source_chunk_id` 规范化为单 range；写出时 dual-write `source_chunk_id`（取首个 `audio_chunk` range）以便 rollback 读者不破。
 - 60 秒延迟目标需在 iPhone 15 / iOS 18 真机以长录音、跨边界连续说话、后台积压和发热场景验证；无真机证据前不能宣称为硬 SLA。
 - 当前 active AAC 的 salvage 策略仍不在本阶段范围；发布前需决定是清理孤儿文件还是提供显式恢复尝试。
 
