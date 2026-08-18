@@ -129,6 +129,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         let endSample: Int64
         let sourceRanges: [SourceRange]
         let speechSpanIDs: [UUID]
+        let isManuallyEdited: Bool
+        let editedAt: Date?
 
         private enum CodingKeys: String, CodingKey {
             case id
@@ -141,6 +143,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
             case sourceRanges = "source_ranges"
             case sourceChunkID = "source_chunk_id"
             case speechSpanIDs = "speech_span_ids"
+            case isManuallyEdited = "is_manually_edited"
+            case editedAt = "edited_at"
             // Files written before the explicit ID mapping used the
             // encoder's acronym split. Keep them readable locally.
             case legacySpeechSpanIDs = "speech_span_i_ds"
@@ -155,7 +159,9 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
             startSample: Int64,
             endSample: Int64,
             sourceRanges: [SourceRange],
-            speechSpanIDs: [UUID]
+            speechSpanIDs: [UUID],
+            isManuallyEdited: Bool = false,
+            editedAt: Date? = nil
         ) {
             precondition(!sourceRanges.isEmpty, "segments require at least one source range")
             self.id = id
@@ -167,6 +173,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
             self.endSample = endSample
             self.sourceRanges = sourceRanges
             self.speechSpanIDs = speechSpanIDs
+            self.isManuallyEdited = isManuallyEdited
+            self.editedAt = editedAt
         }
 
         /// Compatibility initializer used by existing single-chunk call sites.
@@ -243,6 +251,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
 
             startSample = decodedStart ?? sourceRanges.first!.startSample
             endSample = decodedEnd ?? sourceRanges.last!.endSample
+            isManuallyEdited = try container.decodeIfPresent(Bool.self, forKey: .isManuallyEdited) ?? false
+            editedAt = try container.decodeIfPresent(Date.self, forKey: .editedAt)
         }
 
         func encode(to encoder: Encoder) throws {
@@ -255,6 +265,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
             try container.encode(startSample, forKey: .startSample)
             try container.encode(endSample, forKey: .endSample)
             try container.encode(sourceRanges, forKey: .sourceRanges)
+            try container.encode(isManuallyEdited, forKey: .isManuallyEdited)
+            try container.encodeIfPresent(editedAt, forKey: .editedAt)
             // Dual-write the primary audio_chunk id so transcript@1 rollback
             // readers that still require source_chunk_id keep working.
             if let primary = primarySourceChunkID {
@@ -306,23 +318,35 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         let endSample: Int64
         let sourceRanges: [SourceRange]
         let speechSpanIDs: [UUID]
+        let isManuallyEdited: Bool
+        let editedAt: Date?
 
         init(
             text: String,
             startSample: Int64,
             endSample: Int64,
             sourceRanges: [SourceRange],
-            speechSpanIDs: [UUID] = []
+            speechSpanIDs: [UUID] = [],
+            isManuallyEdited: Bool = false,
+            editedAt: Date? = nil
         ) {
             self.text = text
             self.startSample = startSample
             self.endSample = endSample
             self.sourceRanges = sourceRanges
             self.speechSpanIDs = speechSpanIDs
+            self.isManuallyEdited = isManuallyEdited
+            self.editedAt = editedAt
         }
 
         /// Whole-chunk draft used by the current per-chunk transcription path.
-        init(text: String, chunk: AudioChunk, speechSpanIDs: [UUID] = []) {
+        init(
+            text: String,
+            chunk: AudioChunk,
+            speechSpanIDs: [UUID] = [],
+            isManuallyEdited: Bool = false,
+            editedAt: Date? = nil
+        ) {
             self.init(
                 text: text,
                 startSample: chunk.startSample,
@@ -335,12 +359,20 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
                         endSample: chunk.endSample
                     )
                 ],
-                speechSpanIDs: speechSpanIDs
+                speechSpanIDs: speechSpanIDs,
+                isManuallyEdited: isManuallyEdited,
+                editedAt: editedAt
             )
         }
 
         /// Cross-chunk draft with ordered exact ranges.
-        init(text: String, sourceRanges: [SourceRange], speechSpanIDs: [UUID] = []) {
+        init(
+            text: String,
+            sourceRanges: [SourceRange],
+            speechSpanIDs: [UUID] = [],
+            isManuallyEdited: Bool = false,
+            editedAt: Date? = nil
+        ) {
             let ordered = sourceRanges.sorted { lhs, rhs in
                 if lhs.startSample != rhs.startSample {
                     return lhs.startSample < rhs.startSample
@@ -352,7 +384,9 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
                 startSample: ordered.first?.startSample ?? 0,
                 endSample: ordered.last?.endSample ?? 0,
                 sourceRanges: ordered,
-                speechSpanIDs: speechSpanIDs
+                speechSpanIDs: speechSpanIDs,
+                isManuallyEdited: isManuallyEdited,
+                editedAt: editedAt
             )
         }
     }
@@ -635,6 +669,18 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
     ) -> [SegmentDraft] {
         let replacedSources = Set(replacingSourceIDs)
         return existing.compactMap { segment -> SegmentDraft? in
+            if segment.isManuallyEdited {
+                // User manually edited / confirmed this segment: NEVER overwrite with auto ASR
+                return SegmentDraft(
+                    text: segment.text,
+                    startSample: segment.startSample,
+                    endSample: segment.endSample,
+                    sourceRanges: segment.sourceRanges,
+                    speechSpanIDs: segment.speechSpanIDs,
+                    isManuallyEdited: true,
+                    editedAt: segment.editedAt
+                )
+            }
             let overlapsIdentity =
                 segment.startSample == draft.startSample && segment.endSample == draft.endSample
             let overlapsSource = segment.sourceRanges.contains { existingRange in
@@ -656,7 +702,9 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
                 startSample: segment.startSample,
                 endSample: segment.endSample,
                 sourceRanges: segment.sourceRanges,
-                speechSpanIDs: segment.speechSpanIDs
+                speechSpanIDs: segment.speechSpanIDs,
+                isManuallyEdited: segment.isManuallyEdited,
+                editedAt: segment.editedAt
             )
         }
     }
@@ -767,7 +815,9 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
                 startSample: draft.startSample,
                 endSample: draft.endSample,
                 sourceRanges: draft.sourceRanges,
-                speechSpanIDs: draft.speechSpanIDs
+                speechSpanIDs: draft.speechSpanIDs,
+                isManuallyEdited: draft.isManuallyEdited,
+                editedAt: draft.editedAt
             )
         }
         .sorted { lhs, rhs in
@@ -799,7 +849,9 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
                 startSample: draft.startSample,
                 endSample: draft.endSample,
                 sourceRanges: draft.sourceRanges,
-                speechSpanIDs: draft.speechSpanIDs
+                speechSpanIDs: draft.speechSpanIDs,
+                isManuallyEdited: draft.isManuallyEdited,
+                editedAt: draft.editedAt
             )
         }
     }

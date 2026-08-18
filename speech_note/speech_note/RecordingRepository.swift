@@ -223,6 +223,14 @@ actor RecordingRepository {
         try index.chunks(recordingID: recordingID)
     }
 
+    func allAudioDurations() throws -> [UUID: TimeInterval] {
+        try index.allAudioDurations()
+    }
+
+    func audioDuration(recordingID: UUID) throws -> TimeInterval? {
+        try index.audioDuration(recordingID: recordingID)
+    }
+
     func jobs(recordingID: UUID) throws -> [RecordingJob] {
         try index.jobs(recordingID: recordingID)
     }

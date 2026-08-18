@@ -1,8 +1,7 @@
 import Foundation
 
 /// Decides whether the foreground transcription scheduler may submit work to
-/// SenseVoice / Metal. Thermal pauses and purchase locks must never reach the
-/// GPU admission gate.
+/// SenseVoice / Metal. Purchase locks must never reach the GPU admission gate.
 nonisolated struct TranscriptionAdmissionPolicy: Sendable {
     nonisolated enum Decision: Equatable, Sendable {
         case admit
@@ -27,13 +26,6 @@ nonisolated struct TranscriptionAdmissionPolicy: Sendable {
         if isPurchaseLocked() {
             return .lockedPendingPurchase
         }
-        switch thermalState() {
-        case .serious, .critical:
-            return .deferInference(reason: "deferredUntilThermalImproves")
-        case .nominal, .fair:
-            return .admit
-        @unknown default:
-            return .admit
-        }
+        return .admit
     }
 }

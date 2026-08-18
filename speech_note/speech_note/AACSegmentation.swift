@@ -13,9 +13,12 @@ nonisolated struct AACChunkBoundaryPlanner: Sendable {
     private(set) var currentSample: Int64 = 0
     private(set) var currentSegmentStartSample: Int64 = 0
 
-    init(segmentLengthSamples: Int64) {
+    init(segmentLengthSamples: Int64, initialSample: Int64 = 0) {
         precondition(segmentLengthSamples > 0)
+        precondition(initialSample >= 0)
         self.segmentLengthSamples = segmentLengthSamples
+        self.currentSample = initialSample
+        self.currentSegmentStartSample = initialSample
     }
 
     mutating func slices(for frameCount: Int64) -> [Slice] {

@@ -432,7 +432,7 @@ struct RecordingCoreTests {
         #expect(await outcomes.values == [.init(recordingID: recording.id, state: .completed)])
     }
 
-    @Test func schedulerAdmissionDefersThermalWithoutSubmittingMetalWork() async throws {
+    @Test func schedulerAdmissionAdmitsUnderSeriousThermalState() async throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let repository = try RecordingRepository(rootURL: root)
@@ -456,12 +456,10 @@ struct RecordingCoreTests {
         try await scheduler.enqueue(recordingID: recording.id, chunkID: UUID()) { _ in }
         await scheduler.waitForIdle()
 
-        #expect(await executor.recordingIDs.isEmpty)
-        #expect(await gate.metrics().submittedMetalWork == 0)
+        #expect(await executor.recordingIDs == [recording.id])
+        #expect(await gate.metrics().submittedMetalWork == 1)
         let job = try #require(await repository.jobs(recordingID: recording.id).first)
-        #expect(job.state == .pending)
-        #expect(job.attemptCount == 0)
-        #expect(job.lastError == "deferredUntilThermalImproves")
+        #expect(job.state == .completed)
     }
 
     @Test func schedulerAdmissionLocksPendingPurchaseWithoutSubmittingMetalWork() async throws {
@@ -2026,7 +2024,7 @@ struct RecordingCoreTests {
         #expect(jobs.allSatisfy { $0.state == .completed })
     }
 
-    @Test func schedulerDrainsMultipleRecordingsFIFOWhileThermalDeferDoesNotFailJobs() async throws {
+    @Test func schedulerDrainsMultipleRecordingsFIFOUnderThermalLoad() async throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let repository = try RecordingRepository(rootURL: root)
@@ -2068,18 +2066,6 @@ struct RecordingCoreTests {
 
         try await scheduler.enqueue(recordingID: older.id, chunkID: olderChunk) { _ in }
         try await scheduler.enqueue(recordingID: newer.id, chunkID: newerChunk) { _ in }
-        await scheduler.waitForIdle()
-
-        // Thermal degradation keeps jobs pending; it must not mark them failed
-        // or submit Metal work.
-        #expect(await order.chunkIDs.isEmpty)
-        #expect(await gate.metrics().submittedMetalWork == 0)
-        #expect(try await repository.jobs(recordingID: older.id)[0].state == .pending)
-        #expect(try await repository.jobs(recordingID: newer.id)[0].state == .pending)
-        #expect(try await repository.jobs(recordingID: older.id)[0].lastError == "deferredUntilThermalImproves")
-
-        thermal.set(.nominal)
-        await scheduler.enteredForeground()
         await scheduler.waitForIdle()
 
         #expect(await order.chunkIDs == [olderChunk, newerChunk])
@@ -2233,9 +2219,9 @@ struct RecordingCoreTests {
         #expect(try await repository.jobs(recordingID: failed.id).count == 1)
     }
 
-    /// #49: thermal defer keeps Metal dark but must never block a new capture
-    /// session or mark durable jobs failed.
-    @Test @MainActor func thermalDeferLeavesCaptureFreeAndKeepsJobsPending() async throws {
+    /// #49: high thermal load admits transcription and does not block a new capture
+    /// session.
+    @Test @MainActor func schedulerAdmissionLeavesCaptureFreeAndCompletesUnderThermalLoad() async throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let repository = try RecordingRepository(rootURL: root)
@@ -2270,21 +2256,14 @@ struct RecordingCoreTests {
 
         try await scheduler.enqueue(recordingID: older.id, chunkID: chunkID) { _ in }
         await scheduler.waitForIdle()
-        #expect(try await repository.jobs(recordingID: older.id)[0].state == .pending)
-        #expect(try await repository.jobs(recordingID: older.id)[0].lastError == "deferredUntilThermalImproves")
-        #expect(await gate.metrics().submittedMetalWork == 0)
+        #expect(try await repository.jobs(recordingID: older.id)[0].state == .completed)
+        #expect(await gate.metrics().submittedMetalWork == 1)
 
         let liveID = try await coordinator.start()
         #expect(liveID != older.id)
         #expect(coordinator.captureState == .recording)
         #expect(capture.startCount == 1)
-
-        thermal.set(.nominal)
-        await scheduler.enteredForeground()
-        await scheduler.waitForIdle()
-        #expect(try await repository.jobs(recordingID: older.id)[0].state == .completed)
         #expect(coordinator.activeRecordingID == liveID)
-        #expect(coordinator.captureState == .recording)
     }
 
     /// #49: source_ranges seek helpers must honour half-open sample windows,
@@ -2619,6 +2598,51 @@ struct RecordingCoreTests {
             endedAt: recording.startedAt.addingTimeInterval(1)
         )
     }
+
+    @Test func cumulativeAudioDurationCalculatesFromSegmentsAcrossTimeGaps() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let repository = try RecordingRepository(rootURL: root)
+        let recordingID = UUID()
+        let start = Date(timeIntervalSince1970: 1_785_900_000)
+        let end = start.addingTimeInterval(8 * 3600)
+        let recording = Recording(
+            id: recordingID,
+            startedAt: start,
+            endedAt: end,
+            state: .complete
+        )
+        try await repository.createRecording(recording, at: start)
+
+        let chunk1 = AudioChunk(
+            id: UUID(),
+            recordingID: recordingID,
+            relativePath: "Recordings/\(recordingID.uuidString.lowercased())/audio/chunk1.m4a",
+            startSample: 0,
+            endSample: 480_000,
+            startedAt: start,
+            endedAt: start.addingTimeInterval(30)
+        )
+        try await repository.addChunk(chunk1, at: start.addingTimeInterval(30))
+
+        let chunk2 = AudioChunk(
+            id: UUID(),
+            recordingID: recordingID,
+            relativePath: "Recordings/\(recordingID.uuidString.lowercased())/audio/chunk2.m4a",
+            startSample: 480_000,
+            endSample: 960_000,
+            startedAt: end.addingTimeInterval(-30),
+            endedAt: end
+        )
+        try await repository.addChunk(chunk2, at: end)
+
+        let duration = try await repository.audioDuration(recordingID: recordingID)
+        #expect(duration == 60.0)
+
+        let allDurations = try await repository.allAudioDurations()
+        #expect(allDurations[recordingID] == 60.0)
+    }
 }
 
 private enum SchedulerTestError: LocalizedError {
@@ -2727,7 +2751,7 @@ private final class MockRecordingCapture: RecordingCapturing {
     private(set) var lastStoppedSegment: AACSegmentRecorder.Segment?
     private var directory: URL?
 
-    func start(in directory: URL, segmentDuration: TimeInterval) async throws {
+    func start(in directory: URL, segmentDuration: TimeInterval, initialSampleOffset: Int64 = 0) async throws {
         self.directory = directory
         startCount += 1
         segmentDurations.append(segmentDuration)

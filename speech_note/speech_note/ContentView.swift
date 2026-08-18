@@ -232,6 +232,7 @@ struct ContentView: View {
     @State private var modelError: String?
     @State private var filterCriteria = RecordingFilterCriteria()
     @State private var isFilterSheetPresented = false
+    @State private var isTranscriptionCenterPresented = false
     @State private var isClientManagerPresented = false
     @State private var isNewFolderAlertPresented = false
     @State private var newFolderNameInput = ""
@@ -240,7 +241,6 @@ struct ContentView: View {
     @State private var isSearching = false
     @State private var isFolderManagerPresented = false
     @State private var moveRecordingID: UUID?
-    @State private var isStartSheetPresented = false
     @State private var isImportPickerPresented = false
     @State private var isPhotosPickerPresented = false
     @State private var selectedPhotoVideoItem: PhotosPickerItem?
@@ -312,18 +312,11 @@ struct ContentView: View {
             isRecordingScreenPresented = true
             return
         }
-        switch MicrophoneAccess.recordPermission {
-        case .denied:
-            isStartSheetPresented = true
-        case .granted:
-            Task {
-                await model.start(title: "", isMeeting: false)
-                if !model.captureIsActive {
-                    isStartSheetPresented = true
-                }
+        Task {
+            await model.start(title: "", isMeeting: false)
+            if model.captureIsActive {
+                isRecordingScreenPresented = true
             }
-        case .undetermined:
-            isStartSheetPresented = true
         }
     }
 
@@ -335,6 +328,13 @@ struct ContentView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Menu {
+                            Section("转写与调度") {
+                                Button {
+                                    isTranscriptionCenterPresented = true
+                                } label: {
+                                    Label("转写任务中心", systemImage: "waveform.badge.magnifyingglass")
+                                }
+                            }
                             Section("管理") {
                                 Button {
                                     isClientManagerPresented = true
@@ -431,8 +431,8 @@ struct ContentView: View {
         .sheet(isPresented: $isClientManagerPresented) {
             ClientManagementScreen(model: model)
         }
-        .sheet(isPresented: $isStartSheetPresented) {
-            StartRecordingSheet(model: model)
+        .sheet(isPresented: $isTranscriptionCenterPresented) {
+            TranscriptionCenterView(model: model)
         }
         .sheet(isPresented: $isSettingsPresented) {
             SettingsScreen(model: model, reduceMotion: reduceMotion)
@@ -476,12 +476,22 @@ struct ContentView: View {
                 selectedPhotoVideoItem = nil
             }
         }
-        .fullScreenCover(isPresented: $isRecordingScreenPresented) {
-            RecordingScreen(
-                model: model,
-                reduceMotion: reduceMotion,
-                isPresented: $isRecordingScreenPresented
-            )
+        .sheet(isPresented: $isRecordingScreenPresented) {
+            if let activeID = model.activeRecordingID {
+                NavigationStack {
+                    RecordingDetailScreen(
+                        model: model,
+                        recordingID: activeID
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("最小化") {
+                                isRecordingScreenPresented = false
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -605,7 +615,8 @@ struct ContentView: View {
                                 } label: {
                                     RecordingRow(
                                         recording: recording,
-                                        folderName: model.folderName(for: recording.id)
+                                        folderName: model.folderName(for: recording.id),
+                                        audioDuration: model.audioDuration(for: recording.id)
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -723,25 +734,34 @@ struct ContentView: View {
         let micHeld = model.captureIsActive || model.presentation == .stopping
         return VStack(spacing: 6) {
             Button {
-                isStartSheetPresented = true
+                if micHeld {
+                    isRecordingScreenPresented = true
+                } else {
+                    Task {
+                        await model.start()
+                        if model.captureIsActive {
+                            isRecordingScreenPresented = true
+                        }
+                    }
+                }
             } label: {
                 ZStack {
                     Circle()
-                        .fill(micHeld ? Color.secondary.opacity(0.35) : Color.red)
+                        .fill(micHeld ? Color.red.opacity(0.85) : Color.red)
                         .frame(width: 64, height: 64)
-                    Image(systemName: micHeld ? "stop.fill" : "mic.fill")
+                    Image(systemName: micHeld ? "waveform" : "mic.fill")
                         .font(.system(size: 24, weight: .medium))
                         .foregroundStyle(.white)
+                        .symbolEffect(.pulse, isActive: !reduceMotion && micHeld)
                 }
                 .frame(width: 72, height: 72)
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .disabled(micHeld)
-            .accessibilityLabel(micHeld ? "录音进行中" : "开始录音")
-            .accessibilityHint(micHeld ? "当前麦克风仍被占用，请先停止" : "可选择性填写标题和会议字段")
+            .sensoryFeedback(.impact(weight: .medium), trigger: micHeld)
+            .accessibilityLabel(micHeld ? "录音进行中，轻点查看" : "开始录音")
 
-            Text(micHeld ? "录音中" : "开始录音")
+            Text(micHeld ? "录音中 · 轻点查看" : "开始录音")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.primary)
         }
@@ -995,6 +1015,7 @@ private struct CalendarStrip: View {
 private struct RecordingRow: View {
     let recording: Recording
     var folderName: String? = nil
+    var audioDuration: Double = 0
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -1046,7 +1067,9 @@ private struct RecordingRow: View {
     private var metadata: String {
         let time = recording.startedAt.formatted(date: .omitted, time: .shortened)
         let duration: String
-        if let endedAt = recording.endedAt {
+        if audioDuration > 0 {
+            duration = Self.duration(audioDuration)
+        } else if let endedAt = recording.endedAt {
             duration = Self.duration(endedAt.timeIntervalSince(recording.startedAt))
         } else {
             duration = "录制中"
@@ -1101,269 +1124,6 @@ private struct TranscriptSearchResultRow: View {
         .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(hit.title)，\(hit.excerpt)")
-    }
-}
-
-private struct StartRecordingSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var title = ""
-    @State private var isMeeting = false
-    @State private var selectedClientIDs: Set<UUID> = []
-    @State private var microphonePermission = MicrophoneAccess.recordPermission
-    let model: RecordingCoreModel
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if microphonePermission == .denied {
-                    Section {
-                        Label(MicrophoneAccess.deniedStartMessage, systemImage: "mic.slash")
-                            .foregroundStyle(.secondary)
-                        Link("前往系统设置", destination: MicrophoneAccess.settingsURL)
-                    } header: {
-                        Text("权限受限")
-                    } footer: {
-                        Text("拒绝麦克风后仍可浏览、导出已有记录；不会自动再次请求权限。")
-                    }
-                }
-
-                Section {
-                    Button {
-                        Task {
-                            await model.start(title: title, isMeeting: isMeeting)
-                            microphonePermission = MicrophoneAccess.recordPermission
-                            if model.captureIsActive { dismiss() }
-                        }
-                    } label: {
-                        Label(
-                            microphonePermission == .denied ? "重试开始录音" : "直接开始录音",
-                            systemImage: "mic.fill"
-                        )
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.primary)
-                    .accessibilityHint("不填写以下字段也可以开始；未点击不会录音")
-                } footer: {
-                    Text("标题和会议字段都可以在录音结束后补充。")
-                }
-
-                Section("可选信息") {
-                    TextField("标题", text: $title)
-                        .textInputAutocapitalization(.sentences)
-                    Toggle("这是一次会议", isOn: $isMeeting)
-                }
-
-                if isMeeting, !model.clients.isEmpty {
-                    Section("预选参会客户") {
-                        ForEach(model.clients) { client in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(client.name)
-                                        .font(.body)
-                                    if !client.displaySubtitle.isEmpty {
-                                        Text(client.displaySubtitle)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                Spacer()
-                                if selectedClientIDs.contains(client.id) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(.primary)
-                                } else {
-                                    Image(systemName: "circle")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if selectedClientIDs.contains(client.id) {
-                                    selectedClientIDs.remove(client.id)
-                                } else {
-                                    selectedClientIDs.insert(client.id)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if let notice = model.notice {
-                    Section {
-                        Label(notice, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.red)
-                        if notice == MicrophoneAccess.deniedStartMessage {
-                            Link("前往系统设置", destination: MicrophoneAccess.settingsURL)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("开始记录")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
-                }
-            }
-            .onAppear { microphonePermission = MicrophoneAccess.recordPermission }
-        }
-        .presentationDetents([.medium])
-    }
-}
-
-private struct RecordingScreen: View {
-    let model: RecordingCoreModel
-    let reduceMotion: Bool
-    @Binding var isPresented: Bool
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                Spacer(minLength: 28)
-                status
-                timer
-                level
-                Spacer()
-                controls
-                if let notice = model.notice {
-                    Label(notice, systemImage: "info.circle")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 20)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 24)
-            .navigationTitle("录音中")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("最小化") { isPresented = false }
-                }
-            }
-            .background(Color(uiColor: .systemBackground))
-        }
-        .interactiveDismissDisabled()
-        .onChange(of: model.presentation) { _, state in
-            switch state {
-            case .idle, .failed, .processing:
-                isPresented = false
-            case .recording, .paused, .interrupted, .stopping:
-                break
-            }
-        }
-    }
-
-    private var status: some View {
-        VStack(spacing: 8) {
-            Label(
-                RecordingStatusStyle.text(for: model.presentation),
-                systemImage: RecordingStatusStyle.symbolName(for: model.presentation)
-            )
-            .font(.headline)
-            .foregroundStyle(RecordingStatusStyle.color(for: model.presentation))
-            .accessibilityLabel("录音状态：\(RecordingStatusStyle.text(for: model.presentation))")
-
-            if let progress = model.sessionProgress {
-                Text(RecordingStatusStyle.progressDetailText(
-                    for: progress,
-                    isInBackground: model.isInBackground
-                ))
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .accessibilityLabel(
-                    RecordingStatusStyle.progressDetailText(
-                        for: progress,
-                        isInBackground: model.isInBackground
-                    )
-                )
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var timer: some View {
-        Text(elapsedText)
-            .font(.system(size: 48, weight: .regular, design: .rounded).monospacedDigit())
-            .contentTransition(.numericText())
-            .padding(.top, 12)
-            .accessibilityLabel("已录制时长")
-            .accessibilityValue(elapsedAccessibility)
-    }
-
-    @ViewBuilder
-    private var level: some View {
-        if let inputLevel = model.inputLevel {
-            GeometryReader { proxy in
-                Capsule()
-                    .fill(Color(uiColor: .systemFill))
-                    .overlay(alignment: .leading) {
-                        Capsule()
-                            .fill(.red)
-                            .frame(width: max(2, proxy.size.width * CGFloat(inputLevel)))
-                    }
-            }
-            .frame(height: 6)
-            .padding(.top, 24)
-            .accessibilityLabel("麦克风输入电平")
-            .accessibilityValue("\(Int(inputLevel * 100))%")
-        } else {
-            Text(levelFallback)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .padding(.top, 24)
-        }
-    }
-
-    private var controls: some View {
-        HStack(spacing: 20) {
-            Button {
-                Task { await model.pauseOrResume() }
-            } label: {
-                Label(pauseTitle, systemImage: pauseSymbol)
-                    .frame(minWidth: 88, minHeight: 52)
-            }
-            .buttonStyle(.bordered)
-            .disabled(model.presentation == .interrupted || model.presentation == .stopping)
-            .accessibilityHint(
-                model.presentation == .interrupted
-                    ? "系统中断期间不可暂停"
-                    : (model.presentation == .stopping ? "正在安全停止，请稍候" : "")
-            )
-
-            Button(role: .destructive) {
-                Task { await model.stop() }
-            } label: {
-                Label(model.presentation == .stopping ? "停止中" : "停止", systemImage: "stop.fill")
-                    .frame(minWidth: 88, minHeight: 52)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .disabled(model.presentation == .stopping)
-            .accessibilityLabel(model.presentation == .stopping ? "正在安全停止" : "停止录音")
-        }
-        .sensoryFeedback(.impact(weight: .medium), trigger: model.presentation)
-    }
-
-    private var elapsedText: String {
-        guard let recording = model.snapshot.recording else { return "00:00" }
-        let ending = recording.endedAt ?? Date()
-        return RecordingRow.duration(ending.timeIntervalSince(recording.startedAt))
-    }
-
-    private var elapsedAccessibility: String {
-        guard let recording = model.snapshot.recording else { return "尚未开始录音" }
-        let seconds = max(0, Int((recording.endedAt ?? Date()).timeIntervalSince(recording.startedAt)))
-        return "\(seconds / 60) 分 \(seconds % 60) 秒"
-    }
-
-    private var pauseTitle: String { model.presentation == .paused ? "继续" : "暂停" }
-    private var pauseSymbol: String { model.presentation == .paused ? "play.fill" : "pause.fill" }
-    private var levelFallback: String {
-        model.presentation == .interrupted ? "系统中断；恢复后会继续显示输入电平。" : "正在等待麦克风输入。"
     }
 }
 
@@ -1456,23 +1216,44 @@ struct RecordingBar: View {
     }
 
     private var elapsedText: String {
+        if let activeID = model.activeRecordingID {
+            let duration = model.audioDuration(for: activeID)
+            if duration > 0 {
+                return RecordingStatusStyle.formatDuration(duration)
+            }
+        }
         guard let recording = model.snapshot.recording else {
             if let active = model.recordings.first(where: {
                 $0.state == .processing || $0.state == .stopping
             }) {
+                let duration = model.audioDuration(for: active.id)
+                if duration > 0 {
+                    return RecordingStatusStyle.formatDuration(duration)
+                }
                 let end = active.endedAt ?? Date()
                 return RecordingStatusStyle.formatDuration(end.timeIntervalSince(active.startedAt))
             }
             return "00:00"
+        }
+        let duration = model.audioDuration(for: recording.id)
+        if duration > 0 {
+            return RecordingStatusStyle.formatDuration(duration)
         }
         let end = recording.endedAt ?? Date()
         return RecordingStatusStyle.formatDuration(end.timeIntervalSince(recording.startedAt))
     }
 
     private var elapsedAccessibility: String {
-        guard let recording = model.snapshot.recording else { return "0 分 0 秒" }
-        let end = recording.endedAt ?? Date()
-        let seconds = max(0, Int(end.timeIntervalSince(recording.startedAt)))
+        let seconds: Int
+        if let activeID = model.activeRecordingID {
+            let duration = model.audioDuration(for: activeID)
+            seconds = max(0, Int(duration))
+        } else if let recording = model.snapshot.recording {
+            let duration = model.audioDuration(for: recording.id)
+            seconds = max(0, Int(duration))
+        } else {
+            return "0 分 0 秒"
+        }
         return "\(seconds / 60) 分 \(seconds % 60) 秒"
     }
 }
@@ -1605,6 +1386,17 @@ private struct SettingsScreen: View {
                         .foregroundStyle(.secondary)
                     Toggle("同步加密的已确认声纹档案", isOn: $encryptedVoiceprintSyncEnabled)
                     Text("AES-GCM 加密后写入私有 iCloud 路径；关闭同步时不保留云端档案。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("任务与调度") {
+                    NavigationLink {
+                        TranscriptionCenterView(model: model)
+                    } label: {
+                        Label("转写任务中心", systemImage: "waveform.badge.magnifyingglass")
+                    }
+                    Text("实时监控后台转写队列、分片推理状态与异常排障。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

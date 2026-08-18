@@ -10,6 +10,23 @@ enum RecordingDetailPlaybackPresentation {
         let endMilliseconds: Int
         let speaker: String?
         let text: String
+        let isManuallyEdited: Bool
+
+        init(
+            id: UUID,
+            offsetMilliseconds: Int,
+            endMilliseconds: Int,
+            speaker: String?,
+            text: String,
+            isManuallyEdited: Bool = false
+        ) {
+            self.id = id
+            self.offsetMilliseconds = offsetMilliseconds
+            self.endMilliseconds = endMilliseconds
+            self.speaker = speaker
+            self.text = text
+            self.isManuallyEdited = isManuallyEdited
+        }
 
         var startTime: TimeInterval { Double(offsetMilliseconds) / 1_000 }
         var endTime: TimeInterval { Double(max(endMilliseconds, offsetMilliseconds)) / 1_000 }
@@ -74,7 +91,8 @@ enum RecordingDetailPlaybackPresentation {
                 offsetMilliseconds: row.offsetMilliseconds,
                 endMilliseconds: end,
                 speaker: row.speaker,
-                text: row.text
+                text: row.text,
+                isManuallyEdited: row.isManuallyEdited
             )
         }
     }

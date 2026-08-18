@@ -146,6 +146,52 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         }
     }
 
+    func allAudioDurations() throws -> [UUID: TimeInterval] {
+        try lock.withLock {
+            var durations: [UUID: TimeInterval] = [:]
+            try query(
+                "SELECT recording_id, SUM(MAX(0, end_sample - start_sample)) FROM audio_chunks WHERE state != 'corrupt' GROUP BY recording_id"
+            ) { statement in
+                guard let idString = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+                      let id = UUID(uuidString: idString) else { return }
+                let samples = sqlite3_column_double(statement, 1)
+                durations[id] = samples / 16_000.0
+            }
+            try query(
+                "SELECT recording_id, duration_seconds FROM imported_audio_assets WHERE audio_removed_at IS NULL"
+            ) { statement in
+                guard let idString = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+                      let id = UUID(uuidString: idString) else { return }
+                let duration = sqlite3_column_double(statement, 1)
+                durations[id] = duration
+            }
+            return durations
+        }
+    }
+
+    func audioDuration(recordingID: UUID) throws -> TimeInterval? {
+        try lock.withLock {
+            if let asset = try importedAudioAsset(recordingID: recordingID), asset.audioRemovedAt == nil {
+                return asset.durationSeconds
+            }
+            var totalSamples: Int64 = 0
+            var foundChunks = false
+            try query(
+                "SELECT SUM(MAX(0, end_sample - start_sample)) FROM audio_chunks WHERE recording_id = ? AND state != 'corrupt'",
+                [.text(recordingID.uuidString)]
+            ) { statement in
+                if sqlite3_column_type(statement, 0) != SQLITE_NULL {
+                    totalSamples = sqlite3_column_int64(statement, 0)
+                    foundChunks = true
+                }
+            }
+            if foundChunks {
+                return Double(totalSamples) / 16_000.0
+            }
+            return nil
+        }
+    }
+
     func jobs(recordingID: UUID) throws -> [RecordingJob] {
         try lock.withLock {
             var result: [RecordingJob] = []

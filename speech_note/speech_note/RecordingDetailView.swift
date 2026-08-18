@@ -18,15 +18,12 @@ struct RecordingDetailScreen: View {
     @State private var processingRanges: [ProcessingRange] = []
     @State private var progress: RecordingPresentationProgress?
     @State private var transcript: TranscriptDocumentV1?
+    @State private var jobs: [RecordingJob] = []
+    @State private var loadedPlayableChunkIDs: [UUID] = []
+    @State private var loadedAssetURL: URL?
     @State private var speakerBindings: [MeetingSpeakerBinding] = []
     @State private var loadError: String?
     @State private var transcriptError: String?
-    @State private var saveError: String?
-    @State private var isEditing = false
-    @State private var draftTitle = ""
-    @State private var draftTagsText = ""
-    @State private var draftSegmentTexts: [UUID: String] = [:]
-    @State private var isSaving = false
     @State private var contentTab: DetailContentTab = .transcript
     @StateObject private var timelinePlayer = RecordingAudioTimelinePlayer()
 
@@ -36,6 +33,9 @@ struct RecordingDetailScreen: View {
     @State private var speakerForNewClient: MeetingSpeakerBinding? = nil
     @State private var isCopiedToastPresented = false
     @State private var isExportSheetPresented = false
+    @State private var isMetadataEditSheetPresented = false
+    @State private var editingSegmentRow: RecordingDetailPlaybackPresentation.TimedRow? = nil
+    @State private var isDeleteConfirmationPresented = false
 
     private enum DetailContentTab: String, CaseIterable, Identifiable {
         case transcript
@@ -53,33 +53,96 @@ struct RecordingDetailScreen: View {
         }
     }
 
+    private var contentSection: some View {
+        Group {
+            switch contentTab {
+            case .transcript:
+                transcriptDocumentView
+            case .speakers:
+                speakersManagementView
+            case .details:
+                technicalDetailsView
+            }
+        }
+    }
+
+    private var topBarTrailingMenu: some View {
+        Menu {
+            Section {
+                Button {
+                    Task {
+                        await model.append(recordingID: recordingID)
+                    }
+                } label: {
+                    Label("增录音频…", systemImage: "mic.badge.plus")
+                }
+                .disabled(model.captureIsActive)
+
+                Button {
+                    isMetadataEditSheetPresented = true
+                } label: {
+                    Label("编辑录音信息…", systemImage: "pencil")
+                }
+
+                Button {
+                    isExportSheetPresented = true
+                } label: {
+                    Label("导出与分享…", systemImage: "square.and.arrow.up")
+                }
+                .disabled(transcript == nil)
+            }
+
+            Section {
+                Button {
+                    if let fullText = transcript?.segments.map(\.text).joined(separator: "\n"), !fullText.isEmpty {
+                        UIPasteboard.general.string = fullText
+                        withAnimation { isCopiedToastPresented = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            withAnimation { isCopiedToastPresented = false }
+                        }
+                    }
+                } label: {
+                    Label("复制全文逐字稿", systemImage: "doc.on.doc")
+                }
+                .disabled(transcript == nil || transcript?.segments.isEmpty == true)
+
+                Button {
+                    Task {
+                        await model.retryTranscription(recordingID: recordingID)
+                        await loadDetail()
+                    }
+                } label: {
+                    Label("重新转写 / 分析", systemImage: "arrow.clockwise")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.body)
+        }
+        .accessibilityLabel("更多操作")
+    }
+
+    @ViewBuilder
+    private var copiedToastOverlay: some View {
+        if isCopiedToastPresented {
+            Text("已复制文本")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.8), in: Capsule())
+                .padding(.bottom, 24)
+                .transition(.opacity.combined(with: .scale))
+        }
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     headerCard
-                    audioPlayerCard
-
-                    if isEditing {
-                        editorSection
-                    } else {
-                        contentTabsPicker
-                        switch contentTab {
-                        case .transcript:
-                            transcriptDocumentView
-                        case .speakers:
-                            speakersManagementView
-                        case .details:
-                            technicalDetailsView
-                        }
-                    }
-
-                    if let saveError {
-                        Label(saveError, systemImage: "exclamationmark.triangle")
-                            .font(.subheadline)
-                            .foregroundStyle(.red)
-                            .accessibilityIdentifier("detail-save-error")
-                    }
+                    contentTabsPicker
+                    contentSection
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
@@ -101,34 +164,31 @@ struct RecordingDetailScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 12) {
-                        Button {
-                            isExportSheetPresented = true
-                        } label: {
-                            Image(systemName: "square.and.arrow.up")
-                        }
-                        .disabled(transcript == nil)
-                        .accessibilityLabel("导出与分享")
-
-                        if transcript != nil {
-                            Button(isEditing ? "完成" : "编辑") {
-                                if isEditing {
-                                    Task { await saveEdits() }
-                                } else {
-                                    beginEditing()
-                                }
-                            }
-                            .fontWeight(isEditing ? .semibold : .regular)
-                            .disabled(isSaving)
-                            .accessibilityIdentifier("edit-transcript")
-                        }
-                    }
+                    topBarTrailingMenu
                 }
             }
             .sheet(isPresented: $isExportSheetPresented) {
                 NavigationStack {
                     ExportDocumentsDestination(model: model, recordingID: recordingID)
                 }
+            }
+            .sheet(isPresented: $isMetadataEditSheetPresented) {
+                EditRecordingMetadataSheet(
+                    model: model,
+                    recordingID: recordingID,
+                    initialTitle: displayTitle,
+                    initialTags: transcript?.tags ?? []
+                )
+            }
+            .sheet(item: $editingSegmentRow) { row in
+                EditSegmentTextSheet(
+                    model: model,
+                    recordingID: recordingID,
+                    row: row,
+                    onSaved: {
+                        await loadDetail()
+                    }
+                )
             }
             .sheet(item: $selectedSpeakerForClientBinding) { binding in
                 SpeakerClientPickerSheet(
@@ -160,43 +220,32 @@ struct RecordingDetailScreen: View {
                 }
             }
             .safeAreaInset(edge: .top, spacing: 0) {
-                if model.showsSessionChrome {
+                if model.showsSessionChrome && model.activeRecordingID != recordingID {
                     RecordingBar(model: model, reduceMotion: reduceMotion)
                 }
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                bottomControlDock
+            }
             .overlay(alignment: .bottom) {
-                if isCopiedToastPresented {
-                    Text("已复制文本")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.black.opacity(0.8), in: Capsule())
-                        .padding(.bottom, 24)
-                        .transition(.opacity.combined(with: .scale))
-                }
+                copiedToastOverlay
             }
             .task(id: recordingID) {
                 while !Task.isCancelled {
-                    if !isEditing {
-                        await loadDetail()
+                    await loadDetail()
+                    let hasActiveWork = jobs.contains { job in
+                        if job.kind != .transcription { return false }
+                        return job.state == .running || job.state == .pending
                     }
                     let processing = progress?.processing
-                    let shouldKeepUpdating: Bool = {
-                        switch processing {
-                        case .queued, .processing, .deferredUntilForeground, .lockedPendingPurchase:
-                            return true
-                        case .idle:
-                            return progress?.capture == .recording
-                                || progress?.capture == .paused
-                                || progress?.capture == .interrupted
-                                || progress?.capture == .stopping
-                        case .needsAttention, .complete, .none:
-                            return false
-                        }
-                    }()
-                    guard shouldKeepUpdating else { break }
-                    try? await Task.sleep(for: .seconds(1))
+                    let isQueued = (processing == .queued || processing == .processing || processing == .deferredUntilForeground)
+                    let isActivelyTranscribing = isCapturingThisRecording || hasActiveWork || isQueued
+
+                    if isActivelyTranscribing {
+                        try? await Task.sleep(for: .seconds(1))
+                    } else {
+                        try? await Task.sleep(for: .seconds(3))
+                    }
                 }
             }
             .onDisappear {
@@ -267,11 +316,11 @@ struct RecordingDetailScreen: View {
 
     private var statusPill: some View {
         let processing = progress?.processing ?? .idle
-        let capture = progress?.capture ?? currentRecording.persistedCaptureState
+        let capture = progress?.capture ?? (isCapturingThisRecording ? .recording : currentRecording.persistedCaptureState)
 
         let (title, icon, color): (String, String, Color) = {
-            if capture == .recording {
-                return ("录制中", "circle.fill", .red)
+            if isCapturingThisRecording || capture == .recording {
+                return (model.presentation == .paused ? "已暂停" : "录制中", "circle.fill", .red)
             }
             switch processing {
             case .processing, .queued:
@@ -303,33 +352,121 @@ struct RecordingDetailScreen: View {
     }
 
     private var durationText: String {
-        currentRecording.endedAt.map {
+        if isCapturingThisRecording {
+            return elapsedText
+        }
+        if let importedAsset {
+            return RecordingStatusStyle.formatDuration(importedAsset.durationSeconds)
+        }
+        let totalSamples = chunks.reduce(Int64(0)) { $0 + max(0, $1.endSample - $1.startSample) }
+        if totalSamples > 0 {
+            let durationSeconds = Double(totalSamples) / AACSegmentRecorder.targetSampleRate
+            return RecordingStatusStyle.formatDuration(durationSeconds)
+        }
+        if timelinePlayer.duration > 0 {
+            return RecordingStatusStyle.formatDuration(timelinePlayer.duration)
+        }
+        let modelDuration = model.audioDuration(for: recordingID)
+        if modelDuration > 0 {
+            return RecordingStatusStyle.formatDuration(modelDuration)
+        }
+        return currentRecording.endedAt.map {
             RecordingStatusStyle.formatDuration($0.timeIntervalSince(currentRecording.startedAt))
         } ?? "录制中"
     }
 
-    // MARK: - Audio Player Card
+    private var elapsedText: String {
+        let duration = model.audioDuration(for: recordingID)
+        if duration > 0 {
+            return RecordingStatusStyle.formatDuration(duration)
+        }
+        guard let recording = model.snapshot.recording, recording.id == recordingID else {
+            let start = currentRecording.startedAt
+            let fallbackDuration = max(0, Date().timeIntervalSince(start))
+            return RecordingStatusStyle.formatDuration(fallbackDuration)
+        }
+        let ending = recording.endedAt ?? Date()
+        return RecordingStatusStyle.formatDuration(ending.timeIntervalSince(recording.startedAt))
+    }
+
+    private var isCapturingThisRecording: Bool {
+        model.activeRecordingID == recordingID && (model.captureIsActive || model.presentation == .stopping || model.presentation == .paused || model.presentation == .interrupted)
+    }
+
+    // MARK: - Bottom Control Dock (Unified Player & Recorder)
 
     @ViewBuilder
-    private var audioPlayerCard: some View {
-        VStack(spacing: 12) {
-            if !hasPlayableAudio {
-                HStack(spacing: 8) {
-                    Image(systemName: "waveform.slash")
-                        .foregroundStyle(.secondary)
-                    Text(transcript?.audio.availableOnThisDevice == false
-                         ? "音频已在设备上清理，逐字稿仍可完整浏览"
-                         : "音频暂不可用")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 16)
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+    private var bottomControlDock: some View {
+        VStack(spacing: 0) {
+            Divider()
+            if isCapturingThisRecording {
+                recordingDockContent
             } else {
-                VStack(spacing: 8) {
-                    // Timeline Scrubber
+                playbackDockContent
+            }
+        }
+        .background(.bar)
+    }
+
+    private var recordingDockContent: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 16) {
+                LiveWaveformView(
+                    inputLevel: model.inputLevel,
+                    isRecording: model.presentation == .recording,
+                    tintColor: .red,
+                    barCount: 24,
+                    maxHeight: 28
+                )
+
+                Spacer()
+
+                Text(elapsedText)
+                    .font(.system(size: 26, weight: .regular, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .contentTransition(.numericText())
+            }
+            .padding(.horizontal, 20)
+
+            HStack(spacing: 16) {
+                Button {
+                    Task { await model.pauseOrResume() }
+                } label: {
+                    Label(
+                        model.presentation == .paused ? "继续" : "暂停",
+                        systemImage: model.presentation == .paused ? "play.fill" : "pause.fill"
+                    )
+                    .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.presentation == .interrupted || model.presentation == .stopping)
+
+                Button(role: .destructive) {
+                    Task { await model.stop() }
+                } label: {
+                    Label(
+                        model.presentation == .stopping ? "停止中" : "完成录音",
+                        systemImage: "stop.fill"
+                    )
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(model.presentation == .stopping)
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+        .sensoryFeedback(.impact(weight: .medium), trigger: model.presentation)
+    }
+
+    private var playbackDockContent: some View {
+        VStack(spacing: 8) {
+            if hasPlayableAudio {
+                HStack(spacing: 12) {
                     Slider(
                         value: Binding(
                             get: { timelinePlayer.currentTime },
@@ -340,86 +477,87 @@ struct RecordingDetailScreen: View {
                     .tint(.red)
                     .accessibilityLabel("音频时间轴")
 
-                    // Timestamps
-                    HStack {
-                        Text(RecordingStatusStyle.formatDuration(timelinePlayer.currentTime))
-                        Spacer()
-                        Text("-\(RecordingStatusStyle.formatDuration(max(0, timelinePlayer.duration - timelinePlayer.currentTime)))")
-                    }
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-
-                    // Control Buttons
-                    HStack(spacing: 32) {
-                        // Skip back 15s
-                        Button {
-                            timelinePlayer.seek(by: -15)
-                        } label: {
-                            Image(systemName: "gobackward.15")
-                                .font(.title3)
-                                .foregroundStyle(.primary)
-                                .frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("快退 15 秒")
-
-                        // Play / Pause prominent round button
-                        Button {
-                            timelinePlayer.togglePlayback()
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.primary)
-                                    .frame(width: 56, height: 56)
-                                Image(systemName: timelinePlayer.isPlaying ? "pause.fill" : "play.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(Color(uiColor: .systemBackground))
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(timelinePlayer.isPlaying ? "暂停" : "播放")
-
-                        // Skip forward 15s
-                        Button {
-                            timelinePlayer.seek(by: 15)
-                        } label: {
-                            Image(systemName: "goforward.15")
-                                .font(.title3)
-                                .foregroundStyle(.primary)
-                                .frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("快进 15 秒")
-
-                        // Playback Speed
-                        Menu {
-                            ForEach([Float(0.75), 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
-                                Button("\(rate, specifier: "%.2g")×") {
-                                    timelinePlayer.setRate(rate)
-                                }
-                            }
-                        } label: {
-                            Text("\(timelinePlayer.playbackRate, specifier: "%.2g")×")
-                                .font(.subheadline.weight(.semibold).monospacedDigit())
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Color(uiColor: .secondarySystemBackground))
-                                .clipShape(Capsule())
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 4)
-
-                    if let playbackError = timelinePlayer.playbackError {
-                        Label(playbackError, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
+                    Text("-\(RecordingStatusStyle.formatDuration(max(0, timelinePlayer.duration - timelinePlayer.currentTime)))")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
                 }
-                .padding(16)
-                .background(Color(uiColor: .secondarySystemBackground).opacity(0.6), in: RoundedRectangle(cornerRadius: 16))
+                .padding(.horizontal, 20)
+
+                HStack(spacing: 28) {
+                    Spacer()
+
+                    Button {
+                        timelinePlayer.seek(by: -15)
+                    } label: {
+                        Image(systemName: "gobackward.15")
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("快退 15 秒")
+
+                    Button {
+                        timelinePlayer.togglePlayback()
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.primary)
+                                .frame(width: 44, height: 44)
+                            Image(systemName: timelinePlayer.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.title3)
+                                .foregroundStyle(Color(uiColor: .systemBackground))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(timelinePlayer.isPlaying ? "暂停" : "播放")
+
+                    Button {
+                        timelinePlayer.seek(by: 15)
+                    } label: {
+                        Image(systemName: "goforward.15")
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("快进 15 秒")
+
+                    Menu {
+                        ForEach([Float(0.75), 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
+                            Button("\(rate, specifier: "%.2g")×") {
+                                timelinePlayer.setRate(rate)
+                            }
+                        }
+                    } label: {
+                        Text("\(timelinePlayer.playbackRate, specifier: "%.2g")×")
+                            .font(.caption.weight(.semibold).monospacedDigit())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(uiColor: .secondarySystemBackground))
+                            .clipShape(Capsule())
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+            } else {
+                HStack(spacing: 12) {
+                    Image(systemName: "waveform.slash")
+                        .foregroundStyle(.secondary)
+                    Text(transcript?.audio.availableOnThisDevice == false
+                         ? "音频已在设备上清理"
+                         : "暂无音频")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
             }
         }
+        .padding(.top, 6)
+        .padding(.bottom, 10)
     }
 
     // MARK: - Content Tabs Picker
@@ -442,33 +580,64 @@ struct RecordingDetailScreen: View {
         let activeID = RecordingDetailPlaybackPresentation.currentRowID(at: timelinePlayer.currentTime, rows: rows)
         let activeSpeaker = rows.first(where: { $0.id == activeID })?.speaker
 
+        let pendingOrRunningJobs = jobs.filter { $0.kind == .transcription && ($0.state == .running || $0.state == .pending) }
+        let failedJobs = jobs.filter { $0.kind == .transcription && $0.state == .failed }
+
         return VStack(alignment: .leading, spacing: 14) {
             if roster.count >= 2 {
                 speakerLegend(roster: roster, activeSpeaker: activeSpeaker)
             }
 
-            if let transcript {
-                if rows.isEmpty {
+            if !rows.isEmpty {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(rows) { row in
+                        transcriptDialogueRow(
+                            row,
+                            roster: roster,
+                            isCurrent: row.id == activeID
+                        )
+                    }
+                }
+
+                if !isCapturingThisRecording && !pendingOrRunningJobs.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("已就绪 \(rows.count) 个分段 · 正在增量转写后续音频 (\(pendingOrRunningJobs.count) 个排队中)…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 6)
+                }
+
+                if !isCapturingThisRecording && !failedJobs.isEmpty {
+                    failedJobsWarningBanner(failedJobs: failedJobs)
+                }
+            } else if isCapturingThisRecording {
+                // liveRecordingBanner is rendered below
+            } else {
+                if !pendingOrRunningJobs.isEmpty {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .controlSize(.regular)
+                        Text("正在生成首个音频分片的转写文稿…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 36)
+                } else if !failedJobs.isEmpty {
+                    failedJobsCard(failedJobs: failedJobs)
+                } else {
                     Text(documentPlaceholder)
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 24)
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(rows) { row in
-                            transcriptDialogueRow(
-                                row,
-                                roster: roster,
-                                isCurrent: row.id == activeID
-                            )
-                        }
-                    }
                 }
-            } else {
-                Text(documentPlaceholder)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 24)
+            }
+
+            if isCapturingThisRecording {
+                liveRecordingBanner
             }
 
             if let transcriptError {
@@ -477,6 +646,117 @@ struct RecordingDetailScreen: View {
                     .foregroundStyle(.red)
             }
         }
+    }
+
+    private func failedJobsWarningBanner(failedJobs: [RecordingJob]) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("部分后续分段暂缓或遇到异常")
+                    .font(.caption.weight(.medium))
+                if let err = failedJobs.first?.lastError {
+                    Text(formatErrorMessage(err))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer()
+            Button {
+                Task {
+                    await model.retryTranscription(recordingID: recordingID)
+                    await loadDetail()
+                }
+            } label: {
+                Text("重试")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.15))
+                    .foregroundStyle(.orange)
+                    .clipShape(Capsule())
+            }
+        }
+        .padding(10)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func failedJobsCard(failedJobs: [RecordingJob]) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.title2)
+                .foregroundStyle(.orange)
+            Text("转写暂缓或遇到异常")
+                .font(.subheadline.weight(.medium))
+            if let err = failedJobs.first?.lastError {
+                Text(formatErrorMessage(err))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+            }
+            Button {
+                Task {
+                    await model.retryTranscription(recordingID: recordingID)
+                    await loadDetail()
+                }
+            } label: {
+                Text("重新转写")
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(Color.orange.opacity(0.15))
+                    .foregroundStyle(.orange)
+                    .clipShape(Capsule())
+            }
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+    }
+
+    private func formatErrorMessage(_ error: String) -> String {
+        switch error {
+        case "deferredUntilThermalImproves":
+            return "设备发热较严重，已暂缓以保护硬件；降温后将自动恢复转写。"
+        case "deferredUntilForeground":
+            return "应用曾退至后台，回到前台后将继续转写。"
+        case "deferredUntilMetalAvailable":
+            return "Metal 图形加速通道排队中，稍候自动执行。"
+        case "lockedPendingPurchase":
+            return "试用配额已达上限，待解锁后继续。"
+        case "recoveredAfterTermination":
+            return "应用退出后已自动恢复，排队转写中。"
+        default:
+            return error
+        }
+    }
+
+    private var liveRecordingBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: RecordingStatusStyle.symbolName(for: model.presentation))
+                .foregroundStyle(RecordingStatusStyle.color(for: model.presentation))
+                .symbolEffect(.pulse, isActive: !reduceMotion && model.presentation == .recording)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.presentation == .paused ? "录音已暂停" : "正在录音并实时转写…")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                if let progress = model.sessionProgress {
+                    Text(RecordingStatusStyle.progressDetailText(for: progress, isInBackground: model.isInBackground))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("每约 60 秒增量转写已关闭分片")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.red.opacity(0.2), lineWidth: 1))
     }
 
     @ViewBuilder
@@ -532,6 +812,19 @@ struct RecordingDetailScreen: View {
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
 
+                    if row.isManuallyEdited {
+                        HStack(spacing: 3) {
+                            Image(systemName: "checkmark.seal.fill")
+                            Text("已校对")
+                        }
+                        .font(.system(size: 10, weight: .medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.12))
+                        .foregroundStyle(.blue)
+                        .clipShape(Capsule())
+                    }
+
                     Spacer()
 
                     if isCurrent {
@@ -564,6 +857,11 @@ struct RecordingDetailScreen: View {
         .buttonStyle(.plain)
         .id(row.id)
         .contextMenu {
+            Button {
+                editingSegmentRow = row
+            } label: {
+                Label("编辑此段逐字稿…", systemImage: "pencil")
+            }
             Button {
                 UIPasteboard.general.string = row.text
                 withAnimation { isCopiedToastPresented = true }
@@ -750,55 +1048,6 @@ struct RecordingDetailScreen: View {
         .padding(.vertical, 10)
     }
 
-    // MARK: - Editor Section
-
-    private var editorSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("编辑文稿")
-                .font(.headline)
-            TextField("标题", text: $draftTitle)
-                .textFieldStyle(.roundedBorder)
-            TextField("标签（用逗号分隔）", text: $draftTagsText)
-                .textFieldStyle(.roundedBorder)
-
-            if let transcript {
-                ForEach(transcript.segments) { segment in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("+\(transcriptOffset(segment.offsetMilliseconds))")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                        TextField(
-                            "逐字稿",
-                            text: Binding(
-                                get: { draftSegmentTexts[segment.id] ?? segment.text },
-                                set: { draftSegmentTexts[segment.id] = $0 }
-                            ),
-                            axis: .vertical
-                        )
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(2...6)
-                    }
-                }
-            }
-
-            HStack {
-                Button("取消") {
-                    isEditing = false
-                    saveError = nil
-                }
-                .buttonStyle(.bordered)
-                Button(isSaving ? "保存中…" : "保存") {
-                    Task { await saveEdits() }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.primary)
-                .disabled(isSaving)
-            }
-        }
-        .padding(14)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-    }
-
     // MARK: - Helpers & Data Binding
 
     private var currentRecording: Recording {
@@ -865,7 +1114,8 @@ struct RecordingDetailScreen: View {
                     offsetMilliseconds: $0.offsetMilliseconds,
                     endMilliseconds: RecordingDetailPlaybackPresentation.milliseconds(fromSamples: $0.endSample),
                     speaker: speakerLabel(for: $0, in: transcript),
-                    text: $0.text
+                    text: $0.text,
+                    isManuallyEdited: $0.isManuallyEdited
                 )
             }
             return RecordingDetailPlaybackPresentation.normalizingEndTimes(mapped)
@@ -884,13 +1134,15 @@ struct RecordingDetailScreen: View {
             let offsetMs = owned.map(\.offsetMilliseconds).min() ?? Int((Double(turn.startSample) / 16.0).rounded())
             let endMs = owned.map { RecordingDetailPlaybackPresentation.milliseconds(fromSamples: $0.endSample) }.max()
                 ?? RecordingDetailPlaybackPresentation.milliseconds(fromSamples: turn.endSample)
+            let isEdited = owned.contains { $0.isManuallyEdited }
             rows.append(
                 TranscriptPresentationRow(
                     id: owned[0].id,
                     offsetMilliseconds: offsetMs,
                     endMilliseconds: endMs,
                     speaker: resolvedSpeakerName(turn.speaker, in: transcript),
-                    text: texts.joined(separator: " ")
+                    text: texts.joined(separator: " "),
+                    isManuallyEdited: isEdited
                 )
             )
         }
@@ -903,7 +1155,8 @@ struct RecordingDetailScreen: View {
                     offsetMilliseconds: segment.offsetMilliseconds,
                     endMilliseconds: RecordingDetailPlaybackPresentation.milliseconds(fromSamples: segment.endSample),
                     speaker: speakerLabel(for: segment, in: transcript),
-                    text: trimmed
+                    text: trimmed,
+                    isManuallyEdited: segment.isManuallyEdited
                 )
             )
         }
@@ -949,38 +1202,6 @@ struct RecordingDetailScreen: View {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
-    private func beginEditing() {
-        guard let transcript else { return }
-        draftTitle = transcript.title ?? currentRecording.title ?? ""
-        draftTagsText = transcript.tags.joined(separator: ", ")
-        draftSegmentTexts = Dictionary(uniqueKeysWithValues: transcript.segments.map { ($0.id, $0.text) })
-        saveError = nil
-        isEditing = true
-    }
-
-    private func saveEdits() async {
-        guard !isSaving else { return }
-        isSaving = true
-        defer { isSaving = false }
-        let tags = draftTagsText
-            .split(whereSeparator: { $0 == "," || $0 == "，" || $0 == ";" })
-            .map(String.init)
-        do {
-            let saved = try await model.saveTranscriptEdits(
-                recordingID: recordingID,
-                title: draftTitle,
-                tags: tags,
-                segmentTexts: draftSegmentTexts
-            )
-            transcript = saved
-            isEditing = false
-            saveError = nil
-            await loadDetail()
-        } catch {
-            saveError = "保存失败：\(error.localizedDescription)"
-        }
-    }
-
     private enum SpeakerAction {
         case confirm(name: String)
         case deny
@@ -1013,9 +1234,8 @@ struct RecordingDetailScreen: View {
                 transcript = document
             }
             speakerBindings = result.1
-            saveError = nil
         } catch {
-            saveError = "说话人更新失败：\(error.localizedDescription)"
+            // best-effort speaker update
         }
     }
 
@@ -1045,11 +1265,19 @@ struct RecordingDetailScreen: View {
             importedAsset = try await model.importedAudioAsset(recordingID: recordingID)
             processingRanges = try await model.processingRanges(recordingID: recordingID)
             progress = try await model.presentationProgress(for: recordingID)
+            jobs = (try? await model.repository.jobs(recordingID: recordingID)) ?? []
+
+            let currentPlayableChunks = playableChunks
+            let currentChunkIDs = currentPlayableChunks.map(\.id)
             if let importedAsset {
                 let url = model.repository.rootURL.appendingPathComponent(importedAsset.relativePath)
-                timelinePlayer.load(assetURL: url, durationSeconds: importedAsset.durationSeconds)
-            } else {
-                timelinePlayer.load(chunks: playableChunks, rootURL: model.repository.rootURL)
+                if loadedAssetURL != url {
+                    loadedAssetURL = url
+                    timelinePlayer.load(assetURL: url, durationSeconds: importedAsset.durationSeconds)
+                }
+            } else if loadedPlayableChunkIDs != currentChunkIDs {
+                loadedPlayableChunkIDs = currentChunkIDs
+                timelinePlayer.load(chunks: currentPlayableChunks, rootURL: model.repository.rootURL)
             }
             loadError = nil
         } catch {
@@ -1069,7 +1297,7 @@ struct RecordingDetailScreen: View {
 
     private func scrollToSearchHit(using proxy: ScrollViewProxy) {
         guard !didAutoScrollToHit else { return }
-        guard contentTab == .transcript, !isEditing else { return }
+        guard contentTab == .transcript else { return }
         let target = resolvedScrollTarget
         guard let target else { return }
         didAutoScrollToHit = true
@@ -1082,7 +1310,7 @@ struct RecordingDetailScreen: View {
 
     private func scrollToActiveSegment(using proxy: ScrollViewProxy) {
         guard timelinePlayer.isPlaying else { return }
-        guard contentTab == .transcript, !isEditing else { return }
+        guard contentTab == .transcript else { return }
         guard let transcript else { return }
         let rows = transcriptPresentationRows(for: transcript)
         guard let target = RecordingDetailPlaybackPresentation.currentRowID(at: timelinePlayer.currentTime, rows: rows) else { return }
@@ -1177,5 +1405,194 @@ struct SpeakerClientPickerSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+/// Sheet to edit recording metadata (title, tags) independently from transcript.
+struct EditRecordingMetadataSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let model: RecordingCoreModel
+    let recordingID: UUID
+    let initialTitle: String
+    let initialTags: [String]
+
+    @State private var titleInput: String = ""
+    @State private var tagsInput: String = ""
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    init(model: RecordingCoreModel, recordingID: UUID, initialTitle: String, initialTags: [String]) {
+        self.model = model
+        self.recordingID = recordingID
+        self.initialTitle = initialTitle
+        self.initialTags = initialTags
+        _titleInput = State(initialValue: initialTitle)
+        _tagsInput = State(initialValue: initialTags.joined(separator: ", "))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("录音标题") {
+                    TextField("输入标题", text: $titleInput)
+                }
+
+                Section("标签") {
+                    TextField("标签（多个标签用逗号分隔）", text: $tagsInput)
+                    Text("例如：周会, 客户沟通, 项目评审")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("编辑录音信息")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        Task {
+                            isSaving = true
+                            defer { isSaving = false }
+                            let tags = tagsInput
+                                .split(whereSeparator: { $0 == "," || $0 == "，" || $0 == ";" || $0 == " " })
+                                .map(String.init)
+                            do {
+                                try await model.saveRecordingMetadata(
+                                    recordingID: recordingID,
+                                    title: titleInput,
+                                    tags: tags
+                                )
+                                dismiss()
+                            } catch {
+                                errorMessage = "保存失败：\(error.localizedDescription)"
+                            }
+                        }
+                    }
+                    .disabled(isSaving)
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// Sheet to edit single segment transcript with manual edit confirmation.
+struct EditSegmentTextSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let model: RecordingCoreModel
+    let recordingID: UUID
+    let row: RecordingDetailPlaybackPresentation.TimedRow
+    let onSaved: () async -> Void
+
+    @State private var textInput: String = ""
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    init(
+        model: RecordingCoreModel,
+        recordingID: UUID,
+        row: RecordingDetailPlaybackPresentation.TimedRow,
+        onSaved: @escaping () async -> Void
+    ) {
+        self.model = model
+        self.recordingID = recordingID
+        self.row = row
+        self.onSaved = onSaved
+        _textInput = State(initialValue: row.text)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 8) {
+                    if let speaker = row.speaker, !speaker.isEmpty {
+                        Text(speaker)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    Text("+\(formatOffset(row.offsetMilliseconds))")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if row.isManuallyEdited {
+                        HStack(spacing: 3) {
+                            Image(systemName: "checkmark.seal.fill")
+                            Text("已校对")
+                        }
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.blue)
+                    }
+                }
+                .padding(.horizontal, 4)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("逐字稿内容（人工编辑后将永久锁定防覆盖）")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    TextEditor(text: $textInput)
+                        .font(.body)
+                        .padding(8)
+                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                        .frame(minHeight: 140)
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
+                Spacer()
+            }
+            .padding(20)
+            .navigationTitle("编辑逐字稿段落")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存校对") {
+                        Task {
+                            isSaving = true
+                            defer { isSaving = false }
+                            do {
+                                _ = try await model.saveSingleSegmentText(
+                                    recordingID: recordingID,
+                                    segmentID: row.id,
+                                    text: textInput
+                                )
+                                await onSaved()
+                                dismiss()
+                            } catch {
+                                errorMessage = "保存失败：\(error.localizedDescription)"
+                            }
+                        }
+                    }
+                    .disabled(isSaving)
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func formatOffset(_ ms: Int) -> String {
+        let totalSeconds = ms / 1_000
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }

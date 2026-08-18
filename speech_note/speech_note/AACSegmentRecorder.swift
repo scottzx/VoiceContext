@@ -88,7 +88,8 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
 
     func start(
         in directory: URL,
-        segmentDuration: TimeInterval = AACSegmentRecorder.defaultSegmentDuration
+        segmentDuration: TimeInterval = AACSegmentRecorder.defaultSegmentDuration,
+        initialSampleOffset: Int64 = 0
     ) async throws {
         guard !statusLock.withLock({ tapInstalled }) else { return }
         let permission = AVAudioApplication.shared.recordPermission
@@ -120,10 +121,13 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         try writerQueue.sync {
             self.directory = directory
             let segmentLengthSamples = max(1, Int64(segmentDuration * targetFormat.sampleRate))
-            boundaryPlanner = AACChunkBoundaryPlanner(segmentLengthSamples: segmentLengthSamples)
+            boundaryPlanner = AACChunkBoundaryPlanner(
+                segmentLengthSamples: segmentLengthSamples,
+                initialSample: initialSampleOffset
+            )
             audioConverter = converter
             recordingFormat = targetFormat
-            writtenSamples = 0
+            writtenSamples = initialSampleOffset
             pendingPacketCount = 0
             lastClosedSegment = nil
             try openNextSegment(startedAt: Date())

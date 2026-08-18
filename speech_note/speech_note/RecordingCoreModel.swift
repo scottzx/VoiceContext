@@ -108,6 +108,7 @@ final class RecordingCoreModel {
     private(set) var sessionProgress: RecordingPresentationProgress?
     private(set) var snapshot = Snapshot()
     private(set) var recordings: [Recording] = []
+    private(set) var audioDurations: [UUID: TimeInterval] = [:]
     private(set) var recoveries: [RecoverySummary] = []
     private(set) var inputLevel: Float?
     private(set) var integrityIssues: [RecordingIntegrityIssue]?
@@ -243,84 +244,55 @@ final class RecordingCoreModel {
                 guard let chunk = chunks.first(where: { $0.id == chunkID }) else {
                     throw SenseVoiceInferenceService.InferenceError.runtime("找不到待转写的音频分片")
                 }
-                let leading = SampleWindowContinuation.leadingAudioChunks(
-                    endingAt: chunk,
-                    among: chunks
-                )
-                let sourceChunks = leading + [chunk]
                 let result = try await inferenceService.transcribe(
-                    recordingURLs: sourceChunks.map {
-                        repository.rootURL.appendingPathComponent($0.relativePath)
-                    },
-                    startingAt: sourceChunks[0].startSample,
+                    recordingURLs: [repository.rootURL.appendingPathComponent(chunk.relativePath)],
+                    startingAt: chunk.startSample,
                     languageMode: recording.languageMode
                 )
-                // The final-chunk rule must reflect whether capture has already
-                // stopped. This job may have started while the Recording was
-                // still active, and the value read above can predate the stop
-                // that closed the last chunk. Re-read at decision time so an
-                // open tail on the final chunk is committed, not left waiting
-                // for a successor that will never be closed.
-                let settledRecording = try await repository.recording(id: recordingID)
-                let isFinalChunk = settledRecording?.endedAt != nil && chunks.last?.id == chunk.id
 
-                if result.endsWithOpenSpeech && !isFinalChunk {
-                    _ = try await repository.setChunkContinuation(
-                        id: chunk.id,
-                        requiresContinuation: true,
-                        at: Date()
-                    )
-                    return
-                }
+                _ = try? await repository.setChunkContinuation(
+                    id: chunk.id,
+                    requiresContinuation: false,
+                    at: Date()
+                )
 
-                // Clear the full multi-hop open-speech chain, not only the
-                // immediate predecessor.
-                for source in sourceChunks {
-                    _ = try await repository.setChunkContinuation(
-                        id: source.id,
-                        requiresContinuation: false,
-                        at: Date()
+                let trimmedText = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedText.isEmpty {
+                    let sourceRanges = [
+                        TranscriptDocumentV1.SourceRange(
+                            sourceKind: .audioChunk,
+                            sourceID: chunk.id,
+                            startSample: chunk.startSample,
+                            endSample: chunk.endSample
+                        )
+                    ]
+                    let draft = TranscriptDocumentV1.SegmentDraft(
+                        text: trimmedText,
+                        sourceRanges: sourceRanges
+                    )
+                    let document = try? await transcriptStore.document(recordingID: recordingID)
+                    let updated = document?.appending(
+                        recording: recording,
+                        chunks: chunks,
+                        draft: draft,
+                        replacingSourceIDs: [chunk.id],
+                        speakers: result.temporarySpeakers
+                    ) ?? TranscriptDocumentV1(
+                        recording: recording,
+                        chunks: chunks,
+                        segmentDrafts: [draft],
+                        language: result.detectedLanguage,
+                        state: .processing,
+                        speakers: result.temporarySpeakers
+                    )
+                    try? await transcriptStore.write(updated)
+                    try? await Self.publishPublicDocuments(
+                        document: updated,
+                        repository: repository,
+                        transcriptStore: transcriptStore,
+                        publisher: publicDocumentPublisher
                     )
                 }
-
-                // Prefer ordered exact source_ranges over a single source_chunk_id
-                // so cross-chunk carry commits remain addressable for seek/export
-                // and idempotent retries.
-                let sourceRanges = sourceChunks.map {
-                    TranscriptDocumentV1.SourceRange(
-                        sourceKind: .audioChunk,
-                        sourceID: $0.id,
-                        startSample: $0.startSample,
-                        endSample: $0.endSample
-                    )
-                }
-                let draft = TranscriptDocumentV1.SegmentDraft(
-                    text: result.text,
-                    sourceRanges: sourceRanges
-                )
-                let document = try await transcriptStore.document(recordingID: recordingID)
-                let updated = document?.appending(
-                    recording: recording,
-                    chunks: chunks,
-                    draft: draft,
-                    replacingSourceIDs: sourceChunks.map(\.id),
-                    speakers: result.temporarySpeakers
-                ) ?? TranscriptDocumentV1(
-                    recording: recording,
-                    chunks: sourceChunks,
-                    segmentDrafts: [draft],
-                    language: result.detectedLanguage,
-                    state: .processing,
-                    speakers: result.temporarySpeakers
-                )
-                try updated.requireContent()
-                try await transcriptStore.write(updated)
-                try? await Self.publishPublicDocuments(
-                    document: updated,
-                    repository: repository,
-                    transcriptStore: transcriptStore,
-                    publisher: publicDocumentPublisher
-                )
             }
 
         )
@@ -353,6 +325,21 @@ final class RecordingCoreModel {
                 await self?.resumeTranscriptionAfterUnlock()
             }
             trialEntitlement.start()
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: ProcessInfo.thermalStateDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            let state = ProcessInfo.processInfo.thermalState
+            if state == .nominal || state == .fair {
+                self.transcriptionScheduler.requestDrain()
+                Task { [weak self] in
+                    await self?.refresh()
+                }
+            }
         }
     }
 
@@ -449,6 +436,28 @@ final class RecordingCoreModel {
         await refresh()
     }
 
+    func append(recordingID: UUID) async {
+        notice = nil
+        let permission = await MicrophoneAccess.requestPermissionIfNeeded()
+        guard permission == .granted else {
+            notice = MicrophoneAccess.deniedStartMessage
+            await refresh()
+            return
+        }
+        do {
+            let resumedID = try await coordinator.startAppend(recordingID: recordingID)
+            activeRecordingID = resumedID
+        } catch {
+            if let recorderError = error as? AACSegmentRecorder.RecorderError,
+               case .microphonePermissionDenied = recorderError {
+                notice = MicrophoneAccess.deniedStartMessage
+            } else {
+                notice = "追录失败：\(error.localizedDescription)"
+            }
+        }
+        await refresh()
+    }
+
     func pauseOrResume() async {
         do {
             if presentation == .paused {
@@ -475,6 +484,19 @@ final class RecordingCoreModel {
         await refresh()
     }
 
+    func audioDuration(for recordingID: UUID) -> TimeInterval {
+        if activeRecordingID == recordingID && (captureIsActive || presentation == .recording || presentation == .paused || presentation == .stopping) {
+            return Double(recorder.currentSample) / AACSegmentRecorder.targetSampleRate
+        }
+        if let duration = audioDurations[recordingID] {
+            return duration
+        }
+        if let recording = recordings.first(where: { $0.id == recordingID }), let endedAt = recording.endedAt {
+            return max(0, endedAt.timeIntervalSince(recording.startedAt))
+        }
+        return 0
+    }
+
     /// Retained for the debug validation screen. Production transitions are
     /// driven by `ForegroundTranscriptionScheduler` after capture stops.
     func markProcessingCompleted() async {
@@ -492,16 +514,182 @@ final class RecordingCoreModel {
     func retryTranscription(recordingID: UUID) async {
         do {
             try await coordinator.retryProcessing(recordingID: recordingID)
-            try await transcriptionScheduler.retry(
-                recordingID: recordingID,
-                onOutcome: { [weak self] outcome in
-                    await self?.applyTranscriptionOutcome(outcome)
-                }
-            )
+            let chunks = (try? await repository.chunks(recordingID: recordingID)) ?? []
+            for chunk in chunks {
+                _ = try? await repository.setChunkContinuation(id: chunk.id, requiresContinuation: false, at: Date())
+            }
+            let jobs = try await repository.jobs(recordingID: recordingID)
+            let date = Date()
+            for var job in jobs where job.kind == .transcription {
+                job.state = .pending
+                job.lastError = nil
+                job.updatedAt = date
+                try await repository.upsertJob(job, at: date)
+            }
+            try await transcriptionScheduler.resumePendingJobs { [weak self] outcome in
+                await self?.applyTranscriptionOutcome(outcome)
+            }
+            notice = "已重新开始转写录音分片。"
         } catch {
             notice = "重试失败：\(error.localizedDescription)"
         }
         await refresh()
+    }
+
+    func retryTranscriptionJob(id: UUID) async {
+        do {
+            let allJobs = try await repository.jobs(
+                kind: .transcription,
+                states: [.failed, .pending, .running, .completed]
+            )
+            guard let target = allJobs.first(where: { $0.id == id }) else { return }
+            try await coordinator.retryProcessing(recordingID: target.recordingID)
+            try await transcriptionScheduler.retry(
+                recordingID: target.recordingID,
+                chunkID: target.chunkID,
+                processingRangeID: target.processingRangeID,
+                onOutcome: { [weak self] outcome in
+                    await self?.applyTranscriptionOutcome(outcome)
+                }
+            )
+            notice = "已重新提交转写任务。"
+        } catch {
+            notice = "重试任务失败：\(error.localizedDescription)"
+        }
+        await refresh()
+    }
+
+    func retryAllFailedJobs() async {
+        do {
+            let failedJobs = try await repository.jobs(
+                kind: .transcription,
+                states: [.failed]
+            )
+            for job in failedJobs {
+                try await coordinator.retryProcessing(recordingID: job.recordingID)
+                try await transcriptionScheduler.retry(
+                    recordingID: job.recordingID,
+                    chunkID: job.chunkID,
+                    processingRangeID: job.processingRangeID,
+                    onOutcome: { [weak self] outcome in
+                        await self?.applyTranscriptionOutcome(outcome)
+                    }
+                )
+            }
+            notice = failedJobs.isEmpty ? "当前没有失败的转写任务。" : "已重新排队 \(failedJobs.count) 个失败任务。"
+        } catch {
+            notice = "重试全部任务失败：\(error.localizedDescription)"
+        }
+        await refresh()
+    }
+
+    func stopAllTranscriptionJobs() async {
+        await transcriptionScheduler.stopAll()
+        notice = "已关停全部转写任务。"
+        await refresh()
+    }
+
+    func resumeAllTranscriptionJobs() async {
+        await transcriptionScheduler.resumeAll { [weak self] outcome in
+            await self?.applyTranscriptionOutcome(outcome)
+        }
+        notice = "已恢复全部转写任务。"
+        await refresh()
+    }
+
+    func forceReconcileAndResume() async {
+        await runRecovery()
+        await transcriptionScheduler.requestDrain()
+        notice = "已强制检查并触发转写调度恢复。"
+        await refresh()
+    }
+
+    func fetchTranscriptionQueueStatus() async -> TranscriptionQueueStatus {
+        var status = TranscriptionQueueStatus()
+        status.isPurchaseLocked = TrialQuotaLedger.isManualTrialEnabled && trialLedger.isPurchaseLocked
+        status.thermalState = {
+            switch ProcessInfo.processInfo.thermalState {
+            case .nominal: "正常 (Nominal)"
+            case .fair: "轻微发热 (Fair)"
+            case .serious: "较热 (Serious)"
+            case .critical: "过热降频 (Critical)"
+            @unknown default: "未知"
+            }
+        }()
+
+        do {
+            let allRecordings = try await repository.recordings()
+            let titleByID = Dictionary(
+                uniqueKeysWithValues: allRecordings.map {
+                    ($0.id, $0.title?.isEmpty == false ? $0.title! : ($0.isMeeting ? "未命名会议" : "未命名录音"))
+                }
+            )
+
+            let allJobs = try await repository.jobs(
+                kind: .transcription,
+                states: [.running, .pending, .failed, .completed]
+            )
+            status.totalJobCount = allJobs.count
+
+            var chunkByID: [UUID: AudioChunk] = [:]
+            var rangeByID: [UUID: ProcessingRange] = [:]
+            for job in allJobs {
+                if let chunkID = job.chunkID, chunkByID[chunkID] == nil {
+                    if let chunks = try? await repository.chunks(recordingID: job.recordingID) {
+                        for chunk in chunks { chunkByID[chunk.id] = chunk }
+                    }
+                }
+                if let rangeID = job.processingRangeID, rangeByID[rangeID] == nil {
+                    if let ranges = try? await repository.processingRanges(recordingID: job.recordingID) {
+                        for range in ranges { rangeByID[range.id] = range }
+                    }
+                }
+            }
+
+            var items: [TranscriptionTaskItem] = []
+            for job in allJobs {
+                let title = titleByID[job.recordingID] ?? "未命名记录"
+                let chunk = job.chunkID.flatMap { chunkByID[$0] }
+                let range = job.processingRangeID.flatMap { rangeByID[$0] }
+                let timeRangeText: String? = {
+                    if let chunk {
+                        let start = Double(chunk.startSample) / 16_000
+                        let end = Double(chunk.endSample) / 16_000
+                        return "\(RecordingStatusStyle.formatDuration(start)) ~ \(RecordingStatusStyle.formatDuration(end))"
+                    }
+                    if let range {
+                        let start = Double(range.startSample) / 16_000
+                        let end = Double(range.endSample) / 16_000
+                        return "分段 #\(range.sequence + 1) (\(RecordingStatusStyle.formatDuration(start)) ~ \(RecordingStatusStyle.formatDuration(end)))"
+                    }
+                    return nil
+                }()
+                let sequence: Int? = range?.sequence
+
+                items.append(TranscriptionTaskItem(
+                    id: job.id,
+                    recordingID: job.recordingID,
+                    recordingTitle: title,
+                    chunkID: job.chunkID,
+                    processingRangeID: job.processingRangeID,
+                    chunkSequence: sequence,
+                    timeRangeText: timeRangeText,
+                    state: job.state,
+                    attemptCount: job.attemptCount,
+                    lastError: job.lastError,
+                    createdAt: job.createdAt,
+                    updatedAt: job.updatedAt
+                ))
+            }
+
+            status.runningTasks = items.filter { $0.state == .running }
+            status.pendingTasks = items.filter { $0.state == .pending }.sorted { $0.createdAt < $1.createdAt }
+            status.failedTasks = items.filter { $0.state == .failed }.sorted { $0.updatedAt > $1.updatedAt }
+            status.completedTasks = items.filter { $0.state == .completed }.sorted { $0.updatedAt > $1.updatedAt }
+        } catch {
+            // fallback empty status
+        }
+        return status
     }
 
     /// Files picker entry: privately copy audio, plan ProcessingRanges, enqueue
@@ -820,6 +1008,54 @@ final class RecordingCoreModel {
             try await publishPublicDocuments(for: edited)
         } catch {
             notice = "文稿已保存，公开目录同步稍后可重试：" + error.localizedDescription
+        }
+        await refresh()
+        return edited
+    }
+
+    func saveRecordingMetadata(
+        recordingID: UUID,
+        title: String?,
+        tags: [String] = []
+    ) async throws {
+        let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalTitle = (trimmedTitle?.isEmpty == false) ? trimmedTitle : nil
+        try await repository.setRecordingTitle(
+            recordingID: recordingID,
+            title: finalTitle,
+            at: Date()
+        )
+        if let document = try? await transcriptStore.document(recordingID: recordingID) {
+            let updated = document.applyingUserEdits(
+                title: finalTitle,
+                tags: tags.isEmpty ? document.tags : tags,
+                segmentTexts: [:]
+            )
+            try await transcriptStore.write(updated)
+            _ = try? await publishPublicDocuments(for: updated)
+        }
+        await refresh()
+    }
+
+    @discardableResult
+    func saveSingleSegmentText(
+        recordingID: UUID,
+        segmentID: UUID,
+        text: String
+    ) async throws -> TranscriptDocumentV1 {
+        guard let document = try await transcriptStore.document(recordingID: recordingID) else {
+            throw PublicDocumentPublisher.PublishError.unresolvedRelativePath("Transcripts/" + recordingID.uuidString)
+        }
+        let edited = document.applyingUserEdits(
+            title: document.title,
+            tags: document.tags,
+            segmentTexts: [segmentID: text]
+        )
+        try await transcriptStore.write(edited)
+        do {
+            try await publishPublicDocuments(for: edited)
+        } catch {
+            // best effort
         }
         await refresh()
         return edited
@@ -1158,6 +1394,27 @@ final class RecordingCoreModel {
             let result = try await repository.recoverUnfinished(at: Date())
             // Retention for mic chunks and imported private assets (local-first).
             _ = try await repository.purgeExpiredAudio(at: Date())
+            
+            // Clean up any historical continuation flags and ensure processing recordings re-queue
+            let allRecordings = (try? await repository.recordings()) ?? []
+            for rec in allRecordings where rec.state == .processing {
+                let chunks = (try? await repository.chunks(recordingID: rec.id)) ?? []
+                for chunk in chunks {
+                    _ = try? await repository.setChunkContinuation(id: chunk.id, requiresContinuation: false, at: Date())
+                }
+                let hasTranscript = (try? await transcriptStore.document(recordingID: rec.id)) != nil
+                if !hasTranscript {
+                    let jobs = (try? await repository.jobs(recordingID: rec.id)) ?? []
+                    let now = Date()
+                    for var job in jobs where job.kind == .transcription {
+                        job.state = .pending
+                        job.lastError = nil
+                        job.updatedAt = now
+                        try? await repository.upsertJob(job, at: now)
+                    }
+                }
+            }
+
             try await enqueueHistoricalChunkJobs()
             try await transcriptionScheduler.resumePendingJobs(
                 onOutcome: { [weak self] outcome in
@@ -1374,57 +1631,46 @@ final class RecordingCoreModel {
             try await markImportedRangesCompleted(covered, repository: repository)
             return 0
         }
-        let isFinalRange = ranges.last?.id == range.id
-        if result.endsWithOpenSpeech && !isFinalRange {
-            _ = try await repository.setProcessingRangeContinuation(
-                id: range.id,
-                requiresContinuation: true,
-                at: Date()
-            )
-            return result.utteranceDuration
-        }
-
         try await markImportedRangesCompleted(covered, repository: repository)
 
         let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return result.utteranceDuration }
-
-        let sourceRanges = [
-            TranscriptDocumentV1.SourceRange(
-                sourceKind: .importedAsset,
-                sourceID: workingAsset.id,
-                startSample: decodeStart,
-                endSample: decodeEnd
+        if !trimmed.isEmpty {
+            let sourceRanges = [
+                TranscriptDocumentV1.SourceRange(
+                    sourceKind: .importedAsset,
+                    sourceID: workingAsset.id,
+                    startSample: decodeStart,
+                    endSample: decodeEnd
+                )
+            ]
+            let draft = TranscriptDocumentV1.SegmentDraft(
+                text: trimmed,
+                sourceRanges: sourceRanges
             )
-        ]
-        let draft = TranscriptDocumentV1.SegmentDraft(
-            text: trimmed,
-            sourceRanges: sourceRanges
-        )
-        let audioAvailable = FileManager.default.fileExists(atPath: assetURL.path)
-            && workingAsset.audioRemovedAt == nil
-        let document = try await transcriptStore.document(recordingID: recording.id)
-        let updated = document?.appendingImported(
-            recording: recording,
-            audioAvailableOnThisDevice: audioAvailable,
-            draft: draft,
-            speakers: result.temporarySpeakers
-        ) ?? TranscriptDocumentV1(
-            recording: recording,
-            audioAvailableOnThisDevice: audioAvailable,
-            segmentDrafts: [draft],
-            language: result.detectedLanguage,
-            state: .processing,
-            speakers: result.temporarySpeakers
-        )
-        try updated.requireContent()
-        try await transcriptStore.write(updated)
-        try? await Self.publishPublicDocuments(
-            document: updated,
-            repository: repository,
-            transcriptStore: transcriptStore,
-            publisher: publicDocumentPublisher
-        )
+            let audioAvailable = FileManager.default.fileExists(atPath: assetURL.path)
+                && workingAsset.audioRemovedAt == nil
+            let document = try? await transcriptStore.document(recordingID: recording.id)
+            let updated = document?.appendingImported(
+                recording: recording,
+                audioAvailableOnThisDevice: audioAvailable,
+                draft: draft,
+                speakers: result.temporarySpeakers
+            ) ?? TranscriptDocumentV1(
+                recording: recording,
+                audioAvailableOnThisDevice: audioAvailable,
+                segmentDrafts: [draft],
+                language: result.detectedLanguage,
+                state: .processing,
+                speakers: result.temporarySpeakers
+            )
+            try? await transcriptStore.write(updated)
+            try? await Self.publishPublicDocuments(
+                document: updated,
+                repository: repository,
+                transcriptStore: transcriptStore,
+                publisher: publicDocumentPublisher
+            )
+        }
         return result.utteranceDuration
     }
 
@@ -1634,6 +1880,7 @@ final class RecordingCoreModel {
         do {
             recordings = try await repository.recordings()
                 .sorted { $0.startedAt > $1.startedAt }
+            audioDurations = try await repository.allAudioDurations()
         } catch {
             notice = "读取记录列表失败：\(error.localizedDescription)"
         }

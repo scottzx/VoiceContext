@@ -226,18 +226,18 @@ struct speech_noteTests {
         #expect(await sharedGate.metrics().submittedMetalWork == 2)
     }
 
-    @Test func admissionPolicyDefersSeriousThermalAndLocksPurchaseWithoutAdmit() {
+    @Test func admissionPolicyAdmitsUnderThermalAndLocksPurchaseWithoutAdmit() {
         let thermal = TranscriptionAdmissionPolicy(
             thermalState: { .serious },
             isPurchaseLocked: { false }
         )
-        #expect(thermal.evaluate() == .deferInference(reason: "deferredUntilThermalImproves"))
+        #expect(thermal.evaluate() == .admit)
 
         let critical = TranscriptionAdmissionPolicy(
             thermalState: { .critical },
             isPurchaseLocked: { false }
         )
-        #expect(critical.evaluate() == .deferInference(reason: "deferredUntilThermalImproves"))
+        #expect(critical.evaluate() == .admit)
 
         let locked = TranscriptionAdmissionPolicy(
             thermalState: { .nominal },

@@ -219,6 +219,40 @@ actor ForegroundTranscriptionScheduler {
         startDrainingIfPossible()
     }
 
+    /// Stops all ongoing and pending transcription jobs immediately.
+    func stopAll() async {
+        acceptsForegroundWork = false
+        drainTask?.cancel()
+        drainTask = nil
+        let jobs = (try? await repository.jobs(kind: .transcription, states: [.pending, .running])) ?? []
+        let date = now()
+        for var job in jobs {
+            job.state = .failed
+            job.lastError = "userStopped"
+            job.updatedAt = date
+            try? await repository.upsertJob(job, at: date)
+        }
+    }
+
+    /// Resumes any jobs that were stopped by the user or are pending.
+    func resumeAll(onOutcome: OutcomeHandler? = nil) async {
+        acceptsForegroundWork = true
+        let stoppedJobs = (try? await repository.jobs(kind: .transcription, states: [.failed])) ?? []
+        let date = now()
+        for var job in stoppedJobs {
+            if job.lastError == "userStopped" {
+                job.state = .pending
+                job.lastError = nil
+                job.updatedAt = date
+                if let onOutcome {
+                    outcomeHandlers[job.id] = onOutcome
+                }
+                try? await repository.upsertJob(job, at: date)
+            }
+        }
+        startDrainingIfPossible()
+    }
+
     /// Lets non-UI callers await the current queue drain. It is also useful to
     /// keep deterministic scheduler tests independent of arbitrary sleeps.
     func waitForIdle() async {

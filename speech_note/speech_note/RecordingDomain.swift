@@ -269,6 +269,32 @@ nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+nonisolated struct TranscriptionTaskItem: Identifiable, Sendable, Equatable {
+    let id: UUID
+    let recordingID: UUID
+    let recordingTitle: String
+    let chunkID: UUID?
+    let processingRangeID: UUID?
+    let chunkSequence: Int?
+    let timeRangeText: String?
+    let state: RecordingJobState
+    let attemptCount: Int
+    let lastError: String?
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+nonisolated struct TranscriptionQueueStatus: Sendable, Equatable {
+    var runningTasks: [TranscriptionTaskItem] = []
+    var pendingTasks: [TranscriptionTaskItem] = []
+    var failedTasks: [TranscriptionTaskItem] = []
+    var completedTasks: [TranscriptionTaskItem] = []
+    var totalJobCount: Int = 0
+    var metalSubmissions: Int = 0
+    var thermalState: String = "正常"
+    var isPurchaseLocked: Bool = false
+}
+
 nonisolated struct RecordingGap: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     let recordingID: UUID

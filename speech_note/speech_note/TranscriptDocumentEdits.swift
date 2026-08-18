@@ -2,7 +2,7 @@ import Foundation
 
 extension TranscriptDocumentV1.Segment {
     /// Text-only correction. Timing, samples, and source_ranges stay untouched.
-    func withText(_ text: String) -> TranscriptDocumentV1.Segment {
+    func withText(_ text: String, isManuallyEdited: Bool = true, editedAt: Date? = Date()) -> TranscriptDocumentV1.Segment {
         TranscriptDocumentV1.Segment(
             id: id,
             sequence: sequence,
@@ -12,7 +12,9 @@ extension TranscriptDocumentV1.Segment {
             startSample: startSample,
             endSample: endSample,
             sourceRanges: sourceRanges,
-            speechSpanIDs: speechSpanIDs
+            speechSpanIDs: speechSpanIDs,
+            isManuallyEdited: isManuallyEdited,
+            editedAt: editedAt
         )
     }
 }

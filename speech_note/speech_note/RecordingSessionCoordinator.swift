@@ -7,10 +7,16 @@ protocol RecordingCapturing: AnyObject {
     var onCaptureEvent: (@Sendable (AACSegmentRecorder.CaptureEvent) -> Void)? { get set }
     var currentSample: Int64 { get }
 
-    func start(in directory: URL, segmentDuration: TimeInterval) async throws
+    func start(in directory: URL, segmentDuration: TimeInterval, initialSampleOffset: Int64) async throws
     func pause() throws
     func resume() throws
     func stop() throws -> AACSegmentRecorder.Segment
+}
+
+extension RecordingCapturing {
+    func start(in directory: URL, segmentDuration: TimeInterval) async throws {
+        try await start(in: directory, segmentDuration: segmentDuration, initialSampleOffset: 0)
+    }
 }
 
 extension AACSegmentRecorder: RecordingCapturing {}
@@ -140,6 +146,57 @@ final class RecordingSessionCoordinator {
             return recording.id
         } catch {
             _ = try? await repository.changeState(recordingID: recording.id, to: .failed, at: now())
+            captureState = .idle
+            presentationState = .failed(error.localizedDescription)
+            activeRecordingID = nil
+            stateMachine = nil
+            throw error
+        }
+    }
+
+    @discardableResult
+    func startAppend(recordingID: UUID) async throws -> UUID {
+        guard activeRecordingID == nil else { throw CoordinatorError.sessionAlreadyActive }
+        let rootURL = repository.rootURL
+        try lowStorageGuard.validateCanStartRecording(at: rootURL)
+
+        guard let existing = try await repository.recording(id: recordingID) else {
+            throw CoordinatorError.noActiveSession
+        }
+
+        let existingChunks = try await repository.chunks(recordingID: recordingID)
+        let initialSampleOffset = existingChunks.map(\.endSample).max() ?? 0
+
+        activeRecordingID = recordingID
+        stateMachine = RecordingStateMachine(state: .recording)
+        persistedSegmentIDs = Set(existingChunks.map(\.id))
+        pendingSegments = [:]
+        segmentPersistenceTask = nil
+        segmentPersistenceOperationID = nil
+        segmentPersistenceFailureMessage = nil
+        stoppedCaptureEndedAt = nil
+        captureState = .preparing
+        presentationState = .recording
+
+        let resumedAt = now()
+        try await repository.changeState(recordingID: recordingID, to: .recording, endedAt: nil, at: resumedAt)
+
+        let directory = rootURL
+            .appendingPathComponent("Recordings", isDirectory: true)
+            .appendingPathComponent(recordingID.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent("audio", isDirectory: true)
+        installCaptureCallbacks()
+        do {
+            try await capture.start(
+                in: directory,
+                segmentDuration: AACSegmentRecorder.defaultSegmentDuration,
+                initialSampleOffset: initialSampleOffset
+            )
+            installRemoteStopCommand()
+            captureState = .recording
+            return recordingID
+        } catch {
+            _ = try? await repository.changeState(recordingID: recordingID, to: .failed, at: now())
             captureState = .idle
             presentationState = .failed(error.localizedDescription)
             activeRecordingID = nil
