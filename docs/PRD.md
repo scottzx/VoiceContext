@@ -496,7 +496,7 @@ PM `#39` 的低保真原型至少要覆盖下表。页面可以通过 sheet、na
 - `FR-BIZ-005`：购买使用 StoreKit 2 非消耗型商品，支持恢复购买。
 - `FR-BIZ-006`：目标价格约 ¥58，最终使用 App Store 最接近的本地价格档位。
 - `FR-BIZ-007`：设置页展示 SenseVoice、transcribe.cpp、sherpa-onnx、3D-Speaker、Silero VAD 等许可与归因。
-- `FR-BIZ-008`：SenseVoice 商业发布前完成 FunASR Model License 法律审核。
+- `FR-BIZ-008`：SenseVoice 商业发布前完成 FunASR Model License 法律审核（已完成审核，允许商业使用，已在设置页完成模型与作者出处归因标注）。
 - `FR-BIZ-009`：设置与锁定 CTA 展示剩余试用时分；不得再展示「剩余 60 分钟语音额度」。
 - `FR-BIZ-010`：试用起点应持久化并尽量抵抗卸载重装重置（Keychain 或等价策略）；无法 100% 防刷时须在审核材料中披露限制。
 

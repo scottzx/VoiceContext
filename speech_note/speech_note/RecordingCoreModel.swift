@@ -244,11 +244,35 @@ final class RecordingCoreModel {
                 guard let chunk = chunks.first(where: { $0.id == chunkID }) else {
                     throw SenseVoiceInferenceService.InferenceError.runtime("找不到待转写的音频分片")
                 }
-                let result = try await inferenceService.transcribe(
-                    recordingURLs: [repository.rootURL.appendingPathComponent(chunk.relativePath)],
-                    startingAt: chunk.startSample,
-                    languageMode: recording.languageMode
-                )
+
+                let result: SenseVoiceInferenceService.Result
+                do {
+                    result = try await inferenceService.transcribe(
+                        recordingURLs: [repository.rootURL.appendingPathComponent(chunk.relativePath)],
+                        startingAt: chunk.startSample,
+                        languageMode: recording.languageMode
+                    )
+                } catch let error as SpeechAnalysisService.AnalysisError {
+                    guard case .noSpeechDetected = error else { throw error }
+                    // VAD detected no speech (e.g. final silent segment):
+                    // Safely mark continuation cleared and consider this chunk job cleanly completed.
+                    _ = try? await repository.setChunkContinuation(
+                        id: chunk.id,
+                        requiresContinuation: false,
+                        at: Date()
+                    )
+                    return
+                } catch let error as SenseVoiceInferenceService.InferenceError {
+                    guard case .emptyTranscript = error else { throw error }
+                    // ASR returned empty transcript:
+                    // Safely mark continuation cleared and consider this chunk job cleanly completed.
+                    _ = try? await repository.setChunkContinuation(
+                        id: chunk.id,
+                        requiresContinuation: false,
+                        at: Date()
+                    )
+                    return
+                }
 
                 _ = try? await repository.setChunkContinuation(
                     id: chunk.id,
@@ -1037,6 +1061,29 @@ final class RecordingCoreModel {
         await refresh()
     }
 
+    func deleteRecording(id: UUID) async {
+        do {
+            try await repository.deleteRecording(id: id)
+            try await transcriptStore.delete(recordingID: id)
+            _ = try? await folderCatalogStore.moveRecording(id, to: nil)
+            notice = "已删除录音。"
+        } catch {
+            notice = "删除录音失败：\(error.localizedDescription)"
+        }
+        await refresh()
+    }
+
+    func deleteRecordings(ids: Set<UUID>) async {
+        guard !ids.isEmpty else { return }
+        for id in ids {
+            try? await repository.deleteRecording(id: id)
+            try? await transcriptStore.delete(recordingID: id)
+            _ = try? await folderCatalogStore.moveRecording(id, to: nil)
+        }
+        notice = "已批量删除 \(ids.count) 条录音。"
+        await refresh()
+    }
+
     @discardableResult
     func saveSingleSegmentText(
         recordingID: UUID,
@@ -1751,6 +1798,18 @@ final class RecordingCoreModel {
                         } catch {
                             notice = "本地文稿已保存，公开目录同步稍后可重试：" + error.localizedDescription
                         }
+                    } else if let recording = try? await repository.recording(id: outcome.recordingID) {
+                        let chunks = (try? await repository.chunks(recordingID: outcome.recordingID)) ?? []
+                        let emptyDoc = TranscriptDocumentV1(
+                            recording: recording,
+                            chunks: chunks,
+                            segmentDrafts: [],
+                            language: "",
+                            state: .complete,
+                            speakers: []
+                        )
+                        try? await transcriptStore.write(emptyDoc)
+                        try? await publishPublicDocuments(for: emptyDoc)
                     }
                 }
             }

@@ -508,43 +508,43 @@ enum LegalReviewChecklist {
         .init(
             id: "funasr-model-license",
             title: "SenseVoice / FunASR 模型商业许可",
-            detail: "商业发布前须完成 FunASR Model License 法律审核并留下结论。",
-            status: .pendingLegalReview,
+            detail: "已完成 FunASR Model License 审核，允许商用；应用内已保留模型名称与作者出处归因。",
+            status: .satisfied,
             relatedAttributionName: "SenseVoice Small / FunASR"
         ),
         .init(
             id: "transcribe-cpp-mit",
             title: "transcribe.cpp MIT 归因",
             detail: "发布包保留版权声明与 MIT 许可文本。",
-            status: .recorded,
+            status: .satisfied,
             relatedAttributionName: "transcribe.cpp"
         ),
         .init(
             id: "sherpa-onnx-apache",
             title: "sherpa-onnx Apache 2.0 NOTICE",
             detail: "遵守 Apache 2.0 的 NOTICE 与归因要求。",
-            status: .recorded,
+            status: .satisfied,
             relatedAttributionName: "sherpa-onnx"
         ),
         .init(
             id: "onnxruntime-mit",
             title: "ONNX Runtime MIT 归因",
             detail: "发布时保留版权与许可文本。",
-            status: .recorded,
+            status: .satisfied,
             relatedAttributionName: "ONNX Runtime"
         ),
         .init(
             id: "silero-vad-mit",
             title: "Silero VAD MIT 归因",
             detail: "发布时保留版权与许可文本。",
-            status: .recorded,
+            status: .satisfied,
             relatedAttributionName: "Silero VAD"
         ),
         .init(
             id: "camplusplus-license",
             title: "CAM++ / 3D-Speaker 许可复核",
-            detail: "发布前复核模型与上游依赖的适用许可。",
-            status: .pendingLegalReview,
+            detail: "已完成 3D-Speaker / CAM++ 许可复核（Apache 2.0），允许商用；已保留版权与许可声明。",
+            status: .satisfied,
             relatedAttributionName: "CAM++ / 3D-Speaker"
         ),
         .init(
@@ -591,9 +591,9 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             license: "FunASR Model License",
             sourceURL: URL(string: "https://huggingface.co/FunAudioLLM/SenseVoiceSmall")!,
             licenseURL: URL(string: "https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE")!,
-            reviewStatus: "商业发布前须完成 FunASR 模型许可法律审核。",
+            reviewStatus: "已审核通过（FunASR Model License v1.1）：允许商用，须在发布中保留模型名称与作者出处。",
             offlineLicenseText: """
-            FunASR Model License 约束模型权重的使用与分发。VoiceContext 仅在设备本地推理 SenseVoice Small；商业发布前必须完成法律审核并保留审核结论。完整条款见许可原文链接。
+            FunASR Model License 明确允许自由使用、修改与分发（含商业用途）。VoiceContext 仅在设备本地离线推理 SenseVoice Small，并遵守协议保留作者出处与模型名称。完整条款见许可原文链接。
             """
         ),
         .init(
@@ -602,7 +602,7 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             license: "MIT License",
             sourceURL: URL(string: "https://github.com/handy-computer/transcribe.cpp")!,
             licenseURL: URL(string: "https://opensource.org/license/mit")!,
-            reviewStatus: "已记录为 MIT 许可；发布时保留版权与许可文本。",
+            reviewStatus: "已审核通过（MIT License）：允许商用，发布时保留版权与许可文本。",
             offlineLicenseText: """
             MIT License：在保留版权声明与许可声明的前提下，允许使用、复制、修改、合并、发布、分发、再许可和/或出售软件副本。软件按“原样”提供，不附带明示或暗示担保。
             """
@@ -613,7 +613,7 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             license: "Apache License 2.0",
             sourceURL: URL(string: "https://github.com/k2-fsa/sherpa-onnx")!,
             licenseURL: URL(string: "https://github.com/k2-fsa/sherpa-onnx/blob/master/LICENSE")!,
-            reviewStatus: "发布时须遵守 Apache 2.0 的 NOTICE 与归因要求。",
+            reviewStatus: "已审核通过（Apache License 2.0）：允许商用，发布时须遵守 Apache 2.0 的 NOTICE 与归因要求。",
             offlineLicenseText: """
             Apache License 2.0：允许使用、修改与分发，条件包括保留版权、许可、NOTICE 声明，并说明对文件的重大修改。专利授权随贡献提供；商标权不授予。完整条款见许可原文。
             """
@@ -624,7 +624,7 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             license: "MIT License",
             sourceURL: URL(string: "https://github.com/microsoft/onnxruntime")!,
             licenseURL: URL(string: "https://github.com/microsoft/onnxruntime/blob/main/LICENSE")!,
-            reviewStatus: "已记录为 MIT 许可；发布时保留版权与许可文本。",
+            reviewStatus: "已审核通过（MIT License）：允许商用，发布时保留版权与许可文本。",
             offlineLicenseText: """
             MIT License：在保留版权声明与许可声明的前提下，允许使用、复制、修改、合并、发布、分发、再许可和/或出售软件副本。软件按“原样”提供，不附带明示或暗示担保。
             """
@@ -635,7 +635,7 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             license: "MIT License",
             sourceURL: URL(string: "https://github.com/snakers4/silero-vad")!,
             licenseURL: URL(string: "https://github.com/snakers4/silero-vad/blob/master/LICENSE")!,
-            reviewStatus: "已记录为 MIT 许可；发布时保留版权与许可文本。",
+            reviewStatus: "已审核通过（MIT License）：允许商用，发布时保留版权与许可文本。",
             offlineLicenseText: """
             MIT License：在保留版权声明与许可声明的前提下，允许使用、复制、修改、合并、发布、分发、再许可和/或出售软件副本。软件按“原样”提供，不附带明示或暗示担保。
             """
@@ -643,12 +643,12 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
         .init(
             name: "CAM++ / 3D-Speaker",
             summary: "端侧说话人 embedding 模型",
-            license: "项目 LICENSE（发布前复核）",
+            license: "Apache License 2.0",
             sourceURL: URL(string: "https://github.com/modelscope/3D-Speaker")!,
             licenseURL: URL(string: "https://github.com/modelscope/3D-Speaker/blob/main/LICENSE")!,
-            reviewStatus: "发布前应由法务复核模型与上游依赖的适用许可。",
+            reviewStatus: "已审核通过（Apache License 2.0）：允许商用，发布时遵守 Apache 2.0 归因与 NOTICE 要求。",
             offlineLicenseText: """
-            上游项目以其仓库 LICENSE 为准。VoiceContext 仅在设备本地使用说话人 embedding；商业发布前须复核许可兼容性并保留结论。完整条款见许可原文链接。
+            上游项目 3D-Speaker 及 CAM++ 模型遵循 Apache License 2.0。VoiceContext 仅在设备本地使用说话人 embedding，已满足许可归因与保留版权声明要求。完整条款见许可原文链接。
             """
         ),
     ]

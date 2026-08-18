@@ -405,6 +405,21 @@ actor RecordingRepository {
         index.schemaVersion
     }
 
+    func deleteRecording(id: UUID) throws {
+        let chunks = (try? index.chunks(recordingID: id)) ?? []
+        if let asset = try? index.importedAudioAsset(recordingID: id) {
+            let url = rootURL.appendingPathComponent(asset.relativePath)
+            try? fileManager.removeItem(at: url)
+        }
+        for chunk in chunks {
+            let url = rootURL.appendingPathComponent(chunk.relativePath)
+            try? fileManager.removeItem(at: url)
+        }
+        let folderURL = rootURL.appendingPathComponent("Recordings/\(id.uuidString)")
+        try? fileManager.removeItem(at: folderURL)
+        try index.deleteRecording(id: id)
+    }
+
     var appliedEventCount: Int {
         index.appliedEventCount
     }

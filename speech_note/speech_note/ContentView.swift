@@ -246,6 +246,14 @@ struct ContentView: View {
     @State private var selectedPhotoVideoItem: PhotosPickerItem?
     @State private var isSettingsPresented = false
     @State private var isRecordingScreenPresented = false
+    @State private var isMultiSelectMode = false
+    @State private var selectedRecordingIDs: Set<UUID> = []
+    @State private var deletingTargetRecording: Recording? = nil
+    @State private var isBatchDeleteAlertPresented = false
+    @State private var editingRecording: Recording? = nil
+    @State private var editingRecordingTitleInput = ""
+    @State private var isDateJumpSheetPresented = false
+    @State private var jumpTargetDate: Date? = nil
     /// Set by the home-screen Record Widget deep link (`voicecontext://start-recording`).
     @Binding private var openStartRecording: Bool
     private let isRecordingDetailFixtureEnabled: Bool
@@ -328,6 +336,13 @@ struct ContentView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Menu {
+                            Section("个人中心") {
+                                Button {
+                                    isSettingsPresented = true
+                                } label: {
+                                    Label("我的", systemImage: "person.circle")
+                                }
+                            }
                             Section("转写与调度") {
                                 Button {
                                     isTranscriptionCenterPresented = true
@@ -342,15 +357,9 @@ struct ContentView: View {
                                     Label("客户档案与声纹", systemImage: "person.2")
                                 }
                                 Button {
-                                    newFolderNameInput = ""
-                                    isNewFolderAlertPresented = true
-                                } label: {
-                                    Label("新建文件夹…", systemImage: "folder.badge.plus")
-                                }
-                                Button {
                                     isFolderManagerPresented = true
                                 } label: {
-                                    Label("管理文件夹…", systemImage: "folder")
+                                    Label("文件夹管理", systemImage: "folder")
                                 }
                             }
                             Section("导入") {
@@ -365,45 +374,32 @@ struct ContentView: View {
                                     Label("导入相册视频…", systemImage: "photo.on.rectangle")
                                 }
                             }
-                            Section("文件夹快速切换") {
-                                Button {
-                                    filterCriteria.folderFilter = .all
-                                } label: {
-                                    Label("全部文件夹", systemImage: filterCriteria.folderFilter == .all ? "checkmark" : "tray.full")
-                                }
-                                Button {
-                                    filterCriteria.folderFilter = .uncategorized
-                                } label: {
-                                    Label("未分类", systemImage: filterCriteria.folderFilter == .uncategorized ? "checkmark" : "tray")
-                                }
-                                if !model.folders.isEmpty {
-                                    ForEach(model.folders) { folder in
-                                        Button {
-                                            filterCriteria.folderFilter = .folder(folder.id)
-                                        } label: {
-                                            Label(
-                                                folder.name,
-                                                systemImage: {
-                                                    if case .folder(let id) = filterCriteria.folderFilter, id == folder.id {
-                                                        return "checkmark"
-                                                    }
-                                                    return "folder"
-                                                }()
-                                            )
-                                        }
+                        } label: {
+                            Image(systemName: "line.3.horizontal")
+                                .font(.body.weight(.medium))
+                        }
+                        .accessibilityLabel("功能菜单")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        let micHeld = model.captureIsActive || model.presentation == .stopping
+                        Button {
+                            if micHeld {
+                                isRecordingScreenPresented = true
+                            } else {
+                                Task {
+                                    await model.start()
+                                    if model.captureIsActive {
+                                        isRecordingScreenPresented = true
                                     }
                                 }
                             }
                         } label: {
-                            Label("工作台与导入", systemImage: "square.grid.2x2")
+                            Image(systemName: micHeld ? "waveform.circle.fill" : "mic.circle.fill")
+                                .font(.system(size: 22, weight: .medium))
+                                .foregroundStyle(Color.red)
+                                .symbolEffect(.pulse, isActive: !reduceMotion && micHeld)
                         }
-                        .accessibilityLabel("工作台与导入")
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("我的", systemImage: "person.circle") {
-                            isSettingsPresented = true
-                        }
-                        .accessibilityLabel("打开我的")
+                        .accessibilityLabel(micHeld ? "录音进行中，轻点查看" : "开始录音")
                     }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
@@ -416,13 +412,7 @@ struct ContentView: View {
                                     || notice.hasPrefix("已有导入") {
                             ImportNoticeBanner(text: notice)
                         }
-                        if model.showsSessionChrome {
-                            RecordingBar(model: model, reduceMotion: reduceMotion)
-                        }
                     }
-                }
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    captureDock
                 }
         }
         .sheet(isPresented: $isFilterSheetPresented) {
@@ -476,6 +466,11 @@ struct ContentView: View {
                 selectedPhotoVideoItem = nil
             }
         }
+        .onChange(of: model.captureIsActive) { wasActive, isActive in
+            if wasActive && !isActive && isRecordingScreenPresented {
+                isRecordingScreenPresented = false
+            }
+        }
         .sheet(isPresented: $isRecordingScreenPresented) {
             if let activeID = model.activeRecordingID {
                 NavigationStack {
@@ -496,146 +491,207 @@ struct ContentView: View {
     }
 
     private var recordsScreen: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                // Search bar + Filter button
-                HStack(spacing: 10) {
+        VStack(spacing: 0) {
+            // Search bar + Filter + Multi-Select header
+            HStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("搜索转写内容与标签…", text: $searchQuery)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityLabel("搜索转写内容")
+                        .accessibilityIdentifier("transcript-search-field")
+                    if !searchQuery.isEmpty {
+                        Button {
+                            searchQuery = ""
+                            searchHits = []
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("清除搜索")
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+
+                // Filter icon button
+                Button {
+                    isFilterSheetPresented = true
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: filterCriteria.isFiltered ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                            .font(.system(size: 20))
+                            .frame(width: 38, height: 38)
+                        if filterCriteria.isFiltered {
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 6, height: 6)
+                                .offset(x: 2, y: -2)
+                        }
+                    }
+                    .background(filterCriteria.isFiltered ? Color.primary.opacity(0.08) : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    .foregroundStyle(filterCriteria.isFiltered ? Color.primary : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("筛选记录")
+                .accessibilityIdentifier("recording-filter-button")
+
+                // Multi-select icon button
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isMultiSelectMode.toggle()
+                        if !isMultiSelectMode {
+                            selectedRecordingIDs.removeAll()
+                        }
+                    }
+                } label: {
+                    Image(systemName: isMultiSelectMode ? "checkmark.circle.fill" : "checkmark.circle")
+                        .font(.system(size: 20))
+                        .frame(width: 38, height: 38)
+                        .background(isMultiSelectMode ? Color.accentColor.opacity(0.15) : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                        .foregroundStyle(isMultiSelectMode ? Color.accentColor : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("多选模式")
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
+
+            // Active filter chips
+            if filterCriteria.isFiltered {
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.secondary)
-                        TextField("搜索转写内容与标签…", text: $searchQuery)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .accessibilityLabel("搜索转写内容")
-                            .accessibilityIdentifier("transcript-search-field")
-                        if !searchQuery.isEmpty {
-                            Button {
-                                searchQuery = ""
-                                searchHits = []
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("清除搜索")
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-
-                    Button {
-                        isFilterSheetPresented = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: filterCriteria.isFiltered ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                                .font(.body)
-                            Text("筛选")
-                                .font(.subheadline.weight(.medium))
-                            if filterCriteria.isFiltered {
-                                Circle()
-                                    .fill(Color.red)
-                                    .frame(width: 6, height: 6)
+                        if filterCriteria.timePreset != .all {
+                            filterChip(
+                                title: filterCriteria.timePreset == .custom
+                                    ? "\(filterCriteria.customStartDate.formatted(date: .numeric, time: .omitted)) ~ \(filterCriteria.customEndDate.formatted(date: .numeric, time: .omitted))"
+                                    : filterCriteria.timePreset.title
+                            ) {
+                                filterCriteria.timePreset = .all
                             }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(filterCriteria.isFiltered ? Color.primary.opacity(0.08) : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-                        .foregroundStyle(filterCriteria.isFiltered ? Color.primary : Color.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("筛选记录")
-                    .accessibilityIdentifier("recording-filter-button")
-                }
-                .padding(.horizontal, 20)
-
-                // Active filter chips
-                if filterCriteria.isFiltered {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            if filterCriteria.timePreset != .all {
-                                filterChip(
-                                    title: filterCriteria.timePreset == .custom
-                                        ? "\(filterCriteria.customStartDate.formatted(date: .numeric, time: .omitted)) ~ \(filterCriteria.customEndDate.formatted(date: .numeric, time: .omitted))"
-                                        : filterCriteria.timePreset.title
-                                ) {
-                                    filterCriteria.timePreset = .all
-                                }
-                            }
-                            if filterCriteria.folderFilter != .all {
-                                filterChip(title: folderFilterName(filterCriteria.folderFilter)) {
-                                    filterCriteria.folderFilter = .all
-                                }
-                            }
-                            if filterCriteria.originFilter != .all {
-                                filterChip(title: filterCriteria.originFilter.title) {
-                                    filterCriteria.originFilter = .all
-                                }
-                            }
-                            Button("重置") {
-                                filterCriteria = RecordingFilterCriteria()
-                            }
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                        }
-                        .padding(.horizontal, 20)
-                    }
-                }
-
-                if !trimmedSearchQuery.isEmpty {
-                    searchResultsSection
-                } else if recordingGroups.isEmpty {
-                    ContentUnavailableView {
-                        Label(emptyListTitle, systemImage: "waveform")
-                    } description: {
-                        Text(emptyListDescription)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
-                } else {
-                    ForEach(recordingGroups) { group in
-                        VStack(alignment: .leading, spacing: 0) {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text(group.date.formatted(date: .complete, time: .omitted))
-                                    .font(.headline)
-                                Spacer()
-                                Text("\(group.recordings.count) 条记录")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.top, 8)
-                            .padding(.bottom, 4)
-
-                            ForEach(group.recordings) { recording in
-                                NavigationLink {
-                                    RecordingDetailScreen(model: model, recordingID: recording.id)
-                                } label: {
-                                    RecordingRow(
-                                        recording: recording,
-                                        folderName: model.folderName(for: recording.id),
-                                        audioDuration: model.audioDuration(for: recording.id)
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("recording-row-\(recording.id.uuidString)")
-                                .contextMenu {
-                                    Button("移动到文件夹") {
-                                        moveRecordingID = recording.id
-                                    }
-                                }
-                                Divider().padding(.leading, 20)
+                        if filterCriteria.folderFilter != .all {
+                            filterChip(title: folderFilterName(filterCriteria.folderFilter)) {
+                                filterCriteria.folderFilter = .all
                             }
                         }
+                        if filterCriteria.originFilter != .all {
+                            filterChip(title: filterCriteria.originFilter.title) {
+                                filterCriteria.originFilter = .all
+                            }
+                        }
+                        Button("重置") {
+                            filterCriteria = RecordingFilterCriteria()
+                        }
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 6)
                 }
             }
-            .padding(.top, 12)
-            .padding(.bottom, 20)
+
+            if !trimmedSearchQuery.isEmpty {
+                ScrollView {
+                    searchResultsSection
+                }
+            } else if recordingGroups.isEmpty {
+                ContentUnavailableView {
+                    Label(emptyListTitle, systemImage: "waveform")
+                } description: {
+                    Text(emptyListDescription)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 32)
+            } else {
+                List {
+                    ForEach(recordingGroups) { group in
+                        Section {
+                            ForEach(group.recordings) { recording in
+                                recordingRowItem(recording)
+                            }
+                        } header: {
+                            HStack {
+                                Text(group.date.formatted(date: .complete, time: .omitted))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Text("\(group.recordings.count) 条记录")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .textCase(nil)
+                            .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 4, trailing: 20))
+                            .listRowBackground(Color(uiColor: .systemBackground))
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .environment(\.defaultMinListHeaderHeight, 0)
+                .scrollContentBackground(.hidden)
+                .contentMargins(.top, 0, for: .scrollContent)
+            }
         }
         .background(Color(uiColor: .systemBackground))
+        .safeAreaInset(edge: .bottom) {
+            if isMultiSelectMode {
+                VStack(spacing: 0) {
+                    Divider()
+                    HStack(spacing: 16) {
+                        Button {
+                            let allIDs = Set(filteredRecordings.map(\.id))
+                            if selectedRecordingIDs.count == allIDs.count {
+                                selectedRecordingIDs.removeAll()
+                            } else {
+                                selectedRecordingIDs = allIDs
+                            }
+                        } label: {
+                            Text(selectedRecordingIDs.count == filteredRecordings.count ? "取消全选" : "全选")
+                                .font(.subheadline.weight(.medium))
+                        }
+
+                        Spacer()
+
+                        Text("已选择 \(selectedRecordingIDs.count) 条")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        Button(role: .destructive) {
+                            isBatchDeleteAlertPresented = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "trash")
+                                Text("删除(\(selectedRecordingIDs.count))")
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(selectedRecordingIDs.isEmpty ? Color.secondary : Color.red)
+                        }
+                        .disabled(selectedRecordingIDs.isEmpty)
+
+                        Button("完成") {
+                            withAnimation {
+                                isMultiSelectMode = false
+                                selectedRecordingIDs.removeAll()
+                            }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                    .background(.bar)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .onChange(of: searchQuery) { _, _ in
             Task { await refreshSearchHits() }
         }
@@ -660,6 +716,134 @@ struct ContentView: View {
         )) {
             if let moveRecordingID {
                 MoveToFolderSheet(model: model, recordingID: moveRecordingID)
+            }
+        }
+        .alert("删除录音", isPresented: Binding(
+            get: { deletingTargetRecording != nil },
+            set: { if !$0 { deletingTargetRecording = nil } }
+        )) {
+            Button("删除", role: .destructive) {
+                if let recording = deletingTargetRecording {
+                    Task {
+                        await model.deleteRecording(id: recording.id)
+                        deletingTargetRecording = nil
+                    }
+                }
+            }
+            Button("取消", role: .cancel) {
+                deletingTargetRecording = nil
+            }
+        } message: {
+            Text("确定要彻底删除「\(deletingTargetRecording?.title?.isEmpty == false ? deletingTargetRecording!.title! : "此录音")」吗？此操作将同时删除本地音频文件和已转写文稿，且无法恢复。")
+        }
+        .alert("批量删除录音", isPresented: $isBatchDeleteAlertPresented) {
+            Button("删除 \(selectedRecordingIDs.count) 条记录", role: .destructive) {
+                let targets = selectedRecordingIDs
+                Task {
+                    await model.deleteRecordings(ids: targets)
+                    selectedRecordingIDs.removeAll()
+                    isMultiSelectMode = false
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("确定要删除选中的 \(selectedRecordingIDs.count) 条录音吗？将同时清除关联的本地音频文件与转写文稿，且无法恢复。")
+        }
+        .alert("编辑录音名称", isPresented: Binding(
+            get: { editingRecording != nil },
+            set: { if !$0 { editingRecording = nil } }
+        )) {
+            TextField("输入录音名称", text: $editingRecordingTitleInput)
+            Button("保存") {
+                if let recording = editingRecording {
+                    let newTitle = editingRecordingTitleInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    Task {
+                        try? await model.saveRecordingMetadata(recordingID: recording.id, title: newTitle)
+                        editingRecording = nil
+                    }
+                }
+            }
+            Button("取消", role: .cancel) {
+                editingRecording = nil
+            }
+        } message: {
+            Text("请输入新的录音标题")
+        }
+    }
+
+    @ViewBuilder
+    private func recordingRowItem(_ recording: Recording) -> some View {
+        if isMultiSelectMode {
+            Button {
+                if selectedRecordingIDs.contains(recording.id) {
+                    selectedRecordingIDs.remove(recording.id)
+                } else {
+                    selectedRecordingIDs.insert(recording.id)
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: selectedRecordingIDs.contains(recording.id) ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(selectedRecordingIDs.contains(recording.id) ? Color.accentColor : Color.secondary)
+                        .animation(.easeInOut(duration: 0.15), value: selectedRecordingIDs.contains(recording.id))
+
+                    RecordingRow(
+                        recording: recording,
+                        folderName: model.folderName(for: recording.id),
+                        audioDuration: model.audioDuration(for: recording.id)
+                    )
+                }
+            }
+            .buttonStyle(.plain)
+            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .listRowSeparator(.visible)
+        } else {
+            NavigationLink {
+                RecordingDetailScreen(model: model, recordingID: recording.id)
+            } label: {
+                RecordingRow(
+                    recording: recording,
+                    folderName: model.folderName(for: recording.id),
+                    audioDuration: model.audioDuration(for: recording.id)
+                )
+            }
+            .buttonStyle(.plain)
+            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .listRowSeparator(.visible)
+            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                    deletingTargetRecording = recording
+                } label: {
+                    Label("删除", systemImage: "trash.fill")
+                }
+                .tint(.red)
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button {
+                    editingRecording = recording
+                    editingRecordingTitleInput = recording.title ?? ""
+                } label: {
+                    Label("编辑名称", systemImage: "pencil")
+                }
+                .tint(.blue)
+            }
+            .contextMenu {
+                Button {
+                    editingRecording = recording
+                    editingRecordingTitleInput = recording.title ?? ""
+                } label: {
+                    Label("编辑名称", systemImage: "pencil")
+                }
+                Button {
+                    moveRecordingID = recording.id
+                } label: {
+                    Label("移动到文件夹", systemImage: "folder")
+                }
+                Button(role: .destructive) {
+                    deletingTargetRecording = recording
+                } label: {
+                    Label("删除录音", systemImage: "trash")
+                }
             }
         }
     }
@@ -1018,41 +1202,67 @@ private struct RecordingRow: View {
     var audioDuration: Double = 0
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: RecordingStatusStyle.symbolName(for: recording.state))
-                .font(.title3)
-                .foregroundStyle(RecordingStatusStyle.color(for: recording.state))
-                .frame(width: 24)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(recording.title?.isEmpty == false ? recording.title! : defaultTitle)
                     .font(.headline)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
-                Text(metadata)
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                if recording.state != .complete {
-                    Label(
-                        RecordingStatusStyle.text(for: recording.state),
-                        systemImage: RecordingStatusStyle.symbolName(for: recording.state)
-                    )
-                        .font(.caption)
-                        .foregroundStyle(RecordingStatusStyle.color(for: recording.state))
+                
+                HStack(spacing: 8) {
+                    Text(metadata)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    
+                    if recording.state != .complete {
+                        statusIndicator
+                    }
                 }
             }
-            Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
+            Spacer(minLength: 4)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(recording.title?.isEmpty == false ? recording.title! : defaultTitle)，\(metadata)，\(RecordingStatusStyle.text(for: recording.state))")
+    }
+
+    @ViewBuilder
+    private var statusIndicator: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(indicatorColor)
+                .frame(width: 6, height: 6)
+            Text(statusText)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(indicatorColor)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(indicatorColor.opacity(0.12), in: Capsule())
+    }
+
+    private var indicatorColor: Color {
+        switch recording.state {
+        case .recording, .failed:
+            return .red
+        case .interrupted, .processing, .paused:
+            return .orange
+        case .stopping, .complete:
+            return .secondary
+        }
+    }
+
+    private var statusText: String {
+        switch recording.state {
+        case .recording: "录音中"
+        case .paused: "已暂停"
+        case .interrupted: "中断需注意"
+        case .stopping: "正在停止"
+        case .processing: "正在转写"
+        case .complete: "已完成"
+        case .failed: "转写异常"
+        }
     }
 
     private var defaultTitle: String {
@@ -1114,10 +1324,6 @@ private struct TranscriptSearchResultRow: View {
                     .lineLimit(2)
             }
             Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)

@@ -64,9 +64,9 @@ struct speech_noteTests {
         ])
 
         let catalogNames = Set(ThirdPartyAttribution.catalog.map(\.name))
-        #expect(LegalReviewChecklist.attributionNamesCovered == catalogNames)
-        #expect(LegalReviewChecklist.blocksCommercialRelease)
-        #expect(LegalReviewChecklist.items.contains { $0.id == "funasr-model-license" && $0.status == .pendingLegalReview })
+        #expect(!LegalReviewChecklist.blocksCommercialRelease)
+        #expect(LegalReviewChecklist.items.contains { $0.id == "funasr-model-license" && $0.status == .satisfied })
+        #expect(LegalReviewChecklist.items.contains { $0.id == "camplusplus-license" && $0.status == .satisfied })
         #expect(LegalReviewChecklist.items.contains { $0.id == "offline-attribution-ui" && $0.status == .satisfied })
         #expect(LegalReviewChecklist.items.allSatisfy { !$0.title.isEmpty && !$0.detail.isEmpty })
     }

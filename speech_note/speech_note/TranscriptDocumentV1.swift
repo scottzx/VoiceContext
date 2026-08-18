@@ -1072,6 +1072,12 @@ actor TranscriptDocumentStore {
         try? fileManager.removeItem(at: url)
     }
 
+    func delete(recordingID: UUID) throws {
+        removeIfPresent(jsonURL(for: recordingID))
+        removeIfPresent(markdownURL(for: recordingID))
+        try? searchIndex.remove(recordingID: recordingID)
+    }
+
     func document(recordingID: UUID) throws -> TranscriptDocumentV1? {
         let url = jsonURL(for: recordingID)
         guard fileManager.fileExists(atPath: url.path) else { return nil }

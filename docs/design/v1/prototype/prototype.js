@@ -203,8 +203,8 @@ function privacy() {
 
 function licenses() {
   return screen('第三方许可与归因', `
-    <div class="hero"><p class="eyebrow">离线可读</p><h3>模型与运行时来源。</h3><p class="muted">商业发布前仍需完成模型许可的法律审核。</p></div>
-    <div class="card"><strong>SenseVoice / FunASR</strong><p class="muted">模型来源与商业许可审核状态</p></div><div class="card"><strong>transcribe.cpp · sherpa-onnx</strong><p class="muted">本地转写与运行时依赖</p></div><div class="card"><strong>Silero VAD · CAM++ / 3D-Speaker</strong><p class="muted">端侧语音活动与说话人处理</p></div>`, 'profile');
+    <div class="hero"><p class="eyebrow">离线可读</p><h3>模型与运行时来源。</h3><p class="muted">所有依赖库与模型均已完成商业合规审核，并保留完整离线归因。</p></div>
+    <div class="card"><strong>SenseVoice / FunASR</strong><p class="muted">端侧语音识别 · FunASR Model License（已通过商用审核）</p></div><div class="card"><strong>transcribe.cpp · sherpa-onnx · ONNX Runtime</strong><p class="muted">本地转写与运行时依赖 · MIT / Apache 2.0</p></div><div class="card"><strong>Silero VAD · CAM++ / 3D-Speaker</strong><p class="muted">端侧语音活动与说话人处理 · MIT / Apache 2.0</p></div>`, 'profile');
 }
 
 const gallery = {

@@ -258,6 +258,12 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         }
     }
 
+    func deleteRecording(id: UUID) throws {
+        try lock.withLock {
+            try execute("DELETE FROM recordings WHERE id = ?", [.text(id.uuidString)])
+        }
+    }
+
     func gaps(recordingID: UUID) throws -> [RecordingGap] {
         try lock.withLock {
             var result: [RecordingGap] = []

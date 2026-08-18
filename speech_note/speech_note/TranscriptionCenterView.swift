@@ -76,7 +76,7 @@ struct TranscriptionCenterView: View {
         }
     }
 
-    // MARK: - 卡片 1：统计卡片 (Statistics Card)
+    // MARK: - 卡片 1：统计与切换概览卡片 (Statistics & Tab Card)
 
     private var statisticsCard: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -104,32 +104,33 @@ struct TranscriptionCenterView: View {
                 }
             }
 
-            HStack(spacing: 0) {
-                statItem(
+            HStack(spacing: 8) {
+                statTabButton(
+                    tab: .active,
                     title: "进行/排队",
                     count: queueStatus.runningTasks.count + queueStatus.pendingTasks.count,
                     icon: "bolt.fill",
                     color: .orange,
                     isPulse: !queueStatus.runningTasks.isEmpty
                 )
-                Divider().frame(height: 36)
-                statItem(
+                statTabButton(
+                    tab: .failed,
                     title: "需关注/异常",
                     count: queueStatus.failedTasks.count,
                     icon: "exclamationmark.triangle.fill",
                     color: .red,
                     isPulse: !queueStatus.failedTasks.isEmpty
                 )
-                Divider().frame(height: 36)
-                statItem(
-                    title: "已就绪分段",
+                statTabButton(
+                    tab: .completed,
+                    title: "已完成分段",
                     count: queueStatus.completedTasks.count,
                     icon: "checkmark.circle.fill",
                     color: .green,
                     isPulse: false
                 )
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, 2)
 
             Divider()
 
@@ -166,31 +167,52 @@ struct TranscriptionCenterView: View {
         .padding(.horizontal, 16)
     }
 
-    private func statItem(
+    private func statTabButton(
+        tab: TaskTabState,
         title: String,
         count: Int,
         icon: String,
         color: Color,
         isPulse: Bool
     ) -> some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.caption)
-                    .foregroundStyle(color)
-                    .symbolEffect(.pulse, isActive: isPulse && !reduceMotion)
-                Text("\(count)")
-                    .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.primary)
+        let isSelected = selectedTab == tab
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedTab = tab
             }
-            Text(title)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+        } label: {
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.caption)
+                        .foregroundStyle(color)
+                        .symbolEffect(.pulse, isActive: isPulse && !reduceMotion)
+                    Text("\(count)")
+                        .font(.system(size: 20, weight: isSelected ? .bold : .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.primary)
+                }
+                Text(title)
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                isSelected ? Color(uiColor: .systemBackground) : Color(uiColor: .tertiarySystemGroupedBackground).opacity(0.5),
+                in: RoundedRectangle(cornerRadius: 10)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? Color.primary.opacity(0.12) : Color.clear, lineWidth: 1)
+            )
+            .shadow(color: isSelected ? Color.black.opacity(0.06) : Color.clear, radius: 3, x: 0, y: 1)
         }
-        .frame(maxWidth: .infinity)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
-    // MARK: - 卡片 2：列表卡片（下方带有滑块控制器）
+    // MARK: - 卡片 2：列表卡片 (Task List Card)
 
     private var currentTabTasks: [TranscriptionTaskItem] {
         switch selectedTab {
@@ -203,14 +225,11 @@ struct TranscriptionCenterView: View {
         }
     }
 
-    private func count(for tab: TaskTabState) -> Int {
+    private func tabColor(_ tab: TaskTabState) -> Color {
         switch tab {
-        case .active:
-            return queueStatus.runningTasks.count + queueStatus.pendingTasks.count
-        case .failed:
-            return queueStatus.failedTasks.count
-        case .completed:
-            return queueStatus.completedTasks.count
+        case .active: .orange
+        case .failed: .red
+        case .completed: .green
         }
     }
 
@@ -220,7 +239,7 @@ struct TranscriptionCenterView: View {
                 HStack(spacing: 6) {
                     Image(systemName: selectedTab.icon)
                         .font(.body)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(tabColor(selectedTab))
                     Text(selectedTab.rawValue)
                         .font(.headline)
                         .foregroundStyle(.primary)
@@ -236,6 +255,7 @@ struct TranscriptionCenterView: View {
             if currentTabTasks.isEmpty {
                 emptyStateView
                     .padding(.vertical, 28)
+                    .padding(.bottom, 8)
             } else {
                 LazyVStack(spacing: 10) {
                     ForEach(currentTabTasks) { task in
@@ -243,13 +263,8 @@ struct TranscriptionCenterView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-            }
-
-            // 列表下方的滑块控制器 (Slider / Segmented Controller)
-            sliderControlSection
-                .padding(.horizontal, 16)
                 .padding(.bottom, 16)
-                .padding(.top, 4)
+            }
         }
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 16)
@@ -265,39 +280,6 @@ struct TranscriptionCenterView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private var sliderControlSection: some View {
-        HStack(spacing: 0) {
-            ForEach(TaskTabState.allCases) { tab in
-                let isSelected = selectedTab == tab
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        selectedTab = tab
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: tab.icon)
-                            .font(.system(size: 11))
-                        Text(tab.rawValue)
-                            .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                        Text("(\(count(for: tab)))")
-                            .font(.system(size: 11, design: .rounded).monospacedDigit())
-                    }
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        isSelected ? Color(uiColor: .systemBackground) : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-                    .shadow(color: isSelected ? Color.black.opacity(0.06) : Color.clear, radius: 3, x: 0, y: 1)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(3)
-        .background(Color(uiColor: .tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func taskRow(_ task: TranscriptionTaskItem) -> some View {

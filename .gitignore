@@ -1,12 +1,48 @@
-speech_note/speech_note/ModelResources/*.gguf
-speech_note/speech_note/ModelResources/*.onnx
-speech_note/speech_note/Frameworks/
-.gstack/
-.DS_Store
-*.DS_Store
+# Xcode & Swift
 build/
-speech_note/build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
 xcuserdata/
 *.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+DerivedData/
+*.moved-aside
+*.ipa
+*.dSYM.zip
+*.dSYM
+speech_note/build/
+
+# Local Model Binaries & Frameworks (Large Files)
+speech_note/speech_note/ModelResources/*.gguf
+speech_note/speech_note/ModelResources/*.onnx
+speech_note/speech_note/ModelResources/*.bin
+speech_note/speech_note/Frameworks/
+
+# macOS System Files
+.DS_Store
+*.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Python & Tooling Caches
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+.venv/
+env/
+venv/
+
+# Agents & Tooling Temp
+.gstack/
+.1agents/
+.gemini/

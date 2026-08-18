@@ -443,7 +443,10 @@ struct RecordingDetailScreen: View {
                 .disabled(model.presentation == .interrupted || model.presentation == .stopping)
 
                 Button(role: .destructive) {
-                    Task { await model.stop() }
+                    Task {
+                        await model.stop()
+                        dismiss()
+                    }
                 } label: {
                     Label(
                         model.presentation == .stopping ? "停止中" : "完成录音",
