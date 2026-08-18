@@ -75,10 +75,7 @@ actor ForegroundTranscriptionScheduler {
                 $0.kind == .transcription && $0.processingRangeID == processingRangeID
             }) {
                 outcomeHandlers[existing.id] = onOutcome
-                guard existing.state != .completed else { return }
-                if existing.state == .failed {
-                    try await retry(job: existing)
-                }
+                try await retry(job: existing)
             } else {
                 let date = now()
                 let job = RecordingJob(
@@ -103,20 +100,14 @@ actor ForegroundTranscriptionScheduler {
                 $0.kind == .transcription && $0.chunkID == nil && $0.processingRangeID == nil
             }) {
                 outcomeHandlers[legacy.id] = onOutcome
-                guard legacy.state != .completed else { return }
-                if legacy.state == .failed {
-                    try await retry(job: legacy)
-                }
+                try await retry(job: legacy)
                 startDrainingIfPossible()
             }
             return
         }
         if let existing = jobs.last(where: { $0.kind == .transcription && $0.chunkID == chunkID }) {
             outcomeHandlers[existing.id] = onOutcome
-            guard existing.state != .completed else { return }
-            if existing.state == .failed {
-                try await retry(job: existing)
-            }
+            try await retry(job: existing)
         } else {
             let date = now()
             let job = RecordingJob(

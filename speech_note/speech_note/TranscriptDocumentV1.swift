@@ -636,6 +636,58 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         )
     }
 
+    func appending(
+        recording: Recording,
+        chunks: [AudioChunk],
+        drafts: [SegmentDraft],
+        replacingSourceIDs: [UUID] = [],
+        speakers: [String] = []
+    ) -> TranscriptDocumentV1 {
+        guard !drafts.isEmpty else { return self }
+        let replacedSources = Set(replacingSourceIDs)
+        var retained = segments.compactMap { segment -> SegmentDraft? in
+            if segment.isManuallyEdited {
+                return SegmentDraft(
+                    text: segment.text,
+                    startSample: segment.startSample,
+                    endSample: segment.endSample,
+                    sourceRanges: segment.sourceRanges,
+                    speechSpanIDs: segment.speechSpanIDs,
+                    isManuallyEdited: true,
+                    editedAt: segment.editedAt
+                )
+            }
+            if !replacedSources.isEmpty {
+                let matchesReplacedSource = segment.sourceRanges.contains { replacedSources.contains($0.sourceID) }
+                if matchesReplacedSource { return nil }
+            }
+            let isOverlapped = drafts.contains { d in
+                let maxStart = max(segment.startSample, d.startSample)
+                let minEnd = min(segment.endSample, d.endSample)
+                return maxStart < minEnd
+            }
+            if isOverlapped { return nil }
+            return SegmentDraft(
+                text: segment.text,
+                startSample: segment.startSample,
+                endSample: segment.endSample,
+                sourceRanges: segment.sourceRanges,
+                speechSpanIDs: segment.speechSpanIDs,
+                isManuallyEdited: false
+            )
+        }
+        return TranscriptDocumentV1(
+            recording: recording,
+            chunks: chunks,
+            segmentDrafts: retained + drafts,
+            timezone: timezone,
+            language: language,
+            state: .processing,
+            revision: revision + 1,
+            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers)
+        )
+    }
+
     /// Import path: one private asset, many logical ranges. Replacement uses
     /// sample overlap for `imported_asset` so the shared asset ID cannot wipe
     /// sibling ranges.
@@ -654,6 +706,52 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
             recording: recording,
             audioAvailableOnThisDevice: audioAvailableOnThisDevice,
             segmentDrafts: previousDrafts + [draft],
+            timezone: timezone,
+            language: language,
+            state: .processing,
+            revision: revision + 1,
+            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers)
+        )
+    }
+
+    func appendingImported(
+        recording: Recording,
+        audioAvailableOnThisDevice: Bool,
+        drafts: [SegmentDraft],
+        speakers: [String] = []
+    ) -> TranscriptDocumentV1 {
+        guard !drafts.isEmpty else { return self }
+        var retained = segments.compactMap { segment -> SegmentDraft? in
+            if segment.isManuallyEdited {
+                return SegmentDraft(
+                    text: segment.text,
+                    startSample: segment.startSample,
+                    endSample: segment.endSample,
+                    sourceRanges: segment.sourceRanges,
+                    speechSpanIDs: segment.speechSpanIDs,
+                    isManuallyEdited: true,
+                    editedAt: segment.editedAt
+                )
+            }
+            let isOverlapped = drafts.contains { d in
+                let maxStart = max(segment.startSample, d.startSample)
+                let minEnd = min(segment.endSample, d.endSample)
+                return maxStart < minEnd
+            }
+            if isOverlapped { return nil }
+            return SegmentDraft(
+                text: segment.text,
+                startSample: segment.startSample,
+                endSample: segment.endSample,
+                sourceRanges: segment.sourceRanges,
+                speechSpanIDs: segment.speechSpanIDs,
+                isManuallyEdited: false
+            )
+        }
+        return TranscriptDocumentV1(
+            recording: recording,
+            audioAvailableOnThisDevice: audioAvailableOnThisDevice,
+            segmentDrafts: retained + drafts,
             timezone: timezone,
             language: language,
             state: .processing,

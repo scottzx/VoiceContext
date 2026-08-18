@@ -4,6 +4,14 @@ import Darwin
 import Foundation
 
 actor SenseVoiceInferenceService {
+    struct UtteranceResult: Sendable {
+        let text: String
+        let rawText: String
+        let startSample: Int64
+        let endSample: Int64
+        let offsetMilliseconds: Int
+    }
+
     struct Result: Sendable {
         let text: String
         let rawText: String
@@ -31,6 +39,7 @@ actor SenseVoiceInferenceService {
         let physicalFootprintBytes: UInt64
         let thermalState: String
         let submittedMetalWork: Int
+        let utteranceResults: [UtteranceResult]
     }
 
     enum InferenceError: LocalizedError {
@@ -147,6 +156,7 @@ actor SenseVoiceInferenceService {
         var temporarySpeakers: [String] = []
         var lastSpeechEndSample: Int64?
 
+        var utteranceResults: [UtteranceResult] = []
         for range in Self.analysisRanges(sampleCount: samples.count) {
             let window = Array(samples[range])
             let windowStartSample = startingAt + Int64(range.lowerBound)
@@ -178,13 +188,14 @@ actor SenseVoiceInferenceService {
             )
             lastSpeechEndSample = analysis.spans.last?.endSample ?? lastSpeechEndSample
 
-            for input in Self.inferenceInputs(from: analysis.utterances) {
+            for utterance in analysis.utterances {
+                guard !utterance.samples.isEmpty else { continue }
                 try await lifecycleGate.beginMetalWork()
                 let result: NativeResult
                 do {
                     result = try await Task.detached(priority: .userInitiated) { [cancellation] in
                         try Self.run(
-                            samples: input,
+                            samples: utterance.samples,
                             resourceRoot: resourceRoot,
                             cancellation: cancellation,
                             languageMode: languageMode
@@ -196,6 +207,18 @@ actor SenseVoiceInferenceService {
                 }
                 await lifecycleGate.endMetalWork()
                 nativeResults.append(result)
+                let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    utteranceResults.append(
+                        UtteranceResult(
+                            text: trimmed,
+                            rawText: result.rawText,
+                            startSample: utterance.startSample,
+                            endSample: utterance.endSample,
+                            offsetMilliseconds: Int((Double(utterance.startSample) / 16.0).rounded())
+                        )
+                    )
+                }
             }
         }
         guard let lastResult = nativeResults.last else {
@@ -240,7 +263,8 @@ actor SenseVoiceInferenceService {
             temporarySpeakers: temporarySpeakers,
             physicalFootprintBytes: nativeResults.map(\.physicalFootprintBytes).max() ?? 0,
             thermalState: Self.thermalStateDescription(),
-            submittedMetalWork: metrics.submittedMetalWork
+            submittedMetalWork: metrics.submittedMetalWork,
+            utteranceResults: utteranceResults
         )
     }
 

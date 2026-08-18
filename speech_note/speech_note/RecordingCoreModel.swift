@@ -280,31 +280,58 @@ final class RecordingCoreModel {
                     at: Date()
                 )
 
-                let trimmedText = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedText.isEmpty {
-                    let sourceRanges = [
-                        TranscriptDocumentV1.SourceRange(
+                var drafts: [TranscriptDocumentV1.SegmentDraft] = []
+                if !result.utteranceResults.isEmpty {
+                    for u in result.utteranceResults {
+                        let sourceRange = TranscriptDocumentV1.SourceRange(
                             sourceKind: .audioChunk,
                             sourceID: chunk.id,
-                            startSample: chunk.startSample,
-                            endSample: chunk.endSample
+                            startSample: u.startSample,
+                            endSample: u.endSample
                         )
-                    ]
-                    let draft = TranscriptDocumentV1.SegmentDraft(
-                        text: trimmedText,
-                        sourceRanges: sourceRanges
-                    )
+                        drafts.append(
+                            TranscriptDocumentV1.SegmentDraft(
+                                text: u.text,
+                                startSample: u.startSample,
+                                endSample: u.endSample,
+                                sourceRanges: [sourceRange]
+                            )
+                        )
+                    }
+                } else {
+                    let trimmedText = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmedText.isEmpty {
+                        let sourceRanges = [
+                            TranscriptDocumentV1.SourceRange(
+                                sourceKind: .audioChunk,
+                                sourceID: chunk.id,
+                                startSample: chunk.startSample,
+                                endSample: chunk.endSample
+                            )
+                        ]
+                        drafts.append(
+                            TranscriptDocumentV1.SegmentDraft(
+                                text: trimmedText,
+                                startSample: chunk.startSample,
+                                endSample: chunk.endSample,
+                                sourceRanges: sourceRanges
+                            )
+                        )
+                    }
+                }
+
+                if !drafts.isEmpty {
                     let document = try? await transcriptStore.document(recordingID: recordingID)
                     let updated = document?.appending(
                         recording: recording,
                         chunks: chunks,
-                        draft: draft,
+                        drafts: drafts,
                         replacingSourceIDs: [chunk.id],
                         speakers: result.temporarySpeakers
                     ) ?? TranscriptDocumentV1(
                         recording: recording,
                         chunks: chunks,
-                        segmentDrafts: [draft],
+                        segmentDrafts: drafts,
                         language: result.detectedLanguage,
                         state: .processing,
                         speakers: result.temporarySpeakers
@@ -538,20 +565,40 @@ final class RecordingCoreModel {
     func retryTranscription(recordingID: UUID) async {
         do {
             try await coordinator.retryProcessing(recordingID: recordingID)
-            let chunks = (try? await repository.chunks(recordingID: recordingID)) ?? []
-            for chunk in chunks {
-                _ = try? await repository.setChunkContinuation(id: chunk.id, requiresContinuation: false, at: Date())
-            }
-            let jobs = try await repository.jobs(recordingID: recordingID)
-            let date = Date()
-            for var job in jobs where job.kind == .transcription {
-                job.state = .pending
-                job.lastError = nil
-                job.updatedAt = date
-                try await repository.upsertJob(job, at: date)
-            }
-            try await transcriptionScheduler.resumePendingJobs { [weak self] outcome in
-                await self?.applyTranscriptionOutcome(outcome)
+            let importedAsset = try? await repository.importedAudioAsset(recordingID: recordingID)
+            if importedAsset != nil {
+                let ranges = (try? await repository.processingRanges(recordingID: recordingID)) ?? []
+                let date = Date()
+                for var range in ranges {
+                    range.state = .pending
+                    range.requiresContinuation = false
+                    range.updatedAt = date
+                    _ = try? await repository.upsertProcessingRange(range, at: date)
+                }
+                for range in ranges {
+                    try await transcriptionScheduler.enqueue(
+                        recordingID: recordingID,
+                        processingRangeID: range.id,
+                        onOutcome: { [weak self] outcome in
+                            await self?.applyTranscriptionOutcome(outcome)
+                        }
+                    )
+                }
+            } else {
+                let chunks = (try? await repository.chunks(recordingID: recordingID)) ?? []
+                let date = Date()
+                for chunk in chunks {
+                    _ = try? await repository.setChunkContinuation(id: chunk.id, requiresContinuation: false, at: date)
+                }
+                for chunk in chunks where chunk.state == .closed {
+                    try await transcriptionScheduler.enqueue(
+                        recordingID: recordingID,
+                        chunkID: chunk.id,
+                        onOutcome: { [weak self] outcome in
+                            await self?.applyTranscriptionOutcome(outcome)
+                        }
+                    )
+                }
             }
             notice = "已重新开始转写录音分片。"
         } catch {
@@ -1680,32 +1727,59 @@ final class RecordingCoreModel {
         }
         try await markImportedRangesCompleted(covered, repository: repository)
 
-        let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            let sourceRanges = [
-                TranscriptDocumentV1.SourceRange(
+        var drafts: [TranscriptDocumentV1.SegmentDraft] = []
+        if !result.utteranceResults.isEmpty {
+            for u in result.utteranceResults {
+                let sourceRange = TranscriptDocumentV1.SourceRange(
                     sourceKind: .importedAsset,
                     sourceID: workingAsset.id,
-                    startSample: decodeStart,
-                    endSample: decodeEnd
+                    startSample: u.startSample,
+                    endSample: u.endSample
                 )
-            ]
-            let draft = TranscriptDocumentV1.SegmentDraft(
-                text: trimmed,
-                sourceRanges: sourceRanges
-            )
+                drafts.append(
+                    TranscriptDocumentV1.SegmentDraft(
+                        text: u.text,
+                        startSample: u.startSample,
+                        endSample: u.endSample,
+                        sourceRanges: [sourceRange]
+                    )
+                )
+            }
+        } else {
+            let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                let sourceRanges = [
+                    TranscriptDocumentV1.SourceRange(
+                        sourceKind: .importedAsset,
+                        sourceID: workingAsset.id,
+                        startSample: decodeStart,
+                        endSample: decodeEnd
+                    )
+                ]
+                drafts.append(
+                    TranscriptDocumentV1.SegmentDraft(
+                        text: trimmed,
+                        startSample: decodeStart,
+                        endSample: decodeEnd,
+                        sourceRanges: sourceRanges
+                    )
+                )
+            }
+        }
+
+        if !drafts.isEmpty {
             let audioAvailable = FileManager.default.fileExists(atPath: assetURL.path)
                 && workingAsset.audioRemovedAt == nil
             let document = try? await transcriptStore.document(recordingID: recording.id)
             let updated = document?.appendingImported(
                 recording: recording,
                 audioAvailableOnThisDevice: audioAvailable,
-                draft: draft,
+                drafts: drafts,
                 speakers: result.temporarySpeakers
             ) ?? TranscriptDocumentV1(
                 recording: recording,
                 audioAvailableOnThisDevice: audioAvailable,
-                segmentDrafts: [draft],
+                segmentDrafts: drafts,
                 language: result.detectedLanguage,
                 state: .processing,
                 speakers: result.temporarySpeakers
@@ -1756,9 +1830,8 @@ final class RecordingCoreModel {
                     recordingID: outcome.recordingID,
                     outcome: outcome.state
                 )
-                if let recording = try await repository.recording(id: outcome.recordingID),
-                   recording.state == .complete {
-                    _ = try await repository.clearContinuationMarkersForCompletedRecording(
+                if let recording = try await repository.recording(id: outcome.recordingID) {
+                    _ = try? await repository.clearContinuationMarkersForCompletedRecording(
                         recordingID: outcome.recordingID,
                         at: Date()
                     )

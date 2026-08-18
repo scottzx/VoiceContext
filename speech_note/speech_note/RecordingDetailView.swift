@@ -1,5 +1,8 @@
 import SwiftUI
 
+private typealias SentenceBubble = RecordingDetailPlaybackPresentation.SentenceBubble
+private typealias SpeakerBubbleGroup = RecordingDetailPlaybackPresentation.SpeakerBubbleGroup
+
 /// Redesigned professional Recording & Meeting Detail Screen.
 /// Built with Apple Voice Memos-style native utility aesthetics (DESIGN.md).
 struct RecordingDetailScreen: View {
@@ -31,6 +34,10 @@ struct RecordingDetailScreen: View {
     @State private var selectedSpeakerForClientBinding: MeetingSpeakerBinding? = nil
     @State private var isNewClientSheetPresented = false
     @State private var speakerForNewClient: MeetingSpeakerBinding? = nil
+    @State private var speakerToRename: MeetingSpeakerBinding? = nil
+    @State private var newSpeakerName: String = ""
+    @State private var isRenameAlertPresented = false
+    @State private var dragOffset: CGFloat = 0
     @State private var isCopiedToastPresented = false
     @State private var isExportSheetPresented = false
     @State private var isMetadataEditSheetPresented = false
@@ -217,6 +224,32 @@ struct RecordingDetailScreen: View {
                             await createClientAndBindSpeaker(client: newClient, binding: speaker)
                         }
                     }
+                }
+            }
+            .alert("修改发言人名称", isPresented: $isRenameAlertPresented) {
+                TextField("输入发言人名称", text: $newSpeakerName)
+                Button("取消", role: .cancel) {
+                    speakerToRename = nil
+                    newSpeakerName = ""
+                }
+                Button("保存") {
+                    if let speaker = speakerToRename, !newSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let trimmed = newSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        Task {
+                            _ = try? await model.renameSpeakerIdentity(
+                                recordingID: recordingID,
+                                temporaryLabel: speaker.temporaryLabel,
+                                displayName: trimmed
+                            )
+                            await loadDetail()
+                        }
+                    }
+                    speakerToRename = nil
+                    newSpeakerName = ""
+                }
+            } message: {
+                if let speaker = speakerToRename {
+                    Text("修改后，录音中属于「\(speaker.chipText)」的所有气泡将同步更新。")
                 }
             }
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -578,35 +611,49 @@ struct RecordingDetailScreen: View {
     // MARK: - Transcript Document View
 
     private var transcriptDocumentView: some View {
-        let rows = transcript.map { transcriptPresentationRows(for: $0) } ?? []
-        let roster = RecordingDetailPlaybackPresentation.legendSpeakers(from: rows.map(\.speaker))
-        let activeID = RecordingDetailPlaybackPresentation.currentRowID(at: timelinePlayer.currentTime, rows: rows)
-        let activeSpeaker = rows.first(where: { $0.id == activeID })?.speaker
+        let bubbles = transcript.map { transcriptSentenceBubbles(for: $0) } ?? []
+        let groups = RecordingDetailPlaybackPresentation.groupSentenceBubbles(bubbles)
+        let roster = RecordingDetailPlaybackPresentation.legendSpeakers(from: bubbles.map(\.speaker))
+        let activeID = RecordingDetailPlaybackPresentation.currentBubbleID(at: timelinePlayer.currentTime, bubbles: bubbles)
+        let activeSpeaker = bubbles.first(where: { $0.id == activeID })?.speaker
 
         let pendingOrRunningJobs = jobs.filter { $0.kind == .transcription && ($0.state == .running || $0.state == .pending) }
         let failedJobs = jobs.filter { $0.kind == .transcription && $0.state == .failed }
 
-        return VStack(alignment: .leading, spacing: 14) {
+        return VStack(alignment: .leading, spacing: 16) {
             if roster.count >= 2 {
                 speakerLegend(roster: roster, activeSpeaker: activeSpeaker)
             }
 
-            if !rows.isEmpty {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(rows) { row in
-                        transcriptDialogueRow(
-                            row,
+            if !groups.isEmpty {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    ForEach(groups) { group in
+                        transcriptBubbleGroupView(
+                            group: group,
                             roster: roster,
-                            isCurrent: row.id == activeID
+                            activeID: activeID
                         )
                     }
                 }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { value in
+                            if value.translation.width < 0 && abs(value.translation.width) > abs(value.translation.height) {
+                                dragOffset = max(value.translation.width, -64)
+                            }
+                        }
+                        .onEnded { _ in
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                                dragOffset = 0
+                            }
+                        }
+                )
 
                 if !isCapturingThisRecording && !pendingOrRunningJobs.isEmpty {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("已就绪 \(rows.count) 个分段 · 正在增量转写后续音频 (\(pendingOrRunningJobs.count) 个排队中)…")
+                        Text("已就绪 \(bubbles.count) 个分句 · 正在增量转写后续音频 (\(pendingOrRunningJobs.count) 个排队中)…")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -769,117 +816,157 @@ struct RecordingDetailScreen: View {
                 ForEach(roster, id: \.self) { speaker in
                     let color = RecordingDetailPlaybackPresentation.color(for: speaker, roster: roster)
                     let isActive = activeSpeaker == speaker
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(color)
-                            .frame(width: 8, height: 8)
-                        Text(speaker)
-                            .font(.caption.weight(isActive ? .semibold : .regular))
-                            .foregroundStyle(isActive ? .primary : .secondary)
+                    Button {
+                        let binding = speakerBindings.first(where: {
+                            $0.temporaryLabel == speaker || $0.chipText == speaker || $0.state.linkedDisplayName == speaker
+                        }) ?? MeetingSpeakerBinding(temporaryLabel: speaker, state: .unknown)
+                        speakerToRename = binding
+                        newSpeakerName = binding.chipText.replacingOccurrences(of: SpeakerIdentityLabeling.suspectedPrefix, with: "")
+                        isRenameAlertPresented = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(color)
+                                .frame(width: 8, height: 8)
+                            Text(speaker)
+                                .font(.caption.weight(isActive ? .semibold : .regular))
+                                .foregroundStyle(isActive ? .primary : .secondary)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(isActive ? color.opacity(0.18) : Color(uiColor: .secondarySystemBackground))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(isActive ? color : .clear, lineWidth: 1))
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(isActive ? color.opacity(0.18) : Color(uiColor: .secondarySystemBackground))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().strokeBorder(isActive ? color : .clear, lineWidth: 1))
+                    .buttonStyle(.plain)
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func transcriptDialogueRow(
-        _ row: TranscriptPresentationRow,
+    private func transcriptBubbleGroupView(
+        group: SpeakerBubbleGroup,
         roster: [String],
+        activeID: UUID?
+    ) -> some View {
+        let speaker = group.speaker
+        let speakerColor = speaker != nil ? RecordingDetailPlaybackPresentation.color(for: speaker!, roster: roster) : Color.secondary
+        let binding = speakerBindings.first(where: {
+            $0.temporaryLabel == speaker || $0.chipText == speaker || $0.state.linkedDisplayName == speaker
+        })
+
+        VStack(alignment: .leading, spacing: 6) {
+            if let speaker, !speaker.isEmpty {
+                Button {
+                    let targetBinding = binding ?? MeetingSpeakerBinding(temporaryLabel: speaker, state: .unknown)
+                    speakerToRename = targetBinding
+                    newSpeakerName = targetBinding.chipText.replacingOccurrences(of: SpeakerIdentityLabeling.suspectedPrefix, with: "")
+                    isRenameAlertPresented = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(speakerColor)
+                            .frame(width: 8, height: 8)
+                        Text(speaker)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        Image(systemName: "pencil")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("修改发言人 \(speaker)")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(group.bubbles) { bubble in
+                    sentenceBubbleRow(
+                        bubble: bubble,
+                        isCurrent: bubble.id == activeID
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sentenceBubbleRow(
+        bubble: SentenceBubble,
         isCurrent: Bool
     ) -> some View {
-        let speakerColor = row.speaker != nil ? RecordingDetailPlaybackPresentation.color(for: row.speaker!, roster: roster) : Color.secondary
+        HStack(alignment: .center, spacing: 8) {
+            Button {
+                timelinePlayer.seek(to: bubble.startTime)
+            } label: {
+                HStack(alignment: .bottom, spacing: 8) {
+                    Text(bubble.text)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
 
-        Button {
-            timelinePlayer.seek(to: row.startTime)
-        } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    if let speaker = row.speaker, !speaker.isEmpty {
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(speakerColor)
-                                .frame(width: 6, height: 6)
-                            Text(speaker)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(speakerColor)
-                        }
+                    if bubble.isManuallyEdited {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.blue)
                     }
-
-                    Text("+\(transcriptOffset(row.offsetMilliseconds))")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-
-                    if row.isManuallyEdited {
-                        HStack(spacing: 3) {
-                            Image(systemName: "checkmark.seal.fill")
-                            Text("已校对")
-                        }
-                        .font(.system(size: 10, weight: .medium))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.12))
-                        .foregroundStyle(.blue)
-                        .clipShape(Capsule())
-                    }
-
-                    Spacer()
 
                     if isCurrent {
-                        HStack(spacing: 4) {
-                            Image(systemName: "waveform")
-                            Text("播放中")
-                        }
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.red)
+                        Image(systemName: "waveform")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.red)
                     }
                 }
-
-                Text(row.text)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(isCurrent ? Color.red.opacity(0.08) : Color(uiColor: .secondarySystemBackground))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(isCurrent ? Color.red.opacity(0.35) : Color.clear, lineWidth: 1.5)
+                )
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isCurrent ? Color.primary.opacity(0.06) : Color(uiColor: .secondarySystemBackground).opacity(0.4))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(isCurrent ? Color.red.opacity(0.4) : Color.clear, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .id(row.id)
-        .contextMenu {
-            Button {
-                editingSegmentRow = row
-            } label: {
-                Label("编辑此段逐字稿…", systemImage: "pencil")
-            }
-            Button {
-                UIPasteboard.general.string = row.text
-                withAnimation { isCopiedToastPresented = true }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    withAnimation { isCopiedToastPresented = false }
+            .buttonStyle(.plain)
+            .id(bubble.id)
+            .contextMenu {
+                Button {
+                    editingSegmentRow = bubble.asTimedRow
+                } label: {
+                    Label("编辑此句逐字稿…", systemImage: "pencil")
                 }
-            } label: {
-                Label("复制文本", systemImage: "doc.on.doc")
+                Button {
+                    UIPasteboard.general.string = bubble.text
+                    withAnimation { isCopiedToastPresented = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        withAnimation { isCopiedToastPresented = false }
+                    }
+                } label: {
+                    Label("复制单句文本", systemImage: "doc.on.doc")
+                }
+                Button {
+                    timelinePlayer.seek(to: bubble.startTime)
+                } label: {
+                    Label("从此开始播放", systemImage: "play.circle")
+                }
             }
-            Button {
-                timelinePlayer.seek(to: row.startTime)
-            } label: {
-                Label("从此开始播放", systemImage: "play.circle")
+
+            if abs(dragOffset) > 2 {
+                Text(transcriptOffset(bubble.offsetMilliseconds))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: max(0, -dragOffset), alignment: .trailing)
+                    .opacity(min(1.0, Double(-dragOffset) / 32.0))
             }
         }
+        .offset(x: min(0, max(dragOffset, -64)))
     }
 
     // MARK: - Speakers & Client Management View
@@ -968,6 +1055,16 @@ struct RecordingDetailScreen: View {
             // Action Buttons
             HStack(spacing: 8) {
                 Button {
+                    speakerToRename = binding
+                    newSpeakerName = binding.chipText.replacingOccurrences(of: SpeakerIdentityLabeling.suspectedPrefix, with: "")
+                    isRenameAlertPresented = true
+                } label: {
+                    Label("重命名", systemImage: "pencil")
+                        .font(.caption.weight(.medium))
+                }
+                .buttonStyle(.bordered)
+
+                Button {
                     selectedSpeakerForClientBinding = binding
                 } label: {
                     Label("关联客户", systemImage: "link")
@@ -1009,31 +1106,42 @@ struct RecordingDetailScreen: View {
             VStack(spacing: 0) {
                 detailRow(label: "录制时间", value: currentRecording.startedAt.formatted(date: .abbreviated, time: .standard))
                 Divider()
-                detailRow(label: "录制类型", value: currentRecording.isMeeting ? "会议模式" : (currentRecording.origin == .importedAudio ? "导入音频" : "个人录音"))
+                detailRow(label: "录音时长", value: durationText)
                 Divider()
-                detailRow(label: "语言模式", value: (transcript?.languageMode ?? currentRecording.languageMode).shortLabel)
+                detailRow(label: "录音语言", value: transcript?.language.isEmpty == false ? (transcript?.language ?? "自动") : "自动")
                 Divider()
-                detailRow(label: "文稿版本", value: transcript.map { "版本 \($0.revision)" } ?? "未生成")
+                detailRow(label: "录音格式", value: "16kHz 16-bit 单声道 AAC")
                 Divider()
-                detailRow(label: "分片数量", value: "\(chunks.count) 个 AAC 分片")
-                if let asset = importedAsset {
-                    Divider()
-                    detailRow(label: "来源文件名", value: asset.sourceFilename)
-                }
+                detailRow(label: "存储占用", value: "\(chunks.count) 个分片")
+                Divider()
+                detailRow(label: "唯一标识", value: recordingID.uuidString)
             }
-            .padding(.horizontal, 14)
             .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
 
-            if progress?.canRetry == true || currentRecording.state == .failed {
-                Button {
-                    Task { await model.retryTranscription(recordingID: recordingID) }
-                } label: {
-                    Label("重新进行本地转写", systemImage: "arrow.clockwise")
-                        .frame(maxWidth: .infinity, minHeight: 44)
+            Button(role: .destructive) {
+                isDeleteConfirmationPresented = true
+            } label: {
+                Label("删除录音", systemImage: "trash")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .padding(.top, 8)
+            .confirmationDialog(
+                "确定删除此录音？",
+                isPresented: $isDeleteConfirmationPresented,
+                titleVisibility: .visible
+            ) {
+                Button("删除录音与文稿", role: .destructive) {
+                    Task {
+                        await model.deleteRecording(id: recordingID)
+                        dismiss()
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.primary)
-                .padding(.top, 8)
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("删除后将无法恢复该录音文件及其关联的转写文稿。")
             }
         }
     }
@@ -1045,10 +1153,13 @@ struct RecordingDetailScreen: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .font(.subheadline.weight(.medium))
+                .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     // MARK: - Helpers & Data Binding
@@ -1103,67 +1214,28 @@ struct RecordingDetailScreen: View {
         }
     }
 
+    private typealias SentenceBubble = RecordingDetailPlaybackPresentation.SentenceBubble
+    private typealias SpeakerBubbleGroup = RecordingDetailPlaybackPresentation.SpeakerBubbleGroup
     private typealias TranscriptPresentationRow = RecordingDetailPlaybackPresentation.TimedRow
 
-    private func transcriptPresentationRows(for transcript: TranscriptDocumentV1) -> [TranscriptPresentationRow] {
-        let turns = transcript.speakerTurns.sorted {
-            if $0.startSample != $1.startSample { return $0.startSample < $1.startSample }
-            return ($0.speaker ?? "") < ($1.speaker ?? "")
-        }
-        guard !turns.isEmpty else {
-            let mapped = transcript.segments.map {
-                TranscriptPresentationRow(
-                    id: $0.id,
-                    offsetMilliseconds: $0.offsetMilliseconds,
-                    endMilliseconds: RecordingDetailPlaybackPresentation.milliseconds(fromSamples: $0.endSample),
-                    speaker: speakerLabel(for: $0, in: transcript),
-                    text: $0.text,
-                    isManuallyEdited: $0.isManuallyEdited
-                )
-            }
-            return RecordingDetailPlaybackPresentation.normalizingEndTimes(mapped)
-        }
-
-        var assigned = Set<UUID>()
-        var rows: [TranscriptPresentationRow] = []
-        for turn in turns {
-            let owned = transcript.segments.filter { segment in
-                let mid = (segment.startSample + segment.endSample) / 2
-                return turn.startSample <= mid && mid < max(turn.endSample, turn.startSample + 1)
-            }
-            for segment in owned { assigned.insert(segment.id) }
-            let texts = owned.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-            guard !texts.isEmpty else { continue }
-            let offsetMs = owned.map(\.offsetMilliseconds).min() ?? Int((Double(turn.startSample) / 16.0).rounded())
-            let endMs = owned.map { RecordingDetailPlaybackPresentation.milliseconds(fromSamples: $0.endSample) }.max()
-                ?? RecordingDetailPlaybackPresentation.milliseconds(fromSamples: turn.endSample)
-            let isEdited = owned.contains { $0.isManuallyEdited }
-            rows.append(
-                TranscriptPresentationRow(
-                    id: owned[0].id,
-                    offsetMilliseconds: offsetMs,
-                    endMilliseconds: endMs,
-                    speaker: resolvedSpeakerName(turn.speaker, in: transcript),
-                    text: texts.joined(separator: " "),
-                    isManuallyEdited: isEdited
-                )
-            )
-        }
-        for segment in transcript.segments where !assigned.contains(segment.id) {
+    private func transcriptSentenceBubbles(for transcript: TranscriptDocumentV1) -> [SentenceBubble] {
+        let mapped = transcript.segments.compactMap { segment -> SentenceBubble? in
             let trimmed = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
-            rows.append(
-                TranscriptPresentationRow(
-                    id: segment.id,
-                    offsetMilliseconds: segment.offsetMilliseconds,
-                    endMilliseconds: RecordingDetailPlaybackPresentation.milliseconds(fromSamples: segment.endSample),
-                    speaker: speakerLabel(for: segment, in: transcript),
-                    text: trimmed,
-                    isManuallyEdited: segment.isManuallyEdited
-                )
+            guard !trimmed.isEmpty else { return nil }
+            return SentenceBubble(
+                id: segment.id,
+                offsetMilliseconds: segment.offsetMilliseconds,
+                endMilliseconds: RecordingDetailPlaybackPresentation.milliseconds(fromSamples: segment.endSample),
+                speaker: speakerLabel(for: segment, in: transcript),
+                text: trimmed,
+                isManuallyEdited: segment.isManuallyEdited
             )
         }
-        return RecordingDetailPlaybackPresentation.normalizingEndTimes(rows)
+        return RecordingDetailPlaybackPresentation.normalizingBubbleEndTimes(mapped)
+    }
+
+    private func transcriptPresentationRows(for transcript: TranscriptDocumentV1) -> [TranscriptPresentationRow] {
+        transcriptSentenceBubbles(for: transcript).map(\.asTimedRow)
     }
 
     private func resolvedSpeakerName(_ temporaryLabel: String?, in transcript: TranscriptDocumentV1) -> String? {
@@ -1187,6 +1259,14 @@ struct RecordingDetailScreen: View {
                 return binding.chipText
             }
             return speaker
+        }
+        if let first = transcript.speakers.first {
+            if let binding = speakerBindings.first(where: {
+                $0.temporaryLabel == first || $0.chipText == first || $0.state.linkedDisplayName == first
+            }) {
+                return binding.chipText
+            }
+            return first
         }
         return nil
     }
@@ -1315,8 +1395,8 @@ struct RecordingDetailScreen: View {
         guard timelinePlayer.isPlaying else { return }
         guard contentTab == .transcript else { return }
         guard let transcript else { return }
-        let rows = transcriptPresentationRows(for: transcript)
-        guard let target = RecordingDetailPlaybackPresentation.currentRowID(at: timelinePlayer.currentTime, rows: rows) else { return }
+        let bubbles = transcriptSentenceBubbles(for: transcript)
+        guard let target = RecordingDetailPlaybackPresentation.currentBubbleID(at: timelinePlayer.currentTime, bubbles: bubbles) else { return }
         guard lastScrolledActiveSegmentID != target else { return }
         lastScrolledActiveSegmentID = target
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {

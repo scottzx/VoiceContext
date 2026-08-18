@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用户服务协议 - 听记 (VoiceContext)</title>
+  <style>
+:root {
+  --primary: #0066cc;
+  --primary-dark: #004499;
+  --bg-page: #f8fafc;
+  --bg-card: #ffffff;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --accent-glow: rgba(0, 102, 204, 0.1);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #38bdf8;
+    --primary-dark: #0284c7;
+    --bg-page: #0b0f19;
+    --bg-card: #151d30;
+    --text-main: #f1f5f9;
+    --text-muted: #94a3b8;
+    --border: #263352;
+    --accent-glow: rgba(56, 189, 248, 0.15);
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  padding: 0;
+}
+.header {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
+.header-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.brand {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-main);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.brand-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  background: var(--accent-glow);
+  color: var(--primary);
+  border-radius: 999px;
+  font-weight: 600;
+}
+nav a {
+  margin-left: 1.25rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+nav a:hover, nav a.active { color: var(--primary); }
+.container {
+  max-width: 840px;
+  margin: 2.5rem auto 4rem auto;
+  padding: 0 1.5rem;
+}
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2.5rem;
+  box-shadow: 0 4px 20px -2px var(--accent-glow);
+}
+h1 { font-size: 2rem; font-weight: 800; margin-bottom: 0.5rem; color: var(--text-main); }
+.subtitle { color: var(--text-muted); font-size: 1.05rem; margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
+h2 { font-size: 1.35rem; font-weight: 700; margin: 1.8rem 0 0.8rem 0; color: var(--text-main); }
+h3 { font-size: 1.1rem; font-weight: 600; margin: 1.2rem 0 0.5rem 0; }
+p, ul, ol { margin-bottom: 1rem; color: var(--text-main); }
+ul, ol { padding-left: 1.5rem; }
+li { margin-bottom: 0.4rem; }
+.highlight-box {
+  background: var(--accent-glow);
+  border-left: 4px solid var(--primary);
+  padding: 1rem 1.25rem;
+  border-radius: 0 8px 8px 0;
+  margin: 1.25rem 0;
+}
+footer {
+  text-align: center;
+  padding: 2rem 1.5rem 3rem 1.5rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  border-top: 1px solid var(--border);
+}
+.btn {
+  display: inline-block;
+  background: var(--primary);
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+.btn:hover { opacity: 0.9; }
+</style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="index.html" class="brand">
+        🎙️ 听记 <span class="brand-badge">VoiceContext</span>
+      </a>
+      <nav>
+        <a href="index.html">首页</a>
+        <a href="privacy.html">隐私政策</a>
+        <a href="terms.html" class="active">用户协议</a>
+        <a href="support.html">技术支持</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="card">
+      <h1>用户服务协议 (Terms of Service)</h1>
+      <div class="subtitle">更新日期：2026年8月18日 | 生效日期：2026年8月18日</div>
+
+      <h2>1. 协议的范围与接受</h2>
+      <p>欢迎使用《听记》（以下简称“本应用”或“VoiceContext”）。本协议是您与开发者之间关于下载、安装和使用本应用所订立的法律协议。当您下载或使用本应用，即表示您已阅读并同意接受本协议及《隐私政策》的全部条款。</p>
+
+      <h2>2. 软件使用许可</h2>
+      <p>开发者授予您一项个人的、非排他性的、不可转让的、有限的许可，允许您在受支持的 Apple 移动设备上按照本协议及 Apple App Store 服务条款使用本应用。</p>
+
+      <h2>3. 用户合法使用守则</h2>
+      <p>在使用本应用录制语音或转写内容时，您承诺：</p>
+      <ul>
+        <li>遵守所在国家/地区关于录音、隐私权及知情同意的相关法律法规。在录制他人谈话或会议前，应依法获得相关人员的知情同意。</li>
+        <li>不得利用本应用从事侵犯他人隐私、商业秘密、名誉权或其他合法权益的活动。</li>
+        <li>不得对本应用进行逆向工程、反编译、破解或规避技术保护措施。</li>
+      </ul>
+
+      <h2>4. 知识产权</h2>
+      <p>本应用的软件界面、图标、设计、本地推理算法架构均受著作权和知识产权法保护。用户使用本应用生成的文本纪要、录音文件及导出文档的知识产权全权归用户本人所有。</p>
+
+      <h2>5. 免责声明与有限保证</h2>
+      <ul>
+        <li>本应用的语音转文字及声纹区分由端侧本地模型自动计算生成。受环境噪音、方言、口音及硬件性能影响，转写结果可能存在微小偏差，仅供个人记录与参考，不构成任何法律或专业鉴定依据。</li>
+        <li>在适用法律允许的最大范围内，本应用按“现状”（AS-IS）提供。开发者不对因设备故障、存储空间不足或不可抗力导致的数据损失承担间接赔偿责任。建议用户定期使用导出功能备份重要文档。</li>
+      </ul>
+
+      <h2>6. 协议修改与终止</h2>
+      <p>开发者保留根据产品发展或法律法规要求适时修改本协议的权利。修改后的协议将在本页面更新发布。如您继续使用本应用，即视为您接受修改后的条款。</p>
+
+      <h2>7. 联系方式</h2>
+      <p>如对本服务协议有任何疑问，请联系：support@voicecontext.app</p>
+    </div>
+  </div>
+
+  <footer>
+    <p>© 2026 听记 (VoiceContext). 保留所有权利。</p>
+  </footer>
+</body>
+</html>

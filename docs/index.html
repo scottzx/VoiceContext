@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>听记 (VoiceContext) - 听见即记下 | 端侧离线语音转写与智能笔记</title>
+  <style>
+  
+:root {
+  --primary: #0066cc;
+  --primary-dark: #004499;
+  --bg-page: #f8fafc;
+  --bg-card: #ffffff;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --accent-glow: rgba(0, 102, 204, 0.1);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #38bdf8;
+    --primary-dark: #0284c7;
+    --bg-page: #0b0f19;
+    --bg-card: #151d30;
+    --text-main: #f1f5f9;
+    --text-muted: #94a3b8;
+    --border: #263352;
+    --accent-glow: rgba(56, 189, 248, 0.15);
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  padding: 0;
+}
+.header {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
+.header-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.brand {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-main);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.brand-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  background: var(--accent-glow);
+  color: var(--primary);
+  border-radius: 999px;
+  font-weight: 600;
+}
+nav a {
+  margin-left: 1.25rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+nav a:hover, nav a.active { color: var(--primary); }
+.container {
+  max-width: 840px;
+  margin: 2.5rem auto 4rem auto;
+  padding: 0 1.5rem;
+}
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2.5rem;
+  box-shadow: 0 4px 20px -2px var(--accent-glow);
+}
+h1 { font-size: 2rem; font-weight: 800; margin-bottom: 0.5rem; color: var(--text-main); }
+.subtitle { color: var(--text-muted); font-size: 1.05rem; margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
+h2 { font-size: 1.35rem; font-weight: 700; margin: 1.8rem 0 0.8rem 0; color: var(--text-main); }
+h3 { font-size: 1.1rem; font-weight: 600; margin: 1.2rem 0 0.5rem 0; }
+p, ul, ol { margin-bottom: 1rem; color: var(--text-main); }
+ul, ol { padding-left: 1.5rem; }
+li { margin-bottom: 0.4rem; }
+.highlight-box {
+  background: var(--accent-glow);
+  border-left: 4px solid var(--primary);
+  padding: 1rem 1.25rem;
+  border-radius: 0 8px 8px 0;
+  margin: 1.25rem 0;
+}
+footer {
+  text-align: center;
+  padding: 2rem 1.5rem 3rem 1.5rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  border-top: 1px solid var(--border);
+}
+.btn {
+  display: inline-block;
+  background: var(--primary);
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+.btn:hover { opacity: 0.9; }
+
+  .hero {
+    text-align: center;
+    padding: 3.5rem 1rem 2.5rem 1rem;
+  }
+  .hero-tag {
+    display: inline-block;
+    padding: 0.35rem 1rem;
+    background: var(--accent-glow);
+    color: var(--primary);
+    border-radius: 999px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 1.25rem;
+  }
+  .hero h1 {
+    font-size: 2.75rem;
+    line-height: 1.2;
+    margin-bottom: 1rem;
+    letter-spacing: -0.02em;
+  }
+  .hero p {
+    font-size: 1.2rem;
+    color: var(--text-muted);
+    max-width: 600px;
+    margin: 0 auto 2rem auto;
+  }
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.5rem;
+    margin: 2.5rem 0;
+  }
+  .feature-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 1.75rem;
+    border-radius: 14px;
+  }
+  .feature-icon {
+    font-size: 2rem;
+    margin-bottom: 0.75rem;
+  }
+  .feature-item h3 {
+    font-size: 1.2rem;
+    margin-bottom: 0.5rem;
+  }
+  .feature-item p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="index.html" class="brand">
+        🎙️ 听记 <span class="brand-badge">VoiceContext</span>
+      </a>
+      <nav>
+        <a href="index.html" class="active">首页</a>
+        <a href="privacy.html">隐私政策</a>
+        <a href="terms.html">用户协议</a>
+        <a href="support.html">技术支持</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="hero">
+      <div class="hero-tag">🔒 100% 本地端侧 AI · 隐私安全优先</div>
+      <h1>听见，即记下。</h1>
+      <p>无需网络连接，在 iPhone 本地完成毫秒级语音转写、说话人声纹区分与结构化时间线记录。</p>
+      <div>
+        <a href="https://apps.apple.com" class="btn">前往 App Store 下载</a>
+      </div>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-item">
+        <div class="feature-icon">⚡</div>
+        <h3>端侧离线高精度转写</h3>
+        <p>内置高效本地语音识别引擎，无网络环境下依然流畅转写，不消耗蜂窝流量，响应迅速。</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">👥</div>
+        <h3>智能声纹区分说话人</h3>
+        <p>本地声纹聚类与说话人分离技术，自动区分多人对话与发言角色，会议沟通一目了然。</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">🛡️</div>
+        <h3>绝对的数据隐私</h3>
+        <p>音频与明文声纹完全保留在手机沙盒中，零云端上传，从根源杜绝商业机密与隐私泄露。</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">📱</div>
+        <h3>小组件一键即录</h3>
+        <p>支持锁屏与主屏幕 Widget，遇到突发灵感或临时会议，抬手轻点即可瞬时启动录音。</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">📝</div>
+        <h3>时间线与开放文档</h3>
+        <p>自动整理按日归档的结构化时间线，支持一键导出 Markdown / JSON / 音频文件，无缝衔接日常工作流。</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">☁️</div>
+        <h3>本地优先与可选同步</h3>
+        <p>纯本地优先设计，脱离 iCloud 依然完整可用；开启同步时也仅同步文本文档与加密声纹，原始音频永不上公开云端。</p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>© 2026 听记 (VoiceContext). 保留所有权利。</p>
+    <p style="margin-top: 0.5rem;">
+      <a href="privacy.html" style="color: var(--text-muted); margin: 0 0.5rem;">隐私政策</a> | 
+      <a href="terms.html" style="color: var(--text-muted); margin: 0 0.5rem;">服务条款</a> | 
+      <a href="support.html" style="color: var(--text-muted); margin: 0 0.5rem;">联系我们</a>
+    </p>
+  </footer>
+</body>
+</html>

@@ -254,6 +254,7 @@ struct ContentView: View {
     @State private var editingRecordingTitleInput = ""
     @State private var isDateJumpSheetPresented = false
     @State private var jumpTargetDate: Date? = nil
+    @State private var currentFocusedDate: Date? = nil
     /// Set by the home-screen Record Widget deep link (`voicecontext://start-recording`).
     @Binding private var openStartRecording: Bool
     private let isRecordingDetailFixtureEnabled: Bool
@@ -611,32 +612,50 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 32)
             } else {
-                List {
-                    ForEach(recordingGroups) { group in
-                        Section {
-                            ForEach(group.recordings) { recording in
-                                recordingRowItem(recording)
+                ScrollViewReader { proxy in
+                    List {
+                        ForEach(recordingGroups) { group in
+                            Section {
+                                ForEach(group.recordings) { recording in
+                                    recordingRowItem(recording)
+                                }
+                            } header: {
+                                Button {
+                                    currentFocusedDate = group.date
+                                    isDateJumpSheetPresented = true
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text(formattedDateHeader(group.date))
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(.primary)
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                        Text("\(group.recordings.count) 条记录")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .id(group.id)
+                                .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 4, trailing: 20))
+                                .listRowBackground(Color(uiColor: .systemBackground))
                             }
-                        } header: {
-                            HStack {
-                                Text(group.date.formatted(date: .complete, time: .omitted))
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                                Text("\(group.recordings.count) 条记录")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .textCase(nil)
-                            .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 4, trailing: 20))
-                            .listRowBackground(Color(uiColor: .systemBackground))
                         }
                     }
+                    .listStyle(.plain)
+                    .environment(\.defaultMinListHeaderHeight, 0)
+                    .scrollContentBackground(.hidden)
+                    .contentMargins(.top, 0, for: .scrollContent)
+                    .onChange(of: jumpTargetDate) { _, targetDate in
+                        guard let targetDate else { return }
+                        withAnimation(.easeInOut(duration: 0.35)) {
+                            proxy.scrollTo(targetDate, anchor: .top)
+                        }
+                        jumpTargetDate = nil
+                    }
                 }
-                .listStyle(.plain)
-                .environment(\.defaultMinListHeaderHeight, 0)
-                .scrollContentBackground(.hidden)
-                .contentMargins(.top, 0, for: .scrollContent)
             }
         }
         .background(Color(uiColor: .systemBackground))
@@ -718,6 +737,14 @@ struct ContentView: View {
                 MoveToFolderSheet(model: model, recordingID: moveRecordingID)
             }
         }
+        .sheet(isPresented: $isDateJumpSheetPresented) {
+            QuickDateJumpSheet(
+                recordingGroups: recordingGroups,
+                initialDate: currentFocusedDate
+            ) { targetDate in
+                jumpTargetDate = targetDate
+            }
+        }
         .alert("删除录音", isPresented: Binding(
             get: { deletingTargetRecording != nil },
             set: { if !$0 { deletingTargetRecording = nil } }
@@ -768,6 +795,25 @@ struct ContentView: View {
             }
         } message: {
             Text("请输入新的录音标题")
+        }
+    }
+
+    private func formattedDateHeader(_ date: Date) -> String {
+        let isChinese = AppLanguageCenter.shared.isChinese ||
+            Locale.preferredLanguages.contains(where: { $0.hasPrefix("zh") }) ||
+            Locale.current.identifier.hasPrefix("zh") ||
+            AppLanguageCenter.shared.selectedLanguage != .english
+        if isChinese {
+            let calendar = Calendar.current
+            let y = calendar.component(.year, from: date)
+            let m = String(format: "%02d", calendar.component(.month, from: date))
+            let d = String(format: "%02d", calendar.component(.day, from: date))
+            let weekday = calendar.component(.weekday, from: date)
+            let weekdays = ["", "周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+            let wStr = (weekday >= 1 && weekday <= 7) ? weekdays[weekday] : ""
+            return "\(y)-\(m)-\(d), \(wStr)"
+        } else {
+            return date.formatted(date: .complete, time: .omitted)
         }
     }
 
@@ -2085,4 +2131,203 @@ private struct MoveToFolderSheet: View {
         }
     }
 }
+
+private struct QuickDateJumpSheet: View {
+    let recordingGroups: [RecordingDayGroup]
+    var initialDate: Date? = nil
+    let onSelectDate: (Date) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var selectedYear: Int = 0
+    @State private var selectedMonth: Int = 0
+    @State private var selectedDay: Int = 0
+
+    private let calendar = Calendar.current
+
+    private var availableYears: [Int] {
+        Array(Set(recordingGroups.map { calendar.component(.year, from: $0.date) })).sorted(by: >)
+    }
+
+    private var availableMonths: [Int] {
+        Array(Set(recordingGroups.filter {
+            calendar.component(.year, from: $0.date) == selectedYear
+        }.map {
+            calendar.component(.month, from: $0.date)
+        })).sorted(by: >)
+    }
+
+    private var availableDays: [Int] {
+        Array(Set(recordingGroups.filter {
+            calendar.component(.year, from: $0.date) == selectedYear &&
+            calendar.component(.month, from: $0.date) == selectedMonth
+        }.map {
+            calendar.component(.day, from: $0.date)
+        })).sorted(by: >)
+    }
+
+    private var matchedGroup: RecordingDayGroup? {
+        recordingGroups.first {
+            calendar.component(.year, from: $0.date) == selectedYear &&
+            calendar.component(.month, from: $0.date) == selectedMonth &&
+            calendar.component(.day, from: $0.date) == selectedDay
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                if availableYears.isEmpty {
+                    ContentUnavailableView("暂无可用录音日期", systemImage: "calendar.badge.exclamationmark")
+                } else {
+                    Text("选择已有录音记录的年月日快速定位")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 6)
+
+                    HStack(spacing: 0) {
+                        // Year Wheel
+                        Picker("年", selection: $selectedYear) {
+                            ForEach(availableYears, id: \.self) { year in
+                                Text("\(String(year))年").tag(year)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .clipped()
+                        .frame(maxWidth: .infinity)
+                        .onChange(of: selectedYear) { _, newYear in
+                            revalidateMonthAndDay(year: newYear)
+                        }
+
+                        // Month Wheel
+                        Picker("月", selection: $selectedMonth) {
+                            ForEach(availableMonths, id: \.self) { month in
+                                Text("\(month)月").tag(month)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .clipped()
+                        .frame(maxWidth: .infinity)
+                        .onChange(of: selectedMonth) { _, newMonth in
+                            revalidateDay(month: newMonth)
+                        }
+
+                        // Day Wheel
+                        Picker("日", selection: $selectedDay) {
+                            ForEach(availableDays, id: \.self) { day in
+                                Text("\(day)日").tag(day)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .clipped()
+                        .frame(maxWidth: .infinity)
+                    }
+                    .frame(height: 160)
+
+                    if let group = matchedGroup {
+                        HStack(spacing: 6) {
+                            Image(systemName: "waveform")
+                                .foregroundStyle(Color.accentColor)
+                            Text("该日期共有 \(group.recordings.count) 条录音")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .navigationTitle("快速跳转日期")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("跳转") {
+                        if let group = matchedGroup {
+                            onSelectDate(group.date)
+                        }
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(matchedGroup == nil)
+                }
+            }
+            .onAppear {
+                initializeSelection()
+            }
+        }
+        .presentationDetents([.height(320)])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func initializeSelection() {
+        let target = initialDate ?? recordingGroups.first?.date ?? Date()
+        let targetYear = calendar.component(.year, from: target)
+        if availableYears.contains(targetYear) {
+            selectedYear = targetYear
+        } else {
+            selectedYear = availableYears.first ?? targetYear
+        }
+
+        let months = Array(Set(recordingGroups.filter {
+            calendar.component(.year, from: $0.date) == selectedYear
+        }.map {
+            calendar.component(.month, from: $0.date)
+        })).sorted(by: >)
+
+        let targetMonth = calendar.component(.month, from: target)
+        if months.contains(targetMonth) {
+            selectedMonth = targetMonth
+        } else {
+            selectedMonth = months.first ?? 1
+        }
+
+        let days = Array(Set(recordingGroups.filter {
+            calendar.component(.year, from: $0.date) == selectedYear &&
+            calendar.component(.month, from: $0.date) == selectedMonth
+        }.map {
+            calendar.component(.day, from: $0.date)
+        })).sorted(by: >)
+
+        let targetDay = calendar.component(.day, from: target)
+        if days.contains(targetDay) {
+            selectedDay = targetDay
+        } else {
+            selectedDay = days.first ?? 1
+        }
+    }
+
+    private func revalidateMonthAndDay(year: Int) {
+        let months = Array(Set(recordingGroups.filter {
+            calendar.component(.year, from: $0.date) == year
+        }.map {
+            calendar.component(.month, from: $0.date)
+        })).sorted(by: >)
+
+        if !months.contains(selectedMonth) {
+            selectedMonth = months.first ?? 1
+        }
+        revalidateDay(month: selectedMonth)
+    }
+
+    private func revalidateDay(month: Int) {
+        let days = Array(Set(recordingGroups.filter {
+            calendar.component(.year, from: $0.date) == selectedYear &&
+            calendar.component(.month, from: $0.date) == month
+        }.map {
+            calendar.component(.day, from: $0.date)
+        })).sorted(by: >)
+
+        if !days.contains(selectedDay) {
+            selectedDay = days.first ?? 1
+        }
+    }
+}
+
 

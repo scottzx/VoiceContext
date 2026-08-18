@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>技术支持与帮助中心 - 听记 (VoiceContext)</title>
+  <style>
+  
+:root {
+  --primary: #0066cc;
+  --primary-dark: #004499;
+  --bg-page: #f8fafc;
+  --bg-card: #ffffff;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --accent-glow: rgba(0, 102, 204, 0.1);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #38bdf8;
+    --primary-dark: #0284c7;
+    --bg-page: #0b0f19;
+    --bg-card: #151d30;
+    --text-main: #f1f5f9;
+    --text-muted: #94a3b8;
+    --border: #263352;
+    --accent-glow: rgba(56, 189, 248, 0.15);
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  padding: 0;
+}
+.header {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
+.header-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.brand {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-main);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.brand-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  background: var(--accent-glow);
+  color: var(--primary);
+  border-radius: 999px;
+  font-weight: 600;
+}
+nav a {
+  margin-left: 1.25rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+nav a:hover, nav a.active { color: var(--primary); }
+.container {
+  max-width: 840px;
+  margin: 2.5rem auto 4rem auto;
+  padding: 0 1.5rem;
+}
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2.5rem;
+  box-shadow: 0 4px 20px -2px var(--accent-glow);
+}
+h1 { font-size: 2rem; font-weight: 800; margin-bottom: 0.5rem; color: var(--text-main); }
+.subtitle { color: var(--text-muted); font-size: 1.05rem; margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
+h2 { font-size: 1.35rem; font-weight: 700; margin: 1.8rem 0 0.8rem 0; color: var(--text-main); }
+h3 { font-size: 1.1rem; font-weight: 600; margin: 1.2rem 0 0.5rem 0; }
+p, ul, ol { margin-bottom: 1rem; color: var(--text-main); }
+ul, ol { padding-left: 1.5rem; }
+li { margin-bottom: 0.4rem; }
+.highlight-box {
+  background: var(--accent-glow);
+  border-left: 4px solid var(--primary);
+  padding: 1rem 1.25rem;
+  border-radius: 0 8px 8px 0;
+  margin: 1.25rem 0;
+}
+footer {
+  text-align: center;
+  padding: 2rem 1.5rem 3rem 1.5rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  border-top: 1px solid var(--border);
+}
+.btn {
+  display: inline-block;
+  background: var(--primary);
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+.btn:hover { opacity: 0.9; }
+
+  .faq-item {
+    border-bottom: 1px solid var(--border);
+    padding: 1.25rem 0;
+  }
+  .faq-item:last-child { border-bottom: none; }
+  .faq-question {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-main);
+  }
+  .faq-answer {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin: 0;
+  }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="index.html" class="brand">
+        🎙️ 听记 <span class="brand-badge">VoiceContext</span>
+      </a>
+      <nav>
+        <a href="index.html">首页</a>
+        <a href="privacy.html">隐私政策</a>
+        <a href="terms.html">用户协议</a>
+        <a href="support.html" class="active">技术支持</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="card">
+      <h1>技术支持与常见问题 (Support & FAQ)</h1>
+      <div class="subtitle">我们随时为您提供帮助，解答关于《听记》的使用问题。</div>
+
+      <h2>常见问题解答 (FAQ)</h2>
+      
+      <div class="faq-item">
+        <div class="faq-question">Q: 《听记》需要联网才能转文字吗？</div>
+        <div class="faq-answer">不需要。《听记》内置高效的离线语音识别引擎，所有语音转写和声纹计算均在手机芯片本地执行。在飞行模式、高铁、地下车库等无网络环境下均可顺畅使用。</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 我的录音和会议内容安全吗？会被上传吗？</div>
+        <div class="faq-answer">绝对安全。我们坚持 Local-First（本地优先）设计，您的所有原始音频、转写文本和声纹档案仅保留在您的设备本地沙盒中，绝不上传至任何第三方云端。</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 如何快速开始录音？</div>
+        <div class="faq-answer">您可以将《听记》的小组件（Widget）添加到 iPhone 锁定屏幕或主屏幕，无需打开 App，轻点小组件即可瞬间启动录制。</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 录音文件如何导出或在电脑上查看？</div>
+        <div class="faq-answer">在 App 内点击任意记录详情页右上角菜单，选择“导出”即可将文字导出为 Markdown (.md) 或 JSON 格式，也可将音频以标准 AAC (.m4a) 格式分享至系统隔空投送（AirDrop）、微信或存储到“文件”App。</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 录音过程中来电话或被微信语音中断怎么办？</div>
+        <div class="faq-answer">《听记》具备完善的音频中断自愈保护机制。当遇到电话或闹钟中断时，App 会自动安全封存已录制的分段音频；中断结束后您可以随时继续录音，数据不会丢失。</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Q: 硬件与系统要求是什么？</div>
+        <div class="faq-answer">支持运行 iOS 18.0 及以上版本的 iPhone 设备。建议在搭载 A14 仿生芯片及更新机型上使用以获得最佳的离线转写速度体验。</div>
+      </div>
+
+      <h2>联系我们与反馈</h2>
+      <p>如果您在使用过程中遇到任何异常、崩溃或有新功能建议，欢迎随时联系我们：</p>
+      <ul>
+        <li><strong>技术支持邮箱：</strong> support@voicecontext.app</li>
+        <li><strong>问题反馈 GitHub Issues：</strong> <a href="https://github.com/scottzx/VoiceContext/issues" target="_blank">https://github.com/scottzx/VoiceContext/issues</a></li>
+        <li><strong>开发者主页：</strong> <a href="https://github.com/scottzx" target="_blank">https://github.com/scottzx</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    <p>© 2026 听记 (VoiceContext). 保留所有权利。</p>
+  </footer>
+</body>
+</html>
