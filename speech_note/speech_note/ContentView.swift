@@ -255,6 +255,7 @@ struct ContentView: View {
     @State private var isDateJumpSheetPresented = false
     @State private var jumpTargetDate: Date? = nil
     @State private var currentFocusedDate: Date? = nil
+    @State private var isFirstTimeLocationPromptPresented = false
     /// Set by the home-screen Record Widget deep link (`voicecontext://start-recording`).
     @Binding private var openStartRecording: Bool
     private let isRecordingDetailFixtureEnabled: Bool
@@ -321,8 +322,20 @@ struct ContentView: View {
             isRecordingScreenPresented = true
             return
         }
+        triggerStartRecording(isMeeting: false)
+    }
+
+    private func requestStartRecording(isMeeting: Bool = false) {
+        if !LocationAccess.hasPromptedLocationRecording {
+            isFirstTimeLocationPromptPresented = true
+        } else {
+            triggerStartRecording(isMeeting: isMeeting)
+        }
+    }
+
+    private func triggerStartRecording(isMeeting: Bool = false) {
         Task {
-            await model.start(title: "", isMeeting: false)
+            await model.start(title: "", isMeeting: isMeeting)
             if model.captureIsActive {
                 isRecordingScreenPresented = true
             }
@@ -387,12 +400,7 @@ struct ContentView: View {
                             if micHeld {
                                 isRecordingScreenPresented = true
                             } else {
-                                Task {
-                                    await model.start()
-                                    if model.captureIsActive {
-                                        isRecordingScreenPresented = true
-                                    }
-                                }
+                                requestStartRecording()
                             }
                         } label: {
                             Image(systemName: micHeld ? "waveform.circle.fill" : "mic.circle.fill")
@@ -427,6 +435,23 @@ struct ContentView: View {
         }
         .sheet(isPresented: $isSettingsPresented) {
             SettingsScreen(model: model, reduceMotion: reduceMotion)
+        }
+        .alert("记录录音地点", isPresented: $isFirstTimeLocationPromptPresented) {
+            Button("允许并记录") {
+                LocationAccess.hasPromptedLocationRecording = true
+                LocationAccess.isAutoRecordLocationEnabled = true
+                Task {
+                    _ = await LocationAccess.requestPermissionIfNeeded()
+                    triggerStartRecording()
+                }
+            }
+            Button("暂不需要", role: .cancel) {
+                LocationAccess.hasPromptedLocationRecording = true
+                LocationAccess.isAutoRecordLocationEnabled = false
+                triggerStartRecording()
+            }
+        } message: {
+            Text("是否允许 VoiceContext 在录音时自动记录当前发生的地理位置与地址？你也可以稍后在「设置」中随时更改。")
         }
         .alert("新建文件夹", isPresented: $isNewFolderAlertPresented) {
             TextField("文件夹名称", text: $newFolderNameInput)
@@ -967,12 +992,7 @@ struct ContentView: View {
                 if micHeld {
                     isRecordingScreenPresented = true
                 } else {
-                    Task {
-                        await model.start()
-                        if model.captureIsActive {
-                            isRecordingScreenPresented = true
-                        }
-                    }
+                    requestStartRecording()
                 }
             } label: {
                 ZStack {
@@ -1249,7 +1269,7 @@ private struct RecordingRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(recording.title?.isEmpty == false ? recording.title! : defaultTitle)
                     .font(.headline)
                     .foregroundStyle(.primary)
@@ -1264,13 +1284,25 @@ private struct RecordingRow: View {
                         statusIndicator
                     }
                 }
+
+                if let location = recording.locationName, !location.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "mappin.and.ellipse")
+                            .font(.caption2)
+                        Text(location)
+                            .font(.caption)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 4)
         }
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(recording.title?.isEmpty == false ? recording.title! : defaultTitle)，\(metadata)，\(RecordingStatusStyle.text(for: recording.state))")
+        .accessibilityLabel("\(recording.title?.isEmpty == false ? recording.title! : defaultTitle)，\(metadata)\(recording.locationName.map { "，地点：\($0)" } ?? "")，\(RecordingStatusStyle.text(for: recording.state))")
     }
 
     @ViewBuilder
@@ -1321,7 +1353,7 @@ private struct RecordingRow: View {
     }
 
     private var metadata: String {
-        let time = recording.startedAt.formatted(date: .omitted, time: .shortened)
+        let time = recording.startedAt.standardTimeString
         let duration: String
         if audioDuration > 0 {
             duration = Self.duration(audioDuration)
@@ -1565,6 +1597,7 @@ private struct SettingsScreen: View {
     @AppStorage(OnboardingPreferences.encryptedVoiceprintSyncKey) private var encryptedVoiceprintSyncEnabled = false
     @AppStorage(TranscriptionLanguageMode.preferenceKey) private var languageModeRaw =
         TranscriptionLanguageMode.zhEnBilingual.rawValue
+    @AppStorage(BackgroundTranscriptionPreferences.enabledKey) private var backgroundTranscriptionEnabled = false
     @State private var syncStatus = DocumentSyncStatusCenter.shared
     let model: RecordingCoreModel
     let reduceMotion: Bool
@@ -1605,6 +1638,18 @@ private struct SettingsScreen: View {
                     Text("中英双语为默认，由模型自动识别。英语优先将新任务偏向英文解码。仅影响之后开始的新录音与新导入；已完成文稿不会自动重跑。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+
+                    if #available(iOS 26.0, *) {
+                        Toggle("允许转写在后台继续", isOn: $backgroundTranscriptionEnabled)
+                            .accessibilityIdentifier("settings-background-transcription")
+                        Text("仅在你停止录音、导入或手动重试后申请。语音仍在本机处理；系统可因电量、发热或你的取消操作中止，之后回到应用会继续。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("iOS 26 以上可允许长转写在后台继续；当前系统会在回到应用后自动续跑。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("同步") {
@@ -1735,6 +1780,9 @@ private struct SettingsScreen: View {
                         DocumentSyncStatusCenter.shared.record(voiceprint: result)
                     }
                 }
+            }
+            .onChange(of: backgroundTranscriptionEnabled) { _, _ in
+                Task { await model.backgroundTranscriptionPreferenceChanged() }
             }
             .safeAreaInset(edge: .top, spacing: 0) {
                 if model.showsSessionChrome {
@@ -2329,5 +2377,4 @@ private struct QuickDateJumpSheet: View {
         }
     }
 }
-
 

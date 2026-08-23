@@ -1,7 +1,9 @@
 import SwiftUI
+import StoreKit
 
 struct PurchaseUnlockView: View {
     @Bindable var trial: TrialEntitlementController
+    @State private var isPresentingOfferCodeSheet = false
 
     var body: some View {
         List {
@@ -42,8 +44,13 @@ struct PurchaseUnlockView: View {
                         Task { await trial.restore() }
                     }
                     .disabled(trial.isBusy)
+
+                    Button("兑换优惠码") {
+                        isPresentingOfferCodeSheet = true
+                    }
+                    .disabled(trial.isBusy)
                 } footer: {
-                    Text("试用到期后仍可录音并保存音频；解锁后自动继续转写积压任务。")
+                    Text("支持输入 App Store 兑换码直接解锁；试用到期后仍可录音并保存音频。")
                 }
             }
 
@@ -54,9 +61,25 @@ struct PurchaseUnlockView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            #if DEBUG
+            Section("开发测试") {
+                Button("重置 3 天试用倒计时") {
+                    trial.resetTrialForTesting()
+                }
+                Button("模拟试用到期") {
+                    trial.simulateExhaustionForTesting()
+                }
+            }
+            #endif
         }
         .navigationTitle("试用与永久解锁")
         .navigationBarTitleDisplayMode(.inline)
+        .offerCodeRedemption(isPresented: $isPresentingOfferCodeSheet) { result in
+            Task {
+                await trial.refreshFromStore()
+            }
+        }
         .task {
             trial.start()
             trial.noteAppBecameActive()

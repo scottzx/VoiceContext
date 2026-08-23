@@ -167,6 +167,14 @@ final class TrialEntitlementController {
     /// Test / DEBUG helper to force the expired boundary without waiting 72h.
     func simulateExhaustionForTesting() {
         ledger.expireTrialForTesting()
+        statusMessage = "已模拟试用到期"
+        publishLedger()
+    }
+
+    /// Test / DEBUG helper to reset the 3-day trial clock and clear Keychain stamps.
+    func resetTrialForTesting() {
+        ledger.resetTrialForTesting()
+        statusMessage = "已重置 3 天试用倒计时"
         publishLedger()
     }
 
@@ -197,7 +205,7 @@ final class TrialEntitlementController {
     private func listenForTransactions() async {
         for await result in Transaction.updates {
             guard case let .verified(transaction) = result else { continue }
-            guard transaction.productID == TrialQuotaLedger.productID else {
+            guard TrialQuotaLedger.supportedProductIDs.contains(transaction.productID) else {
                 await transaction.finish()
                 continue
             }

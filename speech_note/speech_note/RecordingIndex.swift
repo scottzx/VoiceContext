@@ -109,7 +109,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: Recording?
             try query(
-                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode FROM recordings WHERE id = ?",
+                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name FROM recordings WHERE id = ?",
                 [.text(id.uuidString)]
             ) { statement in
                 result = try decodeRecording(statement)
@@ -122,7 +122,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: [Recording] = []
             try query(
-                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode FROM recordings ORDER BY started_at"
+                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name FROM recordings ORDER BY started_at"
             ) { statement in
                 let recording = try decodeRecording(statement)
                 if states == nil || states?.contains(recording.state) == true {
@@ -196,7 +196,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: [RecordingJob] = []
             try query(
-                "SELECT id, recording_id, chunk_id, processing_range_id, kind, state, attempt_count, last_error, created_at, updated_at FROM recording_jobs WHERE recording_id = ? ORDER BY created_at",
+                "SELECT id, recording_id, chunk_id, processing_range_id, kind, state, attempt_count, last_error, pipeline_version, execution_token, started_at, termination_reason, created_at, updated_at FROM recording_jobs WHERE recording_id = ? ORDER BY created_at",
                 [.text(recordingID.uuidString)]
             ) { statement in
                 result.append(try decodeJob(statement))
@@ -212,7 +212,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: [RecordingJob] = []
             try query(
-                "SELECT id, recording_id, chunk_id, processing_range_id, kind, state, attempt_count, last_error, created_at, updated_at FROM recording_jobs WHERE kind = ? ORDER BY created_at",
+                "SELECT id, recording_id, chunk_id, processing_range_id, kind, state, attempt_count, last_error, pipeline_version, execution_token, started_at, termination_reason, created_at, updated_at FROM recording_jobs WHERE kind = ? ORDER BY created_at",
                 [.text(kind.rawValue)]
             ) { statement in
                 let job = try decodeJob(statement)
@@ -221,6 +221,134 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
             }
             return result
         }
+    }
+
+    /// Atomically transitions exactly one pending transcription job to a
+    /// running lease, while refusing the claim if any transcription lease is
+    /// already active in this database.
+    func claimTranscriptionJob(
+        id: UUID,
+        executionToken: UUID,
+        pipelineVersion: Int,
+        at date: Date
+    ) throws -> RecordingJob? {
+        try lock.withLock {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try execute(
+                    """
+                    UPDATE recording_jobs
+                    SET state = 'running',
+                        attempt_count = attempt_count + 1,
+                        last_error = NULL,
+                        pipeline_version = ?,
+                        execution_token = ?,
+                        started_at = ?,
+                        termination_reason = NULL,
+                        updated_at = ?
+                    WHERE id = ?
+                      AND kind = 'transcription'
+                      AND state = 'pending'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM recording_jobs
+                          WHERE kind = 'transcription' AND state = 'running'
+                      )
+                    """,
+                    [
+                        .int(Int64(pipelineVersion)),
+                        .text(executionToken.uuidString),
+                        .double(date.timeIntervalSince1970),
+                        .double(date.timeIntervalSince1970),
+                        .text(id.uuidString),
+                    ]
+                )
+                guard sqlite3_changes(database) == 1 else {
+                    try execute("COMMIT")
+                    return nil
+                }
+                let claimed = try job(id: id)
+                try execute("COMMIT")
+                return claimed
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
+        }
+    }
+
+    /// Completes, fails, or releases only the attempt that still owns this
+    /// exact token. A late task therefore cannot mutate a replacement attempt.
+    func finishTranscriptionLease(
+        jobID: UUID,
+        executionToken: UUID,
+        state: RecordingJobState,
+        lastError: String?,
+        terminationReason: String?,
+        at date: Date
+    ) throws -> RecordingJob? {
+        precondition(state != .running)
+        return try lock.withLock {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try execute(
+                    """
+                    UPDATE recording_jobs
+                    SET state = ?, last_error = ?, execution_token = NULL,
+                        termination_reason = ?, updated_at = ?
+                    WHERE id = ? AND state = 'running' AND execution_token = ?
+                    """,
+                    [
+                        .text(state.rawValue),
+                        lastError.sqliteValue,
+                        terminationReason.sqliteValue,
+                        .double(date.timeIntervalSince1970),
+                        .text(jobID.uuidString),
+                        .text(executionToken.uuidString),
+                    ]
+                )
+                guard sqlite3_changes(database) == 1 else {
+                    try execute("COMMIT")
+                    return nil
+                }
+                let updated = try job(id: jobID)
+                try execute("COMMIT")
+                return updated
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
+        }
+    }
+
+    func validateTranscriptionLease(jobID: UUID, executionToken: UUID, pipelineVersion: Int) throws -> Bool {
+        try lock.withLock {
+            var valid = false
+            try query(
+                """
+                SELECT 1 FROM recording_jobs
+                WHERE id = ? AND kind = 'transcription' AND state = 'running'
+                  AND execution_token = ? AND pipeline_version = ?
+                LIMIT 1
+                """,
+                [
+                    .text(jobID.uuidString),
+                    .text(executionToken.uuidString),
+                    .int(Int64(pipelineVersion)),
+                ]
+            ) { _ in valid = true }
+            return valid
+        }
+    }
+
+    private func job(id: UUID) throws -> RecordingJob? {
+        var result: RecordingJob?
+        try query(
+            "SELECT id, recording_id, chunk_id, processing_range_id, kind, state, attempt_count, last_error, pipeline_version, execution_token, started_at, termination_reason, created_at, updated_at FROM recording_jobs WHERE id = ?",
+            [.text(id.uuidString)]
+        ) { statement in
+            result = try decodeJob(statement)
+        }
+        return result
     }
 
     func importedAudioAsset(recordingID: UUID) throws -> ImportedAudioAsset? {
@@ -359,14 +487,14 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
 
     private func migrate() throws {
         let current = try scalarInt("PRAGMA user_version")
-        guard current <= 5 else {
-            throw IndexError.open("数据库版本 \(current) 高于当前应用支持的版本 5")
+        guard current <= 7 else {
+            throw IndexError.open("数据库版本 \(current) 高于当前应用支持的版本 7")
         }
         if current == 0 {
             try execute("BEGIN IMMEDIATE")
             do {
                 try createSchemaV3()
-                try execute("PRAGMA user_version = 5")
+                try execute("PRAGMA user_version = 7")
                 try execute("COMMIT")
             } catch {
                 try? execute("ROLLBACK")
@@ -454,6 +582,34 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                 throw error
             }
         }
+        let afterV5 = try scalarInt("PRAGMA user_version")
+        if afterV5 == 5 {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try execute("ALTER TABLE recordings ADD COLUMN location_name TEXT")
+                try execute("PRAGMA user_version = 6")
+                try execute("COMMIT")
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
+        }
+        let afterV6 = try scalarInt("PRAGMA user_version")
+        if afterV6 == 6 {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try execute("ALTER TABLE recording_jobs ADD COLUMN pipeline_version INTEGER NOT NULL DEFAULT 2")
+                try execute("ALTER TABLE recording_jobs ADD COLUMN execution_token TEXT")
+                try execute("ALTER TABLE recording_jobs ADD COLUMN started_at REAL")
+                try execute("ALTER TABLE recording_jobs ADD COLUMN termination_reason TEXT")
+                try execute("CREATE UNIQUE INDEX recording_jobs_one_speaker_finalization ON recording_jobs(recording_id, kind) WHERE kind = 'speakerFinalization'")
+                try execute("PRAGMA user_version = 7")
+                try execute("COMMIT")
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
+        }
     }
 
     private func createSchemaV3() throws {
@@ -471,7 +627,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                 origin TEXT NOT NULL DEFAULT 'microphone',
                 source_filename TEXT,
                 source_uttype TEXT,
-                language_mode TEXT NOT NULL DEFAULT 'zh_en_bilingual'
+                language_mode TEXT NOT NULL DEFAULT 'zh_en_bilingual',
+                location_name TEXT
             )
             """)
         try execute("""
@@ -500,6 +657,10 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                 state TEXT NOT NULL,
                 attempt_count INTEGER NOT NULL,
                 last_error TEXT,
+                pipeline_version INTEGER NOT NULL DEFAULT 2,
+                execution_token TEXT,
+                started_at REAL,
+                termination_reason TEXT,
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
             )
@@ -507,6 +668,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try execute("CREATE INDEX recording_jobs_recording_state ON recording_jobs(recording_id, state)")
         try execute("CREATE INDEX recording_jobs_chunk ON recording_jobs(recording_id, chunk_id)")
         try execute("CREATE INDEX recording_jobs_range ON recording_jobs(recording_id, processing_range_id)")
+        try execute("CREATE UNIQUE INDEX recording_jobs_one_speaker_finalization ON recording_jobs(recording_id, kind) WHERE kind = 'speakerFinalization'")
         try execute("""
             CREATE TABLE recording_gaps(
                 id TEXT PRIMARY KEY NOT NULL,
@@ -568,8 +730,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         case let .recordingCreated(recording):
             try execute(
                 """
-                INSERT INTO recordings(id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO recordings(id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO NOTHING
                 """,
                 recording.bindings
@@ -596,12 +758,16 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         case let .jobUpserted(job):
             try execute(
                 """
-                INSERT INTO recording_jobs(id, recording_id, chunk_id, processing_range_id, kind, state, attempt_count, last_error, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO recording_jobs(id, recording_id, chunk_id, processing_range_id, kind, state, attempt_count, last_error, pipeline_version, execution_token, started_at, termination_reason, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     state = excluded.state,
                     attempt_count = excluded.attempt_count,
                     last_error = excluded.last_error,
+                    pipeline_version = excluded.pipeline_version,
+                    execution_token = excluded.execution_token,
+                    started_at = excluded.started_at,
+                    termination_reason = excluded.termination_reason,
                     updated_at = excluded.updated_at
                 """,
                 job.bindings
@@ -639,6 +805,11 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
             try execute(
                 "UPDATE recordings SET title = ?, updated_at = ? WHERE id = ?",
                 [title.sqliteValue, .double(occurredAt.timeIntervalSince1970), .text(recordingID.uuidString)]
+            )
+        case let .recordingLocationChanged(recordingID, locationName):
+            try execute(
+                "UPDATE recordings SET location_name = ?, updated_at = ? WHERE id = ?",
+                [locationName.sqliteValue, .double(occurredAt.timeIntervalSince1970), .text(recordingID.uuidString)]
             )
         case let .importedAudioAssetCreated(asset):
             try execute(
@@ -719,6 +890,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         let origin = RecordingOrigin(rawValue: optionalText(statement, 9) ?? "") ?? .microphone
         let languageMode = TranscriptionLanguageMode(rawValue: optionalText(statement, 12) ?? "")
             ?? .zhEnBilingual
+        let locationName = optionalText(statement, 13)
         return Recording(
             id: id,
             startedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
@@ -734,7 +906,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
             origin: origin,
             sourceFilename: optionalText(statement, 10),
             sourceUTType: optionalText(statement, 11),
-            languageMode: languageMode
+            languageMode: languageMode,
+            locationName: locationName
         )
     }
 
@@ -754,8 +927,12 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
             state: state,
             attemptCount: Int(sqlite3_column_int64(statement, 6)),
             lastError: optionalText(statement, 7),
-            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 8)),
-            updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 9))
+            pipelineVersion: Int(sqlite3_column_int64(statement, 8)),
+            executionToken: optionalUUID(statement, 9),
+            startedAt: optionalDate(statement, 10),
+            terminationReason: optionalText(statement, 11),
+            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 12)),
+            updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 13))
         )
     }
 
@@ -930,6 +1107,7 @@ private extension RecordingJournalEvent {
         case .chunkPinChanged: "chunkPinChanged"
         case .chunkAudioRemoved: "chunkAudioRemoved"
         case .recordingTitleChanged: "recordingTitleChanged"
+        case .recordingLocationChanged: "recordingLocationChanged"
         case .importedAudioAssetCreated: "importedAudioAssetCreated"
         case .importedAudioAssetUpdated: "importedAudioAssetUpdated"
         case .importedAudioAssetRemoved: "importedAudioAssetRemoved"
@@ -967,6 +1145,7 @@ private extension Recording {
             sourceFilename.sqliteValue,
             sourceUTType.sqliteValue,
             .text(languageMode.rawValue),
+            locationName.sqliteValue,
         ]
     }
 }
@@ -1000,6 +1179,10 @@ private extension RecordingJob {
             .text(state.rawValue),
             .int(Int64(attemptCount)),
             lastError.sqliteValue,
+            .int(Int64(pipelineVersion)),
+            executionToken.map { .text($0.uuidString) } ?? .null,
+            startedAt.sqliteValue,
+            terminationReason.sqliteValue,
             .double(createdAt.timeIntervalSince1970),
             .double(updatedAt.timeIntervalSince1970),
         ]

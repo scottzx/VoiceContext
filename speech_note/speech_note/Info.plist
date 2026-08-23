@@ -6,6 +6,10 @@
 	<string>听记</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>YiJie.speech-note.transcription.*</string>
+	</array>
 	<key>LSSupportsNonExcludableDocuments</key>
 	<true/>
 	<key>UIFileSharingEnabled</key>
@@ -29,5 +33,7 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VoiceContext 使用麦克风录制你主动开始的会议或日常语音。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>VoiceContext 会在录音时获取你的位置，以便自动记录录音发生的地点。</string>
 </dict>
 </plist>

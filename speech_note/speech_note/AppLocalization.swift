@@ -394,3 +394,54 @@ extension String {
         AppLanguageCenter.shared.text(key)
     }
 }
+
+/// Standardized date/time formatters ensuring unified YYYY-MM-DD HH:MM format across the app.
+extension Date {
+    private static let standardDateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter
+    }()
+
+    private static let standardDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    private static let standardTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private static let standardTimeWithSecondsFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    /// e.g. "2026-08-18 21:04"
+    var standardDateTimeString: String {
+        Self.standardDateTimeFormatter.string(from: self)
+    }
+
+    /// e.g. "2026-08-18"
+    var standardDateString: String {
+        Self.standardDateFormatter.string(from: self)
+    }
+
+    /// e.g. "21:04"
+    var standardTimeString: String {
+        Self.standardTimeFormatter.string(from: self)
+    }
+
+    /// e.g. "21:04:05"
+    var standardTimeWithSecondsString: String {
+        Self.standardTimeWithSecondsFormatter.string(from: self)
+    }
+}

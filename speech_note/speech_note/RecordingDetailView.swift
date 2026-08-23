@@ -37,7 +37,7 @@ struct RecordingDetailScreen: View {
     @State private var speakerToRename: MeetingSpeakerBinding? = nil
     @State private var newSpeakerName: String = ""
     @State private var isRenameAlertPresented = false
-    @State private var dragOffset: CGFloat = 0
+    @State private var selectedBubbleID: UUID? = nil
     @State private var isCopiedToastPresented = false
     @State private var isExportSheetPresented = false
     @State private var isMetadataEditSheetPresented = false
@@ -184,7 +184,8 @@ struct RecordingDetailScreen: View {
                     model: model,
                     recordingID: recordingID,
                     initialTitle: displayTitle,
-                    initialTags: transcript?.tags ?? []
+                    initialTags: transcript?.tags ?? [],
+                    initialLocation: currentRecording.locationName
                 )
             }
             .sheet(item: $editingSegmentRow) { row in
@@ -290,17 +291,17 @@ struct RecordingDetailScreen: View {
     // MARK: - Header Card
 
     private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(displayTitle)
                 .font(.title2.weight(.bold))
                 .foregroundStyle(.primary)
                 .accessibilityIdentifier("detail-title")
 
-            // Meta tags row
+            // Meta tags row: 时间、时长、文件夹、状态
             HStack(spacing: 8) {
                 HStack(spacing: 4) {
                     Image(systemName: "calendar")
-                    Text(currentRecording.startedAt.formatted(date: .abbreviated, time: .shortened))
+                    Text(currentRecording.startedAt.standardDateTimeString)
                 }
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -327,6 +328,19 @@ struct RecordingDetailScreen: View {
                 Spacer()
 
                 statusPill
+            }
+
+            // 第三行：地理位置（独立一行）
+            if let location = currentRecording.locationName, !location.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "mappin.and.ellipse")
+                        .font(.caption)
+                    Text(location)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .foregroundStyle(.secondary)
             }
 
             if let transcript, !transcript.tags.isEmpty {
@@ -635,19 +649,6 @@ struct RecordingDetailScreen: View {
                         )
                     }
                 }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 12)
-                        .onChanged { value in
-                            if value.translation.width < 0 && abs(value.translation.width) > abs(value.translation.height) {
-                                dragOffset = max(value.translation.width, -64)
-                            }
-                        }
-                        .onEnded { _ in
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
-                                dragOffset = 0
-                            }
-                        }
-                )
 
                 if !isCapturingThisRecording && !pendingOrRunningJobs.isEmpty {
                     HStack(spacing: 8) {
@@ -899,44 +900,46 @@ struct RecordingDetailScreen: View {
         bubble: SentenceBubble,
         isCurrent: Bool
     ) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            Button {
-                timelinePlayer.seek(to: bubble.startTime)
-            } label: {
-                HStack(alignment: .bottom, spacing: 8) {
-                    Text(bubble.text)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
+        let isSelected = selectedBubbleID == bubble.id
+        let showTimestamp = isCurrent || isSelected
 
-                    if bubble.isManuallyEdited {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.blue)
-                    }
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .bottom, spacing: 8) {
+                Text(bubble.text)
+                    .font(.body)
+                    .foregroundStyle(isCurrent ? Color.red : Color.primary)
+                    .multilineTextAlignment(.leading)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                    if isCurrent {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.red)
-                    }
+                if bubble.isManuallyEdited {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.blue)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(isCurrent ? Color.red.opacity(0.08) : Color(uiColor: .secondarySystemBackground))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .strokeBorder(isCurrent ? Color.red.opacity(0.35) : Color.clear, lineWidth: 1.5)
-                )
             }
-            .buttonStyle(.plain)
-            .id(bubble.id)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(isCurrent ? Color.red.opacity(0.12) : Color(uiColor: .secondarySystemBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(isCurrent ? Color.red.opacity(0.45) : Color.clear, lineWidth: 1.5)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 16))
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    selectedBubbleID = (selectedBubbleID == bubble.id ? nil : bubble.id)
+                }
+            }
             .contextMenu {
+                Button {
+                    timelinePlayer.seek(to: bubble.startTime)
+                } label: {
+                    Label("从此开始播放", systemImage: "play.circle")
+                }
                 Button {
                     editingSegmentRow = bubble.asTimedRow
                 } label: {
@@ -951,22 +954,17 @@ struct RecordingDetailScreen: View {
                 } label: {
                     Label("复制单句文本", systemImage: "doc.on.doc")
                 }
-                Button {
-                    timelinePlayer.seek(to: bubble.startTime)
-                } label: {
-                    Label("从此开始播放", systemImage: "play.circle")
-                }
             }
+            .id(bubble.id)
 
-            if abs(dragOffset) > 2 {
+            if showTimestamp {
                 Text(transcriptOffset(bubble.offsetMilliseconds))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .frame(width: max(0, -dragOffset), alignment: .trailing)
-                    .opacity(min(1.0, Double(-dragOffset) / 32.0))
+                    .padding(.horizontal, 6)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .offset(x: min(0, max(dragOffset, -64)))
     }
 
     // MARK: - Speakers & Client Management View
@@ -1104,11 +1102,13 @@ struct RecordingDetailScreen: View {
                 .font(.headline)
 
             VStack(spacing: 0) {
-                detailRow(label: "录制时间", value: currentRecording.startedAt.formatted(date: .abbreviated, time: .standard))
+                detailRow(label: "录制时间", value: currentRecording.startedAt.standardDateTimeString)
                 Divider()
                 detailRow(label: "录音时长", value: durationText)
                 Divider()
                 detailRow(label: "录音语言", value: transcript?.language.isEmpty == false ? (transcript?.language ?? "自动") : "自动")
+                Divider()
+                detailRow(label: "录音地点", value: currentRecording.locationName ?? "未记录")
                 Divider()
                 detailRow(label: "录音格式", value: "16kHz 16-bit 单声道 AAC")
                 Divider()
@@ -1491,26 +1491,36 @@ struct SpeakerClientPickerSheet: View {
     }
 }
 
-/// Sheet to edit recording metadata (title, tags) independently from transcript.
+/// Sheet to edit recording metadata (title, tags, location) independently from transcript.
 struct EditRecordingMetadataSheet: View {
     @Environment(\.dismiss) private var dismiss
     let model: RecordingCoreModel
     let recordingID: UUID
     let initialTitle: String
     let initialTags: [String]
+    let initialLocation: String?
 
     @State private var titleInput: String = ""
     @State private var tagsInput: String = ""
+    @State private var locationInput: String = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
 
-    init(model: RecordingCoreModel, recordingID: UUID, initialTitle: String, initialTags: [String]) {
+    init(
+        model: RecordingCoreModel,
+        recordingID: UUID,
+        initialTitle: String,
+        initialTags: [String],
+        initialLocation: String? = nil
+    ) {
         self.model = model
         self.recordingID = recordingID
         self.initialTitle = initialTitle
         self.initialTags = initialTags
+        self.initialLocation = initialLocation
         _titleInput = State(initialValue: initialTitle)
         _tagsInput = State(initialValue: initialTags.joined(separator: ", "))
+        _locationInput = State(initialValue: initialLocation ?? "")
     }
 
     var body: some View {
@@ -1518,6 +1528,17 @@ struct EditRecordingMetadataSheet: View {
             Form {
                 Section("录音标题") {
                     TextField("输入标题", text: $titleInput)
+                }
+
+                Section("录音地点") {
+                    TextField("输入录音发生的地址或地点（可选）", text: $locationInput)
+                    if !locationInput.isEmpty {
+                        Button("清空地点") {
+                            locationInput = ""
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("标签") {
@@ -1553,7 +1574,8 @@ struct EditRecordingMetadataSheet: View {
                                 try await model.saveRecordingMetadata(
                                     recordingID: recordingID,
                                     title: titleInput,
-                                    tags: tags
+                                    tags: tags,
+                                    locationName: locationInput
                                 )
                                 dismiss()
                             } catch {

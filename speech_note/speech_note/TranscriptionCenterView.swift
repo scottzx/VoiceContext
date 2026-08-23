@@ -320,7 +320,7 @@ struct TranscriptionCenterView: View {
                                 .foregroundStyle(.secondary)
                         }
 
-                        Text(task.updatedAt.formatted(date: .omitted, time: .shortened))
+                        Text(task.updatedAt.standardTimeString)
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }

@@ -56,7 +56,7 @@ struct ImportAudioTranscriptionTests {
         try writeFixtureAudio(to: source, durationSeconds: 81)
 
         let repository = try RecordingRepository(rootURL: root)
-        #expect(await repository.schemaVersion == 5)
+        #expect(await repository.schemaVersion == 7)
 
         let importer = ImportAudioImporter()
         let imported = try importer.importAudio(from: source, into: root)
@@ -211,7 +211,7 @@ struct ImportAudioTranscriptionTests {
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let repository = try RecordingRepository(rootURL: root)
-        #expect(await repository.schemaVersion == 5)
+        #expect(await repository.schemaVersion == 7)
 
         let now = Date(timeIntervalSince1970: 1_785_913_200)
         let expiredStart = now.addingTimeInterval(-8 * 24 * 60 * 60)

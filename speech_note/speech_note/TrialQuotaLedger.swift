@@ -8,11 +8,12 @@ import Security
 /// deduct ASR voice-seconds. Unlock is a local flag mirrored from StoreKit 2
 /// non-consumable entitlement.
 nonisolated final class TrialQuotaLedger: @unchecked Sendable {
-    /// Homemade 72-hour wall-clock trial. Off until the official StoreKit trial is wired.
-    /// Ledger + purchase client stay compiled so tests and the future SDK hook remain.
-    static let isManualTrialEnabled = false
+    /// 72-hour (3-day) trial enabled with StoreKit 2 integration.
+    static let isManualTrialEnabled = true
     static let trialDuration: TimeInterval = 72 * 60 * 60
     static let productID = "YiJie.speech-note.lifetimeUnlock"
+    static let subscriptionProductID = "YiJie.speech-note.subscription.yearly"
+    static let supportedProductIDs: Set<String> = [productID, subscriptionProductID]
     static let currentSchemaVersion = 2
 
     struct Snapshot: Equatable, Sendable, Codable {
@@ -211,6 +212,19 @@ nonisolated final class TrialQuotaLedger: @unchecked Sendable {
     /// Test helper: expire the trial immediately without inventing ASR usage.
     func expireTrialForTesting() {
         replaceTrialStartedAtForTesting(now().addingTimeInterval(-(Self.trialDuration + 1)))
+    }
+
+    /// Test helper: reset the trial to start right now and wipe old Keychain timestamps.
+    func resetTrialForTesting(at date: Date? = nil) {
+        let start = date ?? now()
+        lock.lock()
+        defer { lock.unlock() }
+        try? keychain.clear()
+        try? keychain.save(start)
+        snapshot.trialStartedAt = start
+        snapshot.maxObservedElapsed = 0
+        snapshot.isUnlocked = false
+        persistLocked()
     }
 
     private func remainingSecondsLocked(at date: Date) -> TimeInterval {

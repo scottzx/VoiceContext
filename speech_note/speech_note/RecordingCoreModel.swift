@@ -126,6 +126,8 @@ final class RecordingCoreModel {
     private let inferenceService: SenseVoiceInferenceService
     private let transcriptStore: TranscriptDocumentStore
     private let publicDocumentPublisher: PublicDocumentPublisher
+    private let speakerFinalizationCoordinator: SpeakerFinalizationCoordinator
+    private let completionReconciler: CompletionReconciler
     private let skillPackSeeder: PublicSkillPackSeeder
     let folderCatalogStore: FolderCatalogStore
     private let folderiCloudMirror: FolderiCloudMirror
@@ -133,6 +135,7 @@ final class RecordingCoreModel {
     let clientCatalogStore: ClientCatalogStore
     private(set) var clientCatalog: ClientCatalogDocument = .empty()
     private let transcriptionScheduler: ForegroundTranscriptionScheduler
+    private let backgroundTranscriptionContinuation: BackgroundTranscriptionContinuation
     let trialEntitlement: TrialEntitlementController
     private let trialLedger: TrialQuotaLedger
     private let diagnostics = RecordingDiagnostics()
@@ -152,6 +155,11 @@ final class RecordingCoreModel {
         let transcriptStore = try TranscriptDocumentStore(rootURL: rootURL)
         self.transcriptStore = transcriptStore
         publicDocumentPublisher = PublicDocumentPublisher(rootURL: rootURL, enableDefaultiCloudMirror: true)
+        speakerFinalizationCoordinator = SpeakerFinalizationCoordinator()
+        completionReconciler = CompletionReconciler(
+            repository: repository,
+            transcriptStore: transcriptStore
+        )
         skillPackSeeder = PublicSkillPackSeeder(rootURL: rootURL)
         folderCatalogStore = FolderCatalogStore(rootURL: rootURL)
         folderiCloudMirror = FolderiCloudMirror(localRootURL: rootURL)
@@ -167,7 +175,7 @@ final class RecordingCoreModel {
             client: purchaseClient ?? StoreKitPurchaseUnlockClient()
         )
         self.trialEntitlement = entitlement
-        transcriptionScheduler = ForegroundTranscriptionScheduler(
+        let transcriptionScheduler = ForegroundTranscriptionScheduler(
             repository: repository,
             lifecycleGate: lifecycleGate,
             admissionPolicy: TranscriptionAdmissionPolicy(
@@ -175,19 +183,17 @@ final class RecordingCoreModel {
                     TrialQuotaLedger.isManualTrialEnabled && ledger.isPurchaseLocked
                 }
             ),
-            execute: { [repository, inferenceService, transcriptStore, publicDocumentPublisher] recordingID in
+            execute: { [repository, inferenceService, transcriptStore, publicDocumentPublisher] lease in
+                let recordingID = lease.recordingID
                 guard let recording = try await repository.recording(id: recordingID) else {
                     throw SenseVoiceInferenceService.InferenceError.runtime("找不到待写入文稿的录音")
                 }
-                let jobs = try await repository.jobs(recordingID: recordingID)
-                let runningJob = jobs.last {
-                    $0.kind == .transcription && $0.state == .running
-                }
 
-                if let rangeID = runningJob?.processingRangeID {
+                if case let .processingRange(rangeID) = lease.sourceTarget {
                     _ = try await Self.executeImportedRangeJob(
                         recording: recording,
                         rangeID: rangeID,
+                        lease: lease,
                         repository: repository,
                         inferenceService: inferenceService,
                         transcriptStore: transcriptStore,
@@ -205,7 +211,7 @@ final class RecordingCoreModel {
 
                 // Jobs created before minute-level processing have no chunk
                 // scope. Keep them as a one-time compatibility path.
-                guard let chunkID = runningJob?.chunkID else {
+                guard case let .audioChunk(chunkID) = lease.sourceTarget else {
                     var transcriptionResults: [(chunkID: UUID, text: String)] = []
                     var detectedLanguage = ""
                     var temporarySpeakers: [String] = []
@@ -231,6 +237,9 @@ final class RecordingCoreModel {
                         speakers: temporarySpeakers
                     )
                     try document.requireContent()
+                    guard try await repository.validateExecutionLease(lease) else {
+                        throw JobExecutionLeaseError.invalidated
+                    }
                     try await transcriptStore.write(document)
                     try? await Self.publishPublicDocuments(
                         document: document,
@@ -256,6 +265,9 @@ final class RecordingCoreModel {
                     guard case .noSpeechDetected = error else { throw error }
                     // VAD detected no speech (e.g. final silent segment):
                     // Safely mark continuation cleared and consider this chunk job cleanly completed.
+                    guard try await repository.validateExecutionLease(lease) else {
+                        throw JobExecutionLeaseError.invalidated
+                    }
                     _ = try? await repository.setChunkContinuation(
                         id: chunk.id,
                         requiresContinuation: false,
@@ -266,6 +278,9 @@ final class RecordingCoreModel {
                     guard case .emptyTranscript = error else { throw error }
                     // ASR returned empty transcript:
                     // Safely mark continuation cleared and consider this chunk job cleanly completed.
+                    guard try await repository.validateExecutionLease(lease) else {
+                        throw JobExecutionLeaseError.invalidated
+                    }
                     _ = try? await repository.setChunkContinuation(
                         id: chunk.id,
                         requiresContinuation: false,
@@ -274,6 +289,9 @@ final class RecordingCoreModel {
                     return
                 }
 
+                guard try await repository.validateExecutionLease(lease) else {
+                    throw JobExecutionLeaseError.invalidated
+                }
                 _ = try? await repository.setChunkContinuation(
                     id: chunk.id,
                     requiresContinuation: false,
@@ -281,6 +299,7 @@ final class RecordingCoreModel {
                 )
 
                 var drafts: [TranscriptDocumentV1.SegmentDraft] = []
+                var newObservations: [OfflineSpeakerObservation] = []
                 if !result.utteranceResults.isEmpty {
                     for u in result.utteranceResults {
                         let sourceRange = TranscriptDocumentV1.SourceRange(
@@ -295,6 +314,15 @@ final class RecordingCoreModel {
                                 startSample: u.startSample,
                                 endSample: u.endSample,
                                 sourceRanges: [sourceRange]
+                            )
+                        )
+                        newObservations.append(
+                            OfflineSpeakerObservation(
+                                startSample: u.startSample,
+                                endSample: u.endSample,
+                                embedding: u.embedding,
+                                exclusionReasons: [],
+                                onlineTemporaryLabel: nil
                             )
                         )
                     }
@@ -317,11 +345,31 @@ final class RecordingCoreModel {
                                 sourceRanges: sourceRanges
                             )
                         )
+                        newObservations.append(
+                            OfflineSpeakerObservation(
+                                startSample: chunk.startSample,
+                                endSample: chunk.endSample,
+                                embedding: result.speakerEmbedding,
+                                exclusionReasons: [],
+                                onlineTemporaryLabel: nil
+                            )
+                        )
                     }
                 }
 
                 if !drafts.isEmpty {
-                    let document = try? await transcriptStore.document(recordingID: recordingID)
+                    guard try await repository.validateExecutionLease(lease) else {
+                        throw JobExecutionLeaseError.invalidated
+                    }
+                    let commitStartedAt = Date()
+                    try SpeakerObservationStore.replaceBatch(
+                        newObservations,
+                        rootURL: repository.rootURL,
+                        recordingID: recordingID,
+                        batchID: chunk.id
+                    )
+
+                    let document = try await transcriptStore.document(recordingID: recordingID)
                     let updated = document?.appending(
                         recording: recording,
                         chunks: chunks,
@@ -336,17 +384,50 @@ final class RecordingCoreModel {
                         state: .processing,
                         speakers: result.temporarySpeakers
                     )
-                    try? await transcriptStore.write(updated)
-                    try? await Self.publishPublicDocuments(
-                        document: updated,
-                        repository: repository,
-                        transcriptStore: transcriptStore,
-                        publisher: publicDocumentPublisher
+                    guard try await repository.validateExecutionLease(lease) else {
+                        throw JobExecutionLeaseError.invalidated
+                    }
+                    try await transcriptStore.write(updated)
+                    let commitMilliseconds = Date().timeIntervalSince(commitStartedAt) * 1_000
+                    try TranscriptionStageMetricsStore.save(
+                        TranscriptionStageMetrics(
+                            recordingID: recordingID,
+                            batchID: chunk.id,
+                            audioDurationMilliseconds: result.audioDuration * 1_000,
+                            vadMilliseconds: result.vadMilliseconds,
+                            asrLoadMilliseconds: Double(result.loadMilliseconds),
+                            asrInferenceMilliseconds: Double(result.inferenceMilliseconds),
+                            embeddingMilliseconds: result.embeddingMilliseconds,
+                            commitMilliseconds: commitMilliseconds,
+                            thermalState: result.thermalState,
+                            completedAt: Date()
+                        ),
+                        rootURL: repository.rootURL
                     )
                 }
             }
 
         )
+        self.transcriptionScheduler = transcriptionScheduler
+        backgroundTranscriptionContinuation = BackgroundTranscriptionContinuation(
+            setBackgroundExecutionAllowed: { allowed in
+                await transcriptionScheduler.setContinuedBackgroundExecutionAllowed(allowed)
+            },
+            expireCurrentExecution: { [inferenceService] reason in
+                _ = await inferenceService.enteredBackground()
+                await transcriptionScheduler.expireCurrentExecution(reason: reason)
+            },
+            progressProvider: {
+                let snapshot = await transcriptionScheduler.queueSnapshot()
+                return BackgroundTranscriptionQueueProgress(
+                    pendingCount: snapshot.pending,
+                    runningCount: snapshot.running,
+                    completedCount: snapshot.completed,
+                    failedCount: snapshot.failed
+                )
+            }
+        )
+
         coordinator.onStateChanged = { [weak self] state in
             self?.presentationChanged(to: state)
         }
@@ -476,6 +557,14 @@ final class RecordingCoreModel {
                 title: normalizedTitle?.isEmpty == false ? normalizedTitle : nil
             )
             activeRecordingID = recordingID
+
+            if LocationAccess.isAutoRecordLocationEnabled {
+                Task { [weak self, recordingID] in
+                    if let locationName = await LocationAccess.fetchCurrentLocationAddress() {
+                        await self?.updateRecordingLocation(recordingID: recordingID, locationName: locationName)
+                    }
+                }
+            }
         } catch {
             if let recorderError = error as? AACSegmentRecorder.RecorderError,
                case .microphonePermissionDenied = recorderError {
@@ -529,6 +618,7 @@ final class RecordingCoreModel {
             // owns transcription, so stop must not also enqueue a legacy
             // whole-recording job with a nil chunkID.
             _ = try await coordinator.stop()
+            await backgroundTranscriptionContinuation.beginUserInitiatedTask()
         } catch {
             notice = error.localizedDescription
         }
@@ -600,6 +690,7 @@ final class RecordingCoreModel {
                     )
                 }
             }
+            await backgroundTranscriptionContinuation.beginUserInitiatedTask()
             notice = "已重新开始转写录音分片。"
         } catch {
             notice = "重试失败：\(error.localizedDescription)"
@@ -623,6 +714,7 @@ final class RecordingCoreModel {
                     await self?.applyTranscriptionOutcome(outcome)
                 }
             )
+            await backgroundTranscriptionContinuation.beginUserInitiatedTask()
             notice = "已重新提交转写任务。"
         } catch {
             notice = "重试任务失败：\(error.localizedDescription)"
@@ -647,6 +739,9 @@ final class RecordingCoreModel {
                     }
                 )
             }
+            if !failedJobs.isEmpty {
+                await backgroundTranscriptionContinuation.beginUserInitiatedTask()
+            }
             notice = failedJobs.isEmpty ? "当前没有失败的转写任务。" : "已重新排队 \(failedJobs.count) 个失败任务。"
         } catch {
             notice = "重试全部任务失败：\(error.localizedDescription)"
@@ -656,7 +751,13 @@ final class RecordingCoreModel {
 
     func stopAllTranscriptionJobs() async {
         await transcriptionScheduler.stopAll()
+        await backgroundTranscriptionContinuation.userStoppedAllTasks()
         notice = "已关停全部转写任务。"
+        await refresh()
+    }
+
+    func backgroundTranscriptionPreferenceChanged() async {
+        await backgroundTranscriptionContinuation.preferenceDidChange()
         await refresh()
     }
 
@@ -664,6 +765,7 @@ final class RecordingCoreModel {
         await transcriptionScheduler.resumeAll { [weak self] outcome in
             await self?.applyTranscriptionOutcome(outcome)
         }
+        await backgroundTranscriptionContinuation.beginUserInitiatedTask()
         notice = "已恢复全部转写任务。"
         await refresh()
     }
@@ -883,6 +985,7 @@ final class RecordingCoreModel {
                     }
                 )
             }
+            await backgroundTranscriptionContinuation.beginUserInitiatedTask()
             notice = "已导入 \(imported.asset.sourceFilename)，共 \(imported.ranges.count) 个处理范围"
             await refresh()
             return imported.recording.id
@@ -1087,7 +1190,8 @@ final class RecordingCoreModel {
     func saveRecordingMetadata(
         recordingID: UUID,
         title: String?,
-        tags: [String] = []
+        tags: [String] = [],
+        locationName: String? = nil
     ) async throws {
         let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalTitle = (trimmedTitle?.isEmpty == false) ? trimmedTitle : nil
@@ -1096,6 +1200,14 @@ final class RecordingCoreModel {
             title: finalTitle,
             at: Date()
         )
+        if let locationName {
+            let trimmedLocation = locationName.trimmingCharacters(in: .whitespacesAndNewlines)
+            try await repository.setRecordingLocation(
+                recordingID: recordingID,
+                locationName: trimmedLocation.isEmpty ? nil : trimmedLocation,
+                at: Date()
+            )
+        }
         if let document = try? await transcriptStore.document(recordingID: recordingID) {
             let updated = document.applyingUserEdits(
                 title: finalTitle,
@@ -1105,6 +1217,20 @@ final class RecordingCoreModel {
             try await transcriptStore.write(updated)
             _ = try? await publishPublicDocuments(for: updated)
         }
+        await refresh()
+    }
+
+    func updateRecordingLocation(
+        recordingID: UUID,
+        locationName: String?
+    ) async {
+        let trimmed = locationName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalLocation = (trimmed?.isEmpty == false) ? trimmed : nil
+        try? await repository.setRecordingLocation(
+            recordingID: recordingID,
+            locationName: finalLocation,
+            at: Date()
+        )
         await refresh()
     }
 
@@ -1339,9 +1465,12 @@ final class RecordingCoreModel {
         case .background:
             coordinator.applicationEnteredBackground()
             isInBackground = true
+            let continuedProcessingRequested = backgroundTranscriptionContinuation.isExecutionRequested
             Task { [inferenceService, transcriptionScheduler] in
                 await transcriptionScheduler.enteredBackground()
-                _ = await inferenceService.enteredBackground()
+                if !continuedProcessingRequested {
+                    _ = await inferenceService.enteredBackground()
+                }
             }
         case .active:
             coordinator.applicationBecameActive()
@@ -1485,6 +1614,7 @@ final class RecordingCoreModel {
 
     private func runRecovery() async {
         do {
+            try await transcriptionScheduler.beginRecoveryBarrier()
             let result = try await repository.recoverUnfinished(at: Date())
             // Retention for mic chunks and imported private assets (local-first).
             _ = try await repository.purgeExpiredAudio(at: Date())
@@ -1510,6 +1640,20 @@ final class RecordingCoreModel {
             }
 
             try await enqueueHistoricalChunkJobs()
+            // Rebuild completion projections while admission is still closed.
+            // This also resumes a final speaker pass whose ASR callback was
+            // lost just before process termination.
+            let reconciliations = try await completionReconciler.reconcileAll()
+            for (recordingID, reconciliation) in reconciliations {
+                guard case .needsSpeakerFinalization = reconciliation else { continue }
+                _ = try await speakerFinalizationCoordinator.runPersisted(
+                    recordingID: recordingID,
+                    repository: repository,
+                    transcriptStore: transcriptStore,
+                    publisher: publicDocumentPublisher
+                )
+                _ = try await completionReconciler.reconcile(recordingID: recordingID)
+            }
             try await transcriptionScheduler.resumePendingJobs(
                 onOutcome: { [weak self] outcome in
                     await self?.applyTranscriptionOutcome(outcome)
@@ -1527,6 +1671,12 @@ final class RecordingCoreModel {
                 recordings: try await repository.recordings()
             )
         } catch {
+            // Never leave admission permanently closed after a partial repair.
+            try? await transcriptionScheduler.resumePendingJobs(
+                onOutcome: { [weak self] outcome in
+                    await self?.applyTranscriptionOutcome(outcome)
+                }
+            )
             notice = "恢复失败：\(error.localizedDescription)"
         }
         await synchronizeFolders()
@@ -1661,6 +1811,7 @@ final class RecordingCoreModel {
     private static func executeImportedRangeJob(
         recording: Recording,
         rangeID: UUID,
+        lease: JobExecutionLease,
         repository: RecordingRepository,
         inferenceService: SenseVoiceInferenceService,
         transcriptStore: TranscriptDocumentStore,
@@ -1697,6 +1848,9 @@ final class RecordingCoreModel {
                 asset: workingAsset,
                 rootURL: repository.rootURL
             )
+            guard try await repository.validateExecutionLease(lease) else {
+                throw JobExecutionLeaseError.invalidated
+            }
             try await repository.updateImportedAudioAsset(workingAsset, at: Date())
             assetURL = repository.rootURL.appendingPathComponent(workingAsset.relativePath)
             samples = try ImportAudioRangeDecoder.samples(
@@ -1716,18 +1870,28 @@ final class RecordingCoreModel {
             guard case .noSpeechDetected = error else { throw error }
             // Silent window: close the whole open-speech chain so later ranges
             // do not inherit a stuck continuation and the recording can complete.
+            guard try await repository.validateExecutionLease(lease) else {
+                throw JobExecutionLeaseError.invalidated
+            }
             try await markImportedRangesCompleted(covered, repository: repository)
             return 0
         } catch let error as SenseVoiceInferenceService.InferenceError {
             // Empty ASR on a voiced window must not fail the whole import.
             // Keep earlier transcript segments and allow remaining jobs / complete.
             guard case .emptyTranscript = error else { throw error }
+            guard try await repository.validateExecutionLease(lease) else {
+                throw JobExecutionLeaseError.invalidated
+            }
             try await markImportedRangesCompleted(covered, repository: repository)
             return 0
+        }
+        guard try await repository.validateExecutionLease(lease) else {
+            throw JobExecutionLeaseError.invalidated
         }
         try await markImportedRangesCompleted(covered, repository: repository)
 
         var drafts: [TranscriptDocumentV1.SegmentDraft] = []
+        var newObservations: [OfflineSpeakerObservation] = []
         if !result.utteranceResults.isEmpty {
             for u in result.utteranceResults {
                 let sourceRange = TranscriptDocumentV1.SourceRange(
@@ -1742,6 +1906,15 @@ final class RecordingCoreModel {
                         startSample: u.startSample,
                         endSample: u.endSample,
                         sourceRanges: [sourceRange]
+                    )
+                )
+                newObservations.append(
+                    OfflineSpeakerObservation(
+                        startSample: u.startSample,
+                        endSample: u.endSample,
+                        embedding: u.embedding,
+                        exclusionReasons: [],
+                        onlineTemporaryLabel: nil
                     )
                 )
             }
@@ -1764,13 +1937,33 @@ final class RecordingCoreModel {
                         sourceRanges: sourceRanges
                     )
                 )
+                newObservations.append(
+                    OfflineSpeakerObservation(
+                        startSample: decodeStart,
+                        endSample: decodeEnd,
+                        embedding: result.speakerEmbedding,
+                        exclusionReasons: [],
+                        onlineTemporaryLabel: nil
+                    )
+                )
             }
         }
 
         if !drafts.isEmpty {
+            guard try await repository.validateExecutionLease(lease) else {
+                throw JobExecutionLeaseError.invalidated
+            }
+            let commitStartedAt = Date()
             let audioAvailable = FileManager.default.fileExists(atPath: assetURL.path)
                 && workingAsset.audioRemovedAt == nil
-            let document = try? await transcriptStore.document(recordingID: recording.id)
+            try SpeakerObservationStore.replaceBatch(
+                newObservations,
+                rootURL: repository.rootURL,
+                recordingID: recording.id,
+                batchID: range.id
+            )
+
+            let document = try await transcriptStore.document(recordingID: recording.id)
             let updated = document?.appendingImported(
                 recording: recording,
                 audioAvailableOnThisDevice: audioAvailable,
@@ -1784,12 +1977,25 @@ final class RecordingCoreModel {
                 state: .processing,
                 speakers: result.temporarySpeakers
             )
-            try? await transcriptStore.write(updated)
-            try? await Self.publishPublicDocuments(
-                document: updated,
-                repository: repository,
-                transcriptStore: transcriptStore,
-                publisher: publicDocumentPublisher
+            guard try await repository.validateExecutionLease(lease) else {
+                throw JobExecutionLeaseError.invalidated
+            }
+            try await transcriptStore.write(updated)
+            let commitMilliseconds = Date().timeIntervalSince(commitStartedAt) * 1_000
+            try TranscriptionStageMetricsStore.save(
+                TranscriptionStageMetrics(
+                    recordingID: recording.id,
+                    batchID: range.id,
+                    audioDurationMilliseconds: result.audioDuration * 1_000,
+                    vadMilliseconds: result.vadMilliseconds,
+                    asrLoadMilliseconds: Double(result.loadMilliseconds),
+                    asrInferenceMilliseconds: Double(result.inferenceMilliseconds),
+                    embeddingMilliseconds: result.embeddingMilliseconds,
+                    commitMilliseconds: commitMilliseconds,
+                    thermalState: result.thermalState,
+                    completedAt: Date()
+                ),
+                rootURL: repository.rootURL
             )
         }
         return result.utteranceDuration
@@ -1820,71 +2026,19 @@ final class RecordingCoreModel {
                     outcome: outcome.state
                 )
             case .completed:
-                let jobs = try await repository.jobs(recordingID: outcome.recordingID)
-                    .filter { $0.kind == .transcription }
-                guard !jobs.isEmpty, jobs.allSatisfy({ $0.state == .completed }) else {
-                    await refresh()
-                    return
-                }
-                try await coordinator.finishProcessing(
-                    recordingID: outcome.recordingID,
-                    outcome: outcome.state
+                let reconciliation = try await completionReconciler.reconcile(
+                    recordingID: outcome.recordingID
                 )
-                if let recording = try await repository.recording(id: outcome.recordingID) {
-                    _ = try? await repository.clearContinuationMarkersForCompletedRecording(
-                        recordingID: outcome.recordingID,
-                        at: Date()
-                    )
-                    // FR-SPK-004: offline recluster for mic chunks and imported
-                    // assets. Failure keeps any online roster and must not block
-                    // Recording completion.
-                    let pass = try? await Self.offlineSpeakerRecluster(
-                        recordingID: outcome.recordingID,
-                        repository: repository
-                    )
-                    if let pass,
-                       let archiveURL = try? VoiceprintArchiveStorage.defaultURL(),
-                       let archive = try? VoiceprintArchiveStorage.load(from: archiveURL) {
-                        let bindings = SpeakerIdentityConfirmation.makeBindings(
-                            speakers: pass.recluster.speakers,
-                            labels: pass.recluster.labels,
-                            observations: pass.observations,
-                            archive: archive
-                        )
-                        try? MeetingSpeakerBindingStore.save(
-                            bindings,
-                            rootURL: repository.rootURL,
-                            recordingID: outcome.recordingID
-                        )
-                    }
-                    if let document = try await transcriptStore.document(recordingID: outcome.recordingID) {
-                        var completed = document.updatingState(.complete)
-                        if let pass {
-                            completed = completed.applyingOfflineRecluster(
-                                speakers: pass.recluster.speakers,
-                                speakerTurns: pass.recluster.turns
-                            )
-                        }
-                        try await transcriptStore.write(completed)
-                        do {
-                            try await publishPublicDocuments(for: completed)
-                        } catch {
-                            notice = "本地文稿已保存，公开目录同步稍后可重试：" + error.localizedDescription
-                        }
-                    } else if let recording = try? await repository.recording(id: outcome.recordingID) {
-                        let chunks = (try? await repository.chunks(recordingID: outcome.recordingID)) ?? []
-                        let emptyDoc = TranscriptDocumentV1(
-                            recording: recording,
-                            chunks: chunks,
-                            segmentDrafts: [],
-                            language: "",
-                            state: .complete,
-                            speakers: []
-                        )
-                        try? await transcriptStore.write(emptyDoc)
-                        try? await publishPublicDocuments(for: emptyDoc)
-                    }
+                guard case .needsSpeakerFinalization = reconciliation else {
+                    break
                 }
+                _ = try await speakerFinalizationCoordinator.runPersisted(
+                    recordingID: outcome.recordingID,
+                    repository: repository,
+                    transcriptStore: transcriptStore,
+                    publisher: publicDocumentPublisher
+                )
+                _ = try await completionReconciler.reconcile(recordingID: outcome.recordingID)
             }
         } catch {
             // A scheduler failure must remain visible rather than being

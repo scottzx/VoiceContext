@@ -10,7 +10,7 @@ nonisolated struct SpeakerWindow: Equatable, Sendable {
     let samples: [Float]
     let exclusionReasons: [ExclusionReason]
 
-    nonisolated enum ExclusionReason: Equatable, Sendable {
+    nonisolated enum ExclusionReason: String, Codable, Equatable, Sendable {
         case tooShort
         case lowEnergy
         case lowQuality

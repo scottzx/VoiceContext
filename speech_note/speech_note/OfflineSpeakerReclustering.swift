@@ -3,7 +3,7 @@ import Foundation
 /// One short window retained for post-meeting re-clustering. Embeddings stay
 /// in this processing-only value; the public transcript stores turns/labels,
 /// never raw vectors.
-nonisolated struct OfflineSpeakerObservation: Equatable, Sendable {
+nonisolated struct OfflineSpeakerObservation: Codable, Equatable, Sendable {
     let startSample: Int64
     let endSample: Int64
     let embedding: SpeakerEmbeddingResult
@@ -14,6 +14,118 @@ nonisolated struct OfflineSpeakerObservation: Equatable, Sendable {
 
     var isEligibleForClustering: Bool {
         exclusionReasons.isEmpty && embedding.vector != nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case startSample = "start_sample"
+        case endSample = "end_sample"
+        case embedding
+        case exclusionReasons = "exclusion_reasons"
+        case onlineTemporaryLabel = "online_temporary_label"
+    }
+}
+
+/// Incremental, processing-only storage for sentence-level CAM++ observations.
+///
+/// New recordings use one atomically replaced JSON batch per AudioChunk or
+/// ProcessingRange. A retry therefore rewrites only its own minute instead of
+/// reading and rewriting the meeting's complete embedding history. The legacy
+/// whole-recording JSON is still read so existing recordings can finish after
+/// an app update.
+nonisolated enum SpeakerObservationStore {
+    private static let batchDirectoryName = "Batches"
+
+    /// Legacy whole-recording file used by builds before the incremental store.
+    static func storageURL(rootURL: URL, recordingID: UUID) -> URL {
+        rootURL
+            .appendingPathComponent("SpeakerObservations", isDirectory: true)
+            .appendingPathComponent("\(recordingID.uuidString.uppercased()).json", isDirectory: false)
+    }
+
+    static func batchDirectoryURL(rootURL: URL, recordingID: UUID) -> URL {
+        rootURL
+            .appendingPathComponent("SpeakerObservations", isDirectory: true)
+            .appendingPathComponent(recordingID.uuidString.uppercased(), isDirectory: true)
+            .appendingPathComponent(batchDirectoryName, isDirectory: true)
+    }
+
+    static func batchURL(rootURL: URL, recordingID: UUID, batchID: UUID) -> URL {
+        batchDirectoryURL(rootURL: rootURL, recordingID: recordingID)
+            .appendingPathComponent("\(batchID.uuidString.uppercased()).json", isDirectory: false)
+    }
+
+    static func load(rootURL: URL, recordingID: UUID) -> [OfflineSpeakerObservation] {
+        let decoder = JSONDecoder()
+        var observations: [OfflineSpeakerObservation] = []
+
+        let legacyURL = storageURL(rootURL: rootURL, recordingID: recordingID)
+        if let data = try? Data(contentsOf: legacyURL),
+           let legacy = try? decoder.decode([OfflineSpeakerObservation].self, from: data) {
+            observations.append(contentsOf: legacy)
+        }
+
+        let directory = batchDirectoryURL(rootURL: rootURL, recordingID: recordingID)
+        let batchURLs = ((try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? [])
+            .filter { $0.pathExtension.lowercased() == "json" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for url in batchURLs {
+            guard let data = try? Data(contentsOf: url),
+                  let batch = try? decoder.decode([OfflineSpeakerObservation].self, from: data) else {
+                continue
+            }
+            for observation in batch {
+                observations.removeAll { existing in
+                    max(existing.startSample, observation.startSample)
+                        < min(existing.endSample, observation.endSample)
+                }
+                observations.append(observation)
+            }
+        }
+
+        observations.sort {
+            if $0.startSample != $1.startSample { return $0.startSample < $1.startSample }
+            return $0.endSample < $1.endSample
+        }
+        return observations
+    }
+
+    /// Compatibility writer for a one-time legacy/backfill pass. Hot-path
+    /// callers must use `replaceBatch` instead.
+    static func save(_ observations: [OfflineSpeakerObservation], rootURL: URL, recordingID: UUID) {
+        let url = storageURL(rootURL: rootURL, recordingID: recordingID)
+        let dir = url.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let data = try? encoder.encode(observations) {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    /// Atomically replaces observations for one stable source target. This is
+    /// idempotent across retries and never rewrites another minute's vectors.
+    static func replaceBatch(
+        _ observations: [OfflineSpeakerObservation],
+        rootURL: URL,
+        recordingID: UUID,
+        batchID: UUID
+    ) throws {
+        let directory = batchDirectoryURL(rootURL: rootURL, recordingID: recordingID)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(observations.sorted {
+            if $0.startSample != $1.startSample { return $0.startSample < $1.startSample }
+            return $0.endSample < $1.endSample
+        })
+        try data.write(
+            to: batchURL(rootURL: rootURL, recordingID: recordingID, batchID: batchID),
+            options: .atomic
+        )
     }
 }
 
@@ -347,7 +459,7 @@ enum OfflineSpeakerReclusterPass {
         }
     }
 
-    static func bundledResourceRoot(bundle: Bundle = .main) throws -> URL {
+    nonisolated static func bundledResourceRoot(bundle: Bundle = .main) throws -> URL {
         guard let manifestURL = bundle.url(forResource: "ModelManifest", withExtension: "json") else {
             throw PassError.missingManifest
         }

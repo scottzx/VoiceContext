@@ -1036,7 +1036,7 @@ nonisolated enum TranscriptMarkdownRenderer {
 
         for segment in document.segments {
             let offset = offsetString(segment.offsetMilliseconds)
-            lines.append("[\(segment.startedAt.formatted(date: .omitted, time: .standard)) · +\(offset)]")
+            lines.append("[\(segment.startedAt.standardTimeWithSecondsString) · +\(offset)]")
             lines.append(segment.text)
             lines.append("")
         }

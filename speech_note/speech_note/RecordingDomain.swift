@@ -42,6 +42,7 @@ nonisolated enum RecordingJobKind: String, Codable, Sendable {
     case voiceActivityDetection
     case transcription
     case speakerEmbedding
+    case speakerFinalization
     case documentGeneration
 }
 
@@ -50,6 +51,37 @@ nonisolated enum RecordingJobState: String, Codable, Sendable {
     case running
     case completed
     case failed
+}
+
+/// Immutable source identity captured when a transcription job is claimed.
+/// Executors must use this target instead of re-querying an arbitrary running
+/// job for the Recording.
+nonisolated enum JobExecutionSourceTarget: Equatable, Sendable {
+    case audioChunk(UUID)
+    case processingRange(UUID)
+    case legacyWholeRecording
+}
+
+nonisolated struct JobExecutionLease: Equatable, Sendable {
+    static let currentPipelineVersion = 2
+
+    let jobID: UUID
+    let recordingID: UUID
+    let sourceTarget: JobExecutionSourceTarget
+    let executionToken: UUID
+    let pipelineVersion: Int
+    let startedAt: Date
+}
+
+nonisolated enum JobExecutionLeaseError: LocalizedError, Equatable, Sendable {
+    case invalidated
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidated:
+            "转写任务已过期，未提交迟到结果"
+        }
+    }
 }
 
 nonisolated enum AudioChunkState: String, Codable, Sendable {
@@ -97,6 +129,7 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
     /// SenseVoice language mode snapshotted when this Recording was created.
     /// Settings changes must not rewrite completed / in-flight transcripts.
     var languageMode: TranscriptionLanguageMode
+    var locationName: String?
 
     init(
         id: UUID = UUID(),
@@ -110,7 +143,8 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
         origin: RecordingOrigin = .microphone,
         sourceFilename: String? = nil,
         sourceUTType: String? = nil,
-        languageMode: TranscriptionLanguageMode = .zhEnBilingual
+        languageMode: TranscriptionLanguageMode = .zhEnBilingual,
+        locationName: String? = nil
     ) {
         self.id = id
         self.startedAt = startedAt
@@ -124,11 +158,12 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
         self.sourceFilename = sourceFilename
         self.sourceUTType = sourceUTType
         self.languageMode = languageMode
+        self.locationName = locationName
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, startedAt, endedAt, title, isMeeting, state, retention, updatedAt
-        case origin, sourceFilename, sourceUTType, languageMode
+        case origin, sourceFilename, sourceUTType, languageMode, locationName
     }
 
     init(from decoder: Decoder) throws {
@@ -146,6 +181,7 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
         sourceUTType = try container.decodeIfPresent(String.self, forKey: .sourceUTType)
         languageMode = try container.decodeIfPresent(TranscriptionLanguageMode.self, forKey: .languageMode)
             ?? .zhEnBilingual
+        locationName = try container.decodeIfPresent(String.self, forKey: .locationName)
     }
 }
 
@@ -222,6 +258,12 @@ nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
     var state: RecordingJobState
     var attemptCount: Int
     var lastError: String?
+    /// Pipeline and attempt identity. A token exists only while this exact
+    /// attempt owns the running lease.
+    var pipelineVersion: Int
+    var executionToken: UUID?
+    var startedAt: Date?
+    var terminationReason: String?
     let createdAt: Date
     var updatedAt: Date
 
@@ -234,6 +276,10 @@ nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
         state: RecordingJobState,
         attemptCount: Int,
         lastError: String?,
+        pipelineVersion: Int = JobExecutionLease.currentPipelineVersion,
+        executionToken: UUID? = nil,
+        startedAt: Date? = nil,
+        terminationReason: String? = nil,
         createdAt: Date,
         updatedAt: Date
     ) {
@@ -246,12 +292,17 @@ nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
         self.state = state
         self.attemptCount = attemptCount
         self.lastError = lastError
+        self.pipelineVersion = pipelineVersion
+        self.executionToken = executionToken
+        self.startedAt = startedAt
+        self.terminationReason = terminationReason
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, recordingID, chunkID, processingRangeID, kind, state, attemptCount, lastError, createdAt, updatedAt
+        case id, recordingID, chunkID, processingRangeID, kind, state, attemptCount, lastError
+        case pipelineVersion, executionToken, startedAt, terminationReason, createdAt, updatedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -264,6 +315,11 @@ nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
         state = try container.decode(RecordingJobState.self, forKey: .state)
         attemptCount = try container.decode(Int.self, forKey: .attemptCount)
         lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+        pipelineVersion = try container.decodeIfPresent(Int.self, forKey: .pipelineVersion)
+            ?? JobExecutionLease.currentPipelineVersion
+        executionToken = try container.decodeIfPresent(UUID.self, forKey: .executionToken)
+        startedAt = try container.decodeIfPresent(Date.self, forKey: .startedAt)
+        terminationReason = try container.decodeIfPresent(String.self, forKey: .terminationReason)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
@@ -426,6 +482,7 @@ nonisolated enum RecordingJournalPayload: Codable, Equatable, Sendable {
     case chunkPinChanged(chunkID: UUID, isPinned: Bool)
     case chunkAudioRemoved(chunkID: UUID, removedAt: Date)
     case recordingTitleChanged(recordingID: UUID, title: String?)
+    case recordingLocationChanged(recordingID: UUID, locationName: String?)
     case importedAudioAssetCreated(ImportedAudioAsset)
     case importedAudioAssetUpdated(ImportedAudioAsset)
     case importedAudioAssetRemoved(assetID: UUID, removedAt: Date)

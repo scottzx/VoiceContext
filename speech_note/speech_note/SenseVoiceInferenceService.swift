@@ -10,6 +10,7 @@ actor SenseVoiceInferenceService {
         let startSample: Int64
         let endSample: Int64
         let offsetMilliseconds: Int
+        let embedding: SpeakerEmbeddingResult
     }
 
     struct Result: Sendable {
@@ -188,8 +189,14 @@ actor SenseVoiceInferenceService {
             )
             lastSpeechEndSample = analysis.spans.last?.endSample ?? lastSpeechEndSample
 
+            let speakerModelURL = resourceRoot.appending(path: "3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx")
             for utterance in analysis.utterances {
                 guard !utterance.samples.isEmpty else { continue }
+                let utteranceEmbedding = SpeechAnalysisService.computeEmbedding(
+                    from: utterance.samples,
+                    modelURL: speakerModelURL
+                ).result
+
                 try await lifecycleGate.beginMetalWork()
                 let result: NativeResult
                 do {
@@ -215,7 +222,8 @@ actor SenseVoiceInferenceService {
                             rawText: result.rawText,
                             startSample: utterance.startSample,
                             endSample: utterance.endSample,
-                            offsetMilliseconds: Int((Double(utterance.startSample) / 16.0).rounded())
+                            offsetMilliseconds: Int((Double(utterance.startSample) / 16.0).rounded()),
+                            embedding: utteranceEmbedding
                         )
                     )
                 }

@@ -153,6 +153,21 @@ actor RecordingRepository {
         ))
     }
 
+    func setRecordingLocation(
+        recordingID: UUID,
+        locationName: String?,
+        at date: Date
+    ) throws {
+        let trimmed = locationName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        try persist(.init(
+            occurredAt: date,
+            payload: .recordingLocationChanged(
+                recordingID: recordingID,
+                locationName: (trimmed?.isEmpty == false) ? trimmed : nil
+            )
+        ))
+    }
+
     @discardableResult
     func addImportedAudioAsset(_ asset: ImportedAudioAsset, at date: Date) throws -> RecordingJournalEvent {
         try persist(.init(occurredAt: date, payload: .importedAudioAssetCreated(asset)))
@@ -242,6 +257,116 @@ actor RecordingRepository {
         try index.jobs(kind: kind, states: states)
     }
 
+    /// Atomically claims a pending job and returns its immutable execution
+    /// identity. The SQLite transaction enforces the global running guard even
+    /// if two repository/scheduler instances point at the same container.
+    func claimTranscriptionJob(
+        id: UUID,
+        pipelineVersion: Int = JobExecutionLease.currentPipelineVersion,
+        at date: Date
+    ) throws -> JobExecutionLease? {
+        let token = UUID()
+        guard let job = try index.claimTranscriptionJob(
+            id: id,
+            executionToken: token,
+            pipelineVersion: pipelineVersion,
+            at: date
+        ) else { return nil }
+
+        // The index transaction is already durable. Mirror the claimed state
+        // to the append-only journal so a rebuilt index preserves the attempt.
+        let event = RecordingJournalEvent(occurredAt: date, payload: .jobUpserted(job))
+        try journal.append(event)
+        _ = try index.apply(event)
+
+        let target: JobExecutionSourceTarget
+        if let chunkID = job.chunkID {
+            target = .audioChunk(chunkID)
+        } else if let rangeID = job.processingRangeID {
+            target = .processingRange(rangeID)
+        } else {
+            target = .legacyWholeRecording
+        }
+        return JobExecutionLease(
+            jobID: job.id,
+            recordingID: job.recordingID,
+            sourceTarget: target,
+            executionToken: token,
+            pipelineVersion: pipelineVersion,
+            startedAt: date
+        )
+    }
+
+    func validateExecutionLease(_ lease: JobExecutionLease) throws -> Bool {
+        try index.validateTranscriptionLease(
+            jobID: lease.jobID,
+            executionToken: lease.executionToken,
+            pipelineVersion: lease.pipelineVersion
+        )
+    }
+
+    /// Token-guarded state transition. Nil means the attempt lost ownership,
+    /// so its late outcome must be discarded without notifying observers.
+    func finishExecutionLease(
+        _ lease: JobExecutionLease,
+        state: RecordingJobState,
+        lastError: String? = nil,
+        terminationReason: String? = nil,
+        at date: Date
+    ) throws -> RecordingJob? {
+        guard let job = try index.finishTranscriptionLease(
+            jobID: lease.jobID,
+            executionToken: lease.executionToken,
+            state: state,
+            lastError: lastError,
+            terminationReason: terminationReason,
+            at: date
+        ) else { return nil }
+        let event = RecordingJournalEvent(occurredAt: date, payload: .jobUpserted(job))
+        try journal.append(event)
+        _ = try index.apply(event)
+        return job
+    }
+
+    @discardableResult
+    func invalidateRunningTranscriptionLeases(reason: String, at date: Date) throws -> [UUID] {
+        let running = try index.jobs(kind: .transcription, states: [.running])
+        var invalidated: [UUID] = []
+        for job in running {
+            if let token = job.executionToken {
+                let lease = JobExecutionLease(
+                    jobID: job.id,
+                    recordingID: job.recordingID,
+                    sourceTarget: job.chunkID.map(JobExecutionSourceTarget.audioChunk)
+                        ?? job.processingRangeID.map(JobExecutionSourceTarget.processingRange)
+                        ?? .legacyWholeRecording,
+                    executionToken: token,
+                    pipelineVersion: job.pipelineVersion,
+                    startedAt: job.startedAt ?? job.updatedAt
+                )
+                if try finishExecutionLease(
+                    lease,
+                    state: .pending,
+                    lastError: reason,
+                    terminationReason: reason,
+                    at: date
+                ) != nil {
+                    invalidated.append(job.id)
+                }
+            } else {
+                var pending = job
+                pending.state = .pending
+                pending.lastError = reason
+                pending.terminationReason = reason
+                pending.executionToken = nil
+                pending.updatedAt = date
+                try upsertJob(pending, at: date)
+                invalidated.append(job.id)
+            }
+        }
+        return invalidated
+    }
+
     func gaps(recordingID: UUID) throws -> [RecordingGap] {
         try index.gaps(recordingID: recordingID)
     }
@@ -269,6 +394,8 @@ actor RecordingRepository {
             for var job in try index.jobs(recordingID: recording.id) where job.state == .running {
                 job.state = .pending
                 job.lastError = "recoveredAfterTermination"
+                job.executionToken = nil
+                job.terminationReason = "recoveredAfterTermination"
                 job.updatedAt = date
                 try upsertJob(job, at: date)
             }
@@ -284,7 +411,7 @@ actor RecordingRepository {
         for recording in try index.recordings(states: [.processing]) {
             let transcriptionJobs = try index.jobs(recordingID: recording.id)
                 .filter { $0.kind == .transcription }
-            guard let job = transcriptionJobs.last else {
+            guard !transcriptionJobs.isEmpty else {
                 // Files imports restore one durable job per ProcessingRange.
                 // Microphone captures restore one job per closed AudioChunk.
                 // Never create a legacy whole-recording job here.
@@ -325,22 +452,25 @@ actor RecordingRepository {
                 continue
             }
 
-            switch job.state {
-            case .pending:
-                break
-            case .running:
+            for job in transcriptionJobs where job.state == .running {
                 var pending = job
                 pending.state = .pending
                 pending.lastError = "recoveredAfterTermination"
+                pending.executionToken = nil
+                pending.terminationReason = "recoveredAfterTermination"
                 pending.updatedAt = date
                 try upsertJob(pending, at: date)
-            case .completed:
+            }
+
+            let recoveredJobs = try index.jobs(recordingID: recording.id)
+                .filter { $0.kind == .transcription }
+            if recoveredJobs.allSatisfy({ $0.state == .completed }) {
                 try changeState(recordingID: recording.id, to: .complete, at: date)
                 try clearContinuationMarkersForCompletedRecording(
                     recordingID: recording.id,
                     at: date
                 )
-            case .failed:
+            } else if recoveredJobs.contains(where: { $0.state == .failed }) {
                 try changeState(recordingID: recording.id, to: .failed, at: date)
             }
         }

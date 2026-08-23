@@ -5,17 +5,17 @@
   ],
   "products" : [
     {
-      "displayPrice" : "58",
+      "displayPrice" : "18",
       "familyShareable" : false,
       "internalID" : "E5F6A7B8",
       "localizations" : [
         {
-          "description" : "Unlock unlimited on-device transcription after the 72-hour trial.",
+          "description" : "Unlock unlimited on-device transcription after the 3-day trial.",
           "displayName" : "Permanent Unlock",
           "locale" : "en_US"
         },
         {
-          "description" : "72 小时试用后永久解锁本地转写，不是订阅。",
+          "description" : "3 天试用后永久解锁本地转写，一次性买断。",
           "displayName" : "永久解锁",
           "locale" : "zh_CN"
         }
@@ -76,7 +76,55 @@
     ]
   },
   "subscriptionGroups" : [
+    {
+      "id" : "2F4D8A10",
+      "localizations" : [
+        {
+          "description" : "VoiceContext 订阅服务",
+          "displayName" : "VoiceContext 订阅",
+          "locale" : "zh_CN"
+        }
+      ],
+      "name" : "VoiceContext Subscription",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
 
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "18",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "3C7E9B21",
+          "introductoryOffer" : {
+            "displayPrice" : "0",
+            "internalID" : "4D8F0C32",
+            "numberOfPeriods" : 1,
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P3D"
+          },
+          "localizations" : [
+            {
+              "description" : "免费试用 3 天，到期后 18 元/年续订，随时可取消。",
+              "displayName" : "连续订阅 (3天试用)",
+              "locale" : "zh_CN"
+            },
+            {
+              "description" : "3-day free trial, then 18 RMB/year. Cancel anytime.",
+              "displayName" : "Annual Subscription (3-day Trial)",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "YiJie.speech-note.subscription.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Yearly Subscription with 3-Day Trial",
+          "subscriptionGroupID" : "2F4D8A10",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
   ],
   "version" : {
     "major" : 3,

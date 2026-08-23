@@ -22,6 +22,7 @@ speech_note/build/
 # Local Model Binaries & Frameworks (Large Files)
 speech_note/speech_note/ModelResources/*.gguf
 speech_note/speech_note/ModelResources/*.onnx
+!speech_note/speech_note/ModelResources/pyannote-segmentation-3.0.int8.onnx
 speech_note/speech_note/ModelResources/*.bin
 speech_note/speech_note/Frameworks/
 

@@ -19,5 +19,12 @@
     "sha256": "e2d2048292e055f7b61cdec3db010503f35369b245bf0b3bbad021c9a91e4053",
     "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx",
     "licenseURL": "https://github.com/modelscope/3D-Speaker/blob/main/LICENSE"
+  },
+  {
+    "id": "pyannote-segmentation-3-int8",
+    "relativePath": "pyannote-segmentation-3.0.int8.onnx",
+    "sha256": "d582f4b4c6b48205de7e0643c57df0df5615a3c176189be3fc461e9d18827b5d",
+    "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",
+    "licenseURL": "https://huggingface.co/pyannote/segmentation-3.0/blob/main/LICENSE"
   }
 ]

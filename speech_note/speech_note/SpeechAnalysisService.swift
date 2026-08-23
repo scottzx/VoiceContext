@@ -735,7 +735,7 @@ actor SpeechAnalysisService {
         return (.unavailable(reason: "有效语音时长不足，CAM++ 未就绪"), nil, nil, nil)
     }
 
-    private nonisolated static func computeEmbedding(
+    nonisolated static func computeEmbedding(
         from samples: [Float],
         modelURL: URL
     ) -> (result: SpeakerEmbeddingResult, dimension: Int?, rawNorm: Float?, norm: Float?) {

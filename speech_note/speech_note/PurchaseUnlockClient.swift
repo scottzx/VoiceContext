@@ -43,7 +43,8 @@ struct StoreKitPurchaseUnlockClient: PurchaseUnlockClient {
     func currentEntitlementActive() async -> Bool {
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result) else { continue }
-            if transaction.productID == productID, transaction.revocationDate == nil {
+            if (transaction.productID == productID || TrialQuotaLedger.supportedProductIDs.contains(transaction.productID)),
+               transaction.revocationDate == nil {
                 return true
             }
         }
@@ -74,7 +75,7 @@ struct StoreKitPurchaseUnlockClient: PurchaseUnlockClient {
         case let .success(verification):
             let transaction = try checkVerified(verification)
             await transaction.finish()
-            return transaction.productID == productID && transaction.revocationDate == nil
+            return (transaction.productID == productID || TrialQuotaLedger.supportedProductIDs.contains(transaction.productID)) && transaction.revocationDate == nil
         case .userCancelled:
             throw PurchaseUnlockError.purchaseCancelled
         case .pending:
@@ -115,7 +116,7 @@ final class FakePurchaseUnlockClient: PurchaseUnlockClient, @unchecked Sendable 
         entitled: Bool = false,
         shouldFailPurchase: Bool = false,
         shouldFailRestore: Bool = false,
-        price: String = "¥58"
+        price: String = "¥18"
     ) {
         self.entitled = entitled
         self.shouldFailPurchase = shouldFailPurchase

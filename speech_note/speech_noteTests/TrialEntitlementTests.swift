@@ -226,13 +226,13 @@ struct TrialEntitlementTests {
             now: { now }
         )
         _ = ledger.ensureTrialStarted(at: start)
-        let client = FakePurchaseUnlockClient(entitled: false, price: "¥58")
+        let client = FakePurchaseUnlockClient(entitled: false, price: "¥18")
         let controller = TrialEntitlementController(ledger: ledger, client: client)
         controller.start()
         await controller.refreshFromStore()
 
         #expect(controller.isPurchaseLocked == true)
-        #expect(controller.displayPrice == "¥58")
+        #expect(controller.displayPrice == "¥18")
         #expect(controller.remainingTimeText == "已到期")
 
         var unlockedCalls = 0
@@ -249,7 +249,7 @@ struct TrialEntitlementTests {
             now: { now }
         )
         _ = restoreLedger.ensureTrialStarted(at: start)
-        let restoreClient = FakePurchaseUnlockClient(entitled: true)
+        let restoreClient = FakePurchaseUnlockClient(entitled: true, price: "¥18")
         let restoreController = TrialEntitlementController(ledger: restoreLedger, client: restoreClient)
         var restoreUnlocks = 0
         restoreController.onUnlocked = { restoreUnlocks += 1 }
@@ -331,9 +331,9 @@ struct TrialEntitlementTests {
                 thermalState: { .nominal },
                 isPurchaseLocked: { ledger.isPurchaseLocked }
             )
-        ) { recordingID in
+        ) { lease in
             try await gate.beginMetalWork()
-            await executor.record(recordingID)
+            await executor.record(lease.recordingID)
             await gate.endMetalWork()
         }
 
@@ -369,7 +369,7 @@ struct TrialEntitlementTests {
             now: { now }
         )
         _ = ledger.ensureTrialStarted(at: start)
-        let client = FakePurchaseUnlockClient(entitled: false)
+        let client = FakePurchaseUnlockClient(entitled: false, price: "¥18")
         let model = try RecordingCoreModel(
             rootURL: root.appendingPathComponent("VoiceContext"),
             trialLedger: ledger,
@@ -384,7 +384,7 @@ struct TrialEntitlementTests {
     }
 
     @Test @MainActor
-    func scenePhaseActiveDoesNotStartManualTrialClockWhileDisabled() async throws {
+    func scenePhaseActiveStartsManualTrialClockWhenActive() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("trial-scene-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -398,22 +398,22 @@ struct TrialEntitlementTests {
         let model = try RecordingCoreModel(
             rootURL: root.appendingPathComponent("VoiceContext"),
             trialLedger: ledger,
-            purchaseClient: FakePurchaseUnlockClient(entitled: false)
+            purchaseClient: FakePurchaseUnlockClient(entitled: false, price: "¥18")
         )
         model.scenePhaseChanged(to: .active)
-        #expect(TrialQuotaLedger.isManualTrialEnabled == false)
-        #expect(ledger.trialStartedAt == nil)
-        #expect(model.trialEntitlement.trialStartedAt == nil)
+        #expect(TrialQuotaLedger.isManualTrialEnabled == true)
+        #expect(ledger.trialStartedAt != nil)
+        #expect(model.trialEntitlement.trialStartedAt != nil)
     }
 
-    @Test func productionAdmissionBypassesPurchaseLockWhenManualTrialDisabled() {
-        #expect(TrialQuotaLedger.isManualTrialEnabled == false)
+    @Test func productionAdmissionHonorsPurchaseLockWhenTrialEnabled() {
+        #expect(TrialQuotaLedger.isManualTrialEnabled == true)
         let policy = TranscriptionAdmissionPolicy(
             isPurchaseLocked: {
                 TrialQuotaLedger.isManualTrialEnabled && true
             }
         )
-        #expect(policy.evaluate() == .admit)
+        #expect(policy.evaluate() == .lockedPendingPurchase)
     }
 }
 

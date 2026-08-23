@@ -309,9 +309,9 @@ struct OnboardingFlowView: View {
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("首次打开后 72 小时免费试用。")
+                Text("首次打开后 3 天免费试用。")
                     .font(.title2.weight(.semibold))
-                Text("试用自首次打开应用起连续计时，期内转写不按语音秒扣减；到期后可一次性永久解锁。")
+                Text("试用自首次打开应用起连续计时 72 小时；试用期满后可一次性 ¥18 永久解锁。")
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
@@ -345,6 +345,8 @@ struct OnboardingFlowView: View {
 
 struct PrivacyAndPermissionsView: View {
     @State private var microphonePermission = MicrophoneAccess.recordPermission
+    @State private var locationPermission = LocationAccess.authorizationStatus
+    @AppStorage("isAutoRecordLocationEnabled") private var isAutoRecordLocationEnabled = false
 
     var body: some View {
         List {
@@ -380,7 +382,43 @@ struct PrivacyAndPermissionsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } header: {
-                Text("权限")
+                Text("麦克风权限")
+            }
+
+            Section {
+                Toggle("录音时自动记录地点", isOn: $isAutoRecordLocationEnabled)
+                    .onChange(of: isAutoRecordLocationEnabled) { _, enabled in
+                        if enabled && locationPermission == .undetermined {
+                            Task {
+                                locationPermission = await LocationAccess.requestPermissionIfNeeded()
+                            }
+                        }
+                    }
+
+                LabeledContent("定位权限") {
+                    Text(LocationAccess.description(for: locationPermission))
+                        .foregroundStyle(.secondary)
+                }
+
+                if locationPermission == .denied {
+                    Text(LocationAccess.deniedPromptMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Link("前往系统设置", destination: LocationAccess.settingsURL)
+                } else if locationPermission == .undetermined {
+                    Button("请求定位权限") {
+                        Task {
+                            locationPermission = await LocationAccess.requestPermissionIfNeeded()
+                        }
+                    }
+                    .font(.subheadline)
+                }
+
+                Text("开启后，仅在录音时获取一次当前位置并转换为中文地址保存在录音元数据中。你可以随时在录音详情中编辑或清空该地址。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("位置与录音地点")
             }
 
             Section {
@@ -404,7 +442,10 @@ struct PrivacyAndPermissionsView: View {
             }
         }
         .navigationTitle("隐私与权限")
-        .onAppear { microphonePermission = MicrophoneAccess.recordPermission }
+        .onAppear {
+            microphonePermission = MicrophoneAccess.recordPermission
+            locationPermission = LocationAccess.authorizationStatus
+        }
     }
 }
 
@@ -649,6 +690,17 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             reviewStatus: "已审核通过（Apache License 2.0）：允许商用，发布时遵守 Apache 2.0 归因与 NOTICE 要求。",
             offlineLicenseText: """
             上游项目 3D-Speaker 及 CAM++ 模型遵循 Apache License 2.0。VoiceContext 仅在设备本地使用说话人 embedding，已满足许可归因与保留版权声明要求。完整条款见许可原文链接。
+            """
+        ),
+        .init(
+            name: "pyannote segmentation 3.0",
+            summary: "端侧多人说话分段模型",
+            license: "MIT License",
+            sourceURL: URL(string: "https://huggingface.co/pyannote/segmentation-3.0")!,
+            licenseURL: URL(string: "https://huggingface.co/pyannote/segmentation-3.0/blob/main/LICENSE")!,
+            reviewStatus: "已核对随 sherpa-onnx 发布的转换模型内置 MIT 许可：允许商用，发布时保留 CNRS 版权与许可文本。",
+            offlineLicenseText: """
+            pyannote segmentation 3.0 模型采用 MIT License。VoiceContext 使用 sherpa-onnx 官方 release 中的 int8 ONNX 转换版，仅在设备本地执行说话分段，并在 App 包中保留完整许可文本。
             """
         ),
     ]

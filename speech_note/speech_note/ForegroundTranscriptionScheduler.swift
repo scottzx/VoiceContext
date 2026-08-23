@@ -1,9 +1,17 @@
 import Foundation
 
-/// Persists and serializes local transcription work. It never starts Metal
-/// inference in the background: unfinished work remains pending until the app
-/// is foregrounded again, including after process recovery.
+/// Persists and serializes local transcription work. Background inference is
+/// admitted only while an iOS continued-processing grant is active; otherwise
+/// unfinished work remains pending until the app is foregrounded again.
 actor ForegroundTranscriptionScheduler {
+    struct QueueSnapshot: Sendable, Equatable {
+        let pending: Int
+        let running: Int
+        let completed: Int
+        let failed: Int
+        let total: Int
+    }
+
     struct Outcome: Sendable, Equatable {
         enum State: Sendable, Equatable {
             case completed
@@ -28,7 +36,7 @@ actor ForegroundTranscriptionScheduler {
         }
     }
 
-    typealias Executor = @Sendable (UUID) async throws -> Void
+    typealias Executor = @Sendable (JobExecutionLease) async throws -> Void
     typealias OutcomeHandler = @Sendable (Outcome) async -> Void
 
     private let repository: RecordingRepository
@@ -36,9 +44,11 @@ actor ForegroundTranscriptionScheduler {
     private let admissionPolicy: TranscriptionAdmissionPolicy
     private let execute: Executor
     private let now: @Sendable () -> Date
-    private var acceptsForegroundWork = true
+    private var isInBackground = false
+    private var continuedBackgroundExecutionAllowed = false
+    private var recoveryBarrierActive = false
     private var drainTask: Task<Void, Never>?
-    private var restartAfterCurrentDrain = false
+    private var drainGeneration: UUID?
     private var outcomeHandlers: [UUID: OutcomeHandler] = [:]
 
     init(
@@ -170,25 +180,46 @@ actor ForegroundTranscriptionScheduler {
     /// A running Metal job is interrupted, rather than failed, when the app
     /// backgrounds. Its pending record retains the retryable work item.
     func enteredBackground() async {
-        acceptsForegroundWork = false
-        drainTask?.cancel()
+        isInBackground = true
+        guard !continuedBackgroundExecutionAllowed else { return }
+        await suspendCurrentDrain(reason: "deferredUntilForeground")
         await lifecycleGate.enteredBackground()
     }
 
     func enteredForeground() async {
-        acceptsForegroundWork = true
+        isInBackground = false
         await lifecycleGate.enteredForeground()
-        if drainTask != nil {
-            restartAfterCurrentDrain = true
-            return
-        }
         startDrainingIfPossible()
+    }
+
+    /// iOS continued-processing integration may keep the same reliable queue
+    /// running while backgrounded. Turning it off invalidates the current
+    /// attempt before another execution can be admitted.
+    func setContinuedBackgroundExecutionAllowed(_ allowed: Bool) async {
+        continuedBackgroundExecutionAllowed = allowed
+        if isInBackground, !allowed {
+            await suspendCurrentDrain(reason: "deferredUntilForeground")
+        } else {
+            startDrainingIfPossible()
+        }
+    }
+
+    func expireCurrentExecution(reason: String = "backgroundTaskExpired") async {
+        continuedBackgroundExecutionAllowed = false
+        await suspendCurrentDrain(reason: reason)
     }
 
     /// Re-evaluates admission after purchase unlock or thermal recovery without
     /// requiring a scene-phase transition.
     func requestDrain() {
         startDrainingIfPossible()
+    }
+
+    /// Closes admission before journal replay/backfill. The caller completes
+    /// the barrier through `resumePendingJobs`, after observers are attached.
+    func beginRecoveryBarrier() async throws {
+        recoveryBarrierActive = true
+        await suspendCurrentDrain(reason: "recoveredAfterTermination")
     }
 
     /// Restores pending work and turns crash-left `running` rows back into
@@ -203,23 +234,26 @@ actor ForegroundTranscriptionScheduler {
             if job.state == .running {
                 job.state = .pending
                 job.lastError = "recoveredAfterTermination"
+                job.executionToken = nil
+                job.terminationReason = "recoveredAfterTermination"
                 job.updatedAt = now()
                 try await repository.upsertJob(job, at: job.updatedAt)
             }
         }
+        recoveryBarrierActive = false
         startDrainingIfPossible()
     }
 
     /// Stops all ongoing and pending transcription jobs immediately.
     func stopAll() async {
-        acceptsForegroundWork = false
-        drainTask?.cancel()
-        drainTask = nil
+        await suspendCurrentDrain(reason: "userStopped")
         let jobs = (try? await repository.jobs(kind: .transcription, states: [.pending, .running])) ?? []
         let date = now()
         for var job in jobs {
             job.state = .failed
             job.lastError = "userStopped"
+            job.executionToken = nil
+            job.terminationReason = "userStopped"
             job.updatedAt = date
             try? await repository.upsertJob(job, at: date)
         }
@@ -227,7 +261,6 @@ actor ForegroundTranscriptionScheduler {
 
     /// Resumes any jobs that were stopped by the user or are pending.
     func resumeAll(onOutcome: OutcomeHandler? = nil) async {
-        acceptsForegroundWork = true
         let stoppedJobs = (try? await repository.jobs(kind: .transcription, states: [.failed])) ?? []
         let date = now()
         for var job in stoppedJobs {
@@ -250,6 +283,20 @@ actor ForegroundTranscriptionScheduler {
         while let drainTask {
             await drainTask.value
         }
+    }
+
+    func queueSnapshot() async -> QueueSnapshot {
+        let jobs = (try? await repository.jobs(
+            kind: .transcription,
+            states: [.pending, .running, .completed, .failed]
+        )) ?? []
+        return QueueSnapshot(
+            pending: jobs.filter { $0.state == .pending }.count,
+            running: jobs.filter { $0.state == .running }.count,
+            completed: jobs.filter { $0.state == .completed }.count,
+            failed: jobs.filter { $0.state == .failed }.count,
+            total: jobs.count
+        )
     }
 
     /// Same-Recording checkpoints run in absolute chunk order even when job
@@ -303,59 +350,71 @@ actor ForegroundTranscriptionScheduler {
         var pending = job
         pending.state = .pending
         pending.lastError = nil
+        pending.executionToken = nil
+        pending.terminationReason = nil
         pending.updatedAt = now()
         try await repository.upsertJob(pending, at: pending.updatedAt)
     }
 
     private func startDrainingIfPossible() {
-        guard acceptsForegroundWork, drainTask == nil else { return }
+        guard canExecute, drainTask == nil else { return }
+        let generation = UUID()
+        drainGeneration = generation
         drainTask = Task { [weak self] in
-            await self?.drain()
+            await self?.drain(generation: generation)
         }
     }
 
-    private func drain() async {
+    private var canExecute: Bool {
+        !recoveryBarrierActive && (!isInBackground || continuedBackgroundExecutionAllowed)
+    }
+
+    private func drain(generation: UUID) async {
         defer {
-            drainTask = nil
-            let shouldRestart = restartAfterCurrentDrain
-            restartAfterCurrentDrain = false
-            if acceptsForegroundWork, shouldRestart {
-                startDrainingIfPossible()
+            if drainGeneration == generation {
+                drainTask = nil
+                drainGeneration = nil
             }
         }
 
-        while acceptsForegroundWork, !Task.isCancelled {
-            guard var job = try? await nextPendingJob() else { return }
+        while canExecute, !Task.isCancelled, drainGeneration == generation {
+            guard let job = try? await nextPendingJob() else { return }
 
             switch admissionPolicy.evaluate() {
             case .admit:
                 break
             case let .deferInference(reason):
+                var job = job
                 job.lastError = reason
                 job.updatedAt = now()
                 _ = try? await repository.upsertJob(job, at: job.updatedAt)
                 return
             case .lockedPendingPurchase:
+                var job = job
                 job.lastError = "lockedPendingPurchase"
                 job.updatedAt = now()
                 _ = try? await repository.upsertJob(job, at: job.updatedAt)
                 return
             }
 
-            job.state = .running
-            job.attemptCount += 1
-            job.lastError = nil
-            job.updatedAt = now()
+            let claimedAt = now()
+            guard let lease = try? await repository.claimTranscriptionJob(
+                id: job.id,
+                at: claimedAt
+            ) else { return }
             do {
-                try await repository.upsertJob(job, at: job.updatedAt)
-                try await execute(job.recordingID)
+                try await execute(lease)
             } catch let rejection as InferenceLifecycleGate.Rejection {
-                job.state = .pending
-                job.lastError = rejection == .appIsBackgrounded
+                let reason = rejection == .appIsBackgrounded
                     ? "deferredUntilForeground"
                     : "deferredUntilMetalAvailable"
-                job.updatedAt = now()
-                _ = try? await repository.upsertJob(job, at: job.updatedAt)
+                _ = try? await repository.finishExecutionLease(
+                    lease,
+                    state: .pending,
+                    lastError: reason,
+                    terminationReason: reason,
+                    at: now()
+                )
                 // Background must stop Metal submission. A transient metalBusy
                 // leaves the job pending and continues so another Recording's
                 // work is not stranded behind a contended gate.
@@ -365,19 +424,29 @@ actor ForegroundTranscriptionScheduler {
                 await Task.yield()
                 continue
             } catch {
-                if Task.isCancelled || !acceptsForegroundWork {
-                    job.state = .pending
-                    job.lastError = "deferredUntilForeground"
-                    job.updatedAt = now()
-                    _ = try? await repository.upsertJob(job, at: job.updatedAt)
+                if error is JobExecutionLeaseError {
+                    return
+                }
+                if Task.isCancelled || !canExecute {
+                    let reason = isInBackground ? "deferredUntilForeground" : "executionCancelled"
+                    _ = try? await repository.finishExecutionLease(
+                        lease,
+                        state: .pending,
+                        lastError: reason,
+                        terminationReason: reason,
+                        at: now()
+                    )
                     return
                 }
 
-                job.state = .failed
-                job.lastError = error.localizedDescription
-                job.updatedAt = now()
-                _ = try? await repository.upsertJob(job, at: job.updatedAt)
-                if let handler = outcomeHandlers.removeValue(forKey: job.id) {
+                let finished = try? await repository.finishExecutionLease(
+                    lease,
+                    state: .failed,
+                    lastError: error.localizedDescription,
+                    terminationReason: "executorFailed",
+                    at: now()
+                )
+                if finished != nil, let handler = outcomeHandlers.removeValue(forKey: job.id) {
                     await handler(.init(
                         recordingID: job.recordingID,
                         chunkID: job.chunkID,
@@ -388,17 +457,12 @@ actor ForegroundTranscriptionScheduler {
                 continue
             }
 
-            job.state = .completed
-            job.lastError = nil
-            job.updatedAt = now()
-            do {
-                try await repository.upsertJob(job, at: job.updatedAt)
-            } catch {
-                // The executor may have succeeded, but completion is not
-                // durable. Leave the job pending for a truthful retry.
-                job.state = .pending
-                job.lastError = error.localizedDescription
-                _ = try? await repository.upsertJob(job, at: now())
+            guard (try? await repository.finishExecutionLease(
+                lease,
+                state: .completed,
+                at: now()
+            )) != nil else {
+                // A replacement attempt owns the job; discard this late result.
                 return
             }
             if let handler = outcomeHandlers.removeValue(forKey: job.id) {
@@ -409,6 +473,21 @@ actor ForegroundTranscriptionScheduler {
                     state: .completed
                 ))
             }
+        }
+    }
+
+    private func suspendCurrentDrain(reason: String) async {
+        let task = drainTask
+        let generation = drainGeneration
+        drainTask?.cancel()
+        _ = try? await repository.invalidateRunningTranscriptionLeases(
+            reason: reason,
+            at: now()
+        )
+        await task?.value
+        if drainGeneration == generation {
+            drainTask = nil
+            drainGeneration = nil
         }
     }
 }

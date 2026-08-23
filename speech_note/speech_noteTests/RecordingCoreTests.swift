@@ -46,7 +46,7 @@ struct RecordingCoreTests {
 
         let index = try RecordingIndex(url: root.appendingPathComponent("index.sqlite"))
 
-        #expect(index.schemaVersion == 5)
+        #expect(index.schemaVersion == 7)
         #expect(index.appliedEventCount == 0)
     }
 
@@ -185,8 +185,8 @@ struct RecordingCoreTests {
         try await repository.createRecording(recording, at: recording.startedAt)
         let chunkID = UUID()
         let executor = SchedulerExecutorProbe()
-        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { recordingID in
-            await executor.record(recordingID)
+        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { lease in
+            await executor.record(lease.recordingID)
         }
 
         try await scheduler.enqueue(recordingID: recording.id, chunkID: chunkID) { _ in }
@@ -291,8 +291,8 @@ struct RecordingCoreTests {
         let chunkID = UUID()
         let executor = SchedulerExecutorProbe()
         let outcomes = SchedulerOutcomeProbe()
-        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { recordingID in
-            await executor.record(recordingID)
+        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { lease in
+            await executor.record(lease.recordingID)
         }
 
         try await scheduler.enqueue(recordingID: recording.id, chunkID: chunkID) { outcome in
@@ -412,8 +412,8 @@ struct RecordingCoreTests {
         try await repository.upsertJob(running, at: createdAt)
         let executor = SchedulerExecutorProbe()
         let outcomes = SchedulerOutcomeProbe()
-        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { recordingID in
-            await executor.record(recordingID)
+        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { lease in
+            await executor.record(lease.recordingID)
         }
 
         await scheduler.enteredBackground()
@@ -447,9 +447,9 @@ struct RecordingCoreTests {
                 thermalState: { .serious },
                 isPurchaseLocked: { false }
             )
-        ) { recordingID in
+        ) { lease in
             try await gate.beginMetalWork()
-            await executor.record(recordingID)
+            await executor.record(lease.recordingID)
             await gate.endMetalWork()
         }
 
@@ -477,9 +477,9 @@ struct RecordingCoreTests {
                 thermalState: { .nominal },
                 isPurchaseLocked: { true }
             )
-        ) { recordingID in
+        ) { lease in
             try await gate.beginMetalWork()
-            await executor.record(recordingID)
+            await executor.record(lease.recordingID)
             await gate.endMetalWork()
         }
 
@@ -519,8 +519,8 @@ struct RecordingCoreTests {
         )
         try await repository.upsertJob(running, at: createdAt)
         let executor = SchedulerExecutorProbe()
-        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { recordingID in
-            await executor.record(recordingID)
+        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { lease in
+            await executor.record(lease.recordingID)
         }
 
         try await scheduler.resumePendingJobs { _ in }
@@ -2008,10 +2008,11 @@ struct RecordingCoreTests {
         )
 
         let order = SchedulerChunkOrderProbe()
-        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { recordingID in
-            let jobs = try await repository.jobs(recordingID: recordingID)
-            let running = try #require(jobs.first { $0.state == .running })
-            let chunkID = try #require(running.chunkID)
+        let scheduler = ForegroundTranscriptionScheduler(repository: repository) { lease in
+            guard case let .audioChunk(chunkID) = lease.sourceTarget else {
+                Issue.record("expected immutable audio chunk target")
+                return
+            }
             await order.record(chunkID)
         }
 
@@ -2055,11 +2056,12 @@ struct RecordingCoreTests {
                 thermalState: { thermal.current() },
                 isPurchaseLocked: { false }
             )
-        ) { recordingID in
+        ) { lease in
             try await gate.beginMetalWork()
-            let jobs = try await repository.jobs(recordingID: recordingID)
-            let running = try #require(jobs.first { $0.state == .running })
-            let chunkID = try #require(running.chunkID)
+            guard case let .audioChunk(chunkID) = lease.sourceTarget else {
+                Issue.record("expected immutable audio chunk target")
+                return
+            }
             await order.record(chunkID)
             await gate.endMetalWork()
         }
@@ -2168,11 +2170,12 @@ struct RecordingCoreTests {
         let scheduler = ForegroundTranscriptionScheduler(
             repository: repository,
             lifecycleGate: gate
-        ) { recordingID in
+        ) { lease in
             try await gate.beginMetalWork()
-            let jobs = try await repository.jobs(recordingID: recordingID)
-            let running = try #require(jobs.first { $0.state == .running })
-            let chunkID = try #require(running.chunkID)
+            guard case let .audioChunk(chunkID) = lease.sourceTarget else {
+                Issue.record("expected immutable audio chunk target")
+                return
+            }
             await order.record(chunkID)
             // Hold briefly so a peer drain would observe metalBusy if it raced.
             await held.holdBriefly()
@@ -2637,11 +2640,143 @@ struct RecordingCoreTests {
         )
         try await repository.addChunk(chunk2, at: end)
 
-        let duration = try await repository.audioDuration(recordingID: recordingID)
-        #expect(duration == 60.0)
-
         let allDurations = try await repository.allAudioDurations()
         #expect(allDurations[recordingID] == 60.0)
+    }
+
+    @Test func recordingLocationPersistenceAndUpdating() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            title: "地点测试",
+            locationName: "北京市海淀区中关村南大街1号"
+        )
+        try await repository.createRecording(recording, at: startedAt)
+
+        let loaded = try await repository.recording(id: recording.id)
+        #expect(loaded?.locationName == "北京市海淀区中关村南大街1号")
+
+        try await repository.setRecordingLocation(
+            recordingID: recording.id,
+            locationName: "上海市浦东新区张江高科技园区",
+            at: startedAt.addingTimeInterval(10)
+        )
+        let updated = try await repository.recording(id: recording.id)
+        #expect(updated?.locationName == "上海市浦东新区张江高科技园区")
+
+        try await repository.setRecordingLocation(
+            recordingID: recording.id,
+            locationName: "",
+            at: startedAt.addingTimeInterval(20)
+        )
+        let cleared = try await repository.recording(id: recording.id)
+        #expect(cleared?.locationName == nil)
+    }
+
+    @Test func atomicClaimAllowsOnlyOneGlobalLeaseAndRejectsLateCompletion() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repositoryA = try RecordingRepository(rootURL: root)
+        let repositoryB = try RecordingRepository(rootURL: root)
+        let date = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(startedAt: date, state: .processing)
+        try await repositoryA.createRecording(recording, at: date)
+        let first = RecordingJob(
+            recordingID: recording.id,
+            chunkID: UUID(),
+            kind: .transcription,
+            state: .pending,
+            attemptCount: 0,
+            lastError: nil,
+            createdAt: date,
+            updatedAt: date
+        )
+        let second = RecordingJob(
+            recordingID: recording.id,
+            chunkID: UUID(),
+            kind: .transcription,
+            state: .pending,
+            attemptCount: 0,
+            lastError: nil,
+            createdAt: date.addingTimeInterval(1),
+            updatedAt: date.addingTimeInterval(1)
+        )
+        try await repositoryA.upsertJob(first, at: date)
+        try await repositoryA.upsertJob(second, at: date.addingTimeInterval(1))
+
+        async let claimA = repositoryA.claimTranscriptionJob(id: first.id, at: date.addingTimeInterval(2))
+        async let claimB = repositoryB.claimTranscriptionJob(id: second.id, at: date.addingTimeInterval(2))
+        let leases = try await [claimA, claimB].compactMap { $0 }
+        let lease = try #require(leases.first)
+        #expect(leases.count == 1)
+        #expect(try await repositoryA.validateExecutionLease(lease))
+
+        _ = try await repositoryA.finishExecutionLease(
+            lease,
+            state: .pending,
+            lastError: "backgroundTaskExpired",
+            terminationReason: "backgroundTaskExpired",
+            at: date.addingTimeInterval(3)
+        )
+        #expect(try await repositoryA.validateExecutionLease(lease) == false)
+        #expect(try await repositoryA.finishExecutionLease(
+            lease,
+            state: .completed,
+            at: date.addingTimeInterval(4)
+        ) == nil)
+    }
+
+    @Test func completionReconcilerBackfillsFinalizationAndRepairsLostCompletionCallback() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let transcriptStore = try TranscriptDocumentStore(rootURL: root)
+        let reconciler = CompletionReconciler(repository: repository, transcriptStore: transcriptStore)
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(60),
+            state: .processing
+        )
+        try await repository.createRecording(recording, at: startedAt)
+        try await repository.upsertJob(RecordingJob(
+            recordingID: recording.id,
+            chunkID: UUID(),
+            kind: .transcription,
+            state: .completed,
+            attemptCount: 1,
+            lastError: nil,
+            createdAt: startedAt,
+            updatedAt: startedAt.addingTimeInterval(10)
+        ), at: startedAt.addingTimeInterval(10))
+
+        let firstPass = try await reconciler.reconcile(
+            recordingID: recording.id,
+            at: startedAt.addingTimeInterval(11)
+        )
+        guard case let .needsSpeakerFinalization(finalizationID) = firstPass else {
+            Issue.record("expected finalization backfill")
+            return
+        }
+        #expect(try await repository.recording(id: recording.id)?.state == .processing)
+
+        var finalization = try #require(await repository.jobs(recordingID: recording.id)
+            .first { $0.id == finalizationID })
+        finalization.state = .completed
+        finalization.attemptCount = 1
+        finalization.updatedAt = startedAt.addingTimeInterval(12)
+        try await repository.upsertJob(finalization, at: finalization.updatedAt)
+
+        #expect(try await reconciler.reconcile(
+            recordingID: recording.id,
+            at: startedAt.addingTimeInterval(13)
+        ) == .completed)
+        #expect(try await repository.recording(id: recording.id)?.state == .complete)
+        #expect(try await transcriptStore.document(recordingID: recording.id)?.state
+            == RecordingState.complete.rawValue)
     }
 }
 

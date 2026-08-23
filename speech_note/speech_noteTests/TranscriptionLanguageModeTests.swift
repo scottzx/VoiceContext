@@ -92,7 +92,7 @@ struct TranscriptionLanguageModeTests {
 
         let journal = try RecordingJournal(url: root.appendingPathComponent("events.jsonl"))
         let index = try RecordingIndex(url: root.appendingPathComponent("index.sqlite"))
-        #expect(index.schemaVersion == 5)
+        #expect(index.schemaVersion == 7)
 
         let recording = Recording(
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),

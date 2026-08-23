@@ -92,7 +92,7 @@ nonisolated enum DailyTimelineMarkdownRenderer {
         }
 
         for entry in document.entries {
-            let time = entry.startedAt.formatted(date: .omitted, time: .shortened)
+            let time = entry.startedAt.standardTimeString
             let title = entry.title?.isEmpty == false ? entry.title! : defaultTitle(for: entry.kind)
             lines.append("## \(time) · \(title)")
             lines.append("- recording_id: \(entry.recordingID.uuidString)")
