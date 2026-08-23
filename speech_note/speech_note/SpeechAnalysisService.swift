@@ -342,7 +342,6 @@ actor SpeechAnalysisService {
         from spans: [SpeechSpan],
         sourceChunks: [SampleChunk]
     ) -> [Utterance] {
-        let maximumMergeGapSamples = Int64(0.75 * 16_000)
         let chunks = sourceChunks
             .filter { !$0.samples.isEmpty }
             .sorted { $0.startSample < $1.startSample }
@@ -373,32 +372,52 @@ actor SpeechAnalysisService {
             ))
         }
 
-        for inputSpan in spans.sorted(by: { $0.startSample < $1.startSample }) where inputSpan.endSample > inputSpan.startSample {
-            var spanStart = inputSpan.startSample
-            while spanStart < inputSpan.endSample {
-                if currentStart != nil, let activeEnd = currentEnd {
-                    let gap = spanStart - activeEnd
+        for inputSpan in spans.sorted(by: { $0.startSample < $1.startSample })
+            where inputSpan.endSample > inputSpan.startSample {
+            var cursor = inputSpan.startSample
+            while cursor < inputSpan.endSample {
+                if let activeStart = currentStart, let activeEnd = currentEnd {
+                    if cursor < activeEnd {
+                        guard inputSpan.endSample > activeEnd else { break }
+                        cursor = activeEnd
+                    }
+                    let gap = cursor - activeEnd
                     guard gap <= maximumMergeGapSamples else {
                         appendCurrent()
                         continue
                     }
 
-                    let spanEnd = inputSpan.endSample
-                    currentSpans.append(SpeechSpan(startSample: spanStart, endSample: spanEnd))
-                    currentEnd = max(activeEnd, spanEnd)
-                    spanStart = spanEnd
-                    if spanStart < inputSpan.endSample {
+                    let proposedEnd = max(activeEnd, inputSpan.endSample)
+                    if gap > 0,
+                       activeEnd - activeStart >= targetMinimumUtteranceSamples,
+                       proposedEnd - activeStart > targetMaximumUtteranceSamples {
                         appendCurrent()
+                        continue
                     }
+
+                    let hardEnd = activeStart + hardMaximumUtteranceSamples
+                    if activeEnd >= hardEnd {
+                        appendCurrent()
+                        continue
+                    }
+                    let pieceEnd = min(inputSpan.endSample, hardEnd)
+                    if pieceEnd > cursor {
+                        currentSpans.append(SpeechSpan(startSample: cursor, endSample: pieceEnd))
+                    }
+                    currentEnd = max(activeEnd, pieceEnd)
+                    cursor = pieceEnd
+                    if currentEnd == hardEnd { appendCurrent() }
                 } else {
-                    let spanEnd = inputSpan.endSample
-                    currentStart = spanStart
-                    currentEnd = spanEnd
-                    currentSpans = [SpeechSpan(startSample: spanStart, endSample: spanEnd)]
-                    spanStart = spanEnd
-                    if spanStart < inputSpan.endSample {
-                        appendCurrent()
-                    }
+                    let pieceStart = cursor
+                    let pieceEnd = min(
+                        inputSpan.endSample,
+                        pieceStart + hardMaximumUtteranceSamples
+                    )
+                    currentStart = pieceStart
+                    currentEnd = pieceEnd
+                    currentSpans = [SpeechSpan(startSample: pieceStart, endSample: pieceEnd)]
+                    cursor = pieceEnd
+                    if pieceEnd - pieceStart == hardMaximumUtteranceSamples { appendCurrent() }
                 }
             }
         }

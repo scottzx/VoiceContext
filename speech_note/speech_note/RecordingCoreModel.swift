@@ -356,6 +356,7 @@ final class RecordingCoreModel {
                         )
                     }
                 }
+                drafts = drafts.flatMap { ReadableClauseSegmenter.split($0) }
 
                 if !drafts.isEmpty {
                     guard try await repository.validateExecutionLease(lease) else {
@@ -1948,6 +1949,7 @@ final class RecordingCoreModel {
                 )
             }
         }
+        drafts = drafts.flatMap { ReadableClauseSegmenter.split($0) }
 
         if !drafts.isEmpty {
             guard try await repository.validateExecutionLease(lease) else {

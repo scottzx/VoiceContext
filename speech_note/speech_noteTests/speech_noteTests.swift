@@ -44,6 +44,7 @@ struct speech_noteTests {
             "ONNX Runtime",
             "Silero VAD",
             "CAM++ / 3D-Speaker",
+            "pyannote segmentation 3.0",
         ])
         #expect(ThirdPartyAttribution.catalog.allSatisfy { !$0.license.isEmpty && !$0.reviewStatus.isEmpty })
         #expect(ThirdPartyAttribution.catalog.allSatisfy { !$0.offlineLicenseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
@@ -392,7 +393,7 @@ struct speech_noteTests {
         #expect(utterances[0].samples.last == 0.2)
     }
 
-    @Test func utteranceAssemblyKeepsLongSpeechWithoutAHardThreshold() {
+    @Test func utteranceAssemblyHardCutsTwentySixSecondsWithoutLosingAbsoluteOffsets() {
         let start: Int64 = 48_000
         let samples = Array(repeating: Float(0.2), count: 26 * 16_000)
         let spans = [SpeechAnalysisService.SpeechSpan(
@@ -406,11 +407,50 @@ struct speech_noteTests {
             sourceStartSample: start
         )
 
-        #expect(utterances.count == 1)
+        #expect(utterances.count == 2)
         #expect(utterances[0].startSample == start)
-        #expect(utterances[0].endSample == spans[0].endSample)
-        #expect(utterances[0].duration == 26)
-        #expect(utterances[0].speechSpans == spans)
+        #expect(utterances[0].endSample == start + 25 * 16_000)
+        #expect(utterances[0].duration == 25)
+        #expect(utterances[1].startSample == utterances[0].endSample)
+        #expect(utterances[1].endSample == spans[0].endSample)
+        #expect(utterances[1].duration == 1)
+        #expect(utterances.flatMap(\.speechSpans) == [
+            .init(startSample: start, endSample: start + 25 * 16_000),
+            .init(startSample: start + 25 * 16_000, endSample: spans[0].endSample),
+        ])
+        #expect(utterances.reduce(0) { $0 + $1.samples.count } == samples.count)
+    }
+
+    @Test func fourContinuousFifteenSecondVADSpansBecomeTwentyFiveTwentyFiveTen() {
+        let seconds: Int64 = 16_000
+        let totalSamples = 60 * seconds
+        let source = Array(repeating: Float(0.2), count: Int(totalSamples))
+        let spans = (0..<4).map { index in
+            SpeechAnalysisService.SpeechSpan(
+                startSample: Int64(index) * 15 * seconds,
+                endSample: Int64(index + 1) * 15 * seconds
+            )
+        }
+
+        let utterances = SpeechAnalysisService.makeUtterances(
+            from: spans,
+            sourceSamples: source
+        )
+
+        #expect(utterances.map { $0.endSample - $0.startSample } == [
+            25 * seconds,
+            25 * seconds,
+            10 * seconds,
+        ])
+        #expect(utterances.map(\.startSample) == [0, 25 * seconds, 50 * seconds])
+        #expect(utterances.map(\.endSample) == [25 * seconds, 50 * seconds, totalSamples])
+        #expect(utterances.reduce(0) { $0 + $1.samples.count } == source.count)
+        #expect(zip(utterances, utterances.dropFirst()).allSatisfy {
+            $0.endSample == $1.startSample
+        })
+        #expect(utterances.allSatisfy {
+            $0.endSample - $0.startSample <= SpeechAnalysisService.hardMaximumUtteranceSamples
+        })
     }
 
     @Test func utteranceAssemblyRejectsSilenceAndRangesMissingFromChunks() {
