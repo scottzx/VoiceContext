@@ -1,3 +1,4 @@
+import Accelerate
 import Foundation
 
 /// One short window retained for post-meeting re-clustering. Embeddings stay
@@ -14,6 +15,10 @@ nonisolated struct OfflineSpeakerObservation: Codable, Equatable, Sendable {
 
     var isEligibleForClustering: Bool {
         exclusionReasons.isEmpty && embedding.vector != nil
+    }
+
+    var isEligibleForWeakMatching: Bool {
+        exclusionReasons.allSatisfy { $0 == .tooShort } && embedding.vector != nil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -106,6 +111,14 @@ nonisolated enum SpeakerObservationStore {
         }
     }
 
+    static func remove(rootURL: URL, recordingID: UUID) {
+        try? FileManager.default.removeItem(at: storageURL(rootURL: rootURL, recordingID: recordingID))
+        try? FileManager.default.removeItem(
+            at: batchDirectoryURL(rootURL: rootURL, recordingID: recordingID)
+                .deletingLastPathComponent()
+        )
+    }
+
     /// Atomically replaces observations for one stable source target. This is
     /// idempotent across retries and never rewrites another minute's vectors.
     static func replaceBatch(
@@ -133,18 +146,62 @@ nonisolated enum SpeakerObservationStore {
 /// `speaker` is nil for unknown/unreliable windows (overlap, low quality, or
 /// failed embeddings). Online temporary labels are retained for audit only.
 nonisolated struct SpeakerTurn: Codable, Equatable, Sendable {
+    enum Attribution: String, Codable, Equatable, Sendable {
+        case single
+        case multiple
+        case unknown
+    }
+
     let speaker: String?
+    let attribution: Attribution
     let startSample: Int64
     let endSample: Int64
     let onlineTemporaryLabels: [String]
 
-    var isUnknown: Bool { speaker == nil }
+    var isUnknown: Bool { attribution == .unknown }
+
+    init(
+        speaker: String?,
+        attribution: Attribution? = nil,
+        startSample: Int64,
+        endSample: Int64,
+        onlineTemporaryLabels: [String]
+    ) {
+        self.speaker = speaker
+        self.attribution = attribution ?? (speaker == nil ? .unknown : .single)
+        self.startSample = startSample
+        self.endSample = endSample
+        self.onlineTemporaryLabels = onlineTemporaryLabels
+    }
 
     private enum CodingKeys: String, CodingKey {
         case speaker
+        case attribution
         case startSample = "start_sample"
         case endSample = "end_sample"
         case onlineTemporaryLabels = "online_temporary_labels"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        speaker = try container.decodeIfPresent(String.self, forKey: .speaker)
+        attribution = try container.decodeIfPresent(Attribution.self, forKey: .attribution)
+            ?? (speaker == nil ? .unknown : .single)
+        startSample = try container.decode(Int64.self, forKey: .startSample)
+        endSample = try container.decode(Int64.self, forKey: .endSample)
+        onlineTemporaryLabels = try container.decodeIfPresent(
+            [String].self,
+            forKey: .onlineTemporaryLabels
+        ) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(speaker, forKey: .speaker)
+        try container.encode(attribution, forKey: .attribution)
+        try container.encode(startSample, forKey: .startSample)
+        try container.encode(endSample, forKey: .endSample)
+        try container.encode(onlineTemporaryLabels, forKey: .onlineTemporaryLabels)
     }
 }
 
@@ -235,6 +292,14 @@ nonisolated enum OfflineSpeakerReclustering {
         var memberCount: Int
     }
 
+    private struct SimilarityCandidate {
+        let lhs: Int
+        let rhs: Int
+        let lhsGeneration: Int
+        let rhsGeneration: Int
+        let similarity: Float
+    }
+
     private static func agglomerate(
         clusters: inout [Cluster],
         clusterOfObservation: inout [Int],
@@ -242,41 +307,126 @@ nonisolated enum OfflineSpeakerReclustering {
     ) {
         guard clusters.count > 1 else { return }
 
-        while true {
-            var bestSimilarity: Float = -Float.greatestFiniteMagnitude
-            var bestPair: (Int, Int)?
-            for i in 0..<clusters.count {
-                for j in (i + 1)..<clusters.count {
-                    guard let similarity = SpeakerSimilarity.cosineSimilarity(
-                        clusters[i].centroid,
-                        clusters[j].centroid
-                    ) else { continue }
-                    if similarity > bestSimilarity {
-                        bestSimilarity = similarity
-                        bestPair = (i, j)
-                    }
-                }
-            }
-
-            guard let (i, j) = bestPair, bestSimilarity >= mergeSimilarityThreshold else {
-                break
-            }
-
-            let merged = merge(clusters[i], clusters[j])
-            let keep = min(i, j)
-            let drop = max(i, j)
-            clusters[keep] = merged
-            clusters.remove(at: drop)
-
-            for index in clusterOfObservation.indices {
-                let current = clusterOfObservation[index]
-                if current == drop {
-                    clusterOfObservation[index] = keep
-                } else if current > drop {
-                    clusterOfObservation[index] = current - 1
-                }
+        // Keep stable cluster slots and a versioned max-heap. A merge changes
+        // only one centroid, so unchanged pairs stay valid in the heap and
+        // only the merged cluster's candidates are recomputed.
+        let capacity = clusters.count
+        var active = Array(repeating: true, count: capacity)
+        var generations = Array(repeating: 0, count: capacity)
+        var heap: [SimilarityCandidate] = []
+        heap.reserveCapacity(capacity * max(0, capacity - 1) / 2)
+        for i in 0..<capacity {
+            for j in (i + 1)..<capacity {
+                guard let similarity = normalizedCosineSimilarity(
+                    clusters[i].centroid,
+                    clusters[j].centroid
+                ) else { continue }
+                push(SimilarityCandidate(
+                    lhs: i,
+                    rhs: j,
+                    lhsGeneration: 0,
+                    rhsGeneration: 0,
+                    similarity: similarity
+                ), onto: &heap)
             }
         }
+
+        while let best = popValid(
+            from: &heap,
+            active: active,
+            generations: generations
+        ) {
+            guard best.similarity >= mergeSimilarityThreshold else { break }
+
+            let keep = best.lhs
+            let drop = best.rhs
+            clusters[keep] = merge(clusters[keep], clusters[drop])
+            active[drop] = false
+            generations[keep] += 1
+            generations[drop] += 1
+
+            for index in clusterOfObservation.indices {
+                if clusterOfObservation[index] == drop {
+                    clusterOfObservation[index] = keep
+                }
+            }
+            for other in 0..<capacity where active[other] && other != keep {
+                guard let similarity = normalizedCosineSimilarity(
+                    clusters[keep].centroid,
+                    clusters[other].centroid
+                ) else { continue }
+                let lhs = min(keep, other)
+                let rhs = max(keep, other)
+                push(SimilarityCandidate(
+                    lhs: lhs,
+                    rhs: rhs,
+                    lhsGeneration: generations[lhs],
+                    rhsGeneration: generations[rhs],
+                    similarity: similarity
+                ), onto: &heap)
+            }
+        }
+    }
+
+    private static func candidatePrecedes(
+        _ lhs: SimilarityCandidate,
+        _ rhs: SimilarityCandidate
+    ) -> Bool {
+        if lhs.similarity != rhs.similarity { return lhs.similarity > rhs.similarity }
+        if lhs.lhs != rhs.lhs { return lhs.lhs < rhs.lhs }
+        return lhs.rhs < rhs.rhs
+    }
+
+    private static func push(
+        _ candidate: SimilarityCandidate,
+        onto heap: inout [SimilarityCandidate]
+    ) {
+        heap.append(candidate)
+        var child = heap.count - 1
+        while child > 0 {
+            let parent = (child - 1) / 2
+            guard candidatePrecedes(heap[child], heap[parent]) else { break }
+            heap.swapAt(child, parent)
+            child = parent
+        }
+    }
+
+    private static func pop(
+        from heap: inout [SimilarityCandidate]
+    ) -> SimilarityCandidate? {
+        guard !heap.isEmpty else { return nil }
+        if heap.count == 1 { return heap.removeLast() }
+        let result = heap[0]
+        heap[0] = heap.removeLast()
+        var parent = 0
+        while true {
+            let left = parent * 2 + 1
+            guard left < heap.count else { break }
+            let right = left + 1
+            let child = right < heap.count && candidatePrecedes(heap[right], heap[left])
+                ? right
+                : left
+            guard candidatePrecedes(heap[child], heap[parent]) else { break }
+            heap.swapAt(child, parent)
+            parent = child
+        }
+        return result
+    }
+
+    private static func popValid(
+        from heap: inout [SimilarityCandidate],
+        active: [Bool],
+        generations: [Int]
+    ) -> SimilarityCandidate? {
+        while let candidate = pop(from: &heap) {
+            guard active[candidate.lhs], active[candidate.rhs],
+                  generations[candidate.lhs] == candidate.lhsGeneration,
+                  generations[candidate.rhs] == candidate.rhsGeneration else {
+                continue
+            }
+            return candidate
+        }
+        return nil
     }
 
     private static func merge(_ lhs: Cluster, _ rhs: Cluster) -> Cluster {
@@ -287,6 +437,28 @@ nonisolated enum OfflineSpeakerReclustering {
         }
         guard let centroid = normalized(weighted) else { return lhs }
         return Cluster(centroid: centroid, memberCount: total)
+    }
+
+    /// Reclustering normalizes every observation and every merged centroid.
+    /// Accelerate can therefore compute cosine similarity as one vector dot
+    /// product instead of rechecking and renormalizing both 512-D vectors for
+    /// every hierarchy candidate.
+    private static func normalizedCosineSimilarity(
+        _ lhs: [Float],
+        _ rhs: [Float]
+    ) -> Float? {
+        guard !lhs.isEmpty, lhs.count == rhs.count else { return nil }
+        var dot: Float = 0
+        vDSP_dotpr(
+            lhs,
+            1,
+            rhs,
+            1,
+            &dot,
+            vDSP_Length(lhs.count)
+        )
+        guard dot.isFinite else { return nil }
+        return min(1, max(-1, dot))
     }
 
     // MARK: - Smoothing / turns / renumber

@@ -1,0 +1,19 @@
+{
+  "recording_state": "processing",
+  "transcription_job_count": 52,
+  "completed_transcription_job_count": 52,
+  "speaker_finalization": {
+    "state": "running",
+    "attempt_count": 1,
+    "started_before_latest_transcription": true
+  },
+  "transcript": {
+    "state": "processing",
+    "speaker_roster_count": 8,
+    "speaker_turn_count": 0
+  },
+  "expected_recovery": {
+    "speaker_finalization_state": "pending",
+    "visible_processing_stage": "speakerFinalization"
+  }
+}

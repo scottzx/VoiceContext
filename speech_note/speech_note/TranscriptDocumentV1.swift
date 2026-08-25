@@ -852,6 +852,18 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         return copy
     }
 
+    /// A new ASR pass invalidates speaker labels derived from the previous
+    /// transcript. Existing text remains readable until each source range is
+    /// atomically replaced by the retry.
+    func preparingForRetranscription() -> TranscriptDocumentV1 {
+        var copy = self
+        copy.state = RecordingState.processing.rawValue
+        copy.speakers = []
+        copy.speakerTurns = []
+        copy.revision += 1
+        return copy
+    }
+
     /// Replaces the online temporary roster with stable offline speakers/turns.
     /// Revision advances so public mirrors and Skill inputs observe the change.
     func applyingOfflineRecluster(

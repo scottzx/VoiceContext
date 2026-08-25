@@ -367,6 +367,112 @@ actor RecordingRepository {
         return invalidated
     }
 
+    /// Any transcription retry invalidates speaker turns derived from the
+    /// previous text/audio pass. The durable finalizer is returned to pending
+    /// so a late, pre-retry attempt cannot be treated as authoritative.
+    @discardableResult
+    func resetSpeakerFinalizationForRetranscription(
+        recordingID: UUID,
+        at date: Date
+    ) throws -> RecordingJob? {
+        guard var job = try index.jobs(recordingID: recordingID)
+            .first(where: { $0.kind == .speakerFinalization }) else {
+            return nil
+        }
+        job.state = .pending
+        job.lastError = nil
+        job.pipelineVersion = SpeakerFinalizationJob.currentPipelineVersion
+        job.executionToken = nil
+        job.startedAt = nil
+        job.terminationReason = "invalidatedByRetranscription"
+        job.updatedAt = date
+        try upsertJob(job, at: date)
+        return job
+    }
+
+    /// Repairs every crash-left speaker lease before broader recording
+    /// recovery. This pre-pass is deliberately independent: one malformed
+    /// historical Recording must not leave later meetings permanently
+    /// displayed as if their original finalizer were still alive.
+    @discardableResult
+    func recoverRunningSpeakerFinalizations(at date: Date) throws -> [UUID] {
+        let running = try index.jobs(kind: .speakerFinalization, states: [.running])
+        var recoveredRecordingIDs: [UUID] = []
+        for var job in running {
+            job.state = .pending
+            job.lastError = "recoveredAfterTermination"
+            job.executionToken = nil
+            job.startedAt = nil
+            job.terminationReason = "recoveredAfterTermination"
+            job.updatedAt = date
+            try upsertJob(job, at: date)
+            recoveredRecordingIDs.append(job.recordingID)
+        }
+        return recoveredRecordingIDs
+    }
+
+    func claimSpeakerFinalization(
+        jobID: UUID,
+        recordingID: UUID,
+        pipelineVersion: Int,
+        at date: Date
+    ) throws -> RecordingJob? {
+        guard var job = try index.jobs(recordingID: recordingID).first(where: {
+            $0.id == jobID && $0.kind == .speakerFinalization && $0.state == .pending
+        }) else { return nil }
+        job.state = .running
+        job.attemptCount += 1
+        job.lastError = nil
+        job.pipelineVersion = pipelineVersion
+        job.executionToken = UUID()
+        job.startedAt = date
+        job.terminationReason = nil
+        job.updatedAt = date
+        try upsertJob(job, at: date)
+        return job
+    }
+
+    func validateSpeakerFinalization(
+        jobID: UUID,
+        recordingID: UUID,
+        executionToken: UUID,
+        pipelineVersion: Int
+    ) throws -> Bool {
+        try index.jobs(recordingID: recordingID).contains {
+            $0.id == jobID
+                && $0.kind == .speakerFinalization
+                && $0.state == .running
+                && $0.executionToken == executionToken
+                && $0.pipelineVersion == pipelineVersion
+        }
+    }
+
+    @discardableResult
+    func finishSpeakerFinalization(
+        jobID: UUID,
+        recordingID: UUID,
+        executionToken: UUID,
+        state: RecordingJobState,
+        lastError: String? = nil,
+        terminationReason: String? = nil,
+        at date: Date
+    ) throws -> RecordingJob? {
+        guard var job = try index.jobs(recordingID: recordingID).first(where: {
+            $0.id == jobID
+                && $0.kind == .speakerFinalization
+                && $0.state == .running
+                && $0.executionToken == executionToken
+        }) else { return nil }
+        job.state = state
+        job.lastError = lastError
+        job.executionToken = nil
+        job.startedAt = nil
+        job.terminationReason = terminationReason
+        job.updatedAt = date
+        try upsertJob(job, at: date)
+        return job
+    }
+
     func gaps(recordingID: UUID) throws -> [RecordingGap] {
         try index.gaps(recordingID: recordingID)
     }
@@ -395,6 +501,7 @@ actor RecordingRepository {
                 job.state = .pending
                 job.lastError = "recoveredAfterTermination"
                 job.executionToken = nil
+                job.startedAt = nil
                 job.terminationReason = "recoveredAfterTermination"
                 job.updatedAt = date
                 try upsertJob(job, at: date)
@@ -409,7 +516,20 @@ actor RecordingRepository {
         // scheduler resumes so relaunch cannot leave a stopped recording in
         // "正在处理" forever.
         for recording in try index.recordings(states: [.processing]) {
-            let transcriptionJobs = try index.jobs(recordingID: recording.id)
+            let recordingJobs = try index.jobs(recordingID: recording.id)
+            for job in recordingJobs
+            where job.kind == .speakerFinalization && job.state == .running {
+                var pending = job
+                pending.state = .pending
+                pending.lastError = "recoveredAfterTermination"
+                pending.executionToken = nil
+                pending.startedAt = nil
+                pending.terminationReason = "recoveredAfterTermination"
+                pending.updatedAt = date
+                try upsertJob(pending, at: date)
+            }
+
+            let transcriptionJobs = recordingJobs
                 .filter { $0.kind == .transcription }
             guard !transcriptionJobs.isEmpty else {
                 // Files imports restore one durable job per ProcessingRange.
@@ -457,6 +577,7 @@ actor RecordingRepository {
                 pending.state = .pending
                 pending.lastError = "recoveredAfterTermination"
                 pending.executionToken = nil
+                pending.startedAt = nil
                 pending.terminationReason = "recoveredAfterTermination"
                 pending.updatedAt = date
                 try upsertJob(pending, at: date)
@@ -464,7 +585,11 @@ actor RecordingRepository {
 
             let recoveredJobs = try index.jobs(recordingID: recording.id)
                 .filter { $0.kind == .transcription }
-            if recoveredJobs.allSatisfy({ $0.state == .completed }) {
+            let recoveredFinalization = try index.jobs(recordingID: recording.id)
+                .filter { $0.kind == .speakerFinalization }
+            if recoveredJobs.allSatisfy({ $0.state == .completed }),
+               !recoveredFinalization.isEmpty,
+               recoveredFinalization.allSatisfy({ $0.state == .completed }) {
                 try changeState(recordingID: recording.id, to: .complete, at: date)
                 try clearContinuationMarkersForCompletedRecording(
                     recordingID: recording.id,

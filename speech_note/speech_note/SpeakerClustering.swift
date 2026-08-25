@@ -19,6 +19,12 @@ nonisolated struct SpeakerWindow: Equatable, Sendable {
 
     var isEligibleForClustering: Bool { exclusionReasons.isEmpty }
 
+    /// A too-short window may be embedded only for the final, read-only match
+    /// against speakers already established by clean sentence representatives.
+    var isEligibleForWeakMatching: Bool {
+        exclusionReasons.allSatisfy { $0 == .tooShort }
+    }
+
     var duration: TimeInterval {
         Double(endSample - startSample) / SpeakerWindowing.sampleRate
     }
@@ -78,6 +84,25 @@ nonisolated enum SpeakerWindowing {
         return windows
     }
 
+    static func makeWholeSegmentWindow(
+        samples: [Float],
+        startingAt startSample: Int64 = 0
+    ) -> SpeakerWindow? {
+        guard !samples.isEmpty else { return nil }
+        let endSample = startSample + Int64(samples.count)
+        let range = startSample..<endSample
+        return SpeakerWindow(
+            startSample: startSample,
+            endSample: endSample,
+            samples: samples,
+            exclusionReasons: exclusionReasons(
+                for: samples,
+                range: range,
+                suspectedOverlapRanges: []
+            )
+        )
+    }
+
     private static func exclusionReasons(
         for samples: [Float],
         range: Range<Int64>,
@@ -111,6 +136,42 @@ nonisolated enum SpeakerWindowing {
 /// a synthetic stand-in vector. One extractor is reused for the whole batch so
 /// online labeling stays practical during recording.
 nonisolated enum CAMPlusShortWindowEmbedder {
+    /// Runs independent CAM++ sessions in parallel. Each worker owns its
+    /// extractor and stream; results are restored to the original window
+    /// order so clustering stays deterministic.
+    static func embedConcurrently(
+        windows: [SpeakerWindow],
+        modelURL: URL,
+        maximumParallelism: Int
+    ) async -> [SpeakerEmbeddingResult] {
+        let workerCount = min(max(1, maximumParallelism), windows.count)
+        guard workerCount > 1 else {
+            return embed(windows: windows, modelURL: modelURL)
+        }
+
+        return await withTaskGroup(
+            of: (Int, [SpeakerEmbeddingResult]).self,
+            returning: [SpeakerEmbeddingResult].self
+        ) { group in
+            for worker in 0..<workerCount {
+                let lower = windows.count * worker / workerCount
+                let upper = windows.count * (worker + 1) / workerCount
+                let batch = Array(windows[lower..<upper])
+                group.addTask {
+                    (worker, embed(windows: batch, modelURL: modelURL))
+                }
+            }
+            var batches = Array<[SpeakerEmbeddingResult]?>(
+                repeating: nil,
+                count: workerCount
+            )
+            for await (worker, result) in group {
+                batches[worker] = result
+            }
+            return batches.compactMap { $0 }.flatMap { $0 }
+        }
+    }
+
     static func embed(
         windows: [SpeakerWindow],
         modelURL: URL
@@ -145,7 +206,7 @@ nonisolated enum CAMPlusShortWindowEmbedder {
         }
 
         return windows.map { window in
-            guard window.isEligibleForClustering else {
+            guard window.isEligibleForWeakMatching else {
                 return .unavailable(reason: "该短窗未通过说话人聚类质量检查")
             }
             return embedding(

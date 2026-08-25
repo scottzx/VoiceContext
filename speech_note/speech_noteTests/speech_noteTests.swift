@@ -1157,6 +1157,7 @@ struct speech_noteTests {
         let encoded = try encoder.encode(updated)
         let decoded = try decoder.decode(TranscriptDocumentV1.self, from: encoded)
         #expect(decoded.speakerTurns == updated.speakerTurns)
+        #expect(decoded.speakerTurns.first?.attribution == .single)
 
         let legacy = """
         {"schema":"voice-context/transcript@1","recording_id":"\(recording.id.uuidString)","kind":"recording","state":"complete","revision":1,"title":null,"tags":[],"started_at":"2026-08-05T07:00:00Z","ended_at":"2026-08-05T07:02:00Z","timezone":"Asia/Shanghai","language":"zh","audio":{"local_only":true,"available_on_this_device":true,"retention":"seven_days"},"speech_spans":[],"speakers":["说话人 1"],"segments":[{"id":"BA485C93-6D6E-42E9-ADDA-B8DA00000001","sequence":1,"started_at":"2026-08-05T07:00:00Z","offset_milliseconds":0,"text":"hi","start_sample":0,"end_sample":16000,"source_chunk_id":"\(chunk.id.uuidString)","source_ranges":[{"source_kind":"audio_chunk","source_id":"\(chunk.id.uuidString)","start_sample":0,"end_sample":16000}],"speech_span_ids":[]}],"gaps":[]}

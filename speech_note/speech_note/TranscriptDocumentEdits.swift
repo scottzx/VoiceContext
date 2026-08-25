@@ -89,6 +89,7 @@ extension TranscriptDocumentV1 {
         copy.speakerTurns = speakerTurns.map { turn in
             SpeakerTurn(
                 speaker: mapLabel(turn.speaker),
+                attribution: turn.attribution,
                 startSample: turn.startSample,
                 endSample: turn.endSample,
                 onlineTemporaryLabels: turn.onlineTemporaryLabels

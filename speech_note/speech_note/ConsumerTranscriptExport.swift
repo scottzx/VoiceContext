@@ -65,8 +65,15 @@ nonisolated enum TranscriptPlainTextRenderer {
         }) else {
             return nil
         }
-        let label = turn.speaker?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return label.isEmpty ? nil : label
+        switch turn.attribution {
+        case .multiple:
+            return "多人对话"
+        case .unknown:
+            return "说话人不确定"
+        case .single:
+            let label = turn.speaker?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return label.isEmpty ? nil : label
+        }
     }
 
     static func offsetString(_ milliseconds: Int) -> String {

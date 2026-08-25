@@ -26,6 +26,7 @@ nonisolated enum RecordingProcessingState: String, Codable, CaseIterable, Sendab
     case idle
     case queued
     case processing
+    case speakerFinalization
     case deferredUntilForeground
     case lockedPendingPurchase
     case needsAttention
@@ -443,6 +444,14 @@ extension RecordingProcessingState {
     ) -> RecordingProcessingState {
         if jobs.contains(where: { $0.state == .failed }) {
             return .needsAttention
+        }
+        let transcriptionJobs = jobs.filter { $0.kind == .transcription }
+        let finalizationJobs = jobs.filter { $0.kind == .speakerFinalization }
+        let transcriptionIsComplete = !transcriptionJobs.isEmpty
+            && transcriptionJobs.allSatisfy { $0.state == .completed }
+        if transcriptionIsComplete,
+           finalizationJobs.contains(where: { $0.state == .pending || $0.state == .running }) {
+            return .speakerFinalization
         }
         if jobs.contains(where: { $0.state == .running }) {
             return .processing

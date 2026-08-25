@@ -63,6 +63,19 @@ actor CompletionReconciler {
             try await repository.upsertJob(job, at: date)
             return .needsSpeakerFinalization(jobID: job.id)
         }
+        if let outdated = finalization.first(where: {
+            $0.pipelineVersion < SpeakerFinalizationJob.currentPipelineVersion
+        }) {
+            if recording.state == .complete {
+                try await repository.changeState(
+                    recordingID: recordingID,
+                    to: .processing,
+                    endedAt: recording.endedAt,
+                    at: date
+                )
+            }
+            return .needsSpeakerFinalization(jobID: outdated.id)
+        }
         if finalization.contains(where: { $0.state == .failed }) {
             return .needsAttention
         }

@@ -4,7 +4,7 @@ import Foundation
 /// minute-level transcription jobs. Re-running the same job is safe because
 /// every output is atomically replaced at a deterministic path.
 nonisolated struct SpeakerFinalizationJob: Hashable, Sendable {
-    static let currentPipelineVersion = 1
+    static let currentPipelineVersion = 5
 
     let recordingID: UUID
     let pipelineVersion: Int
@@ -34,6 +34,19 @@ nonisolated struct SpeakerFinalizationMetrics: Codable, Equatable, Sendable {
     let diarizationEngineID: String
     let observationCount: Int
     let speakerCount: Int
+    /// Number of meeting-wide fallback passes started by this finalization.
+    /// It is always zero or one; persisted observations make retries zero.
+    let offlineSpeakerPassCount: Int?
+    let offlineSpeakerPassMilliseconds: Double?
+    let acousticStrategy: String?
+    let sherpaWindowCount: Int?
+    let sparseEmbeddingCount: Int?
+    let sparseEmbeddingMilliseconds: Double?
+    let candidateSegmentCount: Int?
+    let audioDecodeMilliseconds: Double?
+    let unknownSegmentCount: Int?
+    let multipleSegmentCount: Int?
+    let weakMatchedSegmentCount: Int?
     let observationLoadMilliseconds: Double
     let reclusterMilliseconds: Double
     let bindingMilliseconds: Double
@@ -112,6 +125,20 @@ nonisolated enum TranscriptionStageMetricsStore {
         )
     }
 
+    static func removeSpeakerFinalization(rootURL: URL, recordingID: UUID) {
+        let directory = rootURL
+            .appendingPathComponent(directoryName, isDirectory: true)
+            .appendingPathComponent(recordingID.uuidString.uppercased(), isDirectory: true)
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        for url in urls where url.lastPathComponent.hasPrefix("speaker-finalization-v") {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
     private static func write<Value: Encodable>(_ value: Value, to url: URL) throws {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -130,13 +157,22 @@ actor SpeakerFinalizationCoordinator {
 
     enum FinalizationError: LocalizedError {
         case previouslyFailed(String?)
+        case invalidated
 
         var errorDescription: String? {
             switch self {
             case let .previouslyFailed(message):
                 message ?? "说话人整理失败，等待用户重试。"
+            case .invalidated:
+                "说话人整理已被新的转写任务取代。"
             }
         }
+    }
+
+    func invalidate(recordingID: UUID) {
+        let job = SpeakerFinalizationJob(recordingID: recordingID)
+        inFlight[job]?.cancel()
+        inFlight[job] = nil
     }
 
     /// Creates the durable finalization fact before doing work, so completion
@@ -162,43 +198,71 @@ actor SpeakerFinalizationCoordinator {
             throw FinalizationError.previouslyFailed(durable.lastError)
         }
 
-        var running = durable
-        if running.state == .pending {
-            running.state = .running
-            running.attemptCount += 1
-            running.lastError = nil
-            running.startedAt = Date()
-            running.updatedAt = running.startedAt!
-            try await repository.upsertJob(running, at: running.updatedAt)
-        }
-
-        do {
-            let metrics = try await run(
-                job: SpeakerFinalizationJob(recordingID: recordingID),
+        let job = SpeakerFinalizationJob(recordingID: recordingID)
+        if durable.state == .running, inFlight[job] != nil {
+            return try await run(
+                job: job,
+                execution: durable,
                 repository: repository,
                 transcriptStore: transcriptStore,
                 publisher: publisher
             )
-            var completed = running
-            completed.state = .completed
-            completed.lastError = nil
-            completed.startedAt = nil
-            completed.updatedAt = Date()
-            try await repository.upsertJob(completed, at: completed.updatedAt)
+        }
+        if durable.state == .running || durable.state == .completed {
+            var orphaned = durable
+            orphaned.state = .pending
+            orphaned.lastError = durable.state == .running
+                ? "recoveredAfterTermination"
+                : "missingFinalizationMetrics"
+            orphaned.executionToken = nil
+            orphaned.startedAt = nil
+            orphaned.terminationReason = orphaned.lastError
+            orphaned.updatedAt = Date()
+            try await repository.upsertJob(orphaned, at: orphaned.updatedAt)
+        }
+        guard let running = try await repository.claimSpeakerFinalization(
+            jobID: durable.id,
+            recordingID: recordingID,
+            pipelineVersion: job.pipelineVersion,
+            at: Date()
+        ) else { throw FinalizationError.invalidated }
+
+        do {
+            let metrics = try await run(
+                job: job,
+                execution: running,
+                repository: repository,
+                transcriptStore: transcriptStore,
+                publisher: publisher
+            )
+            guard let token = running.executionToken,
+                  try await repository.finishSpeakerFinalization(
+                      jobID: running.id,
+                      recordingID: recordingID,
+                      executionToken: token,
+                      state: .completed,
+                      at: Date()
+                  ) != nil else { throw FinalizationError.invalidated }
             return metrics
         } catch {
-            var failed = running
-            failed.state = .failed
-            failed.lastError = error.localizedDescription
-            failed.startedAt = nil
-            failed.updatedAt = Date()
-            _ = try? await repository.upsertJob(failed, at: failed.updatedAt)
+            if let token = running.executionToken {
+                _ = try? await repository.finishSpeakerFinalization(
+                    jobID: running.id,
+                    recordingID: recordingID,
+                    executionToken: token,
+                    state: error is CancellationError ? .pending : .failed,
+                    lastError: error.localizedDescription,
+                    terminationReason: error is CancellationError ? "cancelled" : "finalizerFailed",
+                    at: Date()
+                )
+            }
             throw error
         }
     }
 
     func run(
         job: SpeakerFinalizationJob,
+        execution: RecordingJob,
         repository: RecordingRepository,
         transcriptStore: TranscriptDocumentStore,
         publisher: PublicDocumentPublisher
@@ -210,6 +274,7 @@ actor SpeakerFinalizationCoordinator {
         let task = Task {
             try await Self.perform(
                 job: job,
+                execution: execution,
                 repository: repository,
                 transcriptStore: transcriptStore,
                 publisher: publisher
@@ -226,12 +291,30 @@ actor SpeakerFinalizationCoordinator {
         }
     }
 
-    private func ensureDurableJob(
+    func ensureDurableJob(
         recordingID: UUID,
         repository: RecordingRepository
     ) async throws -> RecordingJob {
-        if let existing = try await repository.jobs(recordingID: recordingID)
+        if var existing = try await repository.jobs(recordingID: recordingID)
             .first(where: { $0.kind == .speakerFinalization }) {
+            if existing.pipelineVersion < SpeakerFinalizationJob.currentPipelineVersion {
+                existing.state = .pending
+                existing.lastError = nil
+                existing.pipelineVersion = SpeakerFinalizationJob.currentPipelineVersion
+                existing.executionToken = nil
+                existing.startedAt = nil
+                existing.terminationReason = "upgradedSpeakerPipeline"
+                existing.updatedAt = Date()
+                try await repository.upsertJob(existing, at: existing.updatedAt)
+                SpeakerObservationStore.remove(
+                    rootURL: repository.rootURL,
+                    recordingID: recordingID
+                )
+                TranscriptionStageMetricsStore.removeSpeakerFinalization(
+                    rootURL: repository.rootURL,
+                    recordingID: recordingID
+                )
+            }
             return existing
         }
         let now = Date()
@@ -251,60 +334,98 @@ actor SpeakerFinalizationCoordinator {
 
     private static func perform(
         job: SpeakerFinalizationJob,
+        execution: RecordingJob,
         repository: RecordingRepository,
         transcriptStore: TranscriptDocumentStore,
         publisher: PublicDocumentPublisher
     ) async throws -> SpeakerFinalizationMetrics {
+        try Task.checkCancellation()
         let totalStartedAt = Date()
+        let document = try await transcriptStore.document(recordingID: job.recordingID)
+        let segments = document?.segments ?? []
         let loadStartedAt = Date()
         var observations = SpeakerObservationStore.load(
             rootURL: repository.rootURL,
             recordingID: job.recordingID
         )
-        var fallbackResult: OfflineSpeakerReclustering.Result?
-        if observations.isEmpty {
-            let pass = try await offlineSpeakerPass(
+        let observationLoadMilliseconds = elapsedMilliseconds(since: loadStartedAt)
+        var audioDecodeMilliseconds: Double = 0
+        var sparseEmbeddingMilliseconds: Double = 0
+        if observations.isEmpty, !segments.isEmpty {
+            let decodeStartedAt = Date()
+            let segmentAudio = try await segmentAudio(
+                segments: segments,
                 recordingID: job.recordingID,
                 repository: repository
             )
-            observations = pass.observations
-            fallbackResult = pass.recluster
+            audioDecodeMilliseconds = elapsedMilliseconds(since: decodeStartedAt)
+            let anchors = SegmentSpeakerAnchorPlanner.anchors(for: segmentAudio)
+            let embeddingStartedAt = Date()
+            let embeddings = await CAMPlusShortWindowEmbedder.embedConcurrently(
+                windows: anchors.map(\.window),
+                modelURL: try speakerEmbeddingModelURL(),
+                maximumParallelism: 4
+            )
+            sparseEmbeddingMilliseconds = elapsedMilliseconds(since: embeddingStartedAt)
+            observations = zip(anchors, embeddings).map { anchor, embedding in
+                OfflineSpeakerObservation(
+                    startSample: anchor.window.startSample,
+                    endSample: anchor.window.endSample,
+                    embedding: embedding,
+                    exclusionReasons: anchor.window.exclusionReasons,
+                    onlineTemporaryLabel: anchor.segmentID.uuidString.lowercased()
+                )
+            }
             SpeakerObservationStore.save(
                 observations,
                 rootURL: repository.rootURL,
                 recordingID: job.recordingID
             )
         }
-        let observationLoadMilliseconds = elapsedMilliseconds(since: loadStartedAt)
 
         let reclusterStartedAt = Date()
-        let baseline = fallbackResult ?? OfflineSpeakerReclustering.recluster(observations)
-        let diarization: SpeakerDiarizationOutput
-        if let sherpa = SpeakerDiarizationEngineFactory.approvedSherpaEngine(),
-           !baseline.speakers.isEmpty {
-            do {
-                diarization = try await windowedSherpaDiarization(
-                    recordingID: job.recordingID,
-                    baseline: baseline,
-                    observations: observations,
-                    engine: sherpa,
-                    repository: repository
+        let sentenceGate = SegmentSpeakerSentenceGate.evaluate(
+            segmentIDs: segments.map(\.id),
+            observations: observations,
+            mergeSimilarityThreshold: 0.65
+        )
+        let clustered = OfflineSpeakerReclustering.recluster(
+            sentenceGate.representatives,
+            mergeSimilarityThreshold: 0.65,
+            shortJumpMaxWindows: 0
+        )
+        let validatedAttributions = SegmentSpeakerSentenceGate.validatingUnknowns(
+            sentenceGate,
+            observations: observations,
+            representativeLabels: clustered.labels,
+            mergeSimilarityThreshold: 0.65
+        )
+        let finalCleanup = SegmentSpeakerSentenceGate.matchingSingleAnchorUnknowns(
+            attributions: validatedAttributions,
+            observations: observations,
+            representatives: sentenceGate.representatives,
+            representativeLabels: clustered.labels
+        )
+        let assignment = SegmentSpeakerAssignmentResolver.resolve(
+            segments: segments.map {
+                SegmentSpeakerAssignmentResolver.Segment(
+                    id: $0.id,
+                    startSample: $0.startSample,
+                    endSample: $0.endSample
                 )
-            } catch {
-                // A decode/model/runtime failure must never discard ASR. The
-                // meeting-wide observation baseline remains deterministic.
-                diarization = SpeakerDiarizationOutput(
-                    engineID: "cam-plus-observation-clustering-v1-fallback",
-                    result: baseline
-                )
-            }
-        } else {
-            diarization = SpeakerDiarizationOutput(
-                engineID: "cam-plus-observation-clustering-v1",
-                result: baseline
-            )
-        }
-        let recluster = diarization.result
+            },
+            attributions: finalCleanup.attributions,
+            representativeSegmentIDs: sentenceGate.representatives.map {
+                $0.onlineTemporaryLabel.flatMap(UUID.init(uuidString:))
+            },
+            representativeLabels: clustered.labels,
+            supplementalLabels: finalCleanup.supplementalLabels
+        )
+        let recluster = OfflineSpeakerReclustering.Result(
+            speakers: assignment.speakers,
+            turns: assignment.turns,
+            labels: clustered.labels
+        )
         let reclusterMilliseconds = elapsedMilliseconds(since: reclusterStartedAt)
 
         let bindingStartedAt = Date()
@@ -314,7 +435,7 @@ actor SpeakerFinalizationCoordinator {
             let bindings = SpeakerIdentityConfirmation.makeBindings(
                 speakers: recluster.speakers,
                 labels: recluster.labels,
-                observations: observations,
+                observations: sentenceGate.representatives,
                 archive: archive
             )
             try MeetingSpeakerBindingStore.save(
@@ -325,6 +446,14 @@ actor SpeakerFinalizationCoordinator {
         }
         let bindingMilliseconds = elapsedMilliseconds(since: bindingStartedAt)
 
+        guard let executionToken = execution.executionToken,
+              try await repository.validateSpeakerFinalization(
+                  jobID: execution.id,
+                  recordingID: job.recordingID,
+                  executionToken: executionToken,
+                  pipelineVersion: execution.pipelineVersion
+              ) else { throw FinalizationError.invalidated }
+        try Task.checkCancellation()
         let commitStartedAt = Date()
         let completed = try await completedDocument(
             recordingID: job.recordingID,
@@ -353,9 +482,20 @@ actor SpeakerFinalizationCoordinator {
         let metrics = SpeakerFinalizationMetrics(
             recordingID: job.recordingID,
             pipelineVersion: job.pipelineVersion,
-            diarizationEngineID: diarization.engineID,
+            diarizationEngineID: "cam-plus-vad-segment-five-point-gate-weak-match-v5",
             observationCount: observations.count,
             speakerCount: recluster.speakers.count,
+            offlineSpeakerPassCount: 0,
+            offlineSpeakerPassMilliseconds: 0,
+            acousticStrategy: "vad-segment-five-point-single-only-cam-plus-weak-cleanup",
+            sherpaWindowCount: 0,
+            sparseEmbeddingCount: observations.filter(\.isEligibleForWeakMatching).count,
+            sparseEmbeddingMilliseconds: sparseEmbeddingMilliseconds,
+            candidateSegmentCount: segments.count,
+            audioDecodeMilliseconds: audioDecodeMilliseconds,
+            unknownSegmentCount: assignment.unknownSegmentCount,
+            multipleSegmentCount: assignment.multipleSegmentCount,
+            weakMatchedSegmentCount: finalCleanup.supplementalLabels.count,
             observationLoadMilliseconds: observationLoadMilliseconds,
             reclusterMilliseconds: reclusterMilliseconds,
             bindingMilliseconds: bindingMilliseconds,
@@ -375,14 +515,10 @@ actor SpeakerFinalizationCoordinator {
         transcriptStore: TranscriptDocumentStore
     ) async throws -> TranscriptDocumentV1 {
         if let document = try await transcriptStore.document(recordingID: recordingID) {
-            var completed = document.updatingState(.complete)
-            if !recluster.speakers.isEmpty {
-                completed = completed.applyingOfflineRecluster(
-                    speakers: recluster.speakers,
-                    speakerTurns: recluster.turns
-                )
-            }
-            return completed
+            return document.updatingState(.complete).applyingOfflineRecluster(
+                speakers: recluster.speakers,
+                speakerTurns: recluster.turns
+            )
         }
 
         guard let recording = try await repository.recording(id: recordingID) else {
@@ -409,55 +545,27 @@ actor SpeakerFinalizationCoordinator {
         )
     }
 
-    /// Fallback for recordings created before incremental observations existed.
-    /// It executes at most once in the finalization pass, never per minute.
-    private static func offlineSpeakerPass(
-        recordingID: UUID,
-        repository: RecordingRepository
-    ) async throws -> OfflineSpeakerReclusterPass.PassResult {
+    private static func speakerEmbeddingModelURL() throws -> URL {
         let resourceRoot = try OfflineSpeakerReclusterPass.bundledResourceRoot()
-        if var asset = try await repository.importedAudioAsset(recordingID: recordingID),
-           asset.audioRemovedAt == nil {
-            var url = repository.rootURL.appendingPathComponent(asset.relativePath)
-            if !asset.isStandardized,
-               !ImportAudioStandardizer.supportsRandomAccess(at: url) {
-                asset = try ImportAudioStandardizer.replaceWithStandardized(
-                    asset: asset,
-                    rootURL: repository.rootURL
-                )
-                try await repository.updateImportedAudioAsset(asset, at: Date())
-                url = repository.rootURL.appendingPathComponent(asset.relativePath)
-            }
-            return try await OfflineSpeakerReclusterPass.runImportedAsset(
-                url: url,
-                totalSamples: asset.totalSamples,
-                resourceRoot: resourceRoot
-            )
-        }
-
-        let chunks = try await repository.chunks(recordingID: recordingID)
-            .filter { $0.state == .closed && $0.audioRemovedAt == nil }
-            .sorted { $0.startSample < $1.startSample }
-        return try await OfflineSpeakerReclusterPass.run(
-            chunkURLs: chunks.map {
-                (
-                    url: repository.rootURL.appendingPathComponent($0.relativePath),
-                    startSample: $0.startSample
-                )
-            },
-            resourceRoot: resourceRoot
+        let url = resourceRoot.appendingPathComponent(
+            "3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx",
+            isDirectory: false
         )
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw OfflineSpeakerReclusterPass.PassError.missingResource(url.lastPathComponent)
+        }
+        return url
     }
 
-    private static func windowedSherpaDiarization(
+    /// Decodes each underlying audio source once per bounded source window and
+    /// distributes only the existing VAD segment ranges into segment buffers.
+    /// Transcript text is never read here.
+    private static func segmentAudio(
+        segments: [TranscriptDocumentV1.Segment],
         recordingID: UUID,
-        baseline: OfflineSpeakerReclustering.Result,
-        observations: [OfflineSpeakerObservation],
-        engine: SherpaOfflineSpeakerDiarizationEngine,
         repository: RecordingRepository
-    ) async throws -> SpeakerDiarizationOutput {
-        let session = try engine.makeSession()
-        var windowResults: [OfflineSpeakerReclustering.Result] = []
+    ) async throws -> [SegmentSpeakerAudio] {
+        var samplesBySegmentID: [UUID: [Float]] = [:]
 
         if var asset = try await repository.importedAudioAsset(recordingID: recordingID),
            asset.audioRemovedAt == nil {
@@ -471,108 +579,107 @@ actor SpeakerFinalizationCoordinator {
                 try await repository.updateImportedAudioAsset(asset, at: Date())
                 url = repository.rootURL.appendingPathComponent(asset.relativePath)
             }
-            for range in SpeakerDiarizationWindowing.ranges(totalSamples: asset.totalSamples) {
-                let samples = try ImportAudioRangeDecoder.samples(
+
+            let importedRanges = sourceRanges(
+                segments: segments,
+                kind: .importedAsset,
+                sourceID: asset.id
+            )
+            for window in SpeakerDiarizationWindowing.ranges(totalSamples: asset.totalSamples)
+            where importedRanges.contains(where: {
+                $0.range.startSample < window.endSample && window.startSample < $0.range.endSample
+            }) {
+                try Task.checkCancellation()
+                let decoded = try ImportAudioRangeDecoder.samples(
                     from: url,
-                    startSample: range.startSample,
-                    endSample: range.endSample
+                    startSample: window.startSample,
+                    endSample: window.endSample
                 )
-                let output = try await session.diarize(
-                    SpeakerDiarizationInput(
-                        startSample: range.startSample,
-                        samples: samples,
-                        observations: overlappingObservations(in: range, from: observations)
-                    )
+                appendIntersections(
+                    sourceRanges: importedRanges,
+                    decodedSamples: decoded,
+                    decodedStartSample: window.startSample,
+                    decodedEndSample: window.endSample,
+                    samplesBySegmentID: &samplesBySegmentID
                 )
-                windowResults.append(output.result)
             }
         } else {
             let chunks = try await repository.chunks(recordingID: recordingID)
                 .filter { $0.state == .closed && $0.audioRemovedAt == nil }
                 .sorted { $0.startSample < $1.startSample }
-            guard let finalSample = chunks.last?.endSample, finalSample > 0 else {
-                throw SherpaOfflineSpeakerDiarizationEngine.EngineError.emptyAudio
-            }
-            for range in SpeakerDiarizationWindowing.ranges(totalSamples: finalSample) {
-                guard let samples = try microphoneSamples(
-                    range: range,
-                    chunks: chunks,
-                    rootURL: repository.rootURL
-                ) else { continue }
-                let output = try await session.diarize(
-                    SpeakerDiarizationInput(
-                        startSample: range.startSample,
-                        samples: samples,
-                        observations: overlappingObservations(in: range, from: observations)
-                    )
+            for chunk in chunks {
+                let ranges = sourceRanges(
+                    segments: segments,
+                    kind: .audioChunk,
+                    sourceID: chunk.id
                 )
-                windowResults.append(output.result)
+                guard !ranges.isEmpty else { continue }
+                try Task.checkCancellation()
+                let decoded = try ImportAudioRangeDecoder.samples(
+                    from: repository.rootURL.appendingPathComponent(chunk.relativePath),
+                    startSample: 0,
+                    endSample: chunk.endSample - chunk.startSample
+                )
+                appendIntersections(
+                    sourceRanges: ranges,
+                    decodedSamples: decoded,
+                    decodedStartSample: chunk.startSample,
+                    decodedEndSample: chunk.endSample,
+                    samplesBySegmentID: &samplesBySegmentID
+                )
             }
         }
 
-        let aligned = SpeakerDiarizationWindowing.align(
-            baseline: baseline,
-            observations: observations,
-            windowResults: windowResults
-        )
-        guard !aligned.turns.isEmpty else {
-            throw SherpaOfflineSpeakerDiarizationEngine.EngineError.processingFailed
-        }
-        return SpeakerDiarizationOutput(
-            engineID: "\(engine.id)-windowed-60s",
-            result: aligned
-        )
-    }
-
-    private static func overlappingObservations(
-        in range: (startSample: Int64, endSample: Int64),
-        from observations: [OfflineSpeakerObservation]
-    ) -> [OfflineSpeakerObservation] {
-        observations.filter {
-            $0.startSample < range.endSample && range.startSample < $0.endSample
-        }
-    }
-
-    /// Reconstructs only one absolute 60-second window from private chunk
-    /// files. Gaps remain zero-filled and no complete meeting buffer exists.
-    private static func microphoneSamples(
-        range: (startSample: Int64, endSample: Int64),
-        chunks: [AudioChunk],
-        rootURL: URL
-    ) throws -> [Float]? {
-        let intersecting = chunks.filter {
-            $0.startSample < range.endSample && range.startSample < $0.endSample
-        }
-        guard !intersecting.isEmpty else { return nil }
-
-        var output = Array(
-            repeating: Float.zero,
-            count: Int(range.endSample - range.startSample)
-        )
-        for chunk in intersecting {
-            let absoluteStart = max(range.startSample, chunk.startSample)
-            let absoluteEnd = min(range.endSample, chunk.endSample)
-            guard absoluteEnd > absoluteStart else { continue }
-            let decoded = try ImportAudioRangeDecoder.samples(
-                from: rootURL.appendingPathComponent(chunk.relativePath),
-                startSample: absoluteStart - chunk.startSample,
-                endSample: absoluteEnd - chunk.startSample
+        return segments.map { segment in
+            SegmentSpeakerAudio(
+                segmentID: segment.id,
+                startSample: segment.startSample,
+                endSample: segment.endSample,
+                samples: samplesBySegmentID[segment.id] ?? []
             )
-            let destinationStart = Int(absoluteStart - range.startSample)
-            let take = min(decoded.count, Int(absoluteEnd - absoluteStart))
-            guard take > 0 else { continue }
-            output.withUnsafeMutableBufferPointer { destination in
-                decoded.withUnsafeBufferPointer { source in
-                    guard let destinationBase = destination.baseAddress,
-                          let sourceBase = source.baseAddress else { return }
-                    destinationBase.advanced(by: destinationStart).update(
-                        from: sourceBase,
-                        count: take
-                    )
-                }
-            }
         }
-        return output
+    }
+
+    private struct SegmentSourceRange {
+        let segmentID: UUID
+        let range: TranscriptDocumentV1.SourceRange
+    }
+
+    private static func sourceRanges(
+        segments: [TranscriptDocumentV1.Segment],
+        kind: TranscriptDocumentV1.SourceRange.Kind,
+        sourceID: UUID
+    ) -> [SegmentSourceRange] {
+        segments.flatMap { segment in
+            segment.sourceRanges.compactMap { range in
+                guard range.sourceKind == kind, range.sourceID == sourceID else { return nil }
+                return SegmentSourceRange(segmentID: segment.id, range: range)
+            }
+        }.sorted {
+            if $0.range.startSample != $1.range.startSample {
+                return $0.range.startSample < $1.range.startSample
+            }
+            return $0.range.endSample < $1.range.endSample
+        }
+    }
+
+    private static func appendIntersections(
+        sourceRanges: [SegmentSourceRange],
+        decodedSamples: [Float],
+        decodedStartSample: Int64,
+        decodedEndSample: Int64,
+        samplesBySegmentID: inout [UUID: [Float]]
+    ) {
+        for item in sourceRanges {
+            let lower = max(item.range.startSample, decodedStartSample)
+            let upper = min(item.range.endSample, decodedEndSample)
+            guard upper > lower else { continue }
+            let localLower = Int(lower - decodedStartSample)
+            let localUpper = min(Int(upper - decodedStartSample), decodedSamples.count)
+            guard localUpper > localLower else { continue }
+            samplesBySegmentID[item.segmentID, default: []]
+                .append(contentsOf: decodedSamples[localLower..<localUpper])
+        }
     }
 
     private static func elapsedMilliseconds(since start: Date) -> Double {

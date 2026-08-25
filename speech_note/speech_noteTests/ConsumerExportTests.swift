@@ -75,6 +75,26 @@ struct ConsumerExportTests {
         #expect(TranscriptSRTRenderer.formatTimestamp(3661.234) == "01:01:01,234")
     }
 
+    @Test func multipleSpeakerSegmentExportsWithoutFalseSingleAttribution() {
+        let document = makeDocument(
+            title: "讨论",
+            segments: [(start: 0, end: 32_000, text: "两个人连续发言")],
+            turns: [
+                SpeakerTurn(
+                    speaker: nil,
+                    attribution: .multiple,
+                    startSample: 0,
+                    endSample: 32_000,
+                    onlineTemporaryLabels: []
+                ),
+            ]
+        )
+
+        #expect(TranscriptPlainTextRenderer.render(document).contains("多人对话"))
+        #expect(TranscriptSRTRenderer.render(document).contains("多人对话: 两个人连续发言"))
+        #expect(!document.speakers.contains("多人对话"))
+    }
+
     @Test func srtBumpsDegenerateZeroLengthCue() {
         let document = makeDocument(
             title: nil,

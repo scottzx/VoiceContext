@@ -4,6 +4,15 @@ import SherpaOnnxC
 /// CPU-only preparation for microphone input. Metal work remains owned by
 /// `SenseVoiceInferenceService` and is admitted through its lifecycle gate.
 actor SpeechAnalysisService {
+    enum AnalysisPurpose: Sendable {
+        case transcription
+        case speakerFinalization
+
+        var includesSpeakerAnalysis: Bool {
+            self == .speakerFinalization
+        }
+    }
+
     struct SpeechSpan: Codable, Equatable, Sendable {
         /// Absolute 16 kHz sample offsets in the recording, not offsets local
         /// to an AAC chunk or a VAD input buffer.
@@ -166,13 +175,15 @@ actor SpeechAnalysisService {
     func analyze(
         samples: [Float],
         resourceRoot: URL,
-        startingAt startSample: Int64 = 0
+        startingAt startSample: Int64 = 0,
+        purpose: AnalysisPurpose = .transcription
     ) async throws -> Result {
         try await Task.detached(priority: .userInitiated) {
             try Self.run(
                 samples: samples,
                 resourceRoot: resourceRoot,
-                startingAt: startSample
+                startingAt: startSample,
+                purpose: purpose
             )
         }.value
     }
@@ -188,7 +199,8 @@ actor SpeechAnalysisService {
             return try run(
                 samples: samples,
                 resourceRoot: resourceRoot,
-                startingAt: startSample
+                startingAt: startSample,
+                purpose: .speakerFinalization
             ).speakerObservations
         } catch let error as AnalysisError {
             if case .noSpeechDetected = error { return [] }
@@ -199,7 +211,8 @@ actor SpeechAnalysisService {
     private nonisolated static func run(
         samples: [Float],
         resourceRoot: URL,
-        startingAt startSample: Int64
+        startingAt startSample: Int64,
+        purpose: AnalysisPurpose
     ) throws -> Result {
         let inputMetrics = AudioInputMetrics.from(samples: samples)
         let vadModel = resourceRoot.appending(path: "silero_vad.onnx")
@@ -207,7 +220,7 @@ actor SpeechAnalysisService {
         guard FileManager.default.fileExists(atPath: vadModel.path) else {
             throw AnalysisError.missingResource("silero_vad.onnx")
         }
-        guard FileManager.default.fileExists(atPath: speakerModel.path) else {
+        guard !purpose.includesSpeakerAnalysis || FileManager.default.fileExists(atPath: speakerModel.path) else {
             throw AnalysisError.missingResource("3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx")
         }
 
@@ -228,6 +241,22 @@ actor SpeechAnalysisService {
         guard !utterances.isEmpty else { throw AnalysisError.noSpeechDetected(inputMetrics) }
 
         let voicedDuration = spans.reduce(0) { $0 + $1.duration }
+        guard purpose.includesSpeakerAnalysis else {
+            return Result(
+                spans: spans,
+                utterances: utterances,
+                voicedDuration: voicedDuration,
+                vadMilliseconds: vadMilliseconds,
+                speakerEmbedding: .unavailable(reason: "说话人整理在转写完成后执行"),
+                embeddingDimension: nil,
+                embeddingRawNorm: nil,
+                embeddingNorm: nil,
+                embeddingMilliseconds: 0,
+                temporarySpeakerAssignments: [],
+                temporarySpeakers: [],
+                speakerObservations: []
+            )
+        }
         let embeddingStartedAt = Date()
         let windows = SpeakerWindowing.makeWindows(from: utterances)
         let windowEmbeddings = CAMPlusShortWindowEmbedder.embed(

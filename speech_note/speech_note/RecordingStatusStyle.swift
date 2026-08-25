@@ -116,6 +116,7 @@ enum RecordingStatusStyle {
         case .idle: "尚未开始转写"
         case .queued: "排队处理中"
         case .processing: "正在处理"
+        case .speakerFinalization: "逐字稿已完成，正在整理说话人"
         case .deferredUntilForeground: "待回到前台后继续"
         case .lockedPendingPurchase: "音频已保存，转写等待解锁"
         case .needsAttention: "需要注意，可重试"
@@ -128,6 +129,7 @@ enum RecordingStatusStyle {
         case .idle: "text.bubble"
         case .queued: "clock"
         case .processing: "hourglass"
+        case .speakerFinalization: "person.2"
         case .deferredUntilForeground: "iphone"
         case .lockedPendingPurchase: "lock.fill"
         case .needsAttention: "exclamationmark.triangle.fill"
@@ -138,7 +140,7 @@ enum RecordingStatusStyle {
     static func processingColor(for processing: RecordingProcessingState) -> Color {
         switch processing {
         case .idle, .complete: .secondary
-        case .queued, .processing, .deferredUntilForeground, .lockedPendingPurchase: .orange
+        case .queued, .processing, .speakerFinalization, .deferredUntilForeground, .lockedPendingPurchase: .orange
         case .needsAttention: .red
         }
     }
@@ -173,6 +175,8 @@ enum RecordingStatusStyle {
             parts.append(processingText(for: .lockedPendingPurchase))
         case .needsAttention:
             parts.append(processingText(for: .needsAttention))
+        case .speakerFinalization:
+            parts.append(processingText(for: .speakerFinalization))
         case .processing, .queued:
             if parts.isEmpty {
                 parts.append(processingText(for: progress.processing))

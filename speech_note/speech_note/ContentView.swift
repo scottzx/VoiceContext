@@ -1337,7 +1337,7 @@ private struct RecordingRow: View {
         case .paused: "已暂停"
         case .interrupted: "中断需注意"
         case .stopping: "正在停止"
-        case .processing: "正在转写"
+        case .processing: "正在处理"
         case .complete: "已完成"
         case .failed: "转写异常"
         }
@@ -2377,4 +2377,3 @@ private struct QuickDateJumpSheet: View {
         }
     }
 }
-

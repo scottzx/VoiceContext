@@ -272,7 +272,12 @@ struct RecordingDetailScreen: View {
                         return job.state == .running || job.state == .pending
                     }
                     let processing = progress?.processing
-                    let isQueued = (processing == .queued || processing == .processing || processing == .deferredUntilForeground)
+                    let isQueued = (
+                        processing == .queued ||
+                            processing == .processing ||
+                            processing == .speakerFinalization ||
+                            processing == .deferredUntilForeground
+                    )
                     let isActivelyTranscribing = isCapturingThisRecording || hasActiveWork || isQueued
 
                     if isActivelyTranscribing {
@@ -330,6 +335,15 @@ struct RecordingDetailScreen: View {
                 statusPill
             }
 
+            if progress?.processing == .speakerFinalization {
+                Label(
+                    RecordingStatusStyle.processingText(for: .speakerFinalization),
+                    systemImage: RecordingStatusStyle.processingSymbolName(for: .speakerFinalization)
+                )
+                .font(.caption)
+                .foregroundStyle(RecordingStatusStyle.processingColor(for: .speakerFinalization))
+            }
+
             // 第三行：地理位置（独立一行）
             if let location = currentRecording.locationName, !location.isEmpty {
                 HStack(spacing: 4) {
@@ -371,7 +385,9 @@ struct RecordingDetailScreen: View {
             }
             switch processing {
             case .processing, .queued:
-                return ("转写中", "waveform", .orange)
+                return ("正在处理", "hourglass", .orange)
+            case .speakerFinalization:
+                return ("整理说话人", "person.2", .orange)
             case .deferredUntilForeground:
                 return ("待恢复", "pause.circle", .orange)
             case .lockedPendingPurchase:
@@ -1203,6 +1219,8 @@ struct RecordingDetailScreen: View {
         switch progress?.processing {
         case .queued, .processing:
             return "正在生成本地转写文稿…"
+        case .speakerFinalization:
+            return "逐字稿已完成，正在整理说话人。"
         case .deferredUntilForeground:
             return "转写待回到前台后继续。"
         case .lockedPendingPurchase:
@@ -1250,9 +1268,16 @@ struct RecordingDetailScreen: View {
 
     private func speakerLabel(for segment: TranscriptDocumentV1.Segment, in transcript: TranscriptDocumentV1) -> String? {
         let mid = (segment.startSample + segment.endSample) / 2
-        if let turn = transcript.speakerTurns.first(where: {
+        guard let turn = transcript.speakerTurns.first(where: {
             $0.startSample <= mid && mid < max($0.endSample, $0.startSample + 1)
-        }), let speaker = turn.speaker {
+        }) else { return nil }
+        switch turn.attribution {
+        case .multiple:
+            return "多人对话"
+        case .unknown:
+            return "说话人不确定"
+        case .single:
+            guard let speaker = turn.speaker else { return nil }
             if let binding = speakerBindings.first(where: {
                 $0.temporaryLabel == speaker || $0.chipText == speaker || $0.state.linkedDisplayName == speaker
             }) {
@@ -1260,15 +1285,6 @@ struct RecordingDetailScreen: View {
             }
             return speaker
         }
-        if let first = transcript.speakers.first {
-            if let binding = speakerBindings.first(where: {
-                $0.temporaryLabel == first || $0.chipText == first || $0.state.linkedDisplayName == first
-            }) {
-                return binding.chipText
-            }
-            return first
-        }
-        return nil
     }
 
     private var displayedBindings: [MeetingSpeakerBinding] {

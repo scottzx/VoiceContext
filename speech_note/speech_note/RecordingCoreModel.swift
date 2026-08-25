@@ -140,6 +140,8 @@ final class RecordingCoreModel {
     private let trialLedger: TrialQuotaLedger
     private let diagnostics = RecordingDiagnostics()
     private var refreshTask: Task<Void, Never>?
+    private var pendingSpeakerFinalizationIDs: Set<UUID> = []
+    private var speakerFinalizationDrainTask: Task<Void, Never>?
 
     convenience init() throws {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -268,6 +270,12 @@ final class RecordingCoreModel {
                     guard try await repository.validateExecutionLease(lease) else {
                         throw JobExecutionLeaseError.invalidated
                     }
+                    try SpeakerObservationStore.replaceBatch(
+                        [],
+                        rootURL: repository.rootURL,
+                        recordingID: recordingID,
+                        batchID: chunk.id
+                    )
                     _ = try? await repository.setChunkContinuation(
                         id: chunk.id,
                         requiresContinuation: false,
@@ -281,6 +289,12 @@ final class RecordingCoreModel {
                     guard try await repository.validateExecutionLease(lease) else {
                         throw JobExecutionLeaseError.invalidated
                     }
+                    try SpeakerObservationStore.replaceBatch(
+                        [],
+                        rootURL: repository.rootURL,
+                        recordingID: recordingID,
+                        batchID: chunk.id
+                    )
                     _ = try? await repository.setChunkContinuation(
                         id: chunk.id,
                         requiresContinuation: false,
@@ -299,7 +313,7 @@ final class RecordingCoreModel {
                 )
 
                 var drafts: [TranscriptDocumentV1.SegmentDraft] = []
-                var newObservations: [OfflineSpeakerObservation] = []
+                let newObservations = result.speakerObservations
                 if !result.utteranceResults.isEmpty {
                     for u in result.utteranceResults {
                         let sourceRange = TranscriptDocumentV1.SourceRange(
@@ -314,15 +328,6 @@ final class RecordingCoreModel {
                                 startSample: u.startSample,
                                 endSample: u.endSample,
                                 sourceRanges: [sourceRange]
-                            )
-                        )
-                        newObservations.append(
-                            OfflineSpeakerObservation(
-                                startSample: u.startSample,
-                                endSample: u.endSample,
-                                embedding: u.embedding,
-                                exclusionReasons: [],
-                                onlineTemporaryLabel: nil
                             )
                         )
                     }
@@ -343,15 +348,6 @@ final class RecordingCoreModel {
                                 startSample: chunk.startSample,
                                 endSample: chunk.endSample,
                                 sourceRanges: sourceRanges
-                            )
-                        )
-                        newObservations.append(
-                            OfflineSpeakerObservation(
-                                startSample: chunk.startSample,
-                                endSample: chunk.endSample,
-                                embedding: result.speakerEmbedding,
-                                exclusionReasons: [],
-                                onlineTemporaryLabel: nil
                             )
                         )
                     }
@@ -656,6 +652,7 @@ final class RecordingCoreModel {
     func retryTranscription(recordingID: UUID) async {
         do {
             try await coordinator.retryProcessing(recordingID: recordingID)
+            try await prepareSpeakerFinalizationForRetranscription(recordingID: recordingID)
             let importedAsset = try? await repository.importedAudioAsset(recordingID: recordingID)
             if importedAsset != nil {
                 let ranges = (try? await repository.processingRanges(recordingID: recordingID)) ?? []
@@ -707,6 +704,7 @@ final class RecordingCoreModel {
             )
             guard let target = allJobs.first(where: { $0.id == id }) else { return }
             try await coordinator.retryProcessing(recordingID: target.recordingID)
+            try await prepareSpeakerFinalizationForRetranscription(recordingID: target.recordingID)
             try await transcriptionScheduler.retry(
                 recordingID: target.recordingID,
                 chunkID: target.chunkID,
@@ -729,8 +727,14 @@ final class RecordingCoreModel {
                 kind: .transcription,
                 states: [.failed]
             )
+            var preparedRecordingIDs: Set<UUID> = []
             for job in failedJobs {
                 try await coordinator.retryProcessing(recordingID: job.recordingID)
+                if preparedRecordingIDs.insert(job.recordingID).inserted {
+                    try await prepareSpeakerFinalizationForRetranscription(
+                        recordingID: job.recordingID
+                    )
+                }
                 try await transcriptionScheduler.retry(
                     recordingID: job.recordingID,
                     chunkID: job.chunkID,
@@ -748,6 +752,28 @@ final class RecordingCoreModel {
             notice = "重试全部任务失败：\(error.localizedDescription)"
         }
         await refresh()
+    }
+
+    private func prepareSpeakerFinalizationForRetranscription(
+        recordingID: UUID
+    ) async throws {
+        pendingSpeakerFinalizationIDs.remove(recordingID)
+        await speakerFinalizationCoordinator.invalidate(recordingID: recordingID)
+        _ = try await repository.resetSpeakerFinalizationForRetranscription(
+            recordingID: recordingID,
+            at: Date()
+        )
+        TranscriptionStageMetricsStore.removeSpeakerFinalization(
+            rootURL: repository.rootURL,
+            recordingID: recordingID
+        )
+        SpeakerObservationStore.remove(
+            rootURL: repository.rootURL,
+            recordingID: recordingID
+        )
+        if let document = try await transcriptStore.document(recordingID: recordingID) {
+            try await transcriptStore.write(document.preparingForRetranscription())
+        }
     }
 
     func stopAllTranscriptionJobs() async {
@@ -1616,9 +1642,10 @@ final class RecordingCoreModel {
     private func runRecovery() async {
         do {
             try await transcriptionScheduler.beginRecoveryBarrier()
+            _ = try await repository.recoverRunningSpeakerFinalizations(at: Date())
             let result = try await repository.recoverUnfinished(at: Date())
             // Retention for mic chunks and imported private assets (local-first).
-            _ = try await repository.purgeExpiredAudio(at: Date())
+            _ = try? await repository.purgeExpiredAudio(at: Date())
             
             // Clean up any historical continuation flags and ensure processing recordings re-queue
             let allRecordings = (try? await repository.recordings()) ?? []
@@ -1645,19 +1672,15 @@ final class RecordingCoreModel {
             // This also resumes a final speaker pass whose ASR callback was
             // lost just before process termination.
             let reconciliations = try await completionReconciler.reconcileAll()
-            for (recordingID, reconciliation) in reconciliations {
-                guard case .needsSpeakerFinalization = reconciliation else { continue }
-                _ = try await speakerFinalizationCoordinator.runPersisted(
-                    recordingID: recordingID,
-                    repository: repository,
-                    transcriptStore: transcriptStore,
-                    publisher: publicDocumentPublisher
-                )
-                _ = try await completionReconciler.reconcile(recordingID: recordingID)
-            }
             try await transcriptionScheduler.resumePendingJobs(
                 onOutcome: { [weak self] outcome in
                     await self?.applyTranscriptionOutcome(outcome)
+                }
+            )
+            enqueueSpeakerFinalization(
+                recordingIDs: reconciliations.compactMap { recordingID, reconciliation in
+                    guard case .needsSpeakerFinalization = reconciliation else { return nil }
+                    return recordingID
                 }
             )
             recoveries.append(RecoverySummary(
@@ -1678,6 +1701,14 @@ final class RecordingCoreModel {
                     await self?.applyTranscriptionOutcome(outcome)
                 }
             )
+            if let reconciliations = try? await completionReconciler.reconcileAll() {
+                enqueueSpeakerFinalization(
+                    recordingIDs: reconciliations.compactMap { recordingID, reconciliation in
+                        guard case .needsSpeakerFinalization = reconciliation else { return nil }
+                        return recordingID
+                    }
+                )
+            }
             notice = "恢复失败：\(error.localizedDescription)"
         }
         await synchronizeFolders()
@@ -1874,6 +1905,12 @@ final class RecordingCoreModel {
             guard try await repository.validateExecutionLease(lease) else {
                 throw JobExecutionLeaseError.invalidated
             }
+            try SpeakerObservationStore.replaceBatch(
+                [],
+                rootURL: repository.rootURL,
+                recordingID: recording.id,
+                batchID: range.id
+            )
             try await markImportedRangesCompleted(covered, repository: repository)
             return 0
         } catch let error as SenseVoiceInferenceService.InferenceError {
@@ -1883,6 +1920,12 @@ final class RecordingCoreModel {
             guard try await repository.validateExecutionLease(lease) else {
                 throw JobExecutionLeaseError.invalidated
             }
+            try SpeakerObservationStore.replaceBatch(
+                [],
+                rootURL: repository.rootURL,
+                recordingID: recording.id,
+                batchID: range.id
+            )
             try await markImportedRangesCompleted(covered, repository: repository)
             return 0
         }
@@ -1892,7 +1935,7 @@ final class RecordingCoreModel {
         try await markImportedRangesCompleted(covered, repository: repository)
 
         var drafts: [TranscriptDocumentV1.SegmentDraft] = []
-        var newObservations: [OfflineSpeakerObservation] = []
+        let newObservations = result.speakerObservations
         if !result.utteranceResults.isEmpty {
             for u in result.utteranceResults {
                 let sourceRange = TranscriptDocumentV1.SourceRange(
@@ -1907,15 +1950,6 @@ final class RecordingCoreModel {
                         startSample: u.startSample,
                         endSample: u.endSample,
                         sourceRanges: [sourceRange]
-                    )
-                )
-                newObservations.append(
-                    OfflineSpeakerObservation(
-                        startSample: u.startSample,
-                        endSample: u.endSample,
-                        embedding: u.embedding,
-                        exclusionReasons: [],
-                        onlineTemporaryLabel: nil
                     )
                 )
             }
@@ -1936,15 +1970,6 @@ final class RecordingCoreModel {
                         startSample: decodeStart,
                         endSample: decodeEnd,
                         sourceRanges: sourceRanges
-                    )
-                )
-                newObservations.append(
-                    OfflineSpeakerObservation(
-                        startSample: decodeStart,
-                        endSample: decodeEnd,
-                        embedding: result.speakerEmbedding,
-                        exclusionReasons: [],
-                        onlineTemporaryLabel: nil
                     )
                 )
             }
@@ -2034,13 +2059,7 @@ final class RecordingCoreModel {
                 guard case .needsSpeakerFinalization = reconciliation else {
                     break
                 }
-                _ = try await speakerFinalizationCoordinator.runPersisted(
-                    recordingID: outcome.recordingID,
-                    repository: repository,
-                    transcriptStore: transcriptStore,
-                    publisher: publicDocumentPublisher
-                )
-                _ = try await completionReconciler.reconcile(recordingID: outcome.recordingID)
+                enqueueSpeakerFinalization(recordingIDs: [outcome.recordingID])
             }
         } catch {
             // A scheduler failure must remain visible rather than being
@@ -2048,6 +2067,61 @@ final class RecordingCoreModel {
             notice = "转写状态更新失败：\(error.localizedDescription)"
         }
         await refresh()
+    }
+
+    /// Speaker work is intentionally a second, serial phase. The transcript is
+    /// already readable while this queue runs, and historical finalizers can no
+    /// longer block recovery of pending ASR jobs at launch.
+    private func enqueueSpeakerFinalization(recordingIDs: [UUID]) {
+        pendingSpeakerFinalizationIDs.formUnion(recordingIDs)
+        guard speakerFinalizationDrainTask == nil else { return }
+        speakerFinalizationDrainTask = Task { @MainActor [weak self] in
+            await self?.drainSpeakerFinalizationQueue()
+        }
+    }
+
+    private func drainSpeakerFinalizationQueue() async {
+        defer { speakerFinalizationDrainTask = nil }
+        while let recordingID = await nextSpeakerFinalizationRecordingID() {
+            pendingSpeakerFinalizationIDs.remove(recordingID)
+            do {
+                _ = try await speakerFinalizationCoordinator.runPersisted(
+                    recordingID: recordingID,
+                    repository: repository,
+                    transcriptStore: transcriptStore,
+                    publisher: publicDocumentPublisher
+                )
+                _ = try await completionReconciler.reconcile(recordingID: recordingID)
+            } catch is CancellationError {
+                // Retranscription invalidates this pass and will enqueue a new
+                // finalization after its transcription jobs complete.
+            } catch SpeakerFinalizationCoordinator.FinalizationError.invalidated {
+                // Same expected invalidation, expressed by the durable token.
+            } catch {
+                notice = "说话人整理失败：\(error.localizedDescription)"
+            }
+            await refresh()
+        }
+    }
+
+    private func nextSpeakerFinalizationRecordingID() async -> UUID? {
+        guard !pendingSpeakerFinalizationIDs.isEmpty else { return nil }
+        let recordings = (try? await repository.recordings()) ?? []
+        let recordingUpdatedAt = Dictionary(uniqueKeysWithValues: recordings.map { ($0.id, $0.updatedAt) })
+        var priorityAt: [UUID: Date] = [:]
+        for recordingID in pendingSpeakerFinalizationIDs {
+            let jobs = (try? await repository.jobs(recordingID: recordingID)) ?? []
+            priorityAt[recordingID] = jobs
+                .filter { $0.kind == .transcription }
+                .map(\.updatedAt)
+                .max() ?? recordingUpdatedAt[recordingID] ?? .distantPast
+        }
+        return pendingSpeakerFinalizationIDs.sorted { lhs, rhs in
+            let left = priorityAt[lhs] ?? .distantPast
+            let right = priorityAt[rhs] ?? .distantPast
+            if left != right { return left > right }
+            return lhs.uuidString < rhs.uuidString
+        }.first
     }
 
     // MARK: - Diagnostics and report

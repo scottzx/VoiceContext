@@ -4,13 +4,14 @@ import Darwin
 import Foundation
 
 actor SenseVoiceInferenceService {
+    nonisolated static let analysisPurpose = SpeechAnalysisService.AnalysisPurpose.transcription
+
     struct UtteranceResult: Sendable {
         let text: String
         let rawText: String
         let startSample: Int64
         let endSample: Int64
         let offsetMilliseconds: Int
-        let embedding: SpeakerEmbeddingResult
     }
 
     struct Result: Sendable {
@@ -41,6 +42,7 @@ actor SenseVoiceInferenceService {
         let thermalState: String
         let submittedMetalWork: Int
         let utteranceResults: [UtteranceResult]
+        let speakerObservations: [OfflineSpeakerObservation]
     }
 
     enum InferenceError: LocalizedError {
@@ -149,12 +151,6 @@ actor SenseVoiceInferenceService {
         var speechSpanCount = 0
         var utteranceCount = 0
         var vadMilliseconds: Double = 0
-        var speakerEmbedding: SpeakerEmbeddingResult = .unavailable(reason: "未形成可用声纹")
-        var embeddingDimension: Int?
-        var embeddingRawNorm: Float?
-        var embeddingNorm: Float?
-        var embeddingMilliseconds: Double = 0
-        var temporarySpeakers: [String] = []
         var lastSpeechEndSample: Int64?
 
         var utteranceResults: [UtteranceResult] = []
@@ -166,7 +162,8 @@ actor SenseVoiceInferenceService {
                 analysis = try await speechAnalysis.analyze(
                     samples: window,
                     resourceRoot: resourceRoot,
-                    startingAt: windowStartSample
+                    startingAt: windowStartSample,
+                    purpose: Self.analysisPurpose
                 )
             } catch let error as SpeechAnalysisService.AnalysisError {
                 guard case .noSpeechDetected = error else { throw error }
@@ -178,24 +175,10 @@ actor SenseVoiceInferenceService {
             speechSpanCount += analysis.spans.count
             utteranceCount += analysis.utterances.count
             vadMilliseconds += analysis.vadMilliseconds
-            speakerEmbedding = analysis.speakerEmbedding
-            embeddingDimension = analysis.embeddingDimension
-            embeddingRawNorm = analysis.embeddingRawNorm
-            embeddingNorm = analysis.embeddingNorm
-            embeddingMilliseconds += analysis.embeddingMilliseconds
-            temporarySpeakers = TemporarySpeakerLabeling.mergeRosters(
-                temporarySpeakers,
-                analysis.temporarySpeakers
-            )
             lastSpeechEndSample = analysis.spans.last?.endSample ?? lastSpeechEndSample
 
-            let speakerModelURL = resourceRoot.appending(path: "3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx")
             for utterance in analysis.utterances {
                 guard !utterance.samples.isEmpty else { continue }
-                let utteranceEmbedding = SpeechAnalysisService.computeEmbedding(
-                    from: utterance.samples,
-                    modelURL: speakerModelURL
-                ).result
 
                 try await lifecycleGate.beginMetalWork()
                 let result: NativeResult
@@ -222,8 +205,7 @@ actor SenseVoiceInferenceService {
                             rawText: result.rawText,
                             startSample: utterance.startSample,
                             endSample: utterance.endSample,
-                            offsetMilliseconds: Int((Double(utterance.startSample) / 16.0).rounded()),
-                            embedding: utteranceEmbedding
+                            offsetMilliseconds: Int((Double(utterance.startSample) / 16.0).rounded())
                         )
                     )
                 }
@@ -263,16 +245,17 @@ actor SenseVoiceInferenceService {
                 >= startingAt + Int64(samples.count) - Int64(0.75 * 16_000),
             utteranceCount: utteranceCount,
             vadMilliseconds: vadMilliseconds,
-            speakerEmbedding: speakerEmbedding,
-            embeddingDimension: embeddingDimension,
-            embeddingRawNorm: embeddingRawNorm,
-            embeddingNorm: embeddingNorm,
-            embeddingMilliseconds: embeddingMilliseconds,
-            temporarySpeakers: temporarySpeakers,
+            speakerEmbedding: .unavailable(reason: "说话人整理在转写完成后执行"),
+            embeddingDimension: nil,
+            embeddingRawNorm: nil,
+            embeddingNorm: nil,
+            embeddingMilliseconds: 0,
+            temporarySpeakers: [],
             physicalFootprintBytes: nativeResults.map(\.physicalFootprintBytes).max() ?? 0,
             thermalState: Self.thermalStateDescription(),
             submittedMetalWork: metrics.submittedMetalWork,
-            utteranceResults: utteranceResults
+            utteranceResults: utteranceResults,
+            speakerObservations: []
         )
     }
 

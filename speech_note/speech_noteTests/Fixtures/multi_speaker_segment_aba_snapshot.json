@@ -1,0 +1,7 @@
+{
+  "scenario": "one VAD segment contains an A-B-A speaker sequence",
+  "anchor_labels": ["A", "A", "B", "A", "A"],
+  "previous_result": "unknown turn that the UI could fall back to speaker 1",
+  "expected_result": "multiple",
+  "transcript_text_must_change": false
+}

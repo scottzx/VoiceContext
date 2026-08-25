@@ -2778,7 +2778,97 @@ struct RecordingCoreTests {
         #expect(try await transcriptStore.document(recordingID: recording.id)?.state
             == RecordingState.complete.rawValue)
     }
+
+    @Test func realDeviceStaleSpeakerFinalizationRecoversToPendingWithoutHidingTranscriptProgress() async throws {
+        struct DeviceSnapshot: Decodable {
+            struct Finalization: Decodable {
+                let state: String
+                let attemptCount: Int
+
+                enum CodingKeys: String, CodingKey {
+                    case state
+                    case attemptCount = "attempt_count"
+                }
+            }
+
+            let recordingState: String
+            let transcriptionJobCount: Int
+            let completedTranscriptionJobCount: Int
+            let speakerFinalization: Finalization
+
+            enum CodingKeys: String, CodingKey {
+                case recordingState = "recording_state"
+                case transcriptionJobCount = "transcription_job_count"
+                case completedTranscriptionJobCount = "completed_transcription_job_count"
+                case speakerFinalization = "speaker_finalization"
+            }
+        }
+
+        let fixtureURL = try #require(Bundle(for: SpeechNoteTestsBundleToken.self).url(
+            forResource: "stale_speaker_finalization_device_snapshot",
+            withExtension: "json"
+        ))
+        let snapshot = try JSONDecoder().decode(
+            DeviceSnapshot.self,
+            from: Data(contentsOf: fixtureURL)
+        )
+        #expect(snapshot.recordingState == RecordingState.processing.rawValue)
+        #expect(snapshot.transcriptionJobCount == snapshot.completedTranscriptionJobCount)
+        #expect(snapshot.speakerFinalization.state == RecordingJobState.running.rawValue)
+
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let startedAt = Date(timeIntervalSince1970: 1_787_510_000)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(3_108),
+            state: .processing
+        )
+        try await repository.createRecording(recording, at: startedAt)
+        for index in 0..<snapshot.transcriptionJobCount {
+            let date = startedAt.addingTimeInterval(Double(index))
+            try await repository.upsertJob(RecordingJob(
+                recordingID: recording.id,
+                chunkID: UUID(),
+                kind: .transcription,
+                state: .completed,
+                attemptCount: 1,
+                lastError: nil,
+                createdAt: date,
+                updatedAt: date
+            ), at: date)
+        }
+        let staleStartedAt = startedAt.addingTimeInterval(-8_000)
+        try await repository.upsertJob(RecordingJob(
+            recordingID: recording.id,
+            kind: .speakerFinalization,
+            state: .running,
+            attemptCount: snapshot.speakerFinalization.attemptCount,
+            lastError: nil,
+            executionToken: UUID(),
+            startedAt: staleStartedAt,
+            createdAt: staleStartedAt,
+            updatedAt: staleStartedAt
+        ), at: staleStartedAt)
+
+        _ = try await repository.recoverUnfinished(at: startedAt.addingTimeInterval(60))
+
+        let jobs = try await repository.jobs(recordingID: recording.id)
+        let finalization = try #require(jobs.first { $0.kind == .speakerFinalization })
+        #expect(finalization.state == .pending)
+        #expect(finalization.executionToken == nil)
+        #expect(finalization.startedAt == nil)
+        #expect(finalization.lastError == "recoveredAfterTermination")
+        #expect(try await repository.recording(id: recording.id)?.state == .processing)
+        #expect(RecordingProcessingState.resolve(
+            legacyRecordingState: .processing,
+            jobs: jobs
+        ) == .speakerFinalization)
+    }
 }
+
+final class SpeechNoteTestsBundleToken: NSObject {}
 
 private enum SchedulerTestError: LocalizedError {
     case noSpeech
