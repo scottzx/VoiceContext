@@ -12,8 +12,7 @@ nonisolated final class TrialQuotaLedger: @unchecked Sendable {
     static let isManualTrialEnabled = true
     static let trialDuration: TimeInterval = 72 * 60 * 60
     static let productID = "YiJie.speech-note.lifetimeUnlock"
-    static let subscriptionProductID = "YiJie.speech-note.subscription.yearly"
-    static let supportedProductIDs: Set<String> = [productID, subscriptionProductID]
+    static let supportedProductIDs: Set<String> = [productID]
     static let currentSchemaVersion = 2
 
     struct Snapshot: Equatable, Sendable, Codable {

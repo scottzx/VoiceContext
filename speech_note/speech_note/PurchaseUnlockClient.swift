@@ -116,7 +116,7 @@ final class FakePurchaseUnlockClient: PurchaseUnlockClient, @unchecked Sendable 
         entitled: Bool = false,
         shouldFailPurchase: Bool = false,
         shouldFailRestore: Bool = false,
-        price: String = "¥18"
+        price: String = "¥30"
     ) {
         self.entitled = entitled
         self.shouldFailPurchase = shouldFailPurchase

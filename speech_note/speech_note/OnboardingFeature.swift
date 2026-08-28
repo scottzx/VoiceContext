@@ -311,7 +311,7 @@ struct OnboardingFlowView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("首次打开后 3 天免费试用。")
                     .font(.title2.weight(.semibold))
-                Text("试用自首次打开应用起连续计时 72 小时；试用期满后可一次性 ¥18 永久解锁。")
+                Text("试用自首次打开应用起连续计时 72 小时；试用期满后可一次性永久解锁。具体价格以 App Store 显示为准。")
                     .font(.body)
                     .foregroundStyle(.secondary)
             }

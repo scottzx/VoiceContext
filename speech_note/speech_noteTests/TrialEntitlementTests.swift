@@ -226,13 +226,13 @@ struct TrialEntitlementTests {
             now: { now }
         )
         _ = ledger.ensureTrialStarted(at: start)
-        let client = FakePurchaseUnlockClient(entitled: false, price: "¥18")
+        let client = FakePurchaseUnlockClient(entitled: false, price: "¥30")
         let controller = TrialEntitlementController(ledger: ledger, client: client)
         controller.start()
         await controller.refreshFromStore()
 
         #expect(controller.isPurchaseLocked == true)
-        #expect(controller.displayPrice == "¥18")
+        #expect(controller.displayPrice == "¥30")
         #expect(controller.remainingTimeText == "已到期")
 
         var unlockedCalls = 0
@@ -249,7 +249,7 @@ struct TrialEntitlementTests {
             now: { now }
         )
         _ = restoreLedger.ensureTrialStarted(at: start)
-        let restoreClient = FakePurchaseUnlockClient(entitled: true, price: "¥18")
+        let restoreClient = FakePurchaseUnlockClient(entitled: true, price: "¥30")
         let restoreController = TrialEntitlementController(ledger: restoreLedger, client: restoreClient)
         var restoreUnlocks = 0
         restoreController.onUnlocked = { restoreUnlocks += 1 }
@@ -369,7 +369,7 @@ struct TrialEntitlementTests {
             now: { now }
         )
         _ = ledger.ensureTrialStarted(at: start)
-        let client = FakePurchaseUnlockClient(entitled: false, price: "¥18")
+        let client = FakePurchaseUnlockClient(entitled: false, price: "¥30")
         let model = try RecordingCoreModel(
             rootURL: root.appendingPathComponent("VoiceContext"),
             trialLedger: ledger,
@@ -398,7 +398,7 @@ struct TrialEntitlementTests {
         let model = try RecordingCoreModel(
             rootURL: root.appendingPathComponent("VoiceContext"),
             trialLedger: ledger,
-            purchaseClient: FakePurchaseUnlockClient(entitled: false, price: "¥18")
+            purchaseClient: FakePurchaseUnlockClient(entitled: false, price: "¥30")
         )
         model.scenePhaseChanged(to: .active)
         #expect(TrialQuotaLedger.isManualTrialEnabled == true)
