@@ -3,6 +3,35 @@ import Testing
 @testable import speech_note
 
 struct SpeakerFinalizationTests {
+    @Test func observationWritersUseCompactJSON() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recordingID = UUID()
+        let batchID = UUID()
+        let value = observation(start: 0, end: 16_000, vector: [1, 0])
+
+        SpeakerObservationStore.save([value], rootURL: root, recordingID: recordingID)
+        try SpeakerObservationStore.replaceBatch(
+            [value],
+            rootURL: root,
+            recordingID: recordingID,
+            batchID: batchID
+        )
+
+        for url in [
+            SpeakerObservationStore.storageURL(rootURL: root, recordingID: recordingID),
+            SpeakerObservationStore.batchURL(
+                rootURL: root,
+                recordingID: recordingID,
+                batchID: batchID
+            ),
+        ] {
+            let json = try String(contentsOf: url, encoding: .utf8)
+            #expect(!json.contains("\n"))
+            #expect(!json.contains("  \""))
+        }
+    }
+
     @Test func observationBatchesReplaceOnlyTheirOwnMinuteAndOverrideLegacyOverlap() throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -212,7 +241,7 @@ struct SpeakerFinalizationTests {
         })
     }
 
-    @Test func segmentAnchorCountsAreBoundedByVADSegmentDuration() {
+    @Test func segmentAnchorCountsAreBoundedByASRSentenceDuration() {
         let short = segmentAudio(seconds: 1, amplitude: 0.2)
         let ordinary = segmentAudio(seconds: 4, amplitude: 0.2)
         let long = segmentAudio(seconds: 8, amplitude: 0.2)

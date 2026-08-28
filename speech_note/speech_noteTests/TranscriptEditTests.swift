@@ -136,6 +136,120 @@ struct TranscriptEditTests {
         #expect(updated.segments[0].text == "你好")
     }
 
+    @Test func singleSpeakerSentenceAssignmentOnlySplitsItsOwnTurn() throws {
+        let recording = Recording(
+            startedAt: Date(timeIntervalSince1970: 1_786_501_800),
+            endedAt: Date(timeIntervalSince1970: 1_786_501_860),
+            isMeeting: true,
+            state: .complete
+        )
+        let chunk = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/a.m4a",
+            startSample: 0,
+            endSample: 48_000,
+            startedAt: recording.startedAt,
+            endedAt: recording.endedAt!
+        )
+        var document = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [chunk],
+            segmentDrafts: [
+                .init(
+                    text: "第一句。",
+                    startSample: 0,
+                    endSample: 16_000,
+                    sourceRanges: [.init(sourceID: chunk.id, startSample: 0, endSample: 16_000)]
+                ),
+                .init(
+                    text: "第二句。",
+                    startSample: 16_000,
+                    endSample: 32_000,
+                    sourceRanges: [.init(sourceID: chunk.id, startSample: 16_000, endSample: 32_000)]
+                ),
+                .init(
+                    text: "第三句。",
+                    startSample: 32_000,
+                    endSample: 48_000,
+                    sourceRanges: [.init(sourceID: chunk.id, startSample: 32_000, endSample: 48_000)]
+                ),
+            ],
+            timezone: "Asia/Shanghai",
+            language: "zh",
+            state: .complete,
+            speakers: ["Alice", "Bob", "说话人不确定", "多人对话"]
+        )
+        document = document.applyingOfflineRecluster(
+            speakers: document.speakers,
+            speakerTurns: [
+                SpeakerTurn(speaker: "Alice", startSample: 0, endSample: 48_000, onlineTemporaryLabels: ["说话人 1"])
+            ]
+        )
+        let segment = try #require(document.segments.dropFirst().first)
+        let assigned = document.applyingSpeakerAssignment(segmentID: segment.id, speaker: "Bob")
+
+        #expect(assigned.revision == document.revision + 1)
+        #expect(assigned.speakerTurn(for: segment)?.speaker == "Bob")
+        #expect(assigned.speakerTurns.map(\.speaker) == ["Alice", "Bob", "Alice"])
+        #expect(assigned.editableSpeakerLabels == ["Alice", "Bob"])
+    }
+
+    @Test func unknownSentenceCanBeAssignedButMultipleSpeakerSentenceCannot() throws {
+        let recording = Recording(
+            startedAt: Date(timeIntervalSince1970: 1_786_501_800),
+            endedAt: Date(timeIntervalSince1970: 1_786_501_860),
+            isMeeting: true,
+            state: .complete
+        )
+        let chunk = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/a.m4a",
+            startSample: 0,
+            endSample: 16_000,
+            startedAt: recording.startedAt,
+            endedAt: recording.endedAt!
+        )
+        let initial = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [chunk],
+            segmentTexts: [(chunkID: chunk.id, text: "一句话")],
+            timezone: "Asia/Shanghai",
+            language: "zh",
+            state: .complete,
+            speakers: ["Alice", "Bob"]
+        )
+        let segment = try #require(initial.segments.first)
+        let unknown = initial.applyingOfflineRecluster(
+            speakers: initial.speakers,
+            speakerTurns: [
+                SpeakerTurn(
+                    speaker: nil,
+                    attribution: .unknown,
+                    startSample: 0,
+                    endSample: 16_000,
+                    onlineTemporaryLabels: []
+                )
+            ]
+        )
+        let assigned = unknown.applyingSpeakerAssignment(segmentID: segment.id, speaker: "Bob")
+        #expect(assigned.speakerTurn(for: segment)?.speaker == "Bob")
+        #expect(assigned.speakerTurn(for: segment)?.attribution == .single)
+
+        let multiple = initial.applyingOfflineRecluster(
+            speakers: initial.speakers,
+            speakerTurns: [
+                SpeakerTurn(
+                    speaker: nil,
+                    attribution: .multiple,
+                    startSample: 0,
+                    endSample: 16_000,
+                    onlineTemporaryLabels: []
+                )
+            ]
+        )
+        #expect(multiple.applyingSpeakerAssignment(segmentID: segment.id, speaker: "Bob") == multiple)
+    }
+
     @Test func bindingStoreRoundTripStaysOutOfPublicTrees() throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

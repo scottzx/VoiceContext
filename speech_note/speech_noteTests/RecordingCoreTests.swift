@@ -46,7 +46,7 @@ struct RecordingCoreTests {
 
         let index = try RecordingIndex(url: root.appendingPathComponent("index.sqlite"))
 
-        #expect(index.schemaVersion == 7)
+        #expect(index.schemaVersion == 9)
         #expect(index.appliedEventCount == 0)
     }
 
@@ -1129,6 +1129,7 @@ struct RecordingCoreTests {
         #expect(try machine.apply(.stopRequested) == .stopping)
         #expect(try machine.apply(.captureStopped) == .processing)
         #expect(try machine.apply(.processingCompleted) == .complete)
+        #expect(try machine.apply(.retryProcessing) == .processing)
     }
 
     @Test @MainActor func coordinatorDoesNotTouchMicrophoneBeforeExplicitStartOrWhenStorageIsLow() async throws {
@@ -2739,6 +2740,7 @@ struct RecordingCoreTests {
         let recording = Recording(
             startedAt: startedAt,
             endedAt: startedAt.addingTimeInterval(60),
+            isMeeting: true,
             state: .processing
         )
         try await repository.createRecording(recording, at: startedAt)

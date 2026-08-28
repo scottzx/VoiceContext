@@ -3,6 +3,109 @@ import Testing
 @testable import speech_note
 
 struct SpeakerFinalizationStateMachineTests {
+    @Test func personalRecordingCompletesAfterASRWithoutSpeakerJobs() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let transcriptStore = try TranscriptDocumentStore(rootURL: root)
+        let reconciler = CompletionReconciler(repository: repository, transcriptStore: transcriptStore)
+        let startedAt = Date(timeIntervalSince1970: 1_787_479_000)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(20),
+            isMeeting: false,
+            state: .processing
+        )
+        try await repository.createRecording(recording, at: startedAt)
+        try await repository.upsertJob(RecordingJob(
+            recordingID: recording.id,
+            kind: .transcription,
+            state: .completed,
+            attemptCount: 1,
+            lastError: nil,
+            createdAt: startedAt,
+            updatedAt: startedAt
+        ), at: startedAt)
+
+        #expect(try await reconciler.reconcile(recordingID: recording.id) == .completed)
+        let jobs = try await repository.jobs(recordingID: recording.id)
+        #expect(!jobs.contains { $0.kind == .speakerEmbedding || $0.kind == .speakerFinalization })
+        #expect(try await repository.recording(id: recording.id)?.state == .complete)
+    }
+
+    @Test func durableEmbeddingJobsRepairCommittedAndMissingBatchesPerSource() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let startedAt = Date(timeIntervalSince1970: 1_787_480_000)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(120),
+            state: .processing
+        )
+        try await repository.createRecording(recording, at: startedAt)
+
+        var chunks: [AudioChunk] = []
+        for index in 0..<2 {
+            let startSample = Int64(index) * 960_000
+            let endSample = Int64(index + 1) * 960_000
+            let chunk = AudioChunk(
+                recordingID: recording.id,
+                relativePath: "Recordings/embedding-\(index).m4a",
+                startSample: startSample,
+                endSample: endSample,
+                startedAt: startedAt.addingTimeInterval(Double(index * 60)),
+                endedAt: startedAt.addingTimeInterval(Double((index + 1) * 60))
+            )
+            chunks.append(chunk)
+        }
+        for chunk in chunks {
+            try await repository.addChunk(chunk, at: chunk.endedAt)
+            try await repository.upsertJob(RecordingJob(
+                recordingID: recording.id,
+                chunkID: chunk.id,
+                kind: .transcription,
+                state: .completed,
+                attemptCount: 1,
+                lastError: nil,
+                createdAt: chunk.endedAt,
+                updatedAt: chunk.endedAt
+            ), at: chunk.endedAt)
+        }
+
+        let coordinator = SpeakerFinalizationCoordinator()
+        var jobs = try await coordinator.ensureDurableEmbeddingJobs(
+            recordingID: recording.id,
+            repository: repository
+        )
+        #expect(jobs.count == 2)
+        #expect(jobs.allSatisfy { $0.kind == .speakerEmbedding && $0.state == .pending })
+
+        try SpeakerObservationStore.replaceBatch(
+            [],
+            rootURL: root,
+            recordingID: recording.id,
+            batchID: chunks[0].id
+        )
+        jobs = try await coordinator.ensureDurableEmbeddingJobs(
+            recordingID: recording.id,
+            repository: repository
+        )
+        #expect(jobs.first(where: { $0.chunkID == chunks[0].id })?.state == .completed)
+
+        var missing = try #require(jobs.first(where: { $0.chunkID == chunks[1].id }))
+        missing.state = RecordingJobState.completed
+        missing.updatedAt = startedAt.addingTimeInterval(180)
+        try await repository.upsertJob(missing, at: missing.updatedAt)
+        jobs = try await coordinator.ensureDurableEmbeddingJobs(
+            recordingID: recording.id,
+            repository: repository
+        )
+        let repaired = try #require(jobs.first(where: { $0.chunkID == chunks[1].id }))
+        #expect(repaired.state == RecordingJobState.pending)
+        #expect(repaired.lastError == "missingSpeakerObservationBatch")
+    }
+
     @Test func coldStartReconcilerQueuesCompletedV4FinalizerForV5Upgrade() async throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -16,6 +119,7 @@ struct SpeakerFinalizationStateMachineTests {
         let recording = Recording(
             startedAt: startedAt,
             endedAt: startedAt.addingTimeInterval(30),
+            isMeeting: true,
             state: .complete
         )
         try await repository.createRecording(recording, at: startedAt)
@@ -78,6 +182,7 @@ struct SpeakerFinalizationStateMachineTests {
         let recording = Recording(
             startedAt: startedAt,
             endedAt: startedAt.addingTimeInterval(30),
+            isMeeting: true,
             state: .processing
         )
         let chunk = AudioChunk(
@@ -288,6 +393,7 @@ struct SpeakerFinalizationStateMachineTests {
         let recording = Recording(
             startedAt: startedAt,
             endedAt: startedAt.addingTimeInterval(30),
+            isMeeting: true,
             state: .processing
         )
         let chunk = AudioChunk(
@@ -403,6 +509,82 @@ struct SpeakerFinalizationStateMachineTests {
         ))
         #expect(completedTranscript.state == RecordingState.complete.rawValue)
         #expect(completedTranscript.segments.map(\.text) == ["ASR 文字必须保留"])
+    }
+
+    @Test func retranscriptionResetReturnsAllSpeakerJobsToPending() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let now = Date(timeIntervalSince1970: 1_787_521_000)
+        let recording = Recording(
+            startedAt: now,
+            endedAt: now.addingTimeInterval(30),
+            isMeeting: true,
+            state: .complete
+        )
+        try await repository.createRecording(recording, at: now)
+        for _ in 0..<2 {
+            try await repository.upsertJob(RecordingJob(
+                recordingID: recording.id,
+                chunkID: UUID(),
+                kind: .transcription,
+                state: .completed,
+                attemptCount: 1,
+                lastError: nil,
+                createdAt: now,
+                updatedAt: now
+            ), at: now)
+        }
+        for kind in [RecordingJobKind.speakerEmbedding, .speakerFinalization] {
+            try await repository.upsertJob(RecordingJob(
+                recordingID: recording.id,
+                chunkID: kind == .speakerEmbedding ? UUID() : nil,
+                kind: kind,
+                state: .completed,
+                attemptCount: 1,
+                lastError: nil,
+                pipelineVersion: kind == .speakerEmbedding
+                    ? SpeakerEmbeddingJob.currentPipelineVersion
+                    : SpeakerFinalizationJob.currentPipelineVersion,
+                createdAt: now,
+                updatedAt: now
+            ), at: now)
+        }
+
+        _ = try await repository.resetSpeakerFinalizationForRetranscription(
+            recordingID: recording.id,
+            at: now.addingTimeInterval(1)
+        )
+        try await repository.resetTranscriptionForRetranscription(
+            recordingID: recording.id,
+            at: now.addingTimeInterval(1)
+        )
+
+        let jobs = try await repository.jobs(recordingID: recording.id)
+        #expect(jobs.filter { $0.kind == .transcription }.allSatisfy { $0.state == .pending })
+        #expect(jobs.first { $0.kind == .speakerEmbedding }?.state == .pending)
+        #expect(jobs.first { $0.kind == .speakerFinalization }?.state == .pending)
+
+        let chunk = AudioChunk(
+            recordingID: recording.id,
+            relativePath: "Recordings/retry.m4a",
+            startSample: 0,
+            endSample: 16_000,
+            startedAt: now,
+            endedAt: now.addingTimeInterval(1)
+        )
+        let document = TranscriptDocumentV1(
+            recording: recording,
+            chunks: [chunk],
+            segmentDrafts: [.init(text: "旧逐字稿", chunk: chunk)],
+            language: "zh",
+            state: .complete,
+            speakers: ["说话人 1"]
+        ).preparingForRetranscription(clearSegments: true)
+        #expect(document.segments.isEmpty)
+        #expect(document.speakers.isEmpty)
+        #expect(document.speakerTurns.isEmpty)
+        #expect(document.state == RecordingState.processing.rawValue)
     }
 
     private struct DeviceSnapshot: Decodable {

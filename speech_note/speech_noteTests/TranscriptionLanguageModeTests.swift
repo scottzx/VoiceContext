@@ -3,13 +3,18 @@ import Testing
 @testable import speech_note
 
 struct TranscriptionLanguageModeTests {
-    @Test func defaultIsZhEnBilingualAndMapsToAutodetect() {
-        #expect(TranscriptionLanguageMode.default == .zhEnBilingual)
+    @Test func defaultIsChineseAndEveryBundledLanguageMapsToSenseVoice() {
+        #expect(TranscriptionLanguageMode.default == .chinese)
+        #expect(TranscriptionLanguageMode.chinese.senseVoiceLanguageHint == "zh")
         #expect(TranscriptionLanguageMode.zhEnBilingual.senseVoiceLanguageHint == nil)
+        #expect(TranscriptionLanguageMode.cantonese.senseVoiceLanguageHint == "yue")
         #expect(TranscriptionLanguageMode.englishOnly.senseVoiceLanguageHint == "en")
-        #expect(TranscriptionLanguageMode.zhEnBilingual.settingsTitle == "中英双语")
-        #expect(TranscriptionLanguageMode.englishOnly.settingsTitle == "英语优先")
-        #expect(TranscriptionLanguageMode.zhEnBilingual.shortLabel == "ZH-EN")
+        #expect(TranscriptionLanguageMode.japanese.senseVoiceLanguageHint == "ja")
+        #expect(TranscriptionLanguageMode.korean.senseVoiceLanguageHint == "ko")
+        #expect(TranscriptionLanguageMode.chinese.settingsTitle == "中文")
+        #expect(TranscriptionLanguageMode.zhEnBilingual.settingsTitle == "自动识别")
+        #expect(TranscriptionLanguageMode.englishOnly.settingsTitle == "英语")
+        #expect(TranscriptionLanguageMode.zhEnBilingual.shortLabel == "AUTO")
         #expect(TranscriptionLanguageMode.englishOnly.shortLabel == "EN")
     }
 
@@ -18,7 +23,7 @@ struct TranscriptionLanguageModeTests {
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        #expect(TranscriptionLanguageMode.load(from: defaults) == .zhEnBilingual)
+        #expect(TranscriptionLanguageMode.load(from: defaults) == .chinese)
 
         TranscriptionLanguageMode.save(.englishOnly, to: defaults)
         #expect(TranscriptionLanguageMode.load(from: defaults) == .englishOnly)
@@ -27,10 +32,10 @@ struct TranscriptionLanguageModeTests {
         #expect(TranscriptionLanguageMode.load(from: defaults) == .zhEnBilingual)
 
         defaults.set("not-a-mode", forKey: TranscriptionLanguageMode.preferenceKey)
-        #expect(TranscriptionLanguageMode.load(from: defaults) == .zhEnBilingual)
+        #expect(TranscriptionLanguageMode.load(from: defaults) == .chinese)
     }
 
-    @Test func recordingSnapshotsLanguageModeAndDecodesLegacyRowsAsDefault() throws {
+    @Test func recordingSnapshotsLanguageModeAndPreservesLegacyAutodetectRows() throws {
         let english = Recording(
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),
             languageMode: .englishOnly
@@ -42,13 +47,16 @@ struct TranscriptionLanguageModeTests {
         let encoded = try encoder.encode(english)
         let decoded = try decoder.decode(Recording.self, from: encoded)
         #expect(decoded.languageMode == .englishOnly)
+        #expect(!decoded.speakerProcessingEnabled)
 
-        // Legacy journal rows without languageMode → bilingual default.
+        // Legacy journal rows retain the old autodetect and speaker-processing behavior.
         var legacyObject = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
         legacyObject.removeValue(forKey: "languageMode")
+        legacyObject.removeValue(forKey: "speakerProcessingEnabled")
         let legacyJSON = try JSONSerialization.data(withJSONObject: legacyObject)
         let legacy = try decoder.decode(Recording.self, from: legacyJSON)
         #expect(legacy.languageMode == .zhEnBilingual)
+        #expect(legacy.speakerProcessingEnabled)
     }
 
     @Test func transcriptDocumentPersistsLanguageModeIndependentlyOfDetectedLanguage() throws {
@@ -92,7 +100,7 @@ struct TranscriptionLanguageModeTests {
 
         let journal = try RecordingJournal(url: root.appendingPathComponent("events.jsonl"))
         let index = try RecordingIndex(url: root.appendingPathComponent("index.sqlite"))
-        #expect(index.schemaVersion == 7)
+        #expect(index.schemaVersion == 9)
 
         let recording = Recording(
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),

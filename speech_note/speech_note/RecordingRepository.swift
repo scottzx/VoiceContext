@@ -168,6 +168,20 @@ actor RecordingRepository {
         ))
     }
 
+    func setRecordingMeeting(
+        recordingID: UUID,
+        isMeeting: Bool,
+        at date: Date
+    ) throws {
+        try persist(.init(
+            occurredAt: date,
+            payload: .recordingMeetingChanged(
+                recordingID: recordingID,
+                isMeeting: isMeeting
+            )
+        ))
+    }
+
     @discardableResult
     func addImportedAudioAsset(_ asset: ImportedAudioAsset, at date: Date) throws -> RecordingJournalEvent {
         try persist(.init(occurredAt: date, payload: .importedAudioAssetCreated(asset)))
@@ -305,6 +319,72 @@ actor RecordingRepository {
         )
     }
 
+    /// Claims one bounded CAM++ source job. Repository actor isolation keeps
+    /// the check-and-write serial, while the execution token prevents a late
+    /// result from a cancelled attempt from replacing a retry.
+    func claimSpeakerEmbedding(
+        jobID: UUID,
+        recordingID: UUID,
+        pipelineVersion: Int,
+        at date: Date
+    ) throws -> RecordingJob? {
+        guard try index.jobs(kind: .speakerEmbedding, states: [.running]).isEmpty,
+              var job = try index.jobs(recordingID: recordingID).first(where: {
+                  $0.id == jobID && $0.kind == .speakerEmbedding && $0.state == .pending
+              }) else { return nil }
+        job.state = .running
+        job.attemptCount += 1
+        job.lastError = nil
+        job.pipelineVersion = pipelineVersion
+        job.executionToken = UUID()
+        job.startedAt = date
+        job.terminationReason = nil
+        job.updatedAt = date
+        try upsertJob(job, at: date)
+        return job
+    }
+
+    func validateSpeakerEmbedding(
+        jobID: UUID,
+        recordingID: UUID,
+        executionToken: UUID,
+        pipelineVersion: Int
+    ) throws -> Bool {
+        try index.jobs(recordingID: recordingID).contains {
+            $0.id == jobID
+                && $0.kind == .speakerEmbedding
+                && $0.state == .running
+                && $0.executionToken == executionToken
+                && $0.pipelineVersion == pipelineVersion
+        }
+    }
+
+    @discardableResult
+    func finishSpeakerEmbedding(
+        jobID: UUID,
+        recordingID: UUID,
+        executionToken: UUID,
+        state: RecordingJobState,
+        lastError: String? = nil,
+        terminationReason: String? = nil,
+        at date: Date
+    ) throws -> RecordingJob? {
+        guard var job = try index.jobs(recordingID: recordingID).first(where: {
+            $0.id == jobID
+                && $0.kind == .speakerEmbedding
+                && $0.state == .running
+                && $0.executionToken == executionToken
+        }) else { return nil }
+        job.state = state
+        job.lastError = lastError
+        job.executionToken = nil
+        job.startedAt = nil
+        job.terminationReason = terminationReason
+        job.updatedAt = date
+        try upsertJob(job, at: date)
+        return job
+    }
+
     /// Token-guarded state transition. Nil means the attempt lost ownership,
     /// so its late outcome must be discarded without notifying observers.
     func finishExecutionLease(
@@ -367,27 +447,53 @@ actor RecordingRepository {
         return invalidated
     }
 
-    /// Any transcription retry invalidates speaker turns derived from the
-    /// previous text/audio pass. The durable finalizer is returned to pending
-    /// so a late, pre-retry attempt cannot be treated as authoritative.
+    /// Any transcription retry invalidates every speaker job derived from the
+    /// previous text/audio pass. Returning embedding rows to pending clears
+    /// user-visible speaker progress immediately instead of waiting for the
+    /// finalizer to discover missing observation batches later.
     @discardableResult
     func resetSpeakerFinalizationForRetranscription(
         recordingID: UUID,
         at date: Date
     ) throws -> RecordingJob? {
-        guard var job = try index.jobs(recordingID: recordingID)
-            .first(where: { $0.kind == .speakerFinalization }) else {
-            return nil
+        var finalization: RecordingJob?
+        for var job in try index.jobs(recordingID: recordingID) where
+            job.kind == .speakerEmbedding || job.kind == .speakerFinalization
+        {
+            job.state = .pending
+            job.lastError = nil
+            job.pipelineVersion = job.kind == .speakerEmbedding
+                ? SpeakerEmbeddingJob.currentPipelineVersion
+                : SpeakerFinalizationJob.currentPipelineVersion
+            job.executionToken = nil
+            job.startedAt = nil
+            job.terminationReason = "invalidatedByRetranscription"
+            job.updatedAt = date
+            try upsertJob(job, at: date)
+            if job.kind == .speakerFinalization {
+                finalization = job
+            }
         }
-        job.state = .pending
-        job.lastError = nil
-        job.pipelineVersion = SpeakerFinalizationJob.currentPipelineVersion
-        job.executionToken = nil
-        job.startedAt = nil
-        job.terminationReason = "invalidatedByRetranscription"
-        job.updatedAt = date
-        try upsertJob(job, at: date)
-        return job
+        return finalization
+    }
+
+    /// Full retranscription is a new stage attempt, so all ASR progress must
+    /// become pending before any source is allowed to execute again.
+    func resetTranscriptionForRetranscription(
+        recordingID: UUID,
+        at date: Date
+    ) throws {
+        for var job in try index.jobs(recordingID: recordingID) where
+            job.kind == .transcription
+        {
+            job.state = .pending
+            job.lastError = nil
+            job.executionToken = nil
+            job.startedAt = nil
+            job.terminationReason = "userRetranscription"
+            job.updatedAt = date
+            try upsertJob(job, at: date)
+        }
     }
 
     /// Repairs every crash-left speaker lease before broader recording

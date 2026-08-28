@@ -221,11 +221,18 @@ private enum PlaybackFailure: Error {
     case couldNotStart
 }
 
+private enum ProcessingModeTarget {
+    case recording
+    case importedFile(URL)
+    case pickedVideo
+}
+
 /// The product-facing recording workspace. Its state is deliberately read
 /// from `RecordingCoreModel`, which in turn refreshes its snapshots from the
 /// journal/SQLite repository; this view never creates a parallel UI state
 /// machine for capture.
 struct ContentView: View {
+    private static var didPrepareRecordingDetailFixtureRoot = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: RecordingCoreModel
@@ -244,6 +251,9 @@ struct ContentView: View {
     @State private var isImportPickerPresented = false
     @State private var isPhotosPickerPresented = false
     @State private var selectedPhotoVideoItem: PhotosPickerItem?
+    @State private var processingModeTarget: ProcessingModeTarget?
+    @State private var isProcessingModeDialogPresented = false
+    @State private var pendingRecordingIsMeeting: Bool?
     @State private var isSettingsPresented = false
     @State private var isRecordingScreenPresented = false
     @State private var isMultiSelectMode = false
@@ -266,7 +276,10 @@ struct ContentView: View {
         if isRecordingDetailFixtureEnabled {
             let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let fixtureRoot = documents.appendingPathComponent("VoiceContext-uiTesting", isDirectory: true)
-            try? FileManager.default.removeItem(at: fixtureRoot)
+            if !Self.didPrepareRecordingDetailFixtureRoot {
+                try? FileManager.default.removeItem(at: fixtureRoot)
+                Self.didPrepareRecordingDetailFixtureRoot = true
+            }
             do {
                 _model = State(initialValue: try RecordingCoreModel(rootURL: fixtureRoot))
             } catch {
@@ -322,11 +335,13 @@ struct ContentView: View {
             isRecordingScreenPresented = true
             return
         }
-        triggerStartRecording(isMeeting: false)
+        processingModeTarget = .recording
+        isProcessingModeDialogPresented = true
     }
 
     private func requestStartRecording(isMeeting: Bool = false) {
         if !LocationAccess.hasPromptedLocationRecording {
+            pendingRecordingIsMeeting = isMeeting
             isFirstTimeLocationPromptPresented = true
         } else {
             triggerStartRecording(isMeeting: isMeeting)
@@ -400,7 +415,8 @@ struct ContentView: View {
                             if micHeld {
                                 isRecordingScreenPresented = true
                             } else {
-                                requestStartRecording()
+                                processingModeTarget = .recording
+                                isProcessingModeDialogPresented = true
                             }
                         } label: {
                             Image(systemName: micHeld ? "waveform.circle.fill" : "mic.circle.fill")
@@ -436,19 +452,40 @@ struct ContentView: View {
         .sheet(isPresented: $isSettingsPresented) {
             SettingsScreen(model: model, reduceMotion: reduceMotion)
         }
+        .confirmationDialog(
+            "选择记录类型",
+            isPresented: $isProcessingModeDialogPresented,
+            titleVisibility: .visible
+        ) {
+            Button("个人记录（仅转为文字）") {
+                applyProcessingMode(isMeeting: false)
+            }
+            Button("多人会议（识别说话人）") {
+                applyProcessingMode(isMeeting: true)
+            }
+            Button("取消", role: .cancel) {
+                cancelProcessingModeSelection()
+            }
+        } message: {
+            Text("多人会议会在转写后继续提取声纹；个人记录会跳过这一步。")
+        }
         .alert("记录录音地点", isPresented: $isFirstTimeLocationPromptPresented) {
             Button("允许并记录") {
                 LocationAccess.hasPromptedLocationRecording = true
                 LocationAccess.isAutoRecordLocationEnabled = true
                 Task {
                     _ = await LocationAccess.requestPermissionIfNeeded()
-                    triggerStartRecording()
+                    let isMeeting = pendingRecordingIsMeeting ?? false
+                    pendingRecordingIsMeeting = nil
+                    triggerStartRecording(isMeeting: isMeeting)
                 }
             }
             Button("暂不需要", role: .cancel) {
                 LocationAccess.hasPromptedLocationRecording = true
                 LocationAccess.isAutoRecordLocationEnabled = false
-                triggerStartRecording()
+                let isMeeting = pendingRecordingIsMeeting ?? false
+                pendingRecordingIsMeeting = nil
+                triggerStartRecording(isMeeting: isMeeting)
             }
         } message: {
             Text("是否允许 VoiceContext 在录音时自动记录当前发生的地理位置与地址？你也可以稍后在「设置」中随时更改。")
@@ -472,9 +509,8 @@ struct ContentView: View {
             switch result {
             case let .success(urls):
                 guard let url = urls.first else { return }
-                Task {
-                    _ = await model.importAudio(from: url)
-                }
+                processingModeTarget = .importedFile(url)
+                isProcessingModeDialogPresented = true
             case let .failure(error):
                 model.presentNotice("选择文件失败：\(error.localizedDescription)")
             }
@@ -487,10 +523,8 @@ struct ContentView: View {
         )
         .onChange(of: selectedPhotoVideoItem) { _, item in
             guard let item else { return }
-            Task {
-                await importPickedPhotoVideo(item)
-                selectedPhotoVideoItem = nil
-            }
+            processingModeTarget = .pickedVideo
+            isProcessingModeDialogPresented = true
         }
         .onChange(of: model.captureIsActive) { wasActive, isActive in
             if wasActive && !isActive && isRecordingScreenPresented {
@@ -992,7 +1026,8 @@ struct ContentView: View {
                 if micHeld {
                     isRecordingScreenPresented = true
                 } else {
-                    requestStartRecording()
+                    processingModeTarget = .recording
+                    isProcessingModeDialogPresented = true
                 }
             } label: {
                 ZStack {
@@ -1022,7 +1057,31 @@ struct ContentView: View {
         .accessibilityIdentifier("capture-dock")
     }
 
-    private func importPickedPhotoVideo(_ item: PhotosPickerItem) async {
+    private func applyProcessingMode(isMeeting: Bool) {
+        let target = processingModeTarget
+        processingModeTarget = nil
+        switch target {
+        case .recording:
+            requestStartRecording(isMeeting: isMeeting)
+        case let .importedFile(url):
+            Task { _ = await model.importAudio(from: url, isMeeting: isMeeting) }
+        case .pickedVideo:
+            guard let item = selectedPhotoVideoItem else { return }
+            Task {
+                await importPickedPhotoVideo(item, isMeeting: isMeeting)
+                selectedPhotoVideoItem = nil
+            }
+        case nil:
+            break
+        }
+    }
+
+    private func cancelProcessingModeSelection() {
+        processingModeTarget = nil
+        selectedPhotoVideoItem = nil
+    }
+
+    private func importPickedPhotoVideo(_ item: PhotosPickerItem, isMeeting: Bool) async {
         do {
             guard let movie = try await item.loadTransferable(type: ImportPickedMovie.self) else {
                 model.presentNotice("导入失败：无法读取所选视频")
@@ -1032,7 +1091,8 @@ struct ContentView: View {
             let suggested = base.isEmpty ? "相册视频.mov" : "\(base).mov"
             _ = await model.importVideoAudio(
                 from: movie.url,
-                sourceFilename: suggested
+                sourceFilename: suggested,
+                isMeeting: isMeeting
             )
         } catch {
             model.presentNotice("导入失败：\(error.localizedDescription)")
@@ -1596,15 +1656,16 @@ private struct SettingsScreen: View {
     @AppStorage(OnboardingPreferences.documentSyncKey) private var documentSyncEnabled = false
     @AppStorage(OnboardingPreferences.encryptedVoiceprintSyncKey) private var encryptedVoiceprintSyncEnabled = false
     @AppStorage(TranscriptionLanguageMode.preferenceKey) private var languageModeRaw =
-        TranscriptionLanguageMode.zhEnBilingual.rawValue
+        TranscriptionLanguageMode.default.rawValue
     @AppStorage(BackgroundTranscriptionPreferences.enabledKey) private var backgroundTranscriptionEnabled = false
+    @AppStorage(ExportPackagePreferences.includesOriginalAudioKey) private var exportPackageIncludesOriginalAudio = false
     @State private var syncStatus = DocumentSyncStatusCenter.shared
     let model: RecordingCoreModel
     let reduceMotion: Bool
 
     private var languageModeBinding: Binding<TranscriptionLanguageMode> {
         Binding(
-            get: { TranscriptionLanguageMode(rawValue: languageModeRaw) ?? .zhEnBilingual },
+            get: { TranscriptionLanguageMode(rawValue: languageModeRaw) ?? .default },
             set: { languageModeRaw = $0.rawValue }
         )
     }
@@ -1635,7 +1696,7 @@ private struct SettingsScreen: View {
                         }
                     }
                     .accessibilityIdentifier("settings-language-mode")
-                    Text("中英双语为默认，由模型自动识别。英语优先将新任务偏向英文解码。仅影响之后开始的新录音与新导入；已完成文稿不会自动重跑。")
+                    Text("默认为中文。自动识别会让模型在中文、粤语、英语、日语和韩语之间判断。仅影响之后开始的新录音与新导入；已完成文稿不会自动重跑。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
@@ -1716,6 +1777,14 @@ private struct SettingsScreen: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Text("长视频无产品时长上限；导入与转写排队进行，不阻塞新的麦克风录音。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("导出") {
+                    Toggle("资料包包含原始录音", isOn: $exportPackageIncludesOriginalAudio)
+                        .accessibilityIdentifier("settings-export-package-audio")
+                    Text("默认关闭。开启后，新生成的 ZIP 资料包会尝试加入原始录音，会显著增加文件大小和准备时间。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

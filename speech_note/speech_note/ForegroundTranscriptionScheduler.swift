@@ -259,6 +259,36 @@ actor ForegroundTranscriptionScheduler {
         }
     }
 
+    /// Cancels one Recording's unfinished transcription work without
+    /// interrupting the rest of the queue after the current drain restarts.
+    func cancel(recordingID: UUID) async {
+        await suspendCurrentDrain(reason: "userCancelled")
+        let jobs = (try? await repository.jobs(recordingID: recordingID)) ?? []
+        let date = now()
+        for var job in jobs where
+            job.kind == .transcription && (job.state == .pending || job.state == .running) {
+            job.state = .cancelled
+            job.lastError = nil
+            job.executionToken = nil
+            job.startedAt = nil
+            job.terminationReason = "userCancelled"
+            job.updatedAt = date
+            try? await repository.upsertJob(job, at: date)
+        }
+        startDrainingIfPossible()
+    }
+
+    /// Invalidates any old ASR lease before a full-recording retry rewrites
+    /// every durable job. Draining resumes after the caller reattaches all
+    /// outcome handlers through `enqueue`.
+    func prepareForRetranscription(recordingID: UUID) async {
+        await suspendCurrentDrain(reason: "invalidatedByRetranscription")
+        let jobs = (try? await repository.jobs(recordingID: recordingID)) ?? []
+        for job in jobs where job.kind == .transcription {
+            outcomeHandlers.removeValue(forKey: job.id)
+        }
+    }
+
     /// Resumes any jobs that were stopped by the user or are pending.
     func resumeAll(onOutcome: OutcomeHandler? = nil) async {
         let stoppedJobs = (try? await repository.jobs(kind: .transcription, states: [.failed])) ?? []

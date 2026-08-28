@@ -59,6 +59,14 @@ nonisolated enum SpeakerObservationStore {
             .appendingPathComponent("\(batchID.uuidString.uppercased()).json", isDirectory: false)
     }
 
+    static func batchExists(rootURL: URL, recordingID: UUID, batchID: UUID) -> Bool {
+        FileManager.default.fileExists(atPath: batchURL(
+            rootURL: rootURL,
+            recordingID: recordingID,
+            batchID: batchID
+        ).path)
+    }
+
     static func load(rootURL: URL, recordingID: UUID) -> [OfflineSpeakerObservation] {
         let decoder = JSONDecoder()
         var observations: [OfflineSpeakerObservation] = []
@@ -105,7 +113,6 @@ nonisolated enum SpeakerObservationStore {
         let dir = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         if let data = try? encoder.encode(observations) {
             try? data.write(to: url, options: .atomic)
         }
@@ -119,6 +126,14 @@ nonisolated enum SpeakerObservationStore {
         )
     }
 
+    static func removeBatch(rootURL: URL, recordingID: UUID, batchID: UUID) {
+        try? FileManager.default.removeItem(at: batchURL(
+            rootURL: rootURL,
+            recordingID: recordingID,
+            batchID: batchID
+        ))
+    }
+
     /// Atomically replaces observations for one stable source target. This is
     /// idempotent across retries and never rewrites another minute's vectors.
     static func replaceBatch(
@@ -130,7 +145,6 @@ nonisolated enum SpeakerObservationStore {
         let directory = batchDirectoryURL(rootURL: rootURL, recordingID: recordingID)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(observations.sorted {
             if $0.startSample != $1.startSample { return $0.startSample < $1.startSample }
             return $0.endSample < $1.endSample

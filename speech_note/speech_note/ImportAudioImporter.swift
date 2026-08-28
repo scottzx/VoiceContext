@@ -65,6 +65,7 @@ nonisolated struct ImportAudioImporter: Sendable {
         assetID: UUID = UUID(),
         now: Date = Date(),
         title: String? = nil,
+        isMeeting: Bool = false,
         forceStandardize: Bool = false,
         sourceFilenameOverride: String? = nil,
         sourceUTTypeOverride: String? = nil
@@ -122,7 +123,7 @@ nonisolated struct ImportAudioImporter: Sendable {
             startedAt: now,
             endedAt: now.addingTimeInterval(metadata.durationSeconds),
             title: (displayTitle?.isEmpty == false) ? displayTitle : fallbackTitle,
-            isMeeting: false,
+            isMeeting: isMeeting,
             state: .processing,
             updatedAt: now,
             origin: .importedAudio,

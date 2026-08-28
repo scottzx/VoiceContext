@@ -109,7 +109,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: Recording?
             try query(
-                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name FROM recordings WHERE id = ?",
+                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name, speaker_processing_enabled FROM recordings WHERE id = ?",
                 [.text(id.uuidString)]
             ) { statement in
                 result = try decodeRecording(statement)
@@ -122,7 +122,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: [Recording] = []
             try query(
-                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name FROM recordings ORDER BY started_at"
+                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name, speaker_processing_enabled FROM recordings ORDER BY started_at"
             ) { statement in
                 let recording = try decodeRecording(statement)
                 if states == nil || states?.contains(recording.state) == true {
@@ -487,14 +487,14 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
 
     private func migrate() throws {
         let current = try scalarInt("PRAGMA user_version")
-        guard current <= 7 else {
-            throw IndexError.open("数据库版本 \(current) 高于当前应用支持的版本 7")
+        guard current <= 9 else {
+            throw IndexError.open("数据库版本 \(current) 高于当前应用支持的版本 9")
         }
         if current == 0 {
             try execute("BEGIN IMMEDIATE")
             do {
                 try createSchemaV3()
-                try execute("PRAGMA user_version = 7")
+                try execute("PRAGMA user_version = 9")
                 try execute("COMMIT")
             } catch {
                 try? execute("ROLLBACK")
@@ -610,6 +610,30 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                 throw error
             }
         }
+        let afterV7 = try scalarInt("PRAGMA user_version")
+        if afterV7 == 7 {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try execute("CREATE UNIQUE INDEX recording_jobs_one_speaker_embedding_source ON recording_jobs(recording_id, kind, COALESCE(chunk_id, ''), COALESCE(processing_range_id, '')) WHERE kind = 'speakerEmbedding'")
+                try execute("PRAGMA user_version = 8")
+                try execute("COMMIT")
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
+        }
+        let afterV8 = try scalarInt("PRAGMA user_version")
+        if afterV8 == 8 {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try execute("ALTER TABLE recordings ADD COLUMN speaker_processing_enabled INTEGER NOT NULL DEFAULT 1")
+                try execute("PRAGMA user_version = 9")
+                try execute("COMMIT")
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
+        }
     }
 
     private func createSchemaV3() throws {
@@ -627,8 +651,9 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                 origin TEXT NOT NULL DEFAULT 'microphone',
                 source_filename TEXT,
                 source_uttype TEXT,
-                language_mode TEXT NOT NULL DEFAULT 'zh_en_bilingual',
-                location_name TEXT
+                language_mode TEXT NOT NULL DEFAULT 'chinese',
+                location_name TEXT,
+                speaker_processing_enabled INTEGER NOT NULL DEFAULT 1
             )
             """)
         try execute("""
@@ -669,6 +694,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try execute("CREATE INDEX recording_jobs_chunk ON recording_jobs(recording_id, chunk_id)")
         try execute("CREATE INDEX recording_jobs_range ON recording_jobs(recording_id, processing_range_id)")
         try execute("CREATE UNIQUE INDEX recording_jobs_one_speaker_finalization ON recording_jobs(recording_id, kind) WHERE kind = 'speakerFinalization'")
+        try execute("CREATE UNIQUE INDEX recording_jobs_one_speaker_embedding_source ON recording_jobs(recording_id, kind, COALESCE(chunk_id, ''), COALESCE(processing_range_id, '')) WHERE kind = 'speakerEmbedding'")
         try execute("""
             CREATE TABLE recording_gaps(
                 id TEXT PRIMARY KEY NOT NULL,
@@ -730,8 +756,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         case let .recordingCreated(recording):
             try execute(
                 """
-                INSERT INTO recordings(id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO recordings(id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name, speaker_processing_enabled)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO NOTHING
                 """,
                 recording.bindings
@@ -810,6 +836,11 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
             try execute(
                 "UPDATE recordings SET location_name = ?, updated_at = ? WHERE id = ?",
                 [locationName.sqliteValue, .double(occurredAt.timeIntervalSince1970), .text(recordingID.uuidString)]
+            )
+        case let .recordingMeetingChanged(recordingID, isMeeting):
+            try execute(
+                "UPDATE recordings SET is_meeting = ?, speaker_processing_enabled = ?, updated_at = ? WHERE id = ?",
+                [.int(isMeeting ? 1 : 0), .int(isMeeting ? 1 : 0), .double(occurredAt.timeIntervalSince1970), .text(recordingID.uuidString)]
             )
         case let .importedAudioAssetCreated(asset):
             try execute(
@@ -891,12 +922,14 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         let languageMode = TranscriptionLanguageMode(rawValue: optionalText(statement, 12) ?? "")
             ?? .zhEnBilingual
         let locationName = optionalText(statement, 13)
+        let speakerProcessingEnabled = sqlite3_column_int(statement, 14) != 0
         return Recording(
             id: id,
             startedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
             endedAt: optionalDate(statement, 2),
             title: optionalText(statement, 3),
             isMeeting: sqlite3_column_int(statement, 4) != 0,
+            speakerProcessingEnabled: speakerProcessingEnabled,
             state: state,
             retention: AudioRetention(
                 expiresAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
@@ -1108,6 +1141,7 @@ private extension RecordingJournalEvent {
         case .chunkAudioRemoved: "chunkAudioRemoved"
         case .recordingTitleChanged: "recordingTitleChanged"
         case .recordingLocationChanged: "recordingLocationChanged"
+        case .recordingMeetingChanged: "recordingMeetingChanged"
         case .importedAudioAssetCreated: "importedAudioAssetCreated"
         case .importedAudioAssetUpdated: "importedAudioAssetUpdated"
         case .importedAudioAssetRemoved: "importedAudioAssetRemoved"
@@ -1146,6 +1180,7 @@ private extension Recording {
             sourceUTType.sqliteValue,
             .text(languageMode.rawValue),
             locationName.sqliteValue,
+            .int(speakerProcessingEnabled ? 1 : 0),
         ]
     }
 }

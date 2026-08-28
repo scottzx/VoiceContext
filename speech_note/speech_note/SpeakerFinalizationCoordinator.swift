@@ -4,13 +4,33 @@ import Foundation
 /// minute-level transcription jobs. Re-running the same job is safe because
 /// every output is atomically replaced at a deterministic path.
 nonisolated struct SpeakerFinalizationJob: Hashable, Sendable {
-    static let currentPipelineVersion = 5
+    static let currentPipelineVersion = 6
 
     let recordingID: UUID
     let pipelineVersion: Int
 
     init(recordingID: UUID, pipelineVersion: Int = currentPipelineVersion) {
         self.recordingID = recordingID
+        self.pipelineVersion = pipelineVersion
+    }
+}
+
+/// Versioned, source-scoped CAM++ work. One job owns one AudioChunk or one
+/// imported ProcessingRange and atomically replaces only that source batch.
+nonisolated struct SpeakerEmbeddingJob: Hashable, Sendable {
+    static let currentPipelineVersion = 1
+
+    let recordingID: UUID
+    let sourceID: UUID
+    let pipelineVersion: Int
+
+    init(
+        recordingID: UUID,
+        sourceID: UUID,
+        pipelineVersion: Int = currentPipelineVersion
+    ) {
+        self.recordingID = recordingID
+        self.sourceID = sourceID
         self.pipelineVersion = pipelineVersion
     }
 }
@@ -157,12 +177,15 @@ actor SpeakerFinalizationCoordinator {
 
     enum FinalizationError: LocalizedError {
         case previouslyFailed(String?)
+        case embeddingPreviouslyFailed(String?)
         case invalidated
 
         var errorDescription: String? {
             switch self {
             case let .previouslyFailed(message):
                 message ?? "说话人整理失败，等待用户重试。"
+            case let .embeddingPreviouslyFailed(message):
+                message ?? "声纹提取失败，等待用户重试。"
             case .invalidated:
                 "说话人整理已被新的转写任务取代。"
             }
@@ -197,6 +220,20 @@ actor SpeakerFinalizationCoordinator {
         if durable.state == .failed {
             throw FinalizationError.previouslyFailed(durable.lastError)
         }
+        if durable.state == .cancelled {
+            throw FinalizationError.invalidated
+        }
+
+        let embeddingJobs = try await ensureDurableEmbeddingJobs(
+            recordingID: recordingID,
+            repository: repository
+        )
+        try await runPendingEmbeddings(
+            embeddingJobs,
+            recordingID: recordingID,
+            repository: repository,
+            transcriptStore: transcriptStore
+        )
 
         let job = SpeakerFinalizationJob(recordingID: recordingID)
         if durable.state == .running, inFlight[job] != nil {
@@ -297,6 +334,9 @@ actor SpeakerFinalizationCoordinator {
     ) async throws -> RecordingJob {
         if var existing = try await repository.jobs(recordingID: recordingID)
             .first(where: { $0.kind == .speakerFinalization }) {
+            if existing.state == .cancelled {
+                return existing
+            }
             if existing.pipelineVersion < SpeakerFinalizationJob.currentPipelineVersion {
                 existing.state = .pending
                 existing.lastError = nil
@@ -332,6 +372,245 @@ actor SpeakerFinalizationCoordinator {
         return pending
     }
 
+    /// Mirrors completed ASR source jobs into durable CAM++ source jobs. The
+    /// batch file is the commit fact: a crash after the atomic file replace but
+    /// before the job transition is repaired as completed, while a completed
+    /// row with a missing batch is returned to pending.
+    func ensureDurableEmbeddingJobs(
+        recordingID: UUID,
+        repository: RecordingRepository
+    ) async throws -> [RecordingJob] {
+        let allJobs = try await repository.jobs(recordingID: recordingID)
+        var sources = allJobs.filter {
+            $0.kind == .transcription
+                && $0.state == .completed
+                && ($0.chunkID != nil || $0.processingRangeID != nil)
+        }
+        if sources.isEmpty,
+           allJobs.contains(where: {
+               $0.kind == .transcription
+                   && $0.state == .completed
+                   && $0.chunkID == nil
+                   && $0.processingRangeID == nil
+           }) {
+            let now = Date()
+            let chunks = try await repository.chunks(recordingID: recordingID)
+                .filter { $0.state == .closed }
+                .sorted { $0.startSample < $1.startSample }
+            sources.append(contentsOf: chunks.map {
+                RecordingJob(
+                    recordingID: recordingID,
+                    chunkID: $0.id,
+                    kind: .transcription,
+                    state: .completed,
+                    attemptCount: 0,
+                    lastError: nil,
+                    createdAt: $0.endedAt,
+                    updatedAt: now
+                )
+            })
+            if chunks.isEmpty {
+                let ranges = try await repository.processingRanges(recordingID: recordingID)
+                    .sorted { $0.sequence < $1.sequence }
+                sources.append(contentsOf: ranges.map {
+                    RecordingJob(
+                        recordingID: recordingID,
+                        processingRangeID: $0.id,
+                        kind: .transcription,
+                        state: .completed,
+                        attemptCount: 0,
+                        lastError: nil,
+                        createdAt: $0.createdAt,
+                        updatedAt: now
+                    )
+                })
+            }
+        }
+        var embeddings = allJobs.filter { $0.kind == .speakerEmbedding }
+
+        for source in sources {
+            guard let sourceID = source.chunkID ?? source.processingRangeID else { continue }
+            if var existing = embeddings.first(where: {
+                $0.chunkID == source.chunkID && $0.processingRangeID == source.processingRangeID
+            }) {
+                let hasBatch = SpeakerObservationStore.batchExists(
+                    rootURL: repository.rootURL,
+                    recordingID: recordingID,
+                    batchID: sourceID
+                )
+                if existing.pipelineVersion < SpeakerEmbeddingJob.currentPipelineVersion {
+                    SpeakerObservationStore.removeBatch(
+                        rootURL: repository.rootURL,
+                        recordingID: recordingID,
+                        batchID: sourceID
+                    )
+                    existing.state = .pending
+                    existing.lastError = nil
+                    existing.pipelineVersion = SpeakerEmbeddingJob.currentPipelineVersion
+                    existing.executionToken = nil
+                    existing.startedAt = nil
+                    existing.terminationReason = "upgradedSpeakerEmbeddingPipeline"
+                    existing.updatedAt = Date()
+                    try await repository.upsertJob(existing, at: existing.updatedAt)
+                } else if existing.state == .running {
+                    existing.state = hasBatch ? .completed : .pending
+                    existing.lastError = hasBatch ? nil : "recoveredAfterTermination"
+                    existing.executionToken = nil
+                    existing.startedAt = nil
+                    existing.terminationReason = "recoveredAfterTermination"
+                    existing.updatedAt = Date()
+                    try await repository.upsertJob(existing, at: existing.updatedAt)
+                } else if existing.state == .completed, !hasBatch {
+                    existing.state = .pending
+                    existing.lastError = "missingSpeakerObservationBatch"
+                    existing.executionToken = nil
+                    existing.startedAt = nil
+                    existing.terminationReason = "missingSpeakerObservationBatch"
+                    existing.updatedAt = Date()
+                    try await repository.upsertJob(existing, at: existing.updatedAt)
+                } else if existing.state == .pending, hasBatch {
+                    existing.state = .completed
+                    existing.lastError = nil
+                    existing.executionToken = nil
+                    existing.startedAt = nil
+                    existing.terminationReason = "recoveredCommittedBatch"
+                    existing.updatedAt = Date()
+                    try await repository.upsertJob(existing, at: existing.updatedAt)
+                }
+                continue
+            }
+
+            let now = Date()
+            let hasBatch = SpeakerObservationStore.batchExists(
+                rootURL: repository.rootURL,
+                recordingID: recordingID,
+                batchID: sourceID
+            )
+            let job = RecordingJob(
+                recordingID: recordingID,
+                chunkID: source.chunkID,
+                processingRangeID: source.processingRangeID,
+                kind: .speakerEmbedding,
+                state: hasBatch ? .completed : .pending,
+                attemptCount: 0,
+                lastError: nil,
+                pipelineVersion: SpeakerEmbeddingJob.currentPipelineVersion,
+                terminationReason: hasBatch ? "recoveredCommittedBatch" : nil,
+                createdAt: now,
+                updatedAt: now
+            )
+            try await repository.upsertJob(job, at: now)
+            embeddings.append(job)
+        }
+
+        return try await repository.jobs(recordingID: recordingID)
+            .filter { $0.kind == .speakerEmbedding }
+            .sorted {
+                if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
+                return $0.id.uuidString < $1.id.uuidString
+            }
+    }
+
+    private func runPendingEmbeddings(
+        _ initialJobs: [RecordingJob],
+        recordingID: UUID,
+        repository: RecordingRepository,
+        transcriptStore: TranscriptDocumentStore
+    ) async throws {
+        if let failed = initialJobs.first(where: { $0.state == .failed }) {
+            throw FinalizationError.embeddingPreviouslyFailed(failed.lastError)
+        }
+
+        for job in initialJobs where job.state == .pending {
+            try Task.checkCancellation()
+            guard let running = try await repository.claimSpeakerEmbedding(
+                jobID: job.id,
+                recordingID: recordingID,
+                pipelineVersion: SpeakerEmbeddingJob.currentPipelineVersion,
+                at: Date()
+            ), let token = running.executionToken else {
+                throw FinalizationError.invalidated
+            }
+            do {
+                try await Self.performEmbedding(
+                    execution: running,
+                    repository: repository,
+                    transcriptStore: transcriptStore
+                )
+                guard try await repository.finishSpeakerEmbedding(
+                    jobID: running.id,
+                    recordingID: recordingID,
+                    executionToken: token,
+                    state: .completed,
+                    at: Date()
+                ) != nil else { throw FinalizationError.invalidated }
+            } catch {
+                _ = try? await repository.finishSpeakerEmbedding(
+                    jobID: running.id,
+                    recordingID: recordingID,
+                    executionToken: token,
+                    state: error is CancellationError ? .pending : .failed,
+                    lastError: error.localizedDescription,
+                    terminationReason: error is CancellationError ? "cancelled" : "embeddingFailed",
+                    at: Date()
+                )
+                throw error
+            }
+        }
+    }
+
+    private static func performEmbedding(
+        execution: RecordingJob,
+        repository: RecordingRepository,
+        transcriptStore: TranscriptDocumentStore
+    ) async throws {
+        guard let sourceID = execution.chunkID ?? execution.processingRangeID,
+              let token = execution.executionToken else {
+            throw FinalizationError.invalidated
+        }
+        try Task.checkCancellation()
+        let document = try await transcriptStore.document(recordingID: execution.recordingID)
+        let segments = try await sourceSegments(
+            from: document?.segments ?? [],
+            execution: execution,
+            repository: repository
+        )
+        let audio = try await segmentAudio(
+            segments: segments,
+            recordingID: execution.recordingID,
+            repository: repository
+        )
+        try Task.checkCancellation()
+        let anchors = SegmentSpeakerAnchorPlanner.anchors(for: audio)
+        let embeddings = await CAMPlusShortWindowEmbedder.embedConcurrently(
+            windows: anchors.map(\.window),
+            modelURL: try speakerEmbeddingModelURL(),
+            maximumParallelism: 1
+        )
+        try Task.checkCancellation()
+        guard try await repository.validateSpeakerEmbedding(
+            jobID: execution.id,
+            recordingID: execution.recordingID,
+            executionToken: token,
+            pipelineVersion: execution.pipelineVersion
+        ) else { throw FinalizationError.invalidated }
+        let observations = zip(anchors, embeddings).map { anchor, embedding in
+            OfflineSpeakerObservation(
+                startSample: anchor.window.startSample,
+                endSample: anchor.window.endSample,
+                embedding: embedding,
+                exclusionReasons: anchor.window.exclusionReasons,
+                onlineTemporaryLabel: anchor.segmentID.uuidString.lowercased()
+            )
+        }
+        try SpeakerObservationStore.replaceBatch(
+            observations,
+            rootURL: repository.rootURL,
+            recordingID: execution.recordingID,
+            batchID: sourceID
+        )
+    }
+
     private static func perform(
         job: SpeakerFinalizationJob,
         execution: RecordingJob,
@@ -344,44 +623,11 @@ actor SpeakerFinalizationCoordinator {
         let document = try await transcriptStore.document(recordingID: job.recordingID)
         let segments = document?.segments ?? []
         let loadStartedAt = Date()
-        var observations = SpeakerObservationStore.load(
+        let observations = SpeakerObservationStore.load(
             rootURL: repository.rootURL,
             recordingID: job.recordingID
         )
         let observationLoadMilliseconds = elapsedMilliseconds(since: loadStartedAt)
-        var audioDecodeMilliseconds: Double = 0
-        var sparseEmbeddingMilliseconds: Double = 0
-        if observations.isEmpty, !segments.isEmpty {
-            let decodeStartedAt = Date()
-            let segmentAudio = try await segmentAudio(
-                segments: segments,
-                recordingID: job.recordingID,
-                repository: repository
-            )
-            audioDecodeMilliseconds = elapsedMilliseconds(since: decodeStartedAt)
-            let anchors = SegmentSpeakerAnchorPlanner.anchors(for: segmentAudio)
-            let embeddingStartedAt = Date()
-            let embeddings = await CAMPlusShortWindowEmbedder.embedConcurrently(
-                windows: anchors.map(\.window),
-                modelURL: try speakerEmbeddingModelURL(),
-                maximumParallelism: 4
-            )
-            sparseEmbeddingMilliseconds = elapsedMilliseconds(since: embeddingStartedAt)
-            observations = zip(anchors, embeddings).map { anchor, embedding in
-                OfflineSpeakerObservation(
-                    startSample: anchor.window.startSample,
-                    endSample: anchor.window.endSample,
-                    embedding: embedding,
-                    exclusionReasons: anchor.window.exclusionReasons,
-                    onlineTemporaryLabel: anchor.segmentID.uuidString.lowercased()
-                )
-            }
-            SpeakerObservationStore.save(
-                observations,
-                rootURL: repository.rootURL,
-                recordingID: job.recordingID
-            )
-        }
 
         let reclusterStartedAt = Date()
         let sentenceGate = SegmentSpeakerSentenceGate.evaluate(
@@ -490,9 +736,9 @@ actor SpeakerFinalizationCoordinator {
             acousticStrategy: "vad-segment-five-point-single-only-cam-plus-weak-cleanup",
             sherpaWindowCount: 0,
             sparseEmbeddingCount: observations.filter(\.isEligibleForWeakMatching).count,
-            sparseEmbeddingMilliseconds: sparseEmbeddingMilliseconds,
+            sparseEmbeddingMilliseconds: 0,
             candidateSegmentCount: segments.count,
-            audioDecodeMilliseconds: audioDecodeMilliseconds,
+            audioDecodeMilliseconds: 0,
             unknownSegmentCount: assignment.unknownSegmentCount,
             multipleSegmentCount: assignment.multipleSegmentCount,
             weakMatchedSegmentCount: finalCleanup.supplementalLabels.count,
@@ -557,8 +803,40 @@ actor SpeakerFinalizationCoordinator {
         return url
     }
 
+    /// Selects only sentences touched by one durable source. `segmentAudio`
+    /// then follows every source range of those sentences, so a sentence that
+    /// crosses a minute boundary keeps the same full-sentence anchors. The
+    /// neighboring job may recompute that rare boundary sentence, but batch
+    /// loading deterministically de-duplicates overlapping observations.
+    private static func sourceSegments(
+        from segments: [TranscriptDocumentV1.Segment],
+        execution: RecordingJob,
+        repository: RecordingRepository
+    ) async throws -> [TranscriptDocumentV1.Segment] {
+        if let chunkID = execution.chunkID {
+            return segments.filter { segment in
+                segment.sourceRanges.contains {
+                    $0.sourceKind == .audioChunk && $0.sourceID == chunkID
+                }
+            }
+        }
+        guard let rangeID = execution.processingRangeID,
+              let range = try await repository.processingRanges(recordingID: execution.recordingID)
+                  .first(where: { $0.id == rangeID }) else {
+            return []
+        }
+        return segments.filter { segment in
+            segment.sourceRanges.contains {
+                $0.sourceKind == .importedAsset
+                    && $0.sourceID == range.assetID
+                    && $0.startSample < range.endSample
+                    && range.startSample < $0.endSample
+            }
+        }
+    }
+
     /// Decodes each underlying audio source once per bounded source window and
-    /// distributes only the existing VAD segment ranges into segment buffers.
+    /// distributes only the persisted ASR sentence ranges into segment buffers.
     /// Transcript text is never read here.
     private static func segmentAudio(
         segments: [TranscriptDocumentV1.Segment],

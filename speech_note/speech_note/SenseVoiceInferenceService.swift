@@ -6,7 +6,7 @@ import Foundation
 actor SenseVoiceInferenceService {
     nonisolated static let analysisPurpose = SpeechAnalysisService.AnalysisPurpose.transcription
 
-    struct UtteranceResult: Sendable {
+    struct SentenceResult: Sendable {
         let text: String
         let rawText: String
         let startSample: Int64
@@ -41,7 +41,7 @@ actor SenseVoiceInferenceService {
         let physicalFootprintBytes: UInt64
         let thermalState: String
         let submittedMetalWork: Int
-        let utteranceResults: [UtteranceResult]
+        let sentenceResults: [SentenceResult]
         let speakerObservations: [OfflineSpeakerObservation]
     }
 
@@ -110,7 +110,7 @@ actor SenseVoiceInferenceService {
 
     func transcribe(
         recordingURL: URL,
-        languageMode: TranscriptionLanguageMode = .zhEnBilingual
+        languageMode: TranscriptionLanguageMode = .default
     ) async throws -> Result {
         try await transcribe(
             recordingURLs: [recordingURL],
@@ -125,7 +125,7 @@ actor SenseVoiceInferenceService {
     func transcribe(
         recordingURLs: [URL],
         startingAt: Int64,
-        languageMode: TranscriptionLanguageMode = .zhEnBilingual
+        languageMode: TranscriptionLanguageMode = .default
     ) async throws -> Result {
         let samples = try recordingURLs.flatMap { try PCM16KMonoLoader.samples(from: $0) }
         return try await transcribe(
@@ -140,7 +140,7 @@ actor SenseVoiceInferenceService {
     func transcribe(
         samples: [Float],
         startingAt: Int64,
-        languageMode: TranscriptionLanguageMode = .zhEnBilingual
+        languageMode: TranscriptionLanguageMode = .default
     ) async throws -> Result {
         let inputMetrics = AudioInputMetrics.from(samples: samples)
         let resourceRoot = try bundledModelResourceRoot()
@@ -153,7 +153,7 @@ actor SenseVoiceInferenceService {
         var vadMilliseconds: Double = 0
         var lastSpeechEndSample: Int64?
 
-        var utteranceResults: [UtteranceResult] = []
+        var sentenceResults: [SentenceResult] = []
         for range in Self.analysisRanges(sampleCount: samples.count) {
             let window = Array(samples[range])
             let windowStartSample = startingAt + Int64(range.lowerBound)
@@ -197,15 +197,29 @@ actor SenseVoiceInferenceService {
                 }
                 await lifecycleGate.endMetalWork()
                 nativeResults.append(result)
-                let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    utteranceResults.append(
-                        UtteranceResult(
-                            text: trimmed,
-                            rawText: result.rawText,
-                            startSample: utterance.startSample,
-                            endSample: utterance.endSample,
-                            offsetMilliseconds: Int((Double(utterance.startSample) / 16.0).rounded())
+                let nativeSentences = ASRSentenceSegmenter.split(
+                    tokens: result.tokens,
+                    fallbackText: result.text,
+                    fallbackDurationMilliseconds: Int64(
+                        (Double(utterance.samples.count) / 16.0).rounded()
+                    )
+                )
+                for sentence in nativeSentences {
+                    let startSample = min(
+                        utterance.endSample,
+                        utterance.startSample + sentence.startMilliseconds * 16
+                    )
+                    let endSample = min(
+                        utterance.endSample,
+                        max(startSample + 1, utterance.startSample + sentence.endMilliseconds * 16)
+                    )
+                    sentenceResults.append(
+                        SentenceResult(
+                            text: sentence.text,
+                            rawText: sentence.text,
+                            startSample: startSample,
+                            endSample: endSample,
+                            offsetMilliseconds: Int((Double(startSample) / 16.0).rounded())
                         )
                     )
                 }
@@ -254,7 +268,7 @@ actor SenseVoiceInferenceService {
             physicalFootprintBytes: nativeResults.map(\.physicalFootprintBytes).max() ?? 0,
             thermalState: Self.thermalStateDescription(),
             submittedMetalWork: metrics.submittedMetalWork,
-            utteranceResults: utteranceResults,
+            sentenceResults: sentenceResults,
             speakerObservations: []
         )
     }
@@ -340,8 +354,11 @@ actor SenseVoiceInferenceService {
 
         var runParams = transcribe_run_params()
         transcribe_run_params_init(&runParams)
-        // NULL language asks the model to autodetect (中英双语).
-        // "en" forces SenseVoice English LID for 英语优先.
+        // SenseVoice couples punctuation output to its ITN prefix. Sentence
+        // boundaries therefore require ITN to be explicitly enabled.
+        runParams.itn = TRANSCRIBE_ITN_MODE_ON
+        // NULL asks SenseVoice to autodetect; explicit settings pass the
+        // corresponding zh / yue / en / ja / ko LID hint.
         let languageHint = languageMode.senseVoiceLanguageHint
         let runStatus: transcribe_status
         if let languageHint {
@@ -372,6 +389,26 @@ actor SenseVoiceInferenceService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let detectedLanguage = String(cString: transcribe_detected_language(session))
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveLanguage = detectedLanguage.isEmpty
+            ? languageMode.senseVoiceLanguageHint ?? ""
+            : detectedLanguage
+
+        var tokens: [ASRSentenceSegmenter.Token] = []
+        if transcribe_returned_timestamp_kind(session) == TRANSCRIBE_TIMESTAMPS_TOKEN {
+            for index in 0..<Int(transcribe_n_tokens(session)) {
+                var token = transcribe_token()
+                transcribe_token_init(&token)
+                guard transcribe_get_token(session, Int32(index), &token) == TRANSCRIBE_OK,
+                      let textPointer = token.text,
+                      token.t1_ms > token.t0_ms
+                else { continue }
+                tokens.append(ASRSentenceSegmenter.Token(
+                    text: String(cString: textPointer),
+                    startMilliseconds: token.t0_ms,
+                    endMilliseconds: token.t1_ms
+                ))
+            }
+        }
 
         var timings = transcribe_timings()
         transcribe_timings_init(&timings)
@@ -387,7 +424,8 @@ actor SenseVoiceInferenceService {
         return NativeResult(
             text: text,
             rawText: rawText,
-            detectedLanguage: detectedLanguage,
+            detectedLanguage: effectiveLanguage,
+            tokens: tokens,
             backend: backend,
             loadMilliseconds: timings.load_ms,
             inferenceMilliseconds: inferenceMilliseconds,
@@ -425,6 +463,7 @@ actor SenseVoiceInferenceService {
         let text: String
         let rawText: String
         let detectedLanguage: String
+        let tokens: [ASRSentenceSegmenter.Token]
         let backend: String
         let loadMilliseconds: Float
         let inferenceMilliseconds: Float

@@ -20,6 +20,91 @@ extension TranscriptDocumentV1.Segment {
 }
 
 extension TranscriptDocumentV1 {
+    /// Labels that can be assigned to an individual sentence. System fallback
+    /// labels describe attribution state rather than a person, so never offer
+    /// them as an assignment target.
+    var editableSpeakerLabels: [String] {
+        let candidates = speakers + speakerTurns.compactMap { turn in
+            turn.attribution == .single ? turn.speaker : nil
+        }
+        var seen = Set<String>()
+        return candidates.compactMap { label in
+            let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard Self.isEditableSpeakerLabel(trimmed), seen.insert(trimmed).inserted else {
+                return nil
+            }
+            return trimmed
+        }
+    }
+
+    /// The attribution turn that determines a sentence's displayed label.
+    func speakerTurn(for segment: Segment) -> SpeakerTurn? {
+        let midpoint = (segment.startSample + segment.endSample) / 2
+        return speakerTurns.first(where: {
+            $0.startSample <= midpoint && midpoint < max($0.endSample, $0.startSample + 1)
+        })
+    }
+
+    /// Reassigns one single-speaker or unknown sentence without relabeling the
+    /// rest of its surrounding turn. The existing turn is split around the
+    /// sentence so neighbouring sentences retain their original attribution.
+    func applyingSpeakerAssignment(
+        segmentID: UUID,
+        speaker: String
+    ) -> TranscriptDocumentV1 {
+        let label = speaker.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.isEditableSpeakerLabel(label),
+              editableSpeakerLabels.contains(label),
+              let segment = segments.first(where: { $0.id == segmentID }),
+              let turnIndex = speakerTurns.firstIndex(where: { turn in
+                  let midpoint = (segment.startSample + segment.endSample) / 2
+                  return (turn.attribution == .single || turn.attribution == .unknown) &&
+                      turn.startSample <= midpoint &&
+                      midpoint < max(turn.endSample, turn.startSample + 1)
+              }) else {
+            return self
+        }
+
+        let turn = speakerTurns[turnIndex]
+        guard turn.speaker != label else { return self }
+
+        let assignmentStart = max(segment.startSample, turn.startSample)
+        let assignmentEnd = min(segment.endSample, turn.endSample)
+        guard assignmentStart < assignmentEnd else { return self }
+
+        var replacements: [SpeakerTurn] = []
+        if turn.startSample < assignmentStart {
+            replacements.append(SpeakerTurn(
+                speaker: turn.speaker,
+                attribution: turn.attribution,
+                startSample: turn.startSample,
+                endSample: assignmentStart,
+                onlineTemporaryLabels: turn.onlineTemporaryLabels
+            ))
+        }
+        replacements.append(SpeakerTurn(
+            speaker: label,
+            attribution: .single,
+            startSample: assignmentStart,
+            endSample: assignmentEnd,
+            onlineTemporaryLabels: turn.onlineTemporaryLabels
+        ))
+        if assignmentEnd < turn.endSample {
+            replacements.append(SpeakerTurn(
+                speaker: turn.speaker,
+                attribution: turn.attribution,
+                startSample: assignmentEnd,
+                endSample: turn.endSample,
+                onlineTemporaryLabels: turn.onlineTemporaryLabels
+            ))
+        }
+
+        var copy = self
+        copy.speakerTurns.replaceSubrange(turnIndex...turnIndex, with: replacements)
+        copy.revision += 1
+        return copy
+    }
+
     /// User-facing metadata / segment text edits for FR-DOC-004.
     /// Always bumps revision exactly once. Never changes `state`, so an
     /// incomplete Recording cannot be mislabeled complete by saving edits.
@@ -122,6 +207,13 @@ extension TranscriptDocumentV1 {
             }
         }
         return mapping
+    }
+
+    private static func isEditableSpeakerLabel(_ label: String) -> Bool {
+        !label.isEmpty &&
+            label != "说话人不确定" &&
+            label != "多人对话" &&
+            label != "多人会话"
     }
 
     private static func normalizedTags(_ tags: [String]) -> [String] {

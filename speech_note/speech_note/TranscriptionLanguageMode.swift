@@ -6,37 +6,58 @@ import Foundation
 /// `Recording` snapshots the mode at creation so in-flight and completed
 /// transcripts are never silently rewritten.
 nonisolated enum TranscriptionLanguageMode: String, Codable, CaseIterable, Sendable, Identifiable {
-    /// Autodetect — SenseVoice bilingual / multilingual path (zh / en / yue…).
+    /// Force Mandarin Chinese LID (`zh`). This is the default for new work.
+    case chinese = "chinese"
+    /// Autodetect across the languages supported by the bundled model.
+    /// Keep the legacy raw value so existing recording snapshots remain valid.
     case zhEnBilingual = "zh_en_bilingual"
-    /// Force English LID hint (`en`) for English-only / English-priority decode.
+    /// Force Cantonese LID (`yue`).
+    case cantonese = "cantonese"
+    /// Force English LID (`en`). Keep the legacy raw value for compatibility.
     case englishOnly = "english_only"
+    /// Force Japanese LID (`ja`).
+    case japanese = "japanese"
+    /// Force Korean LID (`ko`).
+    case korean = "korean"
 
     static let preferenceKey = "settings.transcriptionLanguageMode"
-    static let `default`: TranscriptionLanguageMode = .zhEnBilingual
+    static let `default`: TranscriptionLanguageMode = .chinese
 
     var id: String { rawValue }
 
     /// Title shown in Settings.
     var settingsTitle: String {
         switch self {
-        case .zhEnBilingual: "中英双语"
-        case .englishOnly: "英语优先"
+        case .chinese: "中文"
+        case .zhEnBilingual: "自动识别"
+        case .cantonese: "粤语"
+        case .englishOnly: "英语"
+        case .japanese: "日语"
+        case .korean: "韩语"
         }
     }
 
     /// Compact label for detail metadata / export (e.g. ZH-EN).
     var shortLabel: String {
         switch self {
-        case .zhEnBilingual: "ZH-EN"
+        case .chinese: "ZH"
+        case .zhEnBilingual: "AUTO"
+        case .cantonese: "YUE"
         case .englishOnly: "EN"
+        case .japanese: "JA"
+        case .korean: "KO"
         }
     }
 
     /// BCP-47-ish code for `transcribe_run_params.language`, or `nil` to autodetect.
     var senseVoiceLanguageHint: String? {
         switch self {
+        case .chinese: "zh"
         case .zhEnBilingual: nil
+        case .cantonese: "yue"
         case .englishOnly: "en"
+        case .japanese: "ja"
+        case .korean: "ko"
         }
     }
 

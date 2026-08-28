@@ -15,7 +15,7 @@ nonisolated struct SegmentSpeakerAnchor: Equatable, Sendable {
     let window: SpeakerWindow
 }
 
-/// Converts existing VAD-derived transcript ranges into at most five CAM++
+/// Converts ASR-aligned sentence ranges into at most five CAM++
 /// inputs positioned at 0%, 25%, 50%, 75% and 100% of the usable window-start
 /// range. Short segments naturally de-duplicate to fewer distinct windows.
 nonisolated enum SegmentSpeakerAnchorPlanner {

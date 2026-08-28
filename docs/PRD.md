@@ -464,6 +464,7 @@ PM `#39` 的低保真原型至少要覆盖下表。页面可以通过 sheet、na
 - `FR-SPK-005`：历史身份匹配同时满足 top-1 阈值和 top-1/top-2 margin 才标记 suspected。
 - `FR-SPK-006`：未经用户确认的 cluster 永不更新长期声纹档案。
 - `FR-SPK-007`：CAM++ 失败时保持 unknown，不使用随机 embedding。
+- `FR-SPK-008`：用户在录音对话中为当前说话人新建客户档案时，系统必须用已通过质量筛选的当前声纹样本新建长期声纹身份，并将其关联到全局客户档案；新建路径不得因 suspected 命中而复用或重命名旧身份。没有有效声纹样本时必须明确失败，不得生成“仅本场归属”的伪成功。
 
 ### 12.5 iCloud 与隐私同步（PM `#7`）
 
@@ -494,7 +495,7 @@ PM `#39` 的低保真原型至少要覆盖下表。页面可以通过 sheet、na
 - `FR-BIZ-003`：试用到期后新的转写任务标记为 `locked_pending_purchase`。
 - `FR-BIZ-004`：永久解锁后自动继续处理积压任务。
 - `FR-BIZ-005`：购买使用 StoreKit 2 非消耗型商品，支持恢复购买。
-- `FR-BIZ-006`：目标价格约 ¥58，最终使用 App Store 最接近的本地价格档位。
+- `FR-BIZ-006`：中国大陆永久解锁价格为 ¥30；美国 storefront 价格为 US$6.00。其他 storefront 使用 App Store Connect 确认后的对应本币价格。
 - `FR-BIZ-007`：设置页展示 SenseVoice、transcribe.cpp、sherpa-onnx、3D-Speaker、Silero VAD 等许可与归因。
 - `FR-BIZ-008`：SenseVoice 商业发布前完成 FunASR Model License 法律审核（已完成审核，允许商业使用，已在设置页完成模型与作者出处归因标注）。
 - `FR-BIZ-009`：设置与锁定 CTA 展示剩余试用时分；不得再展示「剩余 60 分钟语音额度」。
@@ -659,7 +660,7 @@ Markdown 使用 YAML frontmatter 保存 schema、recording ID、revision、标�
 ### 18.3 永久解锁
 
 - StoreKit 2 非消耗型购买。
-- 目标价格约 ¥58，最终价格以 App Store 可选本地价格档位为准。
+- 中国大陆永久解锁价格为 ¥30；美国 storefront 价格为 US$6.00。其他 storefront 使用 App Store Connect 确认后的对应本币价格。
 - 支持恢复购买。
 - 永久解锁后自动处理锁定积压。
 - 无业务服务器和产品账号系统。
@@ -789,7 +790,7 @@ docs/design/v1/
 下列事项不阻塞 `#39` 的信息架构与低保真原型，但在对应里程碑完成前需要确认：
 
 - 正式产品名称；当前暂用 VoiceContext。
-- App Store 最终永久解锁价格档位；当前目标约 ¥58。
+- App Store 中国大陆与美国 storefront 的永久解锁价格已确认，其他 storefront 的具体本币价格待 Account Holder 在 App Store Connect 复核。
 - SenseVoice `Q8_0` 在 iPhone 15 上的可接受内存、热状态与实时率阈值。
 - CAM++ 历史身份匹配的 top-1 阈值和 top-1/top-2 margin 数值。
 - 正式 iCloud container identifier。

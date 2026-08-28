@@ -29,6 +29,9 @@ actor CompletionReconciler {
         if transcription.contains(where: { $0.state == .failed }) {
             return .needsAttention
         }
+        if transcription.contains(where: { $0.state == .cancelled }) {
+            return .unchanged
+        }
         guard transcription.allSatisfy({ $0.state == .completed }) else {
             if recording.state == .complete {
                 try await repository.changeState(
@@ -39,6 +42,11 @@ actor CompletionReconciler {
                 )
             }
             return .unchanged
+        }
+
+        if !recording.speakerProcessingEnabled {
+            try await completeRecording(recording, at: date)
+            return .completed
         }
 
         let finalization = jobs.filter { $0.kind == .speakerFinalization }
@@ -62,6 +70,9 @@ actor CompletionReconciler {
             )
             try await repository.upsertJob(job, at: date)
             return .needsSpeakerFinalization(jobID: job.id)
+        }
+        if finalization.contains(where: { $0.state == .cancelled }) {
+            return .unchanged
         }
         if let outdated = finalization.first(where: {
             $0.pipelineVersion < SpeakerFinalizationJob.currentPipelineVersion
@@ -91,20 +102,25 @@ actor CompletionReconciler {
             return .needsSpeakerFinalization(jobID: finalization[0].id)
         }
 
+        try await completeRecording(recording, at: date)
+        return .completed
+    }
+
+    private func completeRecording(_ recording: Recording, at date: Date) async throws {
         if recording.state != .complete {
             try await repository.changeState(
-                recordingID: recordingID,
+                recordingID: recording.id,
                 to: .complete,
                 endedAt: recording.endedAt,
                 at: date
             )
         }
-        if let document = try await transcriptStore.document(recordingID: recordingID) {
+        if let document = try await transcriptStore.document(recordingID: recording.id) {
             if document.state != RecordingState.complete.rawValue {
                 try await transcriptStore.write(document.updatingState(.complete))
             }
         } else {
-            let chunks = try await repository.chunks(recordingID: recordingID)
+            let chunks = try await repository.chunks(recordingID: recording.id)
             let empty = TranscriptDocumentV1(
                 recording: recording,
                 chunks: chunks,
@@ -116,10 +132,9 @@ actor CompletionReconciler {
             try await transcriptStore.write(empty)
         }
         _ = try await repository.clearContinuationMarkersForCompletedRecording(
-            recordingID: recordingID,
+            recordingID: recording.id,
             at: date
         )
-        return .completed
     }
 
     /// Cold-start audit also repairs records whose final callback was lost.

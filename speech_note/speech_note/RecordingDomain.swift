@@ -52,6 +52,7 @@ nonisolated enum RecordingJobState: String, Codable, Sendable {
     case running
     case completed
     case failed
+    case cancelled
 }
 
 /// Immutable source identity captured when a transcription job is claimed.
@@ -120,6 +121,9 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
     var endedAt: Date?
     var title: String?
     var isMeeting: Bool
+    /// Processing policy is independent from presentation type. Legacy rows
+    /// without this field decode as enabled to preserve prior behavior.
+    var speakerProcessingEnabled: Bool
     var state: RecordingState
     var retention: AudioRetention
     var updatedAt: Date
@@ -138,13 +142,14 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
         endedAt: Date? = nil,
         title: String? = nil,
         isMeeting: Bool = false,
+        speakerProcessingEnabled: Bool? = nil,
         state: RecordingState = .recording,
         retention: AudioRetention? = nil,
         updatedAt: Date? = nil,
         origin: RecordingOrigin = .microphone,
         sourceFilename: String? = nil,
         sourceUTType: String? = nil,
-        languageMode: TranscriptionLanguageMode = .zhEnBilingual,
+        languageMode: TranscriptionLanguageMode = .default,
         locationName: String? = nil
     ) {
         self.id = id
@@ -152,6 +157,7 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
         self.endedAt = endedAt
         self.title = title
         self.isMeeting = isMeeting
+        self.speakerProcessingEnabled = speakerProcessingEnabled ?? isMeeting
         self.state = state
         self.retention = retention ?? .standard(startedAt: startedAt)
         self.updatedAt = updatedAt ?? startedAt
@@ -163,7 +169,7 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, startedAt, endedAt, title, isMeeting, state, retention, updatedAt
+        case id, startedAt, endedAt, title, isMeeting, speakerProcessingEnabled, state, retention, updatedAt
         case origin, sourceFilename, sourceUTType, languageMode, locationName
     }
 
@@ -174,6 +180,10 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
         endedAt = try container.decodeIfPresent(Date.self, forKey: .endedAt)
         title = try container.decodeIfPresent(String.self, forKey: .title)
         isMeeting = try container.decode(Bool.self, forKey: .isMeeting)
+        speakerProcessingEnabled = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .speakerProcessingEnabled
+        ) ?? true
         state = try container.decode(RecordingState.self, forKey: .state)
         retention = try container.decode(AudioRetention.self, forKey: .retention)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
@@ -326,30 +336,96 @@ nonisolated struct RecordingJob: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-nonisolated struct TranscriptionTaskItem: Identifiable, Sendable, Equatable {
-    let id: UUID
+nonisolated struct ProcessingStageProgress: Sendable, Equatable {
+    let completed: Int
+    let total: Int
+    let running: Int
+    let pending: Int
+    let failed: Int
+    let cancelled: Int
+
+    var isComplete: Bool { total > 0 && completed == total }
+    var fractionCompleted: Double {
+        guard total > 0 else { return 0 }
+        return Double(completed) / Double(total)
+    }
+}
+
+nonisolated enum ProcessingTaskStage: String, Sendable, Equatable {
+    case transcription
+    case speakerProcessing
+}
+
+nonisolated enum ProcessingTaskState: String, Sendable, Equatable {
+    case todo
+    case running
+    case failed
+    case cancelled
+    case completed
+}
+
+nonisolated struct RecordingProcessingTaskItem: Identifiable, Sendable, Equatable {
+    let id: String
     let recordingID: UUID
     let recordingTitle: String
-    let chunkID: UUID?
-    let processingRangeID: UUID?
-    let chunkSequence: Int?
-    let timeRangeText: String?
-    let state: RecordingJobState
-    let attemptCount: Int
+    let stage: ProcessingTaskStage
+    let state: ProcessingTaskState
+    let progress: ProcessingStageProgress
+    let speakerFinalizationState: RecordingJobState?
+    let dependencyMessage: String?
     let lastError: String?
-    let createdAt: Date
     let updatedAt: Date
 }
 
+nonisolated struct CompletedRecordingProcessingGroup: Identifiable, Sendable, Equatable {
+    var id: UUID { recordingID }
+    let recordingID: UUID
+    let recordingTitle: String
+    let tasks: [RecordingProcessingTaskItem]
+}
+
 nonisolated struct TranscriptionQueueStatus: Sendable, Equatable {
-    var runningTasks: [TranscriptionTaskItem] = []
-    var pendingTasks: [TranscriptionTaskItem] = []
-    var failedTasks: [TranscriptionTaskItem] = []
-    var completedTasks: [TranscriptionTaskItem] = []
-    var totalJobCount: Int = 0
+    var todoTasks: [RecordingProcessingTaskItem] = []
+    var runningTasks: [RecordingProcessingTaskItem] = []
+    var failedTasks: [RecordingProcessingTaskItem] = []
+    var cancelledTasks: [RecordingProcessingTaskItem] = []
+    var completedTasks: [RecordingProcessingTaskItem] = []
     var metalSubmissions: Int = 0
     var thermalState: String = "正常"
     var isPurchaseLocked: Bool = false
+
+    var completedRecordingGroups: [CompletedRecordingProcessingGroup] {
+        var recordingOrder: [UUID] = []
+        var tasksByRecording: [UUID: [RecordingProcessingTaskItem]] = [:]
+        var titlesByRecording: [UUID: String] = [:]
+
+        for task in completedTasks {
+            if tasksByRecording[task.recordingID] == nil {
+                recordingOrder.append(task.recordingID)
+                titlesByRecording[task.recordingID] = task.recordingTitle
+            }
+            tasksByRecording[task.recordingID, default: []].append(task)
+        }
+
+        return recordingOrder.compactMap { recordingID in
+            guard let tasks = tasksByRecording[recordingID],
+                  let title = titlesByRecording[recordingID] else { return nil }
+            return CompletedRecordingProcessingGroup(
+                recordingID: recordingID,
+                recordingTitle: title,
+                tasks: tasks.sorted { lhs, rhs in
+                    completedStageOrder(lhs.stage) < completedStageOrder(rhs.stage)
+                }
+            )
+        }
+    }
+
+    private func completedStageOrder(_ stage: ProcessingTaskStage) -> Int {
+        switch stage {
+        case .transcription: 0
+        case .speakerProcessing: 1
+        }
+    }
 }
 
 nonisolated struct RecordingGap: Codable, Equatable, Identifiable, Sendable {
@@ -492,6 +568,7 @@ nonisolated enum RecordingJournalPayload: Codable, Equatable, Sendable {
     case chunkAudioRemoved(chunkID: UUID, removedAt: Date)
     case recordingTitleChanged(recordingID: UUID, title: String?)
     case recordingLocationChanged(recordingID: UUID, locationName: String?)
+    case recordingMeetingChanged(recordingID: UUID, isMeeting: Bool)
     case importedAudioAssetCreated(ImportedAudioAsset)
     case importedAudioAssetUpdated(ImportedAudioAsset)
     case importedAudioAssetRemoved(assetID: UUID, removedAt: Date)
@@ -556,7 +633,8 @@ nonisolated struct RecordingStateMachine: Sendable {
         case (.stopping, .captureStopped): .processing
         case (.processing, .processingCompleted): .complete
         case (.processing, .processingFailed): .failed
-        case (.failed, .retryProcessing): .processing
+        case (.failed, .retryProcessing),
+             (.complete, .retryProcessing): .processing
         case (.recording, .recoveredAfterTermination),
              (.paused, .recoveredAfterTermination),
              (.stopping, .recoveredAfterTermination): .interrupted

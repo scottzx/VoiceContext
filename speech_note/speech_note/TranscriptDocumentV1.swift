@@ -57,6 +57,49 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         }
     }
 
+    /// A user-confirmed attendee fact. This is deliberately separate from
+    /// `speakers` / `speakerTurns`: attendance does not imply that the person
+    /// spoke or that a usable voiceprint exists.
+    struct Participant: Codable, Equatable, Identifiable, Sendable {
+        let id: UUID
+        let clientID: UUID?
+        let name: String
+        let organization: String
+        let roleOrTitle: String
+        let addedAt: Date
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case clientID = "client_id"
+            case name
+            case organization
+            case roleOrTitle = "role_or_title"
+            case addedAt = "added_at"
+        }
+
+        init(
+            id: UUID = UUID(),
+            clientID: UUID? = nil,
+            name: String,
+            organization: String = "",
+            roleOrTitle: String = "",
+            addedAt: Date = Date()
+        ) {
+            self.id = id
+            self.clientID = clientID
+            self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.organization = organization.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.roleOrTitle = roleOrTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.addedAt = TranscriptRFC3339DateCoding.normalizedToMilliseconds(addedAt)
+        }
+
+        var displaySubtitle: String {
+            [organization, roleOrTitle]
+                .filter { !$0.isEmpty }
+                .joined(separator: " · ")
+        }
+    }
+
     /// Exact provenance for one contiguous portion of a segment. Absolute
     /// samples share the Recording's 16 kHz clock. `source_kind` distinguishes
     /// microphone AudioChunk ranges from Files-imported assets.
@@ -398,6 +441,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
     var revision: Int
     var title: String?
     var tags: [String]
+    /// Explicit meeting roster. A participant may have no speech or voiceprint.
+    var participants: [Participant]
     let startedAt: Date
     let endedAt: Date?
     let timezone: String
@@ -423,6 +468,7 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         case revision
         case title
         case tags
+        case participants
         case startedAt = "started_at"
         case endedAt = "ended_at"
         case timezone
@@ -445,6 +491,7 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         revision = try container.decode(Int.self, forKey: .revision)
         title = try container.decodeIfPresent(String.self, forKey: .title)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        participants = try container.decodeIfPresent([Participant].self, forKey: .participants) ?? []
         startedAt = try container.decode(Date.self, forKey: .startedAt)
         endedAt = try container.decodeIfPresent(Date.self, forKey: .endedAt)
         timezone = try container.decode(String.self, forKey: .timezone)
@@ -468,6 +515,7 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         try container.encode(revision, forKey: .revision)
         try container.encodeIfPresent(title, forKey: .title)
         try container.encode(tags, forKey: .tags)
+        try container.encode(participants, forKey: .participants)
         try container.encode(startedAt, forKey: .startedAt)
         try container.encodeIfPresent(endedAt, forKey: .endedAt)
         try container.encode(timezone, forKey: .timezone)
@@ -489,7 +537,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         language: String = "",
         state: RecordingState = .complete,
         revision: Int = 1,
-        speakers: [String] = []
+        speakers: [String] = [],
+        participants: [Participant] = []
     ) {
         self.schema = Self.schema
         recordingID = recording.id
@@ -500,6 +549,7 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         self.revision = max(1, revision)
         title = recording.title
         tags = []
+        self.participants = participants
         let normalizedStartedAt = TranscriptRFC3339DateCoding.normalizedToMilliseconds(recording.startedAt)
         startedAt = normalizedStartedAt
         endedAt = recording.endedAt.map(TranscriptRFC3339DateCoding.normalizedToMilliseconds)
@@ -538,7 +588,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         language: String = "",
         state: RecordingState = .complete,
         revision: Int = 1,
-        speakers: [String] = []
+        speakers: [String] = [],
+        participants: [Participant] = []
     ) {
         self.schema = Self.schema
         recordingID = recording.id
@@ -547,6 +598,7 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         self.revision = max(1, revision)
         title = recording.title
         tags = []
+        self.participants = participants
         let normalizedStartedAt = TranscriptRFC3339DateCoding.normalizedToMilliseconds(recording.startedAt)
         startedAt = normalizedStartedAt
         endedAt = recording.endedAt.map(TranscriptRFC3339DateCoding.normalizedToMilliseconds)
@@ -577,7 +629,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         language: String = "",
         state: RecordingState = .complete,
         revision: Int = 1,
-        speakers: [String] = []
+        speakers: [String] = [],
+        participants: [Participant] = []
     ) {
         self.schema = Self.schema
         recordingID = recording.id
@@ -586,6 +639,7 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         self.revision = max(1, revision)
         title = recording.title
         tags = []
+        self.participants = participants
         let normalizedStartedAt = TranscriptRFC3339DateCoding.normalizedToMilliseconds(recording.startedAt)
         startedAt = normalizedStartedAt
         endedAt = recording.endedAt.map(TranscriptRFC3339DateCoding.normalizedToMilliseconds)
@@ -632,7 +686,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
             language: language,
             state: .processing,
             revision: revision + 1,
-            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers)
+            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers),
+            participants: participants
         )
     }
 
@@ -684,7 +739,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
             language: language,
             state: .processing,
             revision: revision + 1,
-            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers)
+            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers),
+            participants: participants
         )
     }
 
@@ -710,7 +766,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
             language: language,
             state: .processing,
             revision: revision + 1,
-            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers)
+            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers),
+            participants: participants
         )
     }
 
@@ -756,7 +813,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
             language: language,
             state: .processing,
             revision: revision + 1,
-            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers)
+            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers),
+            participants: participants
         )
     }
 
@@ -852,14 +910,37 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         return copy
     }
 
+    func addingParticipant(_ participant: Participant) -> TranscriptDocumentV1 {
+        guard !participant.name.isEmpty else { return self }
+        let isDuplicate = participants.contains { existing in
+            if let clientID = participant.clientID {
+                return existing.clientID == clientID
+            }
+            return existing.clientID == nil
+                && existing.name.compare(
+                    participant.name,
+                    options: [.caseInsensitive, .diacriticInsensitive]
+                ) == .orderedSame
+        }
+        guard !isDuplicate else { return self }
+
+        var copy = self
+        copy.participants.append(participant)
+        copy.revision += 1
+        return copy
+    }
+
     /// A new ASR pass invalidates speaker labels derived from the previous
-    /// transcript. Existing text remains readable until each source range is
-    /// atomically replaced by the retry.
-    func preparingForRetranscription() -> TranscriptDocumentV1 {
+    /// transcript. A full user-requested retranscription also clears old text;
+    /// a granular failed-source retry may preserve unaffected segments.
+    func preparingForRetranscription(clearSegments: Bool = false) -> TranscriptDocumentV1 {
         var copy = self
         copy.state = RecordingState.processing.rawValue
         copy.speakers = []
         copy.speakerTurns = []
+        if clearSegments {
+            copy.segments = []
+        }
         copy.revision += 1
         return copy
     }
@@ -1037,6 +1118,7 @@ nonisolated enum TranscriptMarkdownRenderer {
             "state: \(document.state)",
             "title: \(yamlString(document.title ?? ""))",
             "tags: \(yamlList(document.tags))",
+            "participants: \(yamlList(document.participants.map(\.name)))",
             "started_at: \(timestamp(document.startedAt))",
             "ended_at: \(document.endedAt.map(timestamp) ?? "")",
             "timezone: \(yamlString(document.timezone))",

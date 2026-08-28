@@ -87,6 +87,7 @@ nonisolated enum SpeakerIdentityConfirmation {
         temporaryLabel: String,
         displayName: String? = nil,
         identityID: UUID? = nil,
+        allowSuspectedIdentityReuse: Bool = true,
         bindings: inout [MeetingSpeakerBinding],
         archive: inout VoiceprintArchive,
         at date: Date = Date()
@@ -106,7 +107,8 @@ nonisolated enum SpeakerIdentityConfirmation {
         )
         guard !quality.isEmpty else { throw ActionError.noQualityEmbeddings }
 
-        let targetID = identityID ?? bindings[index].state.identityID
+        let targetID = identityID
+            ?? (allowSuspectedIdentityReuse ? bindings[index].state.identityID : nil)
         var identity: VoiceprintIdentity
         if let targetID {
             guard var existing = archive.identity(id: targetID) else {
@@ -144,6 +146,26 @@ nonisolated enum SpeakerIdentityConfirmation {
             bindings[index].deniedIdentityIDs.insert(identityID)
         }
         bindings[index].state = .unknown
+    }
+
+    /// Names one speaker for this meeting without creating or attaching any
+    /// archive voiceprint. A suspected archive identity is denied for this
+    /// meeting so a newly created client can never inherit it by accident.
+    static func assignMeetingAlias(
+        temporaryLabel: String,
+        displayName: String,
+        bindings: inout [MeetingSpeakerBinding]
+    ) throws {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ActionError.emptyDisplayName }
+        guard let index = bindings.firstIndex(where: { $0.temporaryLabel == temporaryLabel }) else {
+            throw ActionError.unknownTemporaryLabel
+        }
+        if case let .suspected(identityID, _) = bindings[index].state {
+            bindings[index].deniedIdentityIDs.insert(identityID)
+        }
+        bindings[index].state = .unknown
+        bindings[index].meetingAlias = trimmed
     }
 
     /// Rename display text. Confirmed identities update the archive name only

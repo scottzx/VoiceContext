@@ -15,7 +15,15 @@ struct ExportDocumentsView: View {
     let subtitlesDisabledReason: String?
     let audioDisabledReason: String?
     let isMeeting: Bool
+    let prepareArchive: () async throws -> URL
+    let prepareAudio: () async throws -> URL
     @State private var syncAttention: DocumentSyncAttention?
+    @State private var archiveURL: URL?
+    @State private var isPreparingArchive = false
+    @State private var archiveError: String?
+    @State private var preparedAudioURL: URL?
+    @State private var isPreparingAudio = false
+    @State private var audioError: String?
 
     var body: some View {
         ScrollView {
@@ -74,6 +82,41 @@ struct ExportDocumentsView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
+            if let archiveURL, FileManager.default.fileExists(atPath: archiveURL.path) {
+                ShareLink(item: archiveURL) {
+                    Text("分享资料包 (.zip)")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.primary)
+                .accessibilityIdentifier("export-archive")
+            } else {
+                Button {
+                    Task { await prepareArchiveForSharing() }
+                } label: {
+                    HStack {
+                        if isPreparingArchive { ProgressView() }
+                        Text(isPreparingArchive ? "正在准备资料包…" : "导出资料包 (.zip)")
+                            .font(.body.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.primary)
+                .disabled(isPreparingArchive)
+                .accessibilityIdentifier("prepare-export-archive")
+            }
+
+            Text("选择资料包后才会准备音频并生成 ZIP；资料包默认包含转写文档和全部相关文件。是否包含原始录音由全局设置控制。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            if let archiveError {
+                Text(archiveError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
             if let plainTextURL, FileManager.default.fileExists(atPath: plainTextURL.path) {
                 ShareLink(item: plainTextURL) {
                     Text("导出文本 (.txt)")
@@ -106,7 +149,8 @@ struct ExportDocumentsView: View {
                 )
             }
 
-            if let audioURL, FileManager.default.fileExists(atPath: audioURL.path) {
+            if let audioURL = preparedAudioURL ?? audioURL,
+               FileManager.default.fileExists(atPath: audioURL.path) {
                 ShareLink(item: audioURL) {
                     Text("分享音频")
                         .font(.body.weight(.semibold))
@@ -116,10 +160,25 @@ struct ExportDocumentsView: View {
                 .tint(.primary)
                 .accessibilityIdentifier("export-audio")
             } else {
-                disabledExportButton(
-                    "分享音频",
-                    reason: audioDisabledReason ?? "音频尚不可用"
-                )
+                Button {
+                    Task { await prepareAudioForSharing() }
+                } label: {
+                    HStack {
+                        if isPreparingAudio { ProgressView() }
+                        Text(isPreparingAudio ? "正在准备音频…" : "准备并分享音频")
+                            .font(.body.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .buttonStyle(.bordered)
+                .tint(.primary)
+                .disabled(isPreparingAudio)
+                .accessibilityIdentifier("prepare-export-audio")
+                if let message = audioError ?? audioDisabledReason {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Text("通过系统分享面板 AirDrop、存储到文件或发到其他 App。导出副本不会改动原始录音。")
@@ -204,6 +263,32 @@ struct ExportDocumentsView: View {
         }
     }
 
+    @MainActor
+    private func prepareArchiveForSharing() async {
+        isPreparingArchive = true
+        defer { isPreparingArchive = false }
+        do {
+            archiveURL = try await prepareArchive()
+            archiveError = nil
+        } catch {
+            archiveURL = nil
+            archiveError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func prepareAudioForSharing() async {
+        isPreparingAudio = true
+        defer { isPreparingAudio = false }
+        do {
+            preparedAudioURL = try await prepareAudio()
+            audioError = nil
+        } catch {
+            preparedAudioURL = nil
+            audioError = error.localizedDescription
+        }
+    }
+
     private func disabledExportButton(_ title: String, reason: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
@@ -242,7 +327,13 @@ struct ExportDocumentsDestination: View {
                     plainTextDisabledReason: package.plainTextDisabledReason,
                     subtitlesDisabledReason: package.subtitlesDisabledReason,
                     audioDisabledReason: package.audioDisabledReason,
-                    isMeeting: package.isMeeting
+                    isMeeting: package.isMeeting,
+                    prepareArchive: {
+                        try await model.exportArchive(recordingID: recordingID)
+                    },
+                    prepareAudio: {
+                        try await model.exportShareableAudio(recordingID: recordingID)
+                    }
                 )
             } else if let errorMessage {
                 ContentUnavailableView(
@@ -256,7 +347,7 @@ struct ExportDocumentsDestination: View {
         }
         .task(id: recordingID) {
             do {
-                package = try await model.exportPackage(recordingID: recordingID)
+                package = try await model.exportPackage(recordingID: recordingID, includeAudio: false)
                 errorMessage = nil
             } catch {
                 package = nil

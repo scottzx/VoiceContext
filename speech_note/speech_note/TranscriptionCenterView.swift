@@ -6,21 +6,25 @@ struct TranscriptionCenterView: View {
     let model: RecordingCoreModel
 
     @State private var queueStatus = TranscriptionQueueStatus()
-    @State private var selectedTab: TaskTabState = .active
+    @State private var selectedTab: TaskTabState = .todo
     @State private var isRefreshing = false
     @State private var selectedRecordingID: UUID? = nil
 
     enum TaskTabState: String, CaseIterable, Identifiable {
-        case active = "进行中/排队"
+        case todo = "待办"
+        case running = "进行中"
         case failed = "异常需关注"
+        case cancelled = "已取消"
         case completed = "已完成"
 
         var id: String { rawValue }
 
         var icon: String {
             switch self {
-            case .active: "waveform"
+            case .todo: "list.bullet.clipboard"
+            case .running: "waveform"
             case .failed: "exclamationmark.triangle.fill"
+            case .cancelled: "stop.circle"
             case .completed: "checkmark.circle.fill"
             }
         }
@@ -94,7 +98,7 @@ struct TranscriptionCenterView: View {
                         Circle()
                             .fill(Color.orange)
                             .frame(width: 7, height: 7)
-                        Text("正在转写")
+                        Text("正在处理")
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(.orange)
                     }
@@ -106,25 +110,41 @@ struct TranscriptionCenterView: View {
 
             HStack(spacing: 8) {
                 statTabButton(
-                    tab: .active,
-                    title: "进行/排队",
-                    count: queueStatus.runningTasks.count + queueStatus.pendingTasks.count,
+                    tab: .todo,
+                    title: "待办",
+                    count: queueStatus.todoTasks.count,
+                    icon: "list.bullet.clipboard",
+                    color: .secondary,
+                    isPulse: false
+                )
+                statTabButton(
+                    tab: .running,
+                    title: "进行中",
+                    count: queueStatus.runningTasks.count,
                     icon: "bolt.fill",
                     color: .orange,
                     isPulse: !queueStatus.runningTasks.isEmpty
                 )
                 statTabButton(
                     tab: .failed,
-                    title: "需关注/异常",
+                    title: "异常",
                     count: queueStatus.failedTasks.count,
                     icon: "exclamationmark.triangle.fill",
                     color: .red,
                     isPulse: !queueStatus.failedTasks.isEmpty
                 )
                 statTabButton(
+                    tab: .cancelled,
+                    title: "已取消",
+                    count: queueStatus.cancelledTasks.count,
+                    icon: "stop.circle",
+                    color: .secondary,
+                    isPulse: false
+                )
+                statTabButton(
                     tab: .completed,
-                    title: "已完成分段",
-                    count: queueStatus.completedTasks.count,
+                    title: "已完成",
+                    count: queueStatus.completedRecordingGroups.count,
                     icon: "checkmark.circle.fill",
                     color: .green,
                     isPulse: false
@@ -214,21 +234,37 @@ struct TranscriptionCenterView: View {
 
     // MARK: - 卡片 2：列表卡片 (Task List Card)
 
-    private var currentTabTasks: [TranscriptionTaskItem] {
+    private var currentTabTasks: [RecordingProcessingTaskItem] {
         switch selectedTab {
-        case .active:
-            return queueStatus.runningTasks + queueStatus.pendingTasks
+        case .todo:
+            return queueStatus.todoTasks
+        case .running:
+            return queueStatus.runningTasks
         case .failed:
             return queueStatus.failedTasks
+        case .cancelled:
+            return queueStatus.cancelledTasks
         case .completed:
             return queueStatus.completedTasks
         }
     }
 
+    private var currentTabItemCount: Int {
+        selectedTab == .completed
+            ? queueStatus.completedRecordingGroups.count
+            : currentTabTasks.count
+    }
+
+    private var isCurrentTabEmpty: Bool {
+        currentTabItemCount == 0
+    }
+
     private func tabColor(_ tab: TaskTabState) -> Color {
         switch tab {
-        case .active: .orange
+        case .todo: .secondary
+        case .running: .orange
         case .failed: .red
+        case .cancelled: .secondary
         case .completed: .green
         }
     }
@@ -245,21 +281,31 @@ struct TranscriptionCenterView: View {
                         .foregroundStyle(.primary)
                 }
                 Spacer()
-                Text("\(currentTabTasks.count) 个任务")
+                Text(selectedTab == .completed
+                    ? "\(currentTabItemCount) 个记录"
+                    : "\(currentTabItemCount) 个任务")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
 
-            if currentTabTasks.isEmpty {
+            if isCurrentTabEmpty {
                 emptyStateView
                     .padding(.vertical, 28)
                     .padding(.bottom, 8)
+            } else if selectedTab == .completed {
+                LazyVStack(spacing: 10) {
+                    ForEach(queueStatus.completedRecordingGroups) { group in
+                        completedRecordingRow(group)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
             } else {
                 LazyVStack(spacing: 10) {
-                    ForEach(currentTabTasks) { task in
-                        taskRow(task)
+                    ForEach(Array(currentTabTasks.enumerated()), id: \.element.id) { index, task in
+                        taskRow(task, index: index + 1)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -282,123 +328,241 @@ struct TranscriptionCenterView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func taskRow(_ task: TranscriptionTaskItem) -> some View {
+    private func taskRow(_ task: RecordingProcessingTaskItem, index: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: taskStateIcon(task.state))
-                    .font(.body)
-                    .foregroundStyle(taskStateColor(task.state))
-                    .symbolEffect(.pulse, isActive: task.state == .running && !reduceMotion)
+            HStack(alignment: .top, spacing: 8) {
+                Text("\(index)")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .frame(minWidth: 18, alignment: .leading)
+                    .accessibilityLabel("第 \(index) 项")
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(task.recordingTitle)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(stageTitle(task.stage))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    if let timeText = task.timeRangeText {
-                        Text(timeText)
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let error = task.lastError, !error.isEmpty {
-                        Text("提示: \(formatErrorMessage(error))")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .lineLimit(3)
-                    }
-
-                    HStack(spacing: 8) {
-                        Text("状态: \(taskStateTitle(task.state))")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(taskStateColor(task.state))
-
-                        if task.attemptCount > 0 {
-                            Text("尝试: \(task.attemptCount)")
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Text(task.updatedAt.standardTimeString)
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(task.recordingTitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
 
                 Spacer()
 
-                VStack(spacing: 8) {
-                    if task.state == .failed || task.state == .pending {
-                        Button {
-                            Task {
-                                await model.retryTranscriptionJob(id: task.id)
-                                await refreshQueue()
-                            }
-                        } label: {
-                            Text("重试")
-                                .font(.caption.weight(.semibold))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(Color.orange.opacity(0.15))
-                                .foregroundStyle(.orange)
-                                .clipShape(Capsule())
+                if task.state == .failed {
+                    Button("重试") {
+                        Task {
+                            await model.retryProcessingTask(
+                                recordingID: task.recordingID,
+                                stage: task.stage
+                            )
+                            await refreshQueue()
                         }
                     }
-
-                    Button {
-                        selectedRecordingID = task.recordingID
-                    } label: {
-                        Text("查看")
-                            .font(.caption.weight(.medium))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Color(uiColor: .tertiarySystemGroupedBackground))
-                            .foregroundStyle(.primary)
-                            .clipShape(Capsule())
-                    }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+                    .frame(minHeight: 44)
                 }
+
+                Button("查看") {
+                    selectedRecordingID = task.recordingID
+                }
+                .font(.caption.weight(.medium))
+                .buttonStyle(.bordered)
+                .frame(minHeight: 44)
+            }
+
+            HStack(alignment: .top, spacing: 0) {
+                compactStatus(
+                    title: "状态",
+                    value: taskStateTitle(task.state),
+                    color: taskStateColor(task.state)
+                )
+                Spacer(minLength: 20)
+                compactStageProgress(
+                    title: task.stage == .transcription ? "逐字稿" : "声纹",
+                    progress: task.progress,
+                    activeTitle: task.stage == .transcription ? "识别中" : "提取中"
+                )
+                if task.stage == .speakerProcessing {
+                    Spacer(minLength: 20)
+                    compactFinalization(task.speakerFinalizationState)
+                }
+                Spacer(minLength: 20)
+
+                compactStatus(
+                    title: "更新",
+                    value: task.updatedAt.standardTimeString,
+                    color: .secondary,
+                    alignment: .trailing
+                )
+            }
+
+            if let dependencyMessage = task.dependencyMessage,
+               task.state == .todo {
+                Label(dependencyMessage, systemImage: "arrow.turn.down.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let error = task.lastError, !error.isEmpty {
+                Text("提示: \(formatErrorMessage(error))")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(3)
             }
         }
         .padding(12)
         .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .contentShape(Rectangle())
+        .accessibilityIdentifier("processing-task-\(task.id)")
+        .contextMenu {
+            if task.state == .cancelled {
+                Button {
+                    Task {
+                        await model.restartCancelledProcessingTask(
+                            recordingID: task.recordingID,
+                            stage: task.stage
+                        )
+                        await refreshQueue()
+                    }
+                } label: {
+                    Label("重新开始任务", systemImage: "arrow.clockwise")
+                }
+            } else if task.state != .completed {
+                Button {
+                    Task {
+                        await model.markProcessingTaskCompleted(
+                            recordingID: task.recordingID,
+                            stage: task.stage
+                        )
+                        await refreshQueue()
+                    }
+                } label: {
+                    Label("标记为已完成", systemImage: "checkmark.circle")
+                }
+
+                Button(role: .destructive) {
+                    Task {
+                        await model.cancelProcessingTask(
+                            recordingID: task.recordingID,
+                            stage: task.stage
+                        )
+                        await refreshQueue()
+                    }
+                } label: {
+                    Label("取消任务", systemImage: "stop.circle")
+                }
+            }
+        }
+    }
+
+    private func completedRecordingRow(_ group: CompletedRecordingProcessingGroup) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                Text(group.recordingTitle)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+
+                Spacer(minLength: 8)
+
+                Button("查看") {
+                    selectedRecordingID = group.recordingID
+                }
+                .font(.caption.weight(.medium))
+                .buttonStyle(.bordered)
+                .frame(minHeight: 44)
+            }
+
+            Divider()
+
+            ForEach(Array(group.tasks.enumerated()), id: \.element.id) { index, task in
+                if index > 0 {
+                    Divider()
+                        .padding(.leading, 26)
+                }
+                completedStageRow(task, index: index + 1)
+            }
+        }
+        .padding(12)
+        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("completed-recording-\(group.recordingID.uuidString)")
+    }
+
+    private func completedStageRow(
+        _ task: RecordingProcessingTaskItem,
+        index: Int
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(index).")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .frame(minWidth: 18, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(completedStageTitle(task.stage))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                Text("\(task.progress.completed)/\(task.progress.total) 已完成")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            VStack(alignment: .trailing, spacing: 3) {
+                Text("完成时间")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(task.updatedAt.formatted(.dateTime.month().day().hour().minute()))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("completed-stage-\(task.id)")
     }
 
     // MARK: - 固定底部快捷操作栏 (Fixed Bottom Action Dock)
 
     private var fixedBottomActionDock: some View {
+        Group {
+            switch selectedTab {
+            case .todo, .running:
+                stoppableTaskActions
+            case .failed:
+                failedTaskActions
+            case .cancelled:
+                EmptyView()
+            case .completed:
+                EmptyView()
+            }
+        }
+    }
+
+    private var stoppableTaskActions: some View {
+        VStack(spacing: 8) {
+            Divider()
+            stopAllButton
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 6)
+        }
+        .background(.ultraThinMaterial)
+    }
+
+    private var failedTaskActions: some View {
         VStack(spacing: 8) {
             Divider()
             HStack(spacing: 8) {
-                // 1. 一键开始 / 恢复转写
-                Button {
-                    Task {
-                        await model.resumeAllTranscriptionJobs()
-                        await refreshQueue()
-                    }
-                } label: {
-                    Label("一键开始", systemImage: "play.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(maxWidth: .infinity, minHeight: 40)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.blue)
+                stopAllButton
 
-                // 2. 全部关停
-                Button {
-                    Task {
-                        await model.stopAllTranscriptionJobs()
-                        await refreshQueue()
-                    }
-                } label: {
-                    Label("全部关停", systemImage: "stop.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(maxWidth: .infinity, minHeight: 40)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red.opacity(0.9))
-
-                // 3. 重试异常
                 Button {
                     Task {
                         await model.retryAllFailedJobs()
@@ -420,6 +584,26 @@ struct TranscriptionCenterView: View {
         .background(.ultraThinMaterial)
     }
 
+    private var stopAllButton: some View {
+        Button {
+            Task {
+                await model.stopAllTranscriptionJobs()
+                await refreshQueue()
+            }
+        } label: {
+            Label("全部关停", systemImage: "stop.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 40)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.red)
+        .disabled(
+            queueStatus.todoTasks.isEmpty
+                && queueStatus.runningTasks.isEmpty
+                && queueStatus.failedTasks.isEmpty
+        )
+    }
+
     // MARK: - Helpers
 
     private func refreshQueue() async {
@@ -428,37 +612,116 @@ struct TranscriptionCenterView: View {
         queueStatus = await model.fetchTranscriptionQueueStatus()
     }
 
-    private func taskStateTitle(_ state: RecordingJobState) -> String {
+    private func stageTitle(_ stage: ProcessingTaskStage) -> String {
+        switch stage {
+        case .transcription: "逐字稿识别"
+        case .speakerProcessing: "声文整理"
+        }
+    }
+
+    private func completedStageTitle(_ stage: ProcessingTaskStage) -> String {
+        switch stage {
+        case .transcription: "逐字稿识别"
+        case .speakerProcessing: "声文识别"
+        }
+    }
+
+    private func taskStateTitle(_ state: ProcessingTaskState) -> String {
         switch state {
-        case .pending: "排队中"
-        case .running: "转写中"
-        case .completed: "已就绪"
+        case .todo: "待办"
+        case .running: "进行中"
         case .failed: "异常"
+        case .cancelled: "已取消"
+        case .completed: "已完成"
         }
     }
 
-    private func taskStateIcon(_ state: RecordingJobState) -> String {
+    private func taskStateColor(_ state: ProcessingTaskState) -> Color {
         switch state {
-        case .pending: "clock"
-        case .running: "waveform"
-        case .completed: "checkmark.circle.fill"
-        case .failed: "exclamationmark.triangle.fill"
-        }
-    }
-
-    private func taskStateColor(_ state: RecordingJobState) -> Color {
-        switch state {
-        case .pending: .blue
+        case .todo, .cancelled: .secondary
         case .running: .orange
+        case .failed: .red
+        case .completed: .green
+        }
+    }
+
+    private func compactStageProgress(
+        title: String,
+        progress: ProcessingStageProgress,
+        activeTitle: String
+    ) -> some View {
+        compactStatus(
+            title: title,
+            value: progress.cancelled > 0
+                ? "已取消"
+                : progress.failed > 0
+                ? "\(progress.failed) 异常"
+                : "\(progress.completed)/\(progress.total)",
+            color: progress.cancelled > 0
+                ? .secondary
+                : (progress.failed > 0 ? .red : (progress.running > 0 ? .orange : .secondary)),
+            detail: progress.running > 0 ? activeTitle : nil
+        )
+    }
+
+    private func compactFinalization(_ state: RecordingJobState?) -> some View {
+        compactStatus(
+            title: "整理",
+            value: finalizationTitle(state),
+            color: finalizationColor(state)
+        )
+    }
+
+    private func compactStatus(
+        title: String,
+        value: String,
+        color: Color,
+        detail: String? = nil,
+        alignment: HorizontalAlignment = .leading
+    ) -> some View {
+        VStack(alignment: alignment, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(color)
+                .monospacedDigit()
+                .lineLimit(1)
+            if let detail {
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func finalizationTitle(_ state: RecordingJobState?) -> String {
+        switch state {
+        case .running: "整理中"
+        case .pending: "待办"
+        case .completed: "已完成"
+        case .failed: "异常"
+        case .cancelled: "已取消"
+        case nil: "待办"
+        }
+    }
+
+    private func finalizationColor(_ state: RecordingJobState?) -> Color {
+        switch state {
         case .completed: .green
         case .failed: .red
+        case .cancelled: .secondary
+        case .running: .orange
+        case .pending, nil: .secondary
         }
     }
 
     private func formatErrorMessage(_ error: String) -> String {
         switch error {
         case "userStopped":
-            return "已手动全部关停。点击下方「一键开始」可随时继续转写。"
+            return "已手动关停，可长按任务重新开始。"
         case "deferredUntilThermalImproves":
             return "设备发热较明显，已暂缓以保护硬件；降温后将自动恢复转写。"
         case "deferredUntilForeground":

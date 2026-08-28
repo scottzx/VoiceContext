@@ -11,6 +11,7 @@
 - [0.1.0 录音核心设计](./architecture/recording-core.md)：可靠采集、60 秒 AudioChunk、journal、恢复、gap 与音频保留边界。
 - [0.2.0 分钟级增量转写设计](./architecture/incremental-transcription.md)：closed chunk 立即入队、跨 chunk carry/source ranges、前后台门禁、录音与处理解耦及幂等恢复。
 - [generate-meeting-minutes Codex Skill](./features/generate-meeting-minutes-skill.md)：公开 VoiceContext Skill/模板导出、Mac Codex 安装与端到端验证（`#33`）。
+- [听记 1.0 App Store 发布设计与提交清单](./release/1.0-app-store-submission.md)：首发永久解锁定价、商店元数据、隐私合规、审核说明与手动发布验收。
 
 ## 文档约定
 

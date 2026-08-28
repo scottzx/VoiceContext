@@ -1,4 +1,6 @@
 import SwiftUI
+import QuickLook
+import UniformTypeIdentifiers
 
 private typealias SentenceBubble = RecordingDetailPlaybackPresentation.SentenceBubble
 private typealias SpeakerBubbleGroup = RecordingDetailPlaybackPresentation.SpeakerBubbleGroup
@@ -37,12 +39,29 @@ struct RecordingDetailScreen: View {
     @State private var speakerToRename: MeetingSpeakerBinding? = nil
     @State private var newSpeakerName: String = ""
     @State private var isRenameAlertPresented = false
+    @State private var isParticipantPickerPresented = false
     @State private var selectedBubbleID: UUID? = nil
+    @State private var selectedSpeakerFilter: String? = nil
     @State private var isCopiedToastPresented = false
     @State private var isExportSheetPresented = false
     @State private var isMetadataEditSheetPresented = false
     @State private var editingSegmentRow: RecordingDetailPlaybackPresentation.TimedRow? = nil
+    @State private var speakerAssignmentSegmentID: UUID? = nil
     @State private var isDeleteConfirmationPresented = false
+    @State private var isSpeakerRecognitionConfirmationPresented = false
+    @State private var attachments: [RecordingAttachment] = []
+    @State private var isAttachmentPickerPresented = false
+    @State private var attachmentPendingDeletion: RecordingAttachment?
+    @State private var previewAttachmentURL: URL?
+    @State private var attachmentError: String?
+    @State private var isAddingAttachments = false
+
+    private struct SpeakerAssignmentOption: Identifiable {
+        let speaker: String
+        let title: String
+
+        var id: String { speaker }
+    }
 
     private enum DetailContentTab: String, CaseIterable, Identifiable {
         case transcript
@@ -121,6 +140,15 @@ struct RecordingDetailScreen: View {
                 } label: {
                     Label("重新转写 / 分析", systemImage: "arrow.clockwise")
                 }
+
+                if !currentRecording.isMeeting {
+                    Button {
+                        isSpeakerRecognitionConfirmationPresented = true
+                    } label: {
+                        Label("识别说话人…", systemImage: "person.2.wave.2")
+                    }
+                    .disabled(transcript == nil)
+                }
             }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -188,6 +216,46 @@ struct RecordingDetailScreen: View {
                     initialLocation: currentRecording.locationName
                 )
             }
+            .alert("启用说话人识别？", isPresented: $isSpeakerRecognitionConfirmationPresented) {
+                Button("取消", role: .cancel) {}
+                Button("开始识别") {
+                    Task {
+                        await model.enableSpeakerRecognition(recordingID: recordingID)
+                        await loadDetail()
+                    }
+                }
+            } message: {
+                Text("将使用现有逐字稿的分句时间戳提取声纹并聚类，原始录音和逐字稿不会被覆盖。")
+            }
+            .fileImporter(
+                isPresented: $isAttachmentPickerPresented,
+                allowedContentTypes: [.data],
+                allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case let .success(urls):
+                    Task { await addAttachments(from: urls) }
+                case let .failure(error):
+                    attachmentError = error.localizedDescription
+                }
+            }
+            .quickLookPreview($previewAttachmentURL)
+            .confirmationDialog(
+                "移除相关文件？",
+                isPresented: Binding(
+                    get: { attachmentPendingDeletion != nil },
+                    set: { if !$0 { attachmentPendingDeletion = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("从本录音移除", role: .destructive) {
+                    guard let attachment = attachmentPendingDeletion else { return }
+                    Task { await removeAttachment(attachment) }
+                }
+                Button("取消", role: .cancel) { attachmentPendingDeletion = nil }
+            } message: {
+                Text("只删除 App 中与这条录音关联的副本，不会删除 Files 中的原文件。")
+            }
             .sheet(item: $editingSegmentRow) { row in
                 EditSegmentTextSheet(
                     model: model,
@@ -226,6 +294,18 @@ struct RecordingDetailScreen: View {
                         }
                     }
                 }
+            }
+            .sheet(isPresented: $isParticipantPickerPresented) {
+                MeetingParticipantPickerSheet(
+                    model: model,
+                    existingClientIDs: Set(transcript?.participants.compactMap(\.clientID) ?? []),
+                    onAddName: { name in
+                        Task { await addMeetingParticipant(name: name) }
+                    },
+                    onSelectClient: { client in
+                        Task { await addMeetingParticipant(client: client) }
+                    }
+                )
             }
             .alert("修改发言人名称", isPresented: $isRenameAlertPresented) {
                 TextField("输入发言人名称", text: $newSpeakerName)
@@ -272,12 +352,13 @@ struct RecordingDetailScreen: View {
                         return job.state == .running || job.state == .pending
                     }
                     let processing = progress?.processing
-                    let isQueued = (
-                        processing == .queued ||
-                            processing == .processing ||
-                            processing == .speakerFinalization ||
-                            processing == .deferredUntilForeground
-                    )
+                    let isQueued: Bool
+                    switch processing {
+                    case .queued, .processing, .speakerFinalization, .deferredUntilForeground:
+                        isQueued = true
+                    default:
+                        isQueued = false
+                    }
                     let isActivelyTranscribing = isCapturingThisRecording || hasActiveWork || isQueued
 
                     if isActivelyTranscribing {
@@ -643,7 +724,10 @@ struct RecordingDetailScreen: View {
     private var transcriptDocumentView: some View {
         let bubbles = transcript.map { transcriptSentenceBubbles(for: $0) } ?? []
         let groups = RecordingDetailPlaybackPresentation.groupSentenceBubbles(bubbles)
-        let roster = RecordingDetailPlaybackPresentation.legendSpeakers(from: bubbles.map(\.speaker))
+        let roster = filterableSpeakerLabels(from: bubbles)
+        let displayedGroups = selectedSpeakerFilter.map { filter in
+            groups.filter { $0.speaker == filter }
+        } ?? groups
         let activeID = RecordingDetailPlaybackPresentation.currentBubbleID(at: timelinePlayer.currentTime, bubbles: bubbles)
         let activeSpeaker = bubbles.first(where: { $0.id == activeID })?.speaker
 
@@ -652,12 +736,16 @@ struct RecordingDetailScreen: View {
 
         return VStack(alignment: .leading, spacing: 16) {
             if roster.count >= 2 {
-                speakerLegend(roster: roster, activeSpeaker: activeSpeaker)
+                speakerLegend(
+                    roster: roster,
+                    activeSpeaker: activeSpeaker,
+                    selectedSpeaker: selectedSpeakerFilter
+                )
             }
 
-            if !groups.isEmpty {
+            if !displayedGroups.isEmpty {
                 LazyVStack(alignment: .leading, spacing: 16) {
-                    ForEach(groups) { group in
+                    ForEach(displayedGroups) { group in
                         transcriptBubbleGroupView(
                             group: group,
                             roster: roster,
@@ -827,35 +915,51 @@ struct RecordingDetailScreen: View {
     }
 
     @ViewBuilder
-    private func speakerLegend(roster: [String], activeSpeaker: String?) -> some View {
+    private func speakerLegend(
+        roster: [String],
+        activeSpeaker: String?,
+        selectedSpeaker: String?
+    ) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                if selectedSpeaker != nil {
+                    Button {
+                        selectedSpeakerFilter = nil
+                    } label: {
+                        Text("全部")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color(uiColor: .secondarySystemBackground))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("显示全部发言")
+                }
                 ForEach(roster, id: \.self) { speaker in
                     let color = RecordingDetailPlaybackPresentation.color(for: speaker, roster: roster)
                     let isActive = activeSpeaker == speaker
+                    let isSelected = selectedSpeaker == speaker
                     Button {
-                        let binding = speakerBindings.first(where: {
-                            $0.temporaryLabel == speaker || $0.chipText == speaker || $0.state.linkedDisplayName == speaker
-                        }) ?? MeetingSpeakerBinding(temporaryLabel: speaker, state: .unknown)
-                        speakerToRename = binding
-                        newSpeakerName = binding.chipText.replacingOccurrences(of: SpeakerIdentityLabeling.suspectedPrefix, with: "")
-                        isRenameAlertPresented = true
+                        selectedSpeakerFilter = isSelected ? nil : speaker
                     } label: {
                         HStack(spacing: 6) {
                             Circle()
                                 .fill(color)
                                 .frame(width: 8, height: 8)
                             Text(speaker)
-                                .font(.caption.weight(isActive ? .semibold : .regular))
-                                .foregroundStyle(isActive ? .primary : .secondary)
+                                .font(.caption.weight(isActive || isSelected ? .semibold : .regular))
+                                .foregroundStyle(isActive || isSelected ? .primary : .secondary)
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(isActive ? color.opacity(0.18) : Color(uiColor: .secondarySystemBackground))
+                        .background(isSelected ? color.opacity(0.18) : Color(uiColor: .secondarySystemBackground))
                         .clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(isActive ? color : .clear, lineWidth: 1))
+                        .overlay(Capsule().strokeBorder(isSelected ? color : .clear, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("筛选 (speaker) 的发言")
                 }
             }
         }
@@ -869,35 +973,19 @@ struct RecordingDetailScreen: View {
     ) -> some View {
         let speaker = group.speaker
         let speakerColor = speaker != nil ? RecordingDetailPlaybackPresentation.color(for: speaker!, roster: roster) : Color.secondary
-        let binding = speakerBindings.first(where: {
-            $0.temporaryLabel == speaker || $0.chipText == speaker || $0.state.linkedDisplayName == speaker
-        })
 
         VStack(alignment: .leading, spacing: 6) {
             if let speaker, !speaker.isEmpty {
-                Button {
-                    let targetBinding = binding ?? MeetingSpeakerBinding(temporaryLabel: speaker, state: .unknown)
-                    speakerToRename = targetBinding
-                    newSpeakerName = targetBinding.chipText.replacingOccurrences(of: SpeakerIdentityLabeling.suspectedPrefix, with: "")
-                    isRenameAlertPresented = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(speakerColor)
-                            .frame(width: 8, height: 8)
-                        Text(speaker)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.primary)
-
-                        Image(systemName: "pencil")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(speakerColor)
+                        .frame(width: 8, height: 8)
+                    Text(speaker)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("修改发言人 \(speaker)")
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -953,8 +1041,18 @@ struct RecordingDetailScreen: View {
             .contextMenu {
                 Button {
                     timelinePlayer.seek(to: bubble.startTime)
+                    if !timelinePlayer.isPlaying {
+                        timelinePlayer.play()
+                    }
                 } label: {
                     Label("从此开始播放", systemImage: "play.circle")
+                }
+                if isSpeakerAssignmentAvailable(for: bubble.id) {
+                    Button {
+                        speakerAssignmentSegmentID = bubble.id
+                    } label: {
+                        Label("修改此句说话人", systemImage: "person.crop.circle.badge.pencil")
+                    }
                 }
                 Button {
                     editingSegmentRow = bubble.asTimedRow
@@ -970,6 +1068,24 @@ struct RecordingDetailScreen: View {
                 } label: {
                     Label("复制单句文本", systemImage: "doc.on.doc")
                 }
+            }
+            .confirmationDialog(
+                "选择此句说话人",
+                isPresented: Binding(
+                    get: { speakerAssignmentSegmentID == bubble.id },
+                    set: { if !$0 { speakerAssignmentSegmentID = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                ForEach(editableSpeakerOptions) { option in
+                    Button(option.title) {
+                        speakerAssignmentSegmentID = nil
+                        Task { await assignSpeaker(segmentID: bubble.id, speaker: option.speaker) }
+                    }
+                }
+                Button("取消", role: .cancel) { speakerAssignmentSegmentID = nil }
+            } message: {
+                Text("仅显示已识别的单人说话人。")
             }
             .id(bubble.id)
 
@@ -987,16 +1103,31 @@ struct RecordingDetailScreen: View {
 
     private var speakersManagementView: some View {
         let bindings = displayedBindings
+        let participants = displayedManualParticipants
         return VStack(alignment: .leading, spacing: 14) {
-            Text("本场参会人与声纹")
-                .font(.headline)
+            HStack(spacing: 12) {
+                Text("本场参会人与声纹")
+                    .font(.headline)
 
-            Text("点击参会人可一键绑定到「客户档案」或保存为新客户。绑定后，在后续录音中将自动识别说话人。")
+                Spacer()
+
+                Button {
+                    isParticipantPickerPresented = true
+                } label: {
+                    Label("添加参会人", systemImage: "person.badge.plus")
+                        .font(.subheadline.weight(.medium))
+                }
+                .buttonStyle(.borderless)
+                .disabled(transcript == nil || !currentRecording.isMeeting)
+                .accessibilityHint("记录未发言或未被识别的参会人")
+            }
+
+            Text("可手工补充未发言或未识别的参会人。确认或关联已有客户会绑定声纹；完成后长按已识别发言人可重新选择。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if bindings.isEmpty {
-                Text("暂无说话人标签。离线聚类完成后将在此列出本场发言人。")
+            if bindings.isEmpty && participants.isEmpty {
+                Text("暂无参会人。可手工添加，已识别的发言人也会在此列出。")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 20)
@@ -1005,15 +1136,50 @@ struct RecordingDetailScreen: View {
                     ForEach(bindings, id: \.temporaryLabel) { binding in
                         speakerCard(binding: binding)
                     }
+                    ForEach(participants) { participant in
+                        participantCard(participant)
+                    }
                 }
             }
         }
+    }
+
+    private func participantCard(_ participant: TranscriptDocumentV1.Participant) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(Color(uiColor: .tertiarySystemBackground))
+                    .frame(width: 40, height: 40)
+                Image(systemName: "person.crop.circle")
+                    .font(.title3)
+                    .foregroundStyle(.primary)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(participant.name)
+                    .font(.headline)
+                if !participant.displaySubtitle.isEmpty {
+                    Text(participant.displaySubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text("已参会 · 暂无发言声纹")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
     private func speakerCard(binding: MeetingSpeakerBinding) -> some View {
         let matchedClient = model.client(forVoiceprintID: binding.state.identityID ?? UUID())
         let hasEmbeddings = !binding.candidateEmbeddings.isEmpty
+        let isResolved = binding.state.isConfirmed || !(binding.meetingAlias?.isEmpty ?? true)
 
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -1047,6 +1213,14 @@ struct RecordingDetailScreen: View {
                                 .background(Color.green.opacity(0.12))
                                 .foregroundStyle(.green)
                                 .clipShape(Capsule())
+                        } else if isResolved {
+                            Text("本场已归属 · 未绑定声纹")
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color(uiColor: .tertiarySystemBackground))
+                                .foregroundStyle(.secondary)
+                                .clipShape(Capsule())
                         } else if binding.state.isSuspected {
                             Text("疑似匹配")
                                 .font(.caption2)
@@ -1066,48 +1240,67 @@ struct RecordingDetailScreen: View {
                 Spacer()
             }
 
-            // Action Buttons
-            HStack(spacing: 8) {
-                Button {
-                    speakerToRename = binding
-                    newSpeakerName = binding.chipText.replacingOccurrences(of: SpeakerIdentityLabeling.suspectedPrefix, with: "")
-                    isRenameAlertPresented = true
-                } label: {
-                    Label("重命名", systemImage: "pencil")
-                        .font(.caption.weight(.medium))
-                }
-                .buttonStyle(.bordered)
+            if !isResolved {
+                HStack(spacing: 8) {
+                    if binding.state.isSuspected {
+                        Button {
+                            let name = binding.state.linkedDisplayName ?? binding.chipText
+                            Task { await applySpeakerAction(.confirm(name: name), temporaryLabel: binding.temporaryLabel) }
+                        } label: {
+                            Label("确定", systemImage: "checkmark")
+                                .font(.caption.weight(.medium))
+                        }
+                        .buttonStyle(.bordered)
+                    }
 
-                Button {
-                    selectedSpeakerForClientBinding = binding
-                } label: {
-                    Label("关联客户", systemImage: "link")
-                        .font(.caption.weight(.medium))
-                }
-                .buttonStyle(.bordered)
-
-                Button {
-                    speakerForNewClient = binding
-                    isNewClientSheetPresented = true
-                } label: {
-                    Label("建为新客户", systemImage: "person.badge.plus")
-                        .font(.caption.weight(.medium))
-                }
-                .buttonStyle(.bordered)
-
-                if binding.state.isSuspected {
-                    Button(role: .destructive) {
-                        Task { await applySpeakerAction(.deny, temporaryLabel: binding.temporaryLabel) }
+                    Button {
+                        selectedSpeakerForClientBinding = binding
                     } label: {
-                        Text("否认匹配")
-                            .font(.caption)
+                        Label("关联客户…", systemImage: "link")
+                            .font(.caption.weight(.medium))
                     }
                     .buttonStyle(.bordered)
+
+                    Button {
+                        speakerToRename = binding
+                        newSpeakerName = binding.chipText.replacingOccurrences(of: SpeakerIdentityLabeling.suspectedPrefix, with: "")
+                        isRenameAlertPresented = true
+                    } label: {
+                        Label("重命名", systemImage: "pencil")
+                            .font(.caption.weight(.medium))
+                    }
+                    .buttonStyle(.bordered)
+
+                    if binding.state.isSuspected {
+                        Button(role: .destructive) {
+                            Task { await applySpeakerAction(.deny, temporaryLabel: binding.temporaryLabel) }
+                        } label: {
+                            Text("否认匹配")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
             }
         }
         .padding(14)
         .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .contextMenu {
+            if isResolved {
+                Button {
+                    selectedSpeakerForClientBinding = binding
+                } label: {
+                    Label("重新选择客户…", systemImage: "arrow.triangle.2.circlepath")
+                }
+                Button {
+                    speakerToRename = binding
+                    newSpeakerName = binding.chipText.replacingOccurrences(of: SpeakerIdentityLabeling.suspectedPrefix, with: "")
+                    isRenameAlertPresented = true
+                } label: {
+                    Label("修改显示名称", systemImage: "pencil")
+                }
+            }
+        }
     }
 
     // MARK: - Technical Details View
@@ -1133,6 +1326,8 @@ struct RecordingDetailScreen: View {
                 detailRow(label: "唯一标识", value: recordingID.uuidString)
             }
             .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+
+            relatedFilesSection
 
             Button(role: .destructive) {
                 isDeleteConfirmationPresented = true
@@ -1160,6 +1355,87 @@ struct RecordingDetailScreen: View {
                 Text("删除后将无法恢复该录音文件及其关联的转写文稿。")
             }
         }
+    }
+
+    private var relatedFilesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("相关文件")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    isAttachmentPickerPresented = true
+                } label: {
+                    Label("添加文件", systemImage: "paperclip")
+                        .font(.subheadline.weight(.medium))
+                }
+                .disabled(isAddingAttachments)
+            }
+
+            if isAddingAttachments {
+                ProgressView("正在复制到本录音…")
+                    .font(.caption)
+            } else if attachments.isEmpty {
+                Text("暂无相关文件。可添加会议通知、议程、文档或图片。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(attachments) { attachment in
+                        attachmentRow(attachment)
+                        if attachment.id != attachments.last?.id { Divider() }
+                    }
+                }
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            }
+
+            if let attachmentError {
+                Text(attachmentError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func attachmentRow(_ attachment: RecordingAttachment) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "doc")
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+            Button {
+                Task { previewAttachmentURL = await model.recordingAttachmentURL(attachment) }
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(attachment.originalFilename)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                    Text("\(ByteCountFormatter.string(fromByteCount: attachment.fileSize, countStyle: .file)) · \(attachment.addedAt.standardTimeString)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Menu {
+                ShareLink(item: model.repository.rootURL.appendingPathComponent(attachment.relativePath)) {
+                    Label("分享", systemImage: "square.and.arrow.up")
+                }
+                Button(role: .destructive) {
+                    attachmentPendingDeletion = attachment
+                } label: {
+                    Label("移除", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("管理 \(attachment.originalFilename)")
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 4)
+        .padding(.vertical, 6)
     }
 
     private func detailRow(label: String, value: String) -> some View {
@@ -1256,6 +1532,31 @@ struct RecordingDetailScreen: View {
         transcriptSentenceBubbles(for: transcript).map(\.asTimedRow)
     }
 
+    private func filterableSpeakerLabels(from bubbles: [SentenceBubble]) -> [String] {
+        RecordingDetailPlaybackPresentation.legendSpeakers(from: bubbles.map(\.speaker))
+            .filter { $0 != "说话人不确定" && $0 != "多人对话" && $0 != "多人会话" }
+    }
+
+    private var editableSpeakerOptions: [SpeakerAssignmentOption] {
+        guard let transcript else { return [] }
+        return transcript.editableSpeakerLabels.map { speaker in
+            let title = speakerBindings.first(where: {
+                $0.temporaryLabel == speaker || $0.chipText == speaker || $0.state.linkedDisplayName == speaker
+            })?.chipText ?? speaker
+            return SpeakerAssignmentOption(speaker: speaker, title: title)
+        }
+    }
+
+    private func isSpeakerAssignmentAvailable(for segmentID: UUID) -> Bool {
+        guard !editableSpeakerOptions.isEmpty,
+              let transcript,
+              let segment = transcript.segments.first(where: { $0.id == segmentID }) else {
+            return false
+        }
+        guard let attribution = transcript.speakerTurn(for: segment)?.attribution else { return false }
+        return attribution == .single || attribution == .unknown
+    }
+
     private func resolvedSpeakerName(_ temporaryLabel: String?, in transcript: TranscriptDocumentV1) -> String? {
         guard let temporaryLabel, !temporaryLabel.isEmpty else { return nil }
         if let binding = speakerBindings.first(where: {
@@ -1267,10 +1568,7 @@ struct RecordingDetailScreen: View {
     }
 
     private func speakerLabel(for segment: TranscriptDocumentV1.Segment, in transcript: TranscriptDocumentV1) -> String? {
-        let mid = (segment.startSample + segment.endSample) / 2
-        guard let turn = transcript.speakerTurns.first(where: {
-            $0.startSample <= mid && mid < max($0.endSample, $0.startSample + 1)
-        }) else { return nil }
+        guard let turn = transcript.speakerTurn(for: segment) else { return nil }
         switch turn.attribution {
         case .multiple:
             return "多人对话"
@@ -1292,6 +1590,23 @@ struct RecordingDetailScreen: View {
         guard let transcript else { return [] }
         return transcript.speakers.map {
             MeetingSpeakerBinding(temporaryLabel: $0, state: .unknown)
+        }
+    }
+
+    private var displayedManualParticipants: [TranscriptDocumentV1.Participant] {
+        guard let transcript else { return [] }
+        return transcript.participants.filter { participant in
+            !displayedBindings.contains { binding in
+                if let clientID = participant.clientID,
+                   let voiceprintID = model.client(id: clientID)?.voiceprintIdentityID,
+                   binding.state.identityID == voiceprintID {
+                    return true
+                }
+                return binding.chipText.compare(
+                    participant.name,
+                    options: [.caseInsensitive, .diacriticInsensitive]
+                ) == .orderedSame
+            }
         }
     }
 
@@ -1338,23 +1653,96 @@ struct RecordingDetailScreen: View {
         }
     }
 
+    private func assignSpeaker(segmentID: UUID, speaker: String) async {
+        do {
+            transcript = try await model.assignSpeaker(
+                recordingID: recordingID,
+                segmentID: segmentID,
+                speaker: speaker
+            )
+        } catch {
+            transcriptError = "修改此句说话人失败：\(error.localizedDescription)"
+        }
+    }
+
     private func bindSpeakerToClient(binding: MeetingSpeakerBinding, client: ClientProfile) async {
-        await applySpeakerAction(.confirm(name: client.name), temporaryLabel: binding.temporaryLabel)
-        if let voiceprintID = binding.state.identityID {
-            await model.linkClientVoiceprint(clientID: client.id, voiceprintID: voiceprintID)
+        do {
+            let result = try await model.confirmSpeakerIdentity(
+                recordingID: recordingID,
+                temporaryLabel: binding.temporaryLabel,
+                displayName: client.name
+            )
+            if let voiceprintID = result.1.first(where: { $0.temporaryLabel == binding.temporaryLabel })?.state.identityID {
+                await model.linkClientVoiceprint(clientID: client.id, voiceprintID: voiceprintID)
+            }
+            transcript = result.0
+            speakerBindings = result.1
+        } catch {
+            transcriptError = "关联客户失败：\(error.localizedDescription)"
         }
         selectedSpeakerForClientBinding = nil
     }
 
-    private func createClientAndBindSpeaker(client: ClientProfile, binding: MeetingSpeakerBinding) async {
-        await applySpeakerAction(.confirm(name: client.name), temporaryLabel: binding.temporaryLabel)
-        var newClient = client
-        if let voiceprintID = binding.state.identityID {
-            newClient.voiceprintIdentityID = voiceprintID
+    private func addMeetingParticipant(name: String) async {
+        do {
+            transcript = try await model.addMeetingParticipant(
+                recordingID: recordingID,
+                name: name
+            )
+        } catch {
+            transcriptError = "添加参会人失败：\(error.localizedDescription)"
         }
-        await model.upsertClient(newClient)
+    }
+
+    private func addMeetingParticipant(client: ClientProfile) async {
+        do {
+            transcript = try await model.addMeetingParticipant(
+                recordingID: recordingID,
+                client: client
+            )
+        } catch {
+            transcriptError = "添加参会人失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func createClientAndBindSpeaker(client: ClientProfile, binding: MeetingSpeakerBinding) async {
+        do {
+            let result = try await model.createClientAndConfirmSpeakerIdentity(
+                recordingID: recordingID,
+                temporaryLabel: binding.temporaryLabel,
+                client: client
+            )
+            transcript = result.0
+            speakerBindings = result.1
+        } catch {
+            transcriptError = "新建客户失败：\(error.localizedDescription)"
+        }
         isNewClientSheetPresented = false
         speakerForNewClient = nil
+    }
+
+    private func addAttachments(from urls: [URL]) async {
+        isAddingAttachments = true
+        defer { isAddingAttachments = false }
+        do {
+            _ = try await model.addRecordingAttachments(from: urls, recordingID: recordingID)
+            attachments = try await model.recordingAttachments(recordingID: recordingID)
+            attachmentError = nil
+        } catch {
+            attachments = (try? await model.recordingAttachments(recordingID: recordingID)) ?? attachments
+            attachmentError = "添加文件失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func removeAttachment(_ attachment: RecordingAttachment) async {
+        do {
+            try await model.removeRecordingAttachment(attachment)
+            attachments = try await model.recordingAttachments(recordingID: recordingID)
+            attachmentPendingDeletion = nil
+            attachmentError = nil
+        } catch {
+            attachmentError = "移除文件失败：\(error.localizedDescription)"
+        }
     }
 
     private func loadDetail() async {
@@ -1365,6 +1753,7 @@ struct RecordingDetailScreen: View {
             processingRanges = try await model.processingRanges(recordingID: recordingID)
             progress = try await model.presentationProgress(for: recordingID)
             jobs = (try? await model.repository.jobs(recordingID: recordingID)) ?? []
+            attachments = (try? await model.recordingAttachments(recordingID: recordingID)) ?? []
 
             let currentPlayableChunks = playableChunks
             let currentChunkIDs = currentPlayableChunks.map(\.id)
@@ -1430,7 +1819,94 @@ struct RecordingDetailScreen: View {
     }
 }
 
-/// Sheet to pick an existing Client Profile to bind to a speaker.
+/// Adds a meeting attendee without implying speech or creating a voiceprint.
+struct MeetingParticipantPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let model: RecordingCoreModel
+    let existingClientIDs: Set<UUID>
+    var onAddName: (String) -> Void
+    var onSelectClient: (ClientProfile) -> Void
+
+    @State private var name = ""
+    @State private var search = ""
+
+    private var filteredClients: [ClientProfile] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.isEmpty { return model.clients }
+        return model.clients.filter {
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.organization.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    TextField("参会人姓名", text: $name)
+                        .textContentType(.name)
+                    Button {
+                        onAddName(name.trimmingCharacters(in: .whitespacesAndNewlines))
+                        dismiss()
+                    } label: {
+                        Label("仅添加到本场会议", systemImage: "person.badge.plus")
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                } header: {
+                    Text("本场参会人")
+                } footer: {
+                    Text("只记录出席事实，不会生成声纹或将其标记为已发言。")
+                }
+
+                Section("从客户档案添加") {
+                    if filteredClients.isEmpty {
+                        Text("未找到客户档案")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(filteredClients) { client in
+                            let isAdded = existingClientIDs.contains(client.id)
+                            Button {
+                                onSelectClient(client)
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(client.name)
+                                            .font(.body.weight(.medium))
+                                            .foregroundStyle(.primary)
+                                        if !client.displaySubtitle.isEmpty {
+                                            Text(client.displaySubtitle)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Spacer()
+                                    if isAdded {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .disabled(isAdded)
+                        }
+                    }
+                }
+            }
+            .searchable(text: $search, prompt: "搜索客户姓名…")
+            .navigationTitle("添加参会人")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// Sheet to pick an existing Client Profile to bind to a speaker, or create
+/// a new global client linked to a fresh voiceprint from this speaker.
 struct SpeakerClientPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     let model: RecordingCoreModel
@@ -1460,6 +1936,8 @@ struct SpeakerClientPickerSheet: View {
                         Label("新建客户档案…", systemImage: "person.badge.plus")
                             .font(.body.weight(.medium))
                     }
+                } footer: {
+                    Text("新建客户会建立当前说话人的声纹，并加入全局档案。")
                 }
 
                 Section("选择已有客户") {
