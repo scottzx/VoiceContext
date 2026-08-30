@@ -53,6 +53,16 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     var onCaptureEvent: (@Sendable (CaptureEvent) -> Void)?
     var onMeteringUpdate: (@Sendable (AudioInputMetrics) -> Void)?
 
+    var silenceThresholdDB: Float = -45.0
+    private let preRollCapacitySamples = 6_400
+    private let hangoverCapacitySamples: Int64 = 19_200
+    private var preRollBuffer: [Float] = []
+    private var isVoiced = false
+    private var remainingHangoverSamples: Int64 = 0
+    private var masterSampleCursor: Int64 = 0
+    private var segmentLengthSamples: Int64 = AACSegmentRecorder.defaultSegmentLengthSamples
+    private var activeSegmentEndSample: Int64 = 0
+
     private let engine = AVAudioEngine()
     private let session = AVAudioSession.sharedInstance()
     private let writerQueue = DispatchQueue(label: "VoiceContext.AACSegmentWriter", qos: .userInitiated)
@@ -65,10 +75,6 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     private var audioConverter: AVAudioConverter?
     private var recordingFormat: AVAudioFormat?
     private var directory: URL?
-    private var boundaryPlanner = AACChunkBoundaryPlanner(
-        segmentLengthSamples: AACSegmentRecorder.defaultSegmentLengthSamples
-    )
-    private var writtenSamples: Int64 = 0
     private var pendingPacketCount = 0
     private var tapInstalled = false
     private var lastClosedSegment: Segment?
@@ -83,7 +89,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     }
 
     var currentSample: Int64 {
-        statusLock.withLock { writtenSamples }
+        statusLock.withLock { masterSampleCursor }
     }
 
     func start(
@@ -120,17 +126,22 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
 
         try writerQueue.sync {
             self.directory = directory
-            let segmentLengthSamples = max(1, Int64(segmentDuration * targetFormat.sampleRate))
-            boundaryPlanner = AACChunkBoundaryPlanner(
-                segmentLengthSamples: segmentLengthSamples,
-                initialSample: initialSampleOffset
-            )
+            let segmentLen = max(1, Int64(segmentDuration * targetFormat.sampleRate))
+            segmentLengthSamples = segmentLen
             audioConverter = converter
             recordingFormat = targetFormat
-            writtenSamples = initialSampleOffset
+            statusLock.withLock { masterSampleCursor = initialSampleOffset }
             pendingPacketCount = 0
             lastClosedSegment = nil
-            try openNextSegment(startedAt: Date())
+            preRollBuffer = []
+            isVoiced = false
+            remainingHangoverSamples = 0
+            activeFile = nil
+            activeID = nil
+            activeURL = nil
+            activeStartedAt = nil
+            activeStartSample = initialSampleOffset
+            activeSegmentEndSample = initialSampleOffset
         }
 
         input.installTap(onBus: 0, bufferSize: 1_024, format: inputFormat) { [weak self] buffer, _ in
@@ -160,19 +171,55 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         let segment = try writerQueue.sync {
-            let segment = closeSegment(at: Date()) ?? lastClosedSegment
-            guard let segment else { throw RecorderError.notRecording }
+            let closed = closeSegment(at: Date()) ?? lastClosedSegment
+            if let closed {
+                audioConverter = nil
+                recordingFormat = nil
+                return closed
+            }
+            let fallback = try createFallbackSilentSegment(at: Date())
             audioConverter = nil
             recordingFormat = nil
-            return segment
+            return fallback
         }
         try session.setActive(false, options: .notifyOthersOnDeactivation)
         return segment
     }
 
+    func cancel() {
+        let wasRecording = statusLock.withLock { () -> Bool in
+            guard tapInstalled else { return false }
+            tapInstalled = false
+            return true
+        }
+        guard wasRecording else { return }
+
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        writerQueue.sync {
+            activeFile = nil
+            activeID = nil
+            activeURL = nil
+            activeStartedAt = nil
+            lastClosedSegment = nil
+            audioConverter = nil
+            recordingFormat = nil
+            isVoiced = false
+            remainingHangoverSamples = 0
+            preRollBuffer.removeAll()
+        }
+        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
     func pause() throws {
         guard statusLock.withLock({ tapInstalled }) else { throw RecorderError.notRecording }
         engine.pause()
+        writerQueue.sync {
+            _ = closeSegment(at: Date())
+            isVoiced = false
+            remainingHangoverSamples = 0
+            preRollBuffer.removeAll()
+        }
     }
 
     func resume() throws {
@@ -203,31 +250,129 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     }
 
     private func consume(_ inputBuffer: AVAudioPCMBuffer) {
+        guard statusLock.withLock({ tapInstalled }) else { return }
         do {
-            if let metrics = inputMetrics(inputBuffer) {
-                onMeteringUpdate?(metrics)
-            }
             guard let converted = try convertForRecording(inputBuffer), converted.frameLength > 0 else {
                 return
             }
-            for slice in boundaryPlanner.slices(for: Int64(converted.frameLength)) {
-                if activeFile == nil {
-                    try openNextSegment(startedAt: Date())
+            guard let channelData = converted.floatChannelData?[0] else { return }
+            let frameCount = Int(converted.frameLength)
+            let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
+
+            if let metrics = AudioInputMetrics.from(samples: samples.withUnsafeBufferPointer { $0 }) {
+                onMeteringUpdate?(metrics)
+            }
+
+            let metrics = AudioInputMetrics.from(samples: samples)
+            let isCurrentVoiced = metrics.rmsDecibels >= silenceThresholdDB
+
+            let bufferStartSample = statusLock.withLock { masterSampleCursor }
+            let bufferEndSample = bufferStartSample + Int64(frameCount)
+            statusLock.withLock { masterSampleCursor = bufferEndSample }
+
+            if isCurrentVoiced {
+                if !isVoiced {
+                    isVoiced = true
+                    if !preRollBuffer.isEmpty {
+                        let preRollCount = Int64(preRollBuffer.count)
+                        let preRollStart = bufferStartSample - preRollCount
+                        if let preRollAudioBuffer = buffer(from: preRollBuffer) {
+                            try writeSlices(preRollAudioBuffer, absoluteStartSample: preRollStart)
+                        }
+                        preRollBuffer.removeAll()
+                    }
                 }
-                let buffer = try sliceBuffer(
-                    converted,
-                    sourceOffset: Int(slice.sourceOffset),
-                    frameCount: Int(slice.frameCount)
-                )
-                try activeFile?.write(from: buffer)
-                statusLock.withLock { writtenSamples = slice.endSample }
-                if slice.closesSegment {
+                remainingHangoverSamples = hangoverCapacitySamples
+                try writeSlices(converted, absoluteStartSample: bufferStartSample)
+            } else if isVoiced {
+                remainingHangoverSamples -= Int64(frameCount)
+                if remainingHangoverSamples > 0 {
+                    try writeSlices(converted, absoluteStartSample: bufferStartSample)
+                } else {
+                    remainingHangoverSamples = 0
+                    isVoiced = false
                     _ = closeSegment(at: Date())
+                    preRollBuffer = samples
+                    if preRollBuffer.count > preRollCapacitySamples {
+                        preRollBuffer.removeFirst(preRollBuffer.count - preRollCapacitySamples)
+                    }
+                }
+            } else {
+                preRollBuffer.append(contentsOf: samples)
+                if preRollBuffer.count > preRollCapacitySamples {
+                    preRollBuffer.removeFirst(preRollBuffer.count - preRollCapacitySamples)
                 }
             }
         } catch {
             emit(.writeFailed)
         }
+    }
+
+    private func writeSlices(_ buffer: AVAudioPCMBuffer, absoluteStartSample: Int64) throws {
+        let count = Int(buffer.frameLength)
+        guard count > 0 else { return }
+        var currentStart = absoluteStartSample
+        var offset = 0
+        var remaining = count
+
+        while remaining > 0 {
+            let nextBoundary = ((currentStart / segmentLengthSamples) + 1) * segmentLengthSamples
+            let available = Int(min(Int64(remaining), nextBoundary - currentStart))
+            let sliceEnd = currentStart + Int64(available)
+            let crossesBoundary = (sliceEnd == nextBoundary)
+
+            if activeFile == nil {
+                try openNextSegment(startedAt: Date(), startingSample: currentStart)
+            }
+
+            let slice = try sliceBuffer(
+                buffer,
+                sourceOffset: offset,
+                frameCount: available
+            )
+            try activeFile?.write(from: slice)
+            activeSegmentEndSample = sliceEnd
+
+            if crossesBoundary {
+                _ = closeSegment(at: Date())
+            }
+
+            offset += available
+            currentStart = sliceEnd
+            remaining -= available
+        }
+    }
+
+    private func buffer(from samples: [Float]) -> AVAudioPCMBuffer? {
+        guard let recordingFormat, !samples.isEmpty else { return nil }
+        guard let pcmBuffer = AVAudioPCMBuffer(
+            pcmFormat: recordingFormat,
+            frameCapacity: AVAudioFrameCount(samples.count)
+        ) else { return nil }
+        pcmBuffer.frameLength = AVAudioFrameCount(samples.count)
+        if let channel = pcmBuffer.floatChannelData?[0] {
+            samples.withUnsafeBufferPointer { ptr in
+                if let base = ptr.baseAddress {
+                    channel.update(from: base, count: samples.count)
+                }
+            }
+        }
+        return pcmBuffer
+    }
+
+    private func createFallbackSilentSegment(at endedAt: Date) throws -> Segment {
+        let start = statusLock.withLock { masterSampleCursor }
+        try openNextSegment(startedAt: endedAt, startingSample: start)
+        let silenceCount = 1_600
+        let silenceSamples = Array(repeating: Float(0), count: silenceCount)
+        if let silenceBuffer = buffer(from: silenceSamples) {
+            try activeFile?.write(from: silenceBuffer)
+            activeSegmentEndSample = start + Int64(silenceCount)
+        }
+        guard let segment = closeSegment(at: endedAt) else {
+            throw RecorderError.notRecording
+        }
+        return segment
     }
 
     private func convertForRecording(_ inputBuffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer? {
@@ -264,12 +409,18 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         }
     }
 
-    private func openNextSegment(startedAt: Date) throws {
+    private func openNextSegment(startedAt: Date, startingSample: Int64) throws {
         guard let directory, let recordingFormat else {
             throw RecorderError.audioConverterInitializationFailed
         }
+        let timeDir = AACChunkBoundaryPlanner.timeDirectory(
+            for: startingSample,
+            sampleRate: AACSegmentRecorder.targetSampleRate
+        )
+        let segmentDir = directory.appendingPathComponent(timeDir, isDirectory: true)
+        try FileManager.default.createDirectory(at: segmentDir, withIntermediateDirectories: true)
         let id = UUID()
-        let url = directory.appendingPathComponent("audio-\(id.uuidString.lowercased()).m4a")
+        let url = segmentDir.appendingPathComponent("audio-\(id.uuidString.lowercased()).m4a")
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: AACSegmentRecorder.targetSampleRate,
@@ -285,7 +436,8 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         activeID = id
         activeURL = url
         activeStartedAt = startedAt
-        activeStartSample = currentSample
+        activeStartSample = startingSample
+        activeSegmentEndSample = startingSample
     }
 
     private func closeSegment(at endedAt: Date) -> Segment? {
@@ -302,7 +454,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
             id: id,
             url: url,
             startSample: activeStartSample,
-            endSample: currentSample,
+            endSample: activeSegmentEndSample,
             startedAt: startedAt,
             endedAt: endedAt
         )

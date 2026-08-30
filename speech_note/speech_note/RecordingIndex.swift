@@ -109,7 +109,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: Recording?
             try query(
-                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name, speaker_processing_enabled FROM recordings WHERE id = ?",
+                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name, speaker_processing_enabled, memo FROM recordings WHERE id = ?",
                 [.text(id.uuidString)]
             ) { statement in
                 result = try decodeRecording(statement)
@@ -122,7 +122,7 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         try lock.withLock {
             var result: [Recording] = []
             try query(
-                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name, speaker_processing_enabled FROM recordings ORDER BY started_at"
+                "SELECT id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name, speaker_processing_enabled, memo FROM recordings ORDER BY started_at"
             ) { statement in
                 let recording = try decodeRecording(statement)
                 if states == nil || states?.contains(recording.state) == true {
@@ -487,14 +487,14 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
 
     private func migrate() throws {
         let current = try scalarInt("PRAGMA user_version")
-        guard current <= 9 else {
-            throw IndexError.open("数据库版本 \(current) 高于当前应用支持的版本 9")
+        guard current <= 10 else {
+            throw IndexError.open("数据库版本 \(current) 高于当前应用支持的版本 10")
         }
         if current == 0 {
             try execute("BEGIN IMMEDIATE")
             do {
                 try createSchemaV3()
-                try execute("PRAGMA user_version = 9")
+                try execute("PRAGMA user_version = 10")
                 try execute("COMMIT")
             } catch {
                 try? execute("ROLLBACK")
@@ -634,6 +634,18 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                 throw error
             }
         }
+        let afterV9 = try scalarInt("PRAGMA user_version")
+        if afterV9 == 9 {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try execute("ALTER TABLE recordings ADD COLUMN memo TEXT")
+                try execute("PRAGMA user_version = 10")
+                try execute("COMMIT")
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
+        }
     }
 
     private func createSchemaV3() throws {
@@ -653,7 +665,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                 source_uttype TEXT,
                 language_mode TEXT NOT NULL DEFAULT 'chinese',
                 location_name TEXT,
-                speaker_processing_enabled INTEGER NOT NULL DEFAULT 1
+                speaker_processing_enabled INTEGER NOT NULL DEFAULT 1,
+                memo TEXT
             )
             """)
         try execute("""
@@ -756,8 +769,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
         case let .recordingCreated(recording):
             try execute(
                 """
-                INSERT INTO recordings(id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name, speaker_processing_enabled)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO recordings(id, started_at, ended_at, title, is_meeting, state, retention_expires_at, retention_pinned, updated_at, origin, source_filename, source_uttype, language_mode, location_name, speaker_processing_enabled, memo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO NOTHING
                 """,
                 recording.bindings
@@ -836,6 +849,11 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
             try execute(
                 "UPDATE recordings SET location_name = ?, updated_at = ? WHERE id = ?",
                 [locationName.sqliteValue, .double(occurredAt.timeIntervalSince1970), .text(recordingID.uuidString)]
+            )
+        case let .recordingMemoChanged(recordingID, memo):
+            try execute(
+                "UPDATE recordings SET memo = ?, updated_at = ? WHERE id = ?",
+                [memo.sqliteValue, .double(occurredAt.timeIntervalSince1970), .text(recordingID.uuidString)]
             )
         case let .recordingMeetingChanged(recordingID, isMeeting):
             try execute(
@@ -940,7 +958,8 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
             sourceFilename: optionalText(statement, 10),
             sourceUTType: optionalText(statement, 11),
             languageMode: languageMode,
-            locationName: locationName
+            locationName: locationName,
+            memo: optionalText(statement, 15)
         )
     }
 
@@ -1141,6 +1160,7 @@ private extension RecordingJournalEvent {
         case .chunkAudioRemoved: "chunkAudioRemoved"
         case .recordingTitleChanged: "recordingTitleChanged"
         case .recordingLocationChanged: "recordingLocationChanged"
+        case .recordingMemoChanged: "recordingMemoChanged"
         case .recordingMeetingChanged: "recordingMeetingChanged"
         case .importedAudioAssetCreated: "importedAudioAssetCreated"
         case .importedAudioAssetUpdated: "importedAudioAssetUpdated"
@@ -1181,6 +1201,7 @@ private extension Recording {
             .text(languageMode.rawValue),
             locationName.sqliteValue,
             .int(speakerProcessingEnabled ? 1 : 0),
+            memo.sqliteValue,
         ]
     }
 }

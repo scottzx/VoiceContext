@@ -22,6 +22,8 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
     private struct Item {
         let url: URL
         let duration: TimeInterval
+        let timelineStart: TimeInterval
+        let timelineEnd: TimeInterval
     }
 
     private var items: [Item] = []
@@ -38,17 +40,23 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
     func load(chunks: [AudioChunk], rootURL: URL) {
         stop()
         playbackError = nil
-        items = chunks.compactMap { chunk in
+        let sortedChunks = chunks.sorted { $0.startSample < $1.startSample }
+        items = sortedChunks.compactMap { chunk in
             let url = rootURL.appendingPathComponent(chunk.relativePath)
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
             let sampleCount = max(0, chunk.endSample - chunk.startSample)
+            let itemDuration = Double(sampleCount) / AACSegmentRecorder.targetSampleRate
+            let start = Double(chunk.startSample) / AACSegmentRecorder.targetSampleRate
+            let end = Double(chunk.endSample) / AACSegmentRecorder.targetSampleRate
             return Item(
                 url: url,
-                duration: Double(sampleCount) / AACSegmentRecorder.targetSampleRate
+                duration: itemDuration,
+                timelineStart: start,
+                timelineEnd: max(start + itemDuration, end)
             )
         }
-        duration = items.reduce(0) { $0 + $1.duration }
-        currentTime = 0
+        duration = items.last?.timelineEnd ?? 0
+        currentTime = items.first?.timelineStart ?? 0
     }
 
     /// Continuous timeline for one Files-imported private asset.
@@ -62,8 +70,9 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
             playbackError = "导入音频暂不可用。"
             return
         }
-        items = [Item(url: assetURL, duration: max(0, durationSeconds))]
-        duration = max(0, durationSeconds)
+        let dur = max(0, durationSeconds)
+        items = [Item(url: assetURL, duration: dur, timelineStart: 0, timelineEnd: dur)]
+        duration = dur
         currentTime = 0
     }
 
@@ -76,7 +85,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
             playbackError = "没有可播放的音频分片。"
             return
         }
-        if currentTime >= duration { seek(to: 0) }
+        if currentTime >= duration { seek(to: items.first?.timelineStart ?? 0) }
         playbackError = nil
 
         // Recording leaves the shared session in the .record category, where
@@ -109,7 +118,9 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
             }
             currentIndex += 1
             currentItemOffset = 0
-            updateCurrentTime()
+            if currentIndex < items.count {
+                currentTime = items[currentIndex].timelineStart
+            }
         }
         isPlaying = false
         stopTimer()
@@ -133,7 +144,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         isPlaying = false
         currentIndex = 0
         currentItemOffset = 0
-        currentTime = 0
+        currentTime = items.first?.timelineStart ?? 0
         stopTimer()
     }
 
@@ -147,14 +158,22 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         player?.pause()
         player = nil
         let target = min(max(0, time), duration)
-        var remaining = target
-        currentIndex = 0
-        while currentIndex < items.count - 1, remaining >= items[currentIndex].duration {
-            remaining -= items[currentIndex].duration
-            currentIndex += 1
+
+        if let index = items.firstIndex(where: { target >= $0.timelineStart && target < $0.timelineEnd }) {
+            currentIndex = index
+            currentItemOffset = min(target - items[index].timelineStart, items[index].duration)
+            currentTime = target
+        } else if let nextIndex = items.firstIndex(where: { $0.timelineStart > target }) {
+            // Gap detected: smart skip silence forward to next speech chunk start!
+            currentIndex = nextIndex
+            currentItemOffset = 0
+            currentTime = items[nextIndex].timelineStart
+        } else {
+            currentIndex = items.count - 1
+            currentItemOffset = items[currentIndex].duration
+            currentTime = duration
         }
-        currentItemOffset = min(remaining, items[currentIndex].duration)
-        currentTime = target
+
         if wasPlaying { play() }
     }
 
@@ -172,6 +191,8 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
             return
         }
         currentIndex += 1
+        // Smart skip silence: instant jump to next chunk's start!
+        currentTime = items[currentIndex].timelineStart
         if isPlaying { play() }
     }
 
@@ -208,10 +229,10 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
     }
 
     private func updateCurrentTime() {
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty, currentIndex < items.count else { return }
         currentItemOffset = player?.currentTime ?? currentItemOffset
-        let completedDuration = items.prefix(currentIndex).reduce(0) { $0 + $1.duration }
-        currentTime = min(duration, completedDuration + currentItemOffset)
+        let item = items[currentIndex]
+        currentTime = min(duration, item.timelineStart + currentItemOffset)
     }
 }
 
@@ -268,10 +289,16 @@ struct ContentView: View {
     @State private var isFirstTimeLocationPromptPresented = false
     /// Set by the home-screen Record Widget deep link (`voicecontext://start-recording`).
     @Binding private var openStartRecording: Bool
+    /// Set by the lock-screen Live Activity stop button deep link (`voicecontext://stop-recording`).
+    @Binding private var openStopRecording: Bool
     private let isRecordingDetailFixtureEnabled: Bool
 
-    init(openStartRecording: Binding<Bool> = .constant(false)) {
+    init(
+        openStartRecording: Binding<Bool> = .constant(false),
+        openStopRecording: Binding<Bool> = .constant(false)
+    ) {
         _openStartRecording = openStartRecording
+        _openStopRecording = openStopRecording
         isRecordingDetailFixtureEnabled = ProcessInfo.processInfo.arguments.contains("-uiTestingSeedRecordingDetail")
         if isRecordingDetailFixtureEnabled {
             let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -300,6 +327,10 @@ struct ContentView: View {
         Group {
             if let modelError {
                 startupFailure(modelError)
+            } else if model.trialEntitlement.isPurchaseLocked {
+                NavigationStack {
+                    ExpiredPaywallView(trial: model.trialEntitlement)
+                }
             } else {
                 workspace
             }
@@ -308,7 +339,7 @@ struct ContentView: View {
             model.scenePhaseChanged(to: ScenePhaseLike(phase))
         }
         .onChange(of: model.captureIsActive) { _, isActive in
-            if isActive {
+            if isActive, !model.trialEntitlement.isPurchaseLocked {
                 isRecordingScreenPresented = true
             }
         }
@@ -320,23 +351,39 @@ struct ContentView: View {
             if openStartRecording {
                 handleWidgetStartRecording()
             }
+            if openStopRecording {
+                handleWidgetStopRecording()
+            }
         }
         .onChange(of: openStartRecording) { _, shouldOpen in
             guard shouldOpen else { return }
             handleWidgetStartRecording()
+        }
+        .onChange(of: openStopRecording) { _, shouldStop in
+            guard shouldStop else { return }
+            handleWidgetStopRecording()
         }
     }
 
     /// Widget / deep-link entry into the start-recording flow.
     private func handleWidgetStartRecording() {
         openStartRecording = false
-        if modelError != nil { return }
+        if modelError != nil || model.trialEntitlement.isPurchaseLocked { return }
         if model.captureIsActive || model.presentation == .stopping {
             isRecordingScreenPresented = true
             return
         }
         processingModeTarget = .recording
         isProcessingModeDialogPresented = true
+    }
+
+    /// Live Activity / lock-screen deep-link entry to safely stop recording.
+    private func handleWidgetStopRecording() {
+        openStopRecording = false
+        guard model.captureIsActive else { return }
+        Task {
+            await model.stop()
+        }
     }
 
     private func requestStartRecording(isMeeting: Bool = false) {

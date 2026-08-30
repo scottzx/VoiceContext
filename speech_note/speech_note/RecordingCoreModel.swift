@@ -176,6 +176,7 @@ final class RecordingCoreModel {
 
     init(
         rootURL: URL,
+        coordinator customCoordinator: RecordingSessionCoordinator? = nil,
         trialLedger: TrialQuotaLedger? = nil,
         purchaseClient: (any PurchaseUnlockClient)? = nil,
         voiceprintArchiveURL: URL? = nil,
@@ -199,7 +200,7 @@ final class RecordingCoreModel {
         self.voiceprintArchiveURL = try voiceprintArchiveURL ?? VoiceprintArchiveStorage.defaultURL()
         self.voiceprintKeyProvider = voiceprintKeyProvider
         self.voiceprintSyncConfiguration = voiceprintSyncConfiguration
-        coordinator = RecordingSessionCoordinator(repository: repository, capture: recorder)
+        coordinator = customCoordinator ?? RecordingSessionCoordinator(repository: repository, capture: recorder)
         let lifecycleGate = InferenceLifecycleGate()
         let inferenceService = SenseVoiceInferenceService(lifecycleGate: lifecycleGate)
         self.inferenceService = inferenceService
@@ -487,6 +488,9 @@ final class RecordingCoreModel {
             trialEntitlement.onUnlocked = { [weak self] in
                 await self?.resumeTranscriptionAfterUnlock()
             }
+            trialEntitlement.onTrialStateChanged = { [weak self] in
+                await self?.resumeTranscriptionAfterTrialStateChanged()
+            }
             trialEntitlement.start()
         }
 
@@ -514,6 +518,12 @@ final class RecordingCoreModel {
         if notice == nil || notice?.contains("解锁") == true || notice?.contains("锁定") == true {
             notice = "已解锁，正在继续处理待转写音频。"
         }
+    }
+
+    /// Refresh and drain queue when trial countdown is reset or simulated in testing.
+    func resumeTranscriptionAfterTrialStateChanged() async {
+        await transcriptionScheduler.requestDrain()
+        await refresh()
     }
 
     /// Fallback for the error path of the UI: a tmp-backed model that keeps
@@ -652,6 +662,27 @@ final class RecordingCoreModel {
             await backgroundTranscriptionContinuation.beginUserInitiatedTask()
         } catch {
             notice = error.localizedDescription
+        }
+        await refresh()
+    }
+
+    func cancelRecording(id: UUID? = nil) async {
+        let targetID = id ?? activeRecordingID ?? coordinator.activeRecordingID
+        guard let targetID else { return }
+        if targetID == activeRecordingID || targetID == coordinator.activeRecordingID {
+            await coordinator.cancel(recordingID: targetID)
+            activeRecordingID = nil
+            sessionProgress = nil
+        }
+        await cancelProcessingTasks(recordingID: targetID)
+        do {
+            try await repository.deleteRecording(id: targetID)
+            try await transcriptStore.delete(recordingID: targetID)
+            try? await attachmentStore.removeAll(recordingID: targetID)
+            _ = try? await folderCatalogStore.moveRecording(targetID, to: nil)
+            notice = "已取消录音。"
+        } catch {
+            notice = "取消录音失败：\(error.localizedDescription)"
         }
         await refresh()
     }
@@ -1004,7 +1035,7 @@ final class RecordingCoreModel {
         await refresh()
     }
 
-    func cancelProcessing(recordingID: UUID) async {
+    private func cancelProcessingTasks(recordingID: UUID) async {
         do {
             let initialJobs = try await repository.jobs(recordingID: recordingID)
             Self.transcriptionCenterLog.notice(
@@ -1014,9 +1045,9 @@ final class RecordingCoreModel {
                 (job.kind == .speakerEmbedding || job.kind == .speakerFinalization)
                     && job.state != .completed ? job.recordingID : nil
             })
-            for recordingID in speakerJobIDs {
-                pendingSpeakerFinalizationIDs.remove(recordingID)
-                await speakerFinalizationCoordinator.invalidate(recordingID: recordingID)
+            for rID in speakerJobIDs {
+                pendingSpeakerFinalizationIDs.remove(rID)
+                await speakerFinalizationCoordinator.invalidate(recordingID: rID)
             }
             await transcriptionScheduler.cancel(recordingID: recordingID)
 
@@ -1032,12 +1063,15 @@ final class RecordingCoreModel {
                 job.updatedAt = now
                 try await repository.upsertJob(job, at: now)
             }
-            notice = "已取消该录音尚未完成的处理任务。"
             Self.transcriptionCenterLog.notice("Cancel recording persisted")
         } catch {
             Self.transcriptionCenterLog.error("Cancel recording failed: \(error.localizedDescription)")
-            notice = "取消任务失败：\(error.localizedDescription)"
         }
+    }
+
+    func cancelProcessing(recordingID: UUID) async {
+        await cancelProcessingTasks(recordingID: recordingID)
+        notice = "已取消该录音尚未完成的处理任务。"
         await refresh()
     }
 
@@ -1979,6 +2013,18 @@ final class RecordingCoreModel {
         await refresh()
     }
 
+    func saveRecordingMemo(
+        recordingID: UUID,
+        memo: String?
+    ) async throws {
+        try await repository.setRecordingMemo(
+            recordingID: recordingID,
+            memo: memo,
+            at: Date()
+        )
+        await refresh()
+    }
+
     func recordingAttachments(recordingID: UUID) async throws -> [RecordingAttachment] {
         try await attachmentStore.attachments(recordingID: recordingID)
     }
@@ -2026,6 +2072,12 @@ final class RecordingCoreModel {
     }
 
     func deleteRecording(id: UUID) async {
+        if id == activeRecordingID || id == coordinator.activeRecordingID {
+            await coordinator.cancel(recordingID: id)
+            activeRecordingID = nil
+            sessionProgress = nil
+        }
+        await cancelProcessingTasks(recordingID: id)
         do {
             try await repository.deleteRecording(id: id)
             try await transcriptStore.delete(recordingID: id)
@@ -2040,9 +2092,18 @@ final class RecordingCoreModel {
 
     func deleteRecordings(ids: Set<UUID>) async {
         guard !ids.isEmpty else { return }
+        if let activeID = activeRecordingID ?? coordinator.activeRecordingID, ids.contains(activeID) {
+            await coordinator.cancel(recordingID: activeID)
+            activeRecordingID = nil
+            sessionProgress = nil
+        }
+        for id in ids {
+            await cancelProcessingTasks(recordingID: id)
+        }
         for id in ids {
             try? await repository.deleteRecording(id: id)
             try? await transcriptStore.delete(recordingID: id)
+            try? await attachmentStore.removeAll(recordingID: id)
             _ = try? await folderCatalogStore.moveRecording(id, to: nil)
         }
         notice = "已批量删除 \(ids.count) 条录音。"

@@ -92,19 +92,21 @@ nonisolated struct RecordingDiagnostics: Sendable {
                 .standardizedFileURL.path
         })
         let rootPath = repository.rootURL.standardizedFileURL.path
-        let audioFiles = try FileManager.default.contentsOfDirectory(
+        if let enumerator = FileManager.default.enumerator(
             at: audioDirectory,
-            includingPropertiesForKeys: nil,
+            includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
-        )
-        for url in audioFiles
-            where url.pathExtension.lowercased() == "m4a"
-                && !indexedPaths.contains(url.standardizedFileURL.path) {
-            let path = url.standardizedFileURL.path
-            let relativePath = path.hasPrefix(rootPath + "/")
-                ? String(path.dropFirst(rootPath.count + 1))
-                : url.lastPathComponent
-            issues.append(.unindexedAudioFile(relativePath: relativePath))
+        ) {
+            for case let url as URL in enumerator {
+                guard url.pathExtension.lowercased() == "m4a" else { continue }
+                if !indexedPaths.contains(url.standardizedFileURL.path) {
+                    let path = url.standardizedFileURL.path
+                    let relativePath = path.hasPrefix(rootPath + "/")
+                        ? String(path.dropFirst(rootPath.count + 1))
+                        : url.lastPathComponent
+                    issues.append(.unindexedAudioFile(relativePath: relativePath))
+                }
+            }
         }
         return issues
     }

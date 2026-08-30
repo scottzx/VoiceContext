@@ -415,6 +415,113 @@ struct TrialEntitlementTests {
         )
         #expect(policy.evaluate() == .lockedPendingPurchase)
     }
+
+    @Test
+    func multiRecordingTranscriptionBlocksDuringLockAndDrainsSequentiallyAfterUnlock() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("trial-multi-sched-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let ledgerURL = root.appendingPathComponent("quota.json")
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let now = start.addingTimeInterval(73 * 3600) // expired
+        let ledger = TrialQuotaLedger(
+            fileURL: ledgerURL,
+            keychain: InMemoryTrialStartTimestampStore(),
+            now: { now }
+        )
+        _ = ledger.ensureTrialStarted(at: start)
+        #expect(ledger.isPurchaseLocked == true)
+
+        let repository = try RecordingRepository(rootURL: root.appendingPathComponent("repo"))
+        let recordingA = Recording(startedAt: start, state: .processing)
+        let recordingB = Recording(startedAt: start.addingTimeInterval(60), state: .processing)
+        try await repository.createRecording(recordingA, at: recordingA.startedAt)
+        try await repository.createRecording(recordingB, at: recordingB.startedAt)
+
+        let gate = InferenceLifecycleGate()
+        let executor = TrialSchedulerExecutorProbe()
+        let scheduler = ForegroundTranscriptionScheduler(
+            repository: repository,
+            lifecycleGate: gate,
+            admissionPolicy: TranscriptionAdmissionPolicy(
+                thermalState: { .nominal },
+                isPurchaseLocked: { ledger.isPurchaseLocked }
+            )
+        ) { lease in
+            try await gate.beginMetalWork()
+            await executor.record(lease.recordingID)
+            await gate.endMetalWork()
+        }
+
+        // Enqueue 2 chunks for Recording A and 2 chunks for Recording B
+        let chunkA1 = UUID()
+        let chunkA2 = UUID()
+        let chunkB1 = UUID()
+        let chunkB2 = UUID()
+
+        try await scheduler.enqueue(recordingID: recordingA.id, chunkID: chunkA1) { _ in }
+        try await scheduler.enqueue(recordingID: recordingA.id, chunkID: chunkA2) { _ in }
+        try await scheduler.enqueue(recordingID: recordingB.id, chunkID: chunkB1) { _ in }
+        try await scheduler.enqueue(recordingID: recordingB.id, chunkID: chunkB2) { _ in }
+        await scheduler.waitForIdle()
+
+        // Admission gate must block all 4 jobs during lock
+        #expect(await executor.recordingIDs.isEmpty)
+        let jobsA = try await repository.jobs(recordingID: recordingA.id)
+        let jobsB = try await repository.jobs(recordingID: recordingB.id)
+        #expect(jobsA.count == 2)
+        #expect(jobsB.count == 2)
+        #expect(jobsA.allSatisfy { $0.state == .pending })
+        #expect(jobsB.allSatisfy { $0.state == .pending })
+
+        // Unlock and drain
+        ledger.markUnlocked()
+        await scheduler.requestDrain()
+        await scheduler.waitForIdle()
+
+        // All 4 jobs must execute
+        let executed = await executor.recordingIDs
+        #expect(executed.count == 4)
+        #expect(executed.filter { $0 == recordingA.id }.count == 2)
+        #expect(executed.filter { $0 == recordingB.id }.count == 2)
+
+        let completedA = try await repository.jobs(recordingID: recordingA.id)
+        let completedB = try await repository.jobs(recordingID: recordingB.id)
+        #expect(completedA.allSatisfy { $0.state == .completed })
+        #expect(completedB.allSatisfy { $0.state == .completed })
+    }
+
+    @Test @MainActor
+    func trialEntitlementTestingHelpersTriggerStateChange() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("trial-helper-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let ledger = TrialQuotaLedger(
+            fileURL: root.appendingPathComponent("quota.json"),
+            keychain: InMemoryTrialStartTimestampStore()
+        )
+        let controller = TrialEntitlementController(
+            ledger: ledger,
+            client: FakePurchaseUnlockClient(entitled: false, price: "¥30")
+        )
+
+        var changeNotified = false
+        controller.onTrialStateChanged = {
+            changeNotified = true
+        }
+
+        controller.simulateExhaustionForTesting()
+        #expect(controller.isPurchaseLocked == true)
+
+        controller.resetTrialForTesting()
+        #expect(controller.isPurchaseLocked == false)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(changeNotified == true)
+    }
 }
 
 private actor TrialSchedulerExecutorProbe {

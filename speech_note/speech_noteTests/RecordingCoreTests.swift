@@ -14,7 +14,8 @@ struct RecordingCoreTests {
             isMeeting: true,
             state: .processing,
             retention: .init(expiresAt: startedAt.addingTimeInterval(600), isPinned: true),
-            updatedAt: startedAt.addingTimeInterval(12)
+            updatedAt: startedAt.addingTimeInterval(12),
+            memo: "会后确认下一步"
         )
         let chunk = AudioChunk(
             id: UUID(uuidString: "20000000-0000-0000-0000-000000000001")!,
@@ -46,8 +47,38 @@ struct RecordingCoreTests {
 
         let index = try RecordingIndex(url: root.appendingPathComponent("index.sqlite"))
 
-        #expect(index.schemaVersion == 9)
+        #expect(index.schemaVersion == 10)
         #expect(index.appliedEventCount == 0)
+    }
+
+    @Test func recordingMemoPersistsIndependentlyAndBlankContentClearsIt() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(startedAt: startedAt, state: .complete)
+        try await repository.createRecording(recording, at: startedAt)
+
+        try await repository.setRecordingMemo(
+            recordingID: recording.id,
+            memo: "🎧 复听后确认甲方的上线日期\n⭐ 关键决策：保持本地处理",
+            at: startedAt.addingTimeInterval(1)
+        )
+
+        let saved = try #require(await repository.recording(id: recording.id))
+        #expect(saved.memo == "🎧 复听后确认甲方的上线日期\n⭐ 关键决策：保持本地处理")
+        #expect(saved.title == recording.title)
+        #expect(saved.state == .complete)
+
+        let reopened = try RecordingRepository(rootURL: root)
+        #expect(try await reopened.recording(id: recording.id)?.memo == saved.memo)
+
+        try await reopened.setRecordingMemo(
+            recordingID: recording.id,
+            memo: "  \n ",
+            at: startedAt.addingTimeInterval(2)
+        )
+        #expect(try await reopened.recording(id: recording.id)?.memo == nil)
     }
 
     @Test func flushedJournalReplaysIdempotentlyIntoSQLite() throws {
@@ -622,6 +653,182 @@ struct RecordingCoreTests {
         #expect(capture.startCount == 2)
     }
 
+    @Test @MainActor func coordinatorCancelImmediatelyStopsCaptureAndResetsState() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+
+        let firstID = try await coordinator.start()
+        #expect(coordinator.activeRecordingID == firstID)
+        #expect(coordinator.captureState == .recording)
+        #expect(coordinator.presentationState == .recording)
+
+        await coordinator.cancel()
+
+        #expect(coordinator.activeRecordingID == nil)
+        #expect(coordinator.captureState == .idle)
+        #expect(coordinator.presentationState == .idle)
+        #expect(capture.cancelCount == 1)
+
+        let secondID = try await coordinator.start()
+        #expect(secondID != firstID)
+        #expect(coordinator.activeRecordingID == secondID)
+        #expect(coordinator.captureState == .recording)
+        #expect(coordinator.presentationState == .recording)
+    }
+
+    @Test @MainActor func coordinatorCancelWithMismatchedIDDoesNotCancelActiveSession() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+
+        let firstID = try await coordinator.start()
+        await coordinator.cancel(recordingID: UUID())
+
+        #expect(coordinator.activeRecordingID == firstID)
+        #expect(coordinator.captureState == .recording)
+        #expect(capture.cancelCount == 0)
+
+        await coordinator.cancel(recordingID: firstID)
+
+        #expect(coordinator.activeRecordingID == nil)
+        #expect(coordinator.captureState == .idle)
+        #expect(capture.cancelCount == 1)
+    }
+
+    @Test @MainActor func modelCancelRecordingCancelsCaptureAndDeletesDraft() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+        let model = try RecordingCoreModel(rootURL: root, coordinator: coordinator)
+
+        let recordingID = try await coordinator.start()
+        #expect(model.activeRecordingID == recordingID)
+        #expect(model.presentation == .recording)
+
+        await model.cancelRecording()
+
+        #expect(model.activeRecordingID == nil)
+        #expect(model.presentation == .idle)
+        #expect(capture.cancelCount == 1)
+        #expect(try await repository.recording(id: recordingID) == nil)
+        #expect(model.notice == "已取消录音。")
+    }
+
+    @Test @MainActor func deleteRecordingWhileActiveCancelsTaskFirstAndDeletesSafely() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+        let model = try RecordingCoreModel(rootURL: root, coordinator: coordinator)
+
+        let recordingID = try await coordinator.start()
+        #expect(model.activeRecordingID == recordingID)
+
+        await model.deleteRecording(id: recordingID)
+
+        #expect(model.activeRecordingID == nil)
+        #expect(model.presentation == .idle)
+        #expect(capture.cancelCount == 1)
+        #expect(try await repository.recording(id: recordingID) == nil)
+        #expect(model.notice == "已删除录音。")
+
+        let nextID = try await coordinator.start()
+        #expect(nextID != recordingID)
+        #expect(model.activeRecordingID == nextID)
+        #expect(model.presentation == .recording)
+    }
+
+    @Test @MainActor func deleteOtherRecordingWhileActiveLeavesActiveRecordingIntact() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+        let model = try RecordingCoreModel(rootURL: root, coordinator: coordinator)
+
+        let oldDate = Date(timeIntervalSince1970: 1_785_900_000)
+        let oldRecording = Recording(startedAt: oldDate, state: .complete)
+        try await repository.createRecording(oldRecording, at: oldDate)
+
+        let activeID = try await coordinator.start()
+        #expect(model.activeRecordingID == activeID)
+        #expect(model.presentation == .recording)
+
+        await model.deleteRecording(id: oldRecording.id)
+
+        #expect(try await repository.recording(id: oldRecording.id) == nil)
+        #expect(model.notice == "已删除录音。")
+
+        #expect(model.activeRecordingID == activeID)
+        #expect(model.presentation == .recording)
+        #expect(capture.cancelCount == 0)
+    }
+
+    @Test @MainActor func batchDeleteRecordingsIncludingActiveCancelsTaskFirst() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+        let model = try RecordingCoreModel(rootURL: root, coordinator: coordinator)
+
+        let oldDate = Date(timeIntervalSince1970: 1_785_900_000)
+        let old1 = Recording(startedAt: oldDate, state: .complete)
+        let old2 = Recording(startedAt: oldDate.addingTimeInterval(10), state: .complete)
+        try await repository.createRecording(old1, at: oldDate)
+        try await repository.createRecording(old2, at: oldDate.addingTimeInterval(10))
+
+        let activeID = try await coordinator.start()
+        #expect(model.activeRecordingID == activeID)
+
+        await model.deleteRecordings(ids: [old1.id, old2.id, activeID])
+
+        #expect(model.activeRecordingID == nil)
+        #expect(model.presentation == .idle)
+        #expect(capture.cancelCount == 1)
+        #expect(try await repository.recording(id: activeID) == nil)
+        #expect(try await repository.recording(id: old1.id) == nil)
+        #expect(try await repository.recording(id: old2.id) == nil)
+    }
+
     @Test @MainActor func oldProcessingOutcomesNeverOverwriteNewCaptureState() async throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -915,6 +1122,56 @@ struct RecordingCoreTests {
         #expect(Set(storedChunks.map(\.id)).count == 2)
         #expect(coordinator.segmentPersistenceFailureMessage == nil)
         #expect(coordinator.presentationState == .recording)
+    }
+
+    @Test @MainActor func hierarchicalHourMinuteChunkPathIsPersistedAndIndexed() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+        let recordingID = try await coordinator.start()
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+
+        let segmentID = UUID()
+        let timeDir = AACChunkBoundaryPlanner.timeDirectory(for: 960_000) // "00/01"
+        let chunkRelative = "Recordings/\(recordingID.uuidString.lowercased())/audio/\(timeDir)/audio-\(segmentID.uuidString.lowercased()).m4a"
+        let chunkURL = root.appendingPathComponent(chunkRelative)
+        try FileManager.default.createDirectory(at: chunkURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("audio-payload".utf8).write(to: chunkURL)
+
+        let hierarchicalSegment = AACSegmentRecorder.Segment(
+            id: segmentID,
+            url: chunkURL,
+            startSample: 960_000,
+            endSample: 1_120_000,
+            startedAt: startedAt.addingTimeInterval(60),
+            endedAt: startedAt.addingTimeInterval(70)
+        )
+
+        capture.emitClosedSegment(hierarchicalSegment)
+
+        let deadline = Date().addingTimeInterval(5)
+        var storedChunks = try await repository.chunks(recordingID: recordingID)
+        while storedChunks.isEmpty, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+            storedChunks = try await repository.chunks(recordingID: recordingID)
+        }
+        let storedChunk = try #require(storedChunks.first)
+        #expect(storedChunk.id == segmentID)
+        #expect(storedChunk.relativePath == chunkRelative)
+        #expect(storedChunk.startSample == 960_000)
+        #expect(storedChunk.endSample == 1_120_000)
+
+        // Verify diagnostics recursively scans audio subdirectories without reporting unindexed file
+        let diagnostics = RecordingDiagnostics()
+        let issues = try await diagnostics.inspect(recordingID: recordingID, repository: repository)
+        #expect(issues.isEmpty)
     }
 
     @Test @MainActor func stoppedCaptureRetriesFailedFlushWithoutStoppingCaptureTwice() async throws {
@@ -2973,6 +3230,7 @@ private final class MockRecordingCapture: RecordingCapturing {
     var currentSample: Int64 = 0
     private(set) var startCount = 0
     private(set) var stopCount = 0
+    private(set) var cancelCount = 0
     private(set) var segmentDurations: [TimeInterval] = []
     var emitsSegmentClosedOnStop = true
     private(set) var lastStoppedSegment: AACSegmentRecorder.Segment?
@@ -2987,6 +3245,10 @@ private final class MockRecordingCapture: RecordingCapturing {
     func pause() throws {}
 
     func resume() throws {}
+
+    func cancel() {
+        cancelCount += 1
+    }
 
     func stop() throws -> AACSegmentRecorder.Segment {
         stopCount += 1

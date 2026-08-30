@@ -48,4 +48,14 @@ nonisolated struct AACChunkBoundaryPlanner: Sendable {
         }
         return result
     }
+
+    /// Computes the "HH/MM" relative directory path based on absolute sample position
+    /// relative to the recording start.
+    static func timeDirectory(for sample: Int64, sampleRate: Double = 16_000) -> String {
+        let elapsedSeconds = max(0, Double(sample) / sampleRate)
+        let totalMinutes = Int(elapsedSeconds) / 60
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        return String(format: "%02d/%02d", hours, minutes)
+    }
 }

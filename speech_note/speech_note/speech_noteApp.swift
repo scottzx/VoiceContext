@@ -12,6 +12,7 @@ struct speech_noteApp: App {
     @AppStorage(OnboardingPreferences.completedKey) private var hasCompletedOnboarding = false
     /// Stashed across cold start / onboarding so Widget taps are not lost.
     @State private var pendingStartRecording = false
+    @State private var pendingStopRecording = false
 
     init() {
         guard ProcessInfo.processInfo.arguments.contains("-uiTestingResetOnboarding") else { return }
@@ -25,14 +26,24 @@ struct speech_noteApp: App {
         WindowGroup {
             Group {
                 if hasCompletedOnboarding {
-                    ContentView(openStartRecording: $pendingStartRecording)
+                    ContentView(
+                        openStartRecording: $pendingStartRecording,
+                        openStopRecording: $pendingStopRecording
+                    )
                 } else {
                     OnboardingFlowView()
                 }
             }
             .onOpenURL { url in
-                guard AppDeepLink.parse(url) == .startRecording else { return }
-                pendingStartRecording = true
+                guard let link = AppDeepLink.parse(url) else { return }
+                switch link {
+                case .startRecording:
+                    pendingStartRecording = true
+                case .stopRecording:
+                    pendingStopRecording = true
+                case .openRecording:
+                    break
+                }
             }
         }
     }

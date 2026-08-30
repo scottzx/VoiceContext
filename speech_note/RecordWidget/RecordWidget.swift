@@ -35,6 +35,12 @@ struct RecordWidgetView: View {
     var body: some View {
         Group {
             switch family {
+            case .accessoryCircular:
+                accessoryCircularBody
+            case .accessoryRectangular:
+                accessoryRectangularBody
+            case .accessoryInline:
+                accessoryInlineBody
             case .systemMedium:
                 mediumBody
             default:
@@ -48,6 +54,36 @@ struct RecordWidgetView: View {
         .widgetURL(startRecordingURL)
         .accessibilityLabel("开始录音")
         .accessibilityHint("打开应用并进入开录流程")
+    }
+
+    private var accessoryCircularBody: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            Image(systemName: "mic.fill")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.red)
+        }
+    }
+
+    private var accessoryRectangularBody: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "mic.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("VoiceContext")
+                    .font(.headline)
+                    .widgetAccentable()
+                Text("轻点开录")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var accessoryInlineBody: some View {
+        Label("开录", systemImage: "mic.fill")
     }
 
     private var smallBody: some View {
@@ -90,7 +126,6 @@ struct RecordWidgetView: View {
     }
 }
 
-@main
 struct RecordWidget: Widget {
     let kind = "RecordWidget"
 
@@ -99,8 +134,22 @@ struct RecordWidget: Widget {
             RecordWidgetView(entry: entry)
         }
         .configurationDisplayName("录音")
-        .description("从主屏一键进入开录流程。不显示逐字稿内容。")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .description("一键进入开录流程。不显示逐字稿内容。")
+        .supportedFamilies([
+            .systemSmall,
+            .systemMedium,
+            .accessoryCircular,
+            .accessoryRectangular,
+            .accessoryInline
+        ])
         .contentMarginsDisabled()
+    }
+}
+
+@main
+struct VoiceContextWidgetBundle: WidgetBundle {
+    var body: some Widget {
+        RecordWidget()
+        RecordingLiveActivity()
     }
 }

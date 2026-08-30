@@ -55,6 +55,12 @@ struct RecordingDetailScreen: View {
     @State private var previewAttachmentURL: URL?
     @State private var attachmentError: String?
     @State private var isAddingAttachments = false
+    @State private var memoText = ""
+    @State private var savedMemoText = ""
+    @State private var didLoadMemo = false
+    @State private var memoSaveTask: Task<Void, Never>?
+    @State private var memoSaveState: MemoSaveState = .idle
+    @FocusState private var isMemoFocused: Bool
 
     private struct SpeakerAssignmentOption: Identifiable {
         let speaker: String
@@ -67,6 +73,7 @@ struct RecordingDetailScreen: View {
         case transcript
         case speakers
         case details
+        case memo
 
         var id: String { rawValue }
 
@@ -75,8 +82,16 @@ struct RecordingDetailScreen: View {
             case .transcript: "逐字稿"
             case .speakers: "参会人与声纹"
             case .details: "详细信息"
+            case .memo: "备忘录"
             }
         }
+    }
+
+    private enum MemoSaveState: Equatable {
+        case idle
+        case saving
+        case saved
+        case failed(String)
     }
 
     private var contentSection: some View {
@@ -88,6 +103,8 @@ struct RecordingDetailScreen: View {
                 speakersManagementView
             case .details:
                 technicalDetailsView
+            case .memo:
+                memoSection
             }
         }
     }
@@ -185,6 +202,17 @@ struct RecordingDetailScreen: View {
             .background(Color(uiColor: .systemBackground))
             .onChange(of: transcript?.revision) { _, _ in
                 scrollToSearchHit(using: proxy)
+            }
+            .onChange(of: contentTab) { _, _ in
+                saveMemoImmediatelyIfNeeded()
+            }
+            .onChange(of: memoText) { _, newValue in
+                scheduleMemoSave(newValue)
+            }
+            .onChange(of: isMemoFocused) { _, isFocused in
+                if !isFocused {
+                    saveMemoImmediatelyIfNeeded()
+                }
             }
             .onAppear {
                 scrollToSearchHit(using: proxy)
@@ -345,33 +373,34 @@ struct RecordingDetailScreen: View {
                 copiedToastOverlay
             }
             .task(id: recordingID) {
-                while !Task.isCancelled {
-                    await loadDetail()
-                    let hasActiveWork = jobs.contains { job in
-                        if job.kind != .transcription { return false }
-                        return job.state == .running || job.state == .pending
-                    }
-                    let processing = progress?.processing
-                    let isQueued: Bool
-                    switch processing {
-                    case .queued, .processing, .speakerFinalization, .deferredUntilForeground:
-                        isQueued = true
-                    default:
-                        isQueued = false
-                    }
-                    let isActivelyTranscribing = isCapturingThisRecording || hasActiveWork || isQueued
-
-                    if isActivelyTranscribing {
-                        try? await Task.sleep(for: .seconds(1))
-                    } else {
-                        try? await Task.sleep(for: .seconds(3))
-                    }
-                }
+                await handlePeriodicRefresh()
             }
             .onDisappear {
-                timelinePlayer.stop()
+                handleDisappear()
             }
         }
+    }
+
+    private func handlePeriodicRefresh() async {
+        while !Task.isCancelled {
+            await loadDetail()
+            let sleepSeconds: Double = isActivelyTranscribing ? 1 : 3
+            try? await Task.sleep(for: .seconds(sleepSeconds))
+        }
+    }
+
+    private func handleDisappear() {
+        memoSaveTask?.cancel()
+        let pendingMemo = memoText
+        if didLoadMemo, pendingMemo != savedMemoText {
+            Task {
+                try? await model.saveRecordingMemo(
+                    recordingID: recordingID,
+                    memo: pendingMemo
+                )
+            }
+        }
+        timelinePlayer.stop()
     }
 
     // MARK: - Header Card
@@ -493,6 +522,89 @@ struct RecordingDetailScreen: View {
         .background(color.opacity(0.12))
         .foregroundStyle(color)
         .clipShape(Capsule())
+    }
+
+    private var hasActiveTranscriptionWork: Bool {
+        for job in jobs where job.kind == .transcription {
+            if job.state == .running || job.state == .pending {
+                return true
+            }
+        }
+        return false
+    }
+
+    private var isActivelyTranscribing: Bool {
+        if isCapturingThisRecording || hasActiveTranscriptionWork {
+            return true
+        }
+        switch progress?.processing {
+        case .queued, .processing, .speakerFinalization, .deferredUntilForeground:
+            return true
+        default:
+            return false
+        }
+    }
+
+    // MARK: - Memo
+
+    private var memoSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label("备忘录", systemImage: "note.text")
+                    .font(.headline)
+
+                Spacer()
+
+                memoSaveStatus
+            }
+
+            ZStack(alignment: .topLeading) {
+                if memoText.isEmpty {
+                    Text("记录复听想法、转录要点或关键决策…")
+                        .font(.body)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 12)
+                        .allowsHitTesting(false)
+                }
+
+                TextEditor(text: $memoText)
+                    .font(.body)
+                    .focused($isMemoFocused)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 120, maxHeight: 240)
+                    .padding(4)
+                    .accessibilityLabel("录音备忘录")
+                    .accessibilityHint("输入的内容会自动保存到这条录音")
+                    .accessibilityIdentifier("recording-memo-editor")
+            }
+            .background(Color(uiColor: .secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            Text("自动保存到这条录音")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var memoSaveStatus: some View {
+        switch memoSaveState {
+        case .idle:
+            EmptyView()
+        case .saving:
+            Text("正在保存…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .saved:
+            Label("已保存", systemImage: "checkmark")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case let .failed(message):
+            Label(message, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.red)
+        }
     }
 
     private var durationText: String {
@@ -1747,6 +1859,12 @@ struct RecordingDetailScreen: View {
 
     private func loadDetail() async {
         do {
+            if !didLoadMemo, let recording = try await model.repository.recording(id: recordingID) {
+                let memo = recording.memo ?? ""
+                memoText = memo
+                savedMemoText = memo
+                didLoadMemo = true
+            }
             chunks = try await model.repository.chunks(recordingID: recordingID)
                 .sorted { $0.startSample < $1.startSample }
             importedAsset = try await model.importedAudioAsset(recordingID: recordingID)
@@ -1780,6 +1898,44 @@ struct RecordingDetailScreen: View {
         } catch {
             transcript = nil
             transcriptError = "文稿无法读取：\(error.localizedDescription)"
+        }
+    }
+
+    private func scheduleMemoSave(_ memo: String) {
+        guard didLoadMemo else { return }
+        memoSaveTask?.cancel()
+        guard memo != savedMemoText else {
+            memoSaveState = .idle
+            return
+        }
+
+        memoSaveState = .saving
+        memoSaveTask = Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            await persistMemo(memo)
+        }
+    }
+
+    private func saveMemoImmediatelyIfNeeded() {
+        guard didLoadMemo, memoText != savedMemoText else { return }
+        memoSaveTask?.cancel()
+        let memo = memoText
+        memoSaveState = .saving
+        memoSaveTask = Task {
+            await persistMemo(memo)
+        }
+    }
+
+    private func persistMemo(_ memo: String) async {
+        do {
+            try await model.saveRecordingMemo(recordingID: recordingID, memo: memo)
+            guard !Task.isCancelled else { return }
+            savedMemoText = memo
+            memoSaveState = .saved
+        } catch {
+            guard !Task.isCancelled else { return }
+            memoSaveState = .failed("保存失败")
         }
     }
 

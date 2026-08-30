@@ -11,6 +11,7 @@ protocol RecordingCapturing: AnyObject {
     func pause() throws
     func resume() throws
     func stop() throws -> AACSegmentRecorder.Segment
+    func cancel()
 }
 
 extension RecordingCapturing {
@@ -82,7 +83,7 @@ final class RecordingSessionCoordinator {
         repository: RecordingRepository,
         capture: RecordingCapturing = AACSegmentRecorder(),
         lowStorageGuard: LowStorageGuard = LowStorageGuard(),
-        enablesRemoteStopCommand: Bool = true,
+        enablesRemoteStopCommand: Bool = false,
         now: @escaping () -> Date = Date.init,
         persistChunk: ChunkPersistence? = nil
     ) {
@@ -93,6 +94,11 @@ final class RecordingSessionCoordinator {
         self.now = now
         self.persistChunk = persistChunk ?? { [repository] chunk, date in
             try await repository.addChunk(chunk, at: date)
+        }
+        if !enablesRemoteStopCommand {
+            let command = MPRemoteCommandCenter.shared().stopCommand
+            command.isEnabled = false
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         }
         let (stream, continuation) = AsyncStream<AACSegmentRecorder.CaptureEvent>.makeStream()
         captureEventContinuation = continuation
@@ -142,9 +148,11 @@ final class RecordingSessionCoordinator {
                 segmentDuration: AACSegmentRecorder.defaultSegmentDuration
             )
             installRemoteStopCommand()
+            RecordingLiveActivityManager.shared.startActivity(recordingID: recording.id, startedAt: startedAt)
             captureState = .recording
             return recording.id
         } catch {
+            RecordingLiveActivityManager.shared.endActivity()
             _ = try? await repository.changeState(recordingID: recording.id, to: .failed, at: now())
             captureState = .idle
             presentationState = .failed(error.localizedDescription)
@@ -193,9 +201,11 @@ final class RecordingSessionCoordinator {
                 initialSampleOffset: initialSampleOffset
             )
             installRemoteStopCommand()
+            RecordingLiveActivityManager.shared.startActivity(recordingID: recordingID, startedAt: resumedAt)
             captureState = .recording
             return recordingID
         } catch {
+            RecordingLiveActivityManager.shared.endActivity()
             _ = try? await repository.changeState(recordingID: recordingID, to: .failed, at: now())
             captureState = .idle
             presentationState = .failed(error.localizedDescription)
@@ -222,6 +232,7 @@ final class RecordingSessionCoordinator {
         stateMachine = machine
         captureState = .paused
         presentationState = .paused
+        RecordingLiveActivityManager.shared.updateActivity(isPaused: true)
     }
 
     func resume() async throws {
@@ -235,6 +246,7 @@ final class RecordingSessionCoordinator {
         stateMachine = machine
         captureState = .recording
         presentationState = .recording
+        RecordingLiveActivityManager.shared.updateActivity(isPaused: false)
     }
 
     @discardableResult
@@ -270,6 +282,31 @@ final class RecordingSessionCoordinator {
             machine: machine,
             endedAt: segment.endedAt
         )
+    }
+
+    func cancel(recordingID: UUID? = nil) async {
+        if let recordingID, let activeID = activeRecordingID, activeID != recordingID {
+            return
+        }
+        guard activeRecordingID != nil || captureState != .idle || presentationState != .idle else {
+            return
+        }
+        capture.cancel()
+        removeRemoteStopCommand()
+        RecordingLiveActivityManager.shared.endActivity()
+
+        segmentPersistenceTask?.cancel()
+        segmentPersistenceTask = nil
+        segmentPersistenceOperationID = nil
+        pendingSegments.removeAll()
+        persistedSegmentIDs.removeAll()
+
+        stateMachine = nil
+        activeRecordingID = nil
+        activeGapID = nil
+        stoppedCaptureEndedAt = nil
+        captureState = .idle
+        presentationState = .idle
     }
 
     private func finalizeStoppedCapture(
@@ -594,7 +631,16 @@ final class RecordingSessionCoordinator {
     }
 
     private func installRemoteStopCommand() {
-        guard enablesRemoteStopCommand else { return }
+        guard enablesRemoteStopCommand else {
+            let command = MPRemoteCommandCenter.shared().stopCommand
+            if let remoteStopTarget {
+                command.removeTarget(remoteStopTarget)
+                self.remoteStopTarget = nil
+            }
+            command.isEnabled = false
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            return
+        }
         let command = MPRemoteCommandCenter.shared().stopCommand
         command.isEnabled = true
         remoteStopTarget = command.addTarget { [weak self] _ in
@@ -603,14 +649,10 @@ final class RecordingSessionCoordinator {
             }
             return .success
         }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
-            MPMediaItemPropertyTitle: "VoiceContext 正在录音",
-            MPNowPlayingInfoPropertyIsLiveStream: true,
-        ]
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
     private func removeRemoteStopCommand() {
-        guard enablesRemoteStopCommand else { return }
         let command = MPRemoteCommandCenter.shared().stopCommand
         if let remoteStopTarget {
             command.removeTarget(remoteStopTarget)
@@ -618,5 +660,6 @@ final class RecordingSessionCoordinator {
         command.isEnabled = false
         remoteStopTarget = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        RecordingLiveActivityManager.shared.endActivity()
     }
 }

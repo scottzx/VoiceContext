@@ -168,6 +168,21 @@ actor RecordingRepository {
         ))
     }
 
+    func setRecordingMemo(
+        recordingID: UUID,
+        memo: String?,
+        at date: Date
+    ) throws {
+        let hasContent = memo?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        try persist(.init(
+            occurredAt: date,
+            payload: .recordingMemoChanged(
+                recordingID: recordingID,
+                memo: hasContent ? memo : nil
+            )
+        ))
+    }
+
     func setRecordingMeeting(
         recordingID: UUID,
         isMeeting: Bool,

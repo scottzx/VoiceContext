@@ -21,6 +21,8 @@ final class TrialEntitlementController {
 
     /// Invoked on the main actor after a successful unlock so the scheduler can resume.
     var onUnlocked: (@MainActor () async -> Void)?
+    /// Invoked on the main actor after a test reset or simulation so observers can refresh.
+    var onTrialStateChanged: (@MainActor () async -> Void)?
 
     init(
         ledger: TrialQuotaLedger,
@@ -169,6 +171,9 @@ final class TrialEntitlementController {
         ledger.expireTrialForTesting()
         statusMessage = "已模拟试用到期"
         publishLedger()
+        Task { [weak self] in
+            await self?.onTrialStateChanged?()
+        }
     }
 
     /// Test / DEBUG helper to reset the 3-day trial clock and clear Keychain stamps.
@@ -176,6 +181,9 @@ final class TrialEntitlementController {
         ledger.resetTrialForTesting()
         statusMessage = "已重置 3 天试用倒计时"
         publishLedger()
+        Task { [weak self] in
+            await self?.onTrialStateChanged?()
+        }
     }
 
     private func applyEntitlement(_ entitled: Bool) {

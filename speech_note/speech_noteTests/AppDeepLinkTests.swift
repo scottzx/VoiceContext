@@ -22,4 +22,22 @@ struct AppDeepLinkTests {
         #expect(AppDeepLink.startRecordingURL.scheme == "voicecontext")
         #expect(AppDeepLink.startRecordingURL.host == "start-recording")
     }
+
+    @Test func parsesStopRecordingHostAndAliases() {
+        let stopUrl = URL(string: "voicecontext://stop-recording")!
+        #expect(AppDeepLink.parse(stopUrl) == .stopRecording)
+
+        let aliasUrl = URL(string: "voicecontext://stop")!
+        #expect(AppDeepLink.parse(aliasUrl) == .stopRecording)
+    }
+
+    @Test func parsesOpenRecordingHost() {
+        let openUrl = URL(string: "voicecontext://recording")!
+        #expect(AppDeepLink.parse(openUrl) == .openRecording)
+    }
+
+    @Test func stopRecordingURLUsesRegisteredScheme() {
+        #expect(AppDeepLink.stopRecordingURL.scheme == "voicecontext")
+        #expect(AppDeepLink.stopRecordingURL.host == "stop-recording")
+    }
 }

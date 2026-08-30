@@ -53,10 +53,12 @@ struct TranscriptionLanguageModeTests {
         var legacyObject = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
         legacyObject.removeValue(forKey: "languageMode")
         legacyObject.removeValue(forKey: "speakerProcessingEnabled")
+        legacyObject.removeValue(forKey: "memo")
         let legacyJSON = try JSONSerialization.data(withJSONObject: legacyObject)
         let legacy = try decoder.decode(Recording.self, from: legacyJSON)
         #expect(legacy.languageMode == .zhEnBilingual)
         #expect(legacy.speakerProcessingEnabled)
+        #expect(legacy.memo == nil)
     }
 
     @Test func transcriptDocumentPersistsLanguageModeIndependentlyOfDetectedLanguage() throws {
@@ -100,7 +102,7 @@ struct TranscriptionLanguageModeTests {
 
         let journal = try RecordingJournal(url: root.appendingPathComponent("events.jsonl"))
         let index = try RecordingIndex(url: root.appendingPathComponent("index.sqlite"))
-        #expect(index.schemaVersion == 9)
+        #expect(index.schemaVersion == 10)
 
         let recording = Recording(
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),

@@ -135,6 +135,9 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
     /// Settings changes must not rewrite completed / in-flight transcripts.
     var languageMode: TranscriptionLanguageMode
     var locationName: String?
+    /// Lightweight private note attached to this Recording. It is independent
+    /// from transcript edits and processing state.
+    var memo: String?
 
     init(
         id: UUID = UUID(),
@@ -150,7 +153,8 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
         sourceFilename: String? = nil,
         sourceUTType: String? = nil,
         languageMode: TranscriptionLanguageMode = .default,
-        locationName: String? = nil
+        locationName: String? = nil,
+        memo: String? = nil
     ) {
         self.id = id
         self.startedAt = startedAt
@@ -166,11 +170,12 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
         self.sourceUTType = sourceUTType
         self.languageMode = languageMode
         self.locationName = locationName
+        self.memo = memo
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, startedAt, endedAt, title, isMeeting, speakerProcessingEnabled, state, retention, updatedAt
-        case origin, sourceFilename, sourceUTType, languageMode, locationName
+        case origin, sourceFilename, sourceUTType, languageMode, locationName, memo
     }
 
     init(from decoder: Decoder) throws {
@@ -193,6 +198,7 @@ nonisolated struct Recording: Codable, Equatable, Identifiable, Sendable {
         languageMode = try container.decodeIfPresent(TranscriptionLanguageMode.self, forKey: .languageMode)
             ?? .zhEnBilingual
         locationName = try container.decodeIfPresent(String.self, forKey: .locationName)
+        memo = try container.decodeIfPresent(String.self, forKey: .memo)
     }
 }
 
@@ -568,6 +574,7 @@ nonisolated enum RecordingJournalPayload: Codable, Equatable, Sendable {
     case chunkAudioRemoved(chunkID: UUID, removedAt: Date)
     case recordingTitleChanged(recordingID: UUID, title: String?)
     case recordingLocationChanged(recordingID: UUID, locationName: String?)
+    case recordingMemoChanged(recordingID: UUID, memo: String?)
     case recordingMeetingChanged(recordingID: UUID, isMeeting: Bool)
     case importedAudioAssetCreated(ImportedAudioAsset)
     case importedAudioAssetUpdated(ImportedAudioAsset)
