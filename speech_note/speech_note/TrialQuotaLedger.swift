@@ -11,7 +11,7 @@ nonisolated final class TrialQuotaLedger: @unchecked Sendable {
     /// 72-hour (3-day) trial enabled with StoreKit 2 integration.
     static let isManualTrialEnabled = true
     static let trialDuration: TimeInterval = 72 * 60 * 60
-    static let productID = "YiJie.speech-note.lifetimeUnlock"
+    static let productID = "YiJie.speech_note.lifetimeUnlock"
     static let supportedProductIDs: Set<String> = [productID]
     static let currentSchemaVersion = 2
 
@@ -304,7 +304,7 @@ nonisolated final class InMemoryTrialStartTimestampStore: TrialStartTimestampSto
 }
 
 nonisolated struct KeychainTrialStartTimestampStore: TrialStartTimestampStoring {
-    static let service = "YiJie.speech-note.trial"
+    static let service = "YiJie.speech_note.trial"
     static let account = "first-open-v1"
 
     private let service: String

@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Foundation
 
 actor RecordingRepository {
@@ -604,9 +605,12 @@ actor RecordingRepository {
         var recovered: [UUID] = []
 
         for recording in unfinished {
+            _ = try? reconcileChunksFromDisk(recordingID: recording.id)
             var stateMachine = RecordingStateMachine(state: recording.state)
             let state = try stateMachine.apply(.recoveredAfterTermination)
-            let sample = try index.chunks(recordingID: recording.id).last?.endSample ?? 0
+            let chunks = (try? index.chunks(recordingID: recording.id))?.sorted { $0.startSample < $1.startSample } ?? []
+            let sample = chunks.last?.endSample ?? 0
+            let endedAt = chunks.last?.endedAt ?? date
             let gap = RecordingGap(
                 id: UUID(),
                 recordingID: recording.id,
@@ -616,7 +620,7 @@ actor RecordingRepository {
                 startedAt: date,
                 endedAt: nil
             )
-            try changeState(recordingID: recording.id, to: state, at: date)
+            try changeState(recordingID: recording.id, to: state, endedAt: endedAt, at: date)
             try openGap(gap, at: date)
             for var job in try index.jobs(recordingID: recording.id) where job.state == .running {
                 job.state = .pending
@@ -798,6 +802,155 @@ actor RecordingRepository {
 
     var appliedEventCount: Int {
         index.appliedEventCount
+    }
+
+    @discardableResult
+    func reconcileChunksFromDisk(recordingID: UUID) throws -> [AudioChunk] {
+        let candidateFolderNames = [
+            recordingID.uuidString.lowercased(),
+            recordingID.uuidString.uppercased(),
+            recordingID.uuidString
+        ]
+        var audioDir: URL?
+        for folderName in candidateFolderNames {
+            let candidate = rootURL.appendingPathComponent("Recordings/\(folderName)/audio")
+            if fileManager.fileExists(atPath: candidate.path) {
+                audioDir = candidate
+                break
+            }
+        }
+        guard let audioDir else { return [] }
+
+        guard let enumerator = fileManager.enumerator(
+            at: audioDir,
+            includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        struct DiscoveredFile {
+            let url: URL
+            let relativePath: String
+            let chunkID: UUID
+            let creationDate: Date
+            let frameCount: Int64
+        }
+
+        var discovered: [DiscoveredFile] = []
+        var rawRoot = rootURL.path
+        if rawRoot.hasSuffix("/") { rawRoot.removeLast() }
+
+        while let fileURL = enumerator.nextObject() as? URL {
+            guard fileURL.pathExtension.lowercased() == "m4a" else { continue }
+            let filename = fileURL.deletingPathExtension().lastPathComponent
+            let uuidString = filename.hasPrefix("audio-") ? String(filename.dropFirst(6)) : filename
+            guard let chunkID = UUID(uuidString: uuidString) else { continue }
+
+            let fullPath = fileURL.path
+            let relPath: String
+            if let range = fullPath.range(of: "Recordings/") {
+                relPath = String(fullPath[range.lowerBound...])
+            } else if fullPath.hasPrefix(rawRoot + "/") {
+                relPath = String(fullPath.dropFirst(rawRoot.count + 1))
+            } else {
+                relPath = "Recordings/\(recordingID.uuidString.lowercased())/audio/\(fileURL.lastPathComponent)"
+            }
+
+            let date = (try? fileURL.resourceValues(forKeys: [.creationDateKey]).creationDate)
+                ?? (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                ?? Date()
+
+            var frames: Int64 = 0
+            if let af = try? AVAudioFile(forReading: fileURL, commonFormat: .pcmFormatFloat32, interleaved: false) {
+                frames = Int64(af.length)
+            }
+            if frames <= 0 {
+                let size = (try? fileManager.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.int64Value ?? 0
+                frames = max(1600, size * 4)
+            }
+
+            discovered.append(DiscoveredFile(
+                url: fileURL,
+                relativePath: relPath,
+                chunkID: chunkID,
+                creationDate: date,
+                frameCount: frames
+            ))
+        }
+
+        guard !discovered.isEmpty else { return [] }
+        discovered.sort { $0.relativePath < $1.relativePath }
+
+        let existingChunks = try index.chunks(recordingID: recordingID)
+        let existingMap = Dictionary(uniqueKeysWithValues: existingChunks.map { ($0.id, $0) })
+        let recording = try index.recording(id: recordingID)
+        let recordingStartedAt = recording?.startedAt ?? discovered.first?.creationDate ?? Date()
+
+        var currentSampleCursor: Int64 = 0
+        var newAddedChunks: [AudioChunk] = []
+
+        for item in discovered {
+            if let existing = existingMap[item.chunkID] {
+                currentSampleCursor = max(currentSampleCursor, existing.endSample)
+                if !existing.relativePath.hasPrefix("Recordings/") {
+                    let updated = AudioChunk(
+                        id: existing.id,
+                        recordingID: existing.recordingID,
+                        relativePath: item.relativePath,
+                        startSample: existing.startSample,
+                        endSample: existing.endSample,
+                        startedAt: existing.startedAt,
+                        endedAt: existing.endedAt,
+                        state: existing.state,
+                        isPinned: existing.isPinned,
+                        audioRemovedAt: existing.audioRemovedAt,
+                        requiresContinuation: existing.requiresContinuation
+                    )
+                    try addChunk(updated, at: updated.endedAt)
+                }
+            } else {
+                let startSample = currentSampleCursor
+                let endSample = startSample + item.frameCount
+                currentSampleCursor = endSample
+
+                let startSec = Double(startSample) / 16_000.0
+                let endSec = Double(endSample) / 16_000.0
+                let startedAt = recordingStartedAt.addingTimeInterval(startSec)
+                let endedAt = recordingStartedAt.addingTimeInterval(endSec)
+
+                let newChunk = AudioChunk(
+                    id: item.chunkID,
+                    recordingID: recordingID,
+                    relativePath: item.relativePath,
+                    startSample: startSample,
+                    endSample: endSample,
+                    startedAt: startedAt,
+                    endedAt: endedAt,
+                    state: .closed
+                )
+                try addChunk(newChunk, at: endedAt)
+                newAddedChunks.append(newChunk)
+            }
+        }
+
+        let allChunks = (try index.chunks(recordingID: recordingID)).sorted { $0.startSample < $1.startSample }
+        if let lastChunk = allChunks.last, let recording = try index.recording(id: recordingID), recording.state != .complete {
+            try changeState(recordingID: recordingID, to: .processing, endedAt: lastChunk.endedAt, at: Date())
+        }
+
+        return newAddedChunks
+    }
+
+    @discardableResult
+    func reconcileAllRecordingsFromDisk() throws -> [UUID: [AudioChunk]] {
+        var results: [UUID: [AudioChunk]] = [:]
+        let recordings = try index.recordings()
+        for rec in recordings {
+            let added = try reconcileChunksFromDisk(recordingID: rec.id)
+            if !added.isEmpty {
+                results[rec.id] = added
+            }
+        }
+        return results
     }
 
     @discardableResult

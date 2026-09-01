@@ -17,12 +17,12 @@
 <true/>
 ```
 
-主 App target 已设置 `CODE_SIGN_ENTITLEMENTS = speech_note/speech_note.entitlements`。Apple Developer 团队 `3HJ3R6SXAL` 中的显式 App ID `YiJie.speech-note` 已开启 **Background GPU Access** 和 iCloud；Xcode 已生成专用开发描述文件。
+主 App target 已设置 `CODE_SIGN_ENTITLEMENTS = speech_note/speech_note.entitlements`。Apple Developer 团队 `3HJ3R6SXAL` 中的显式 App ID `YiJie.speech_note` 已开启 **Background GPU Access** 和 iCloud；Xcode 已生成专用开发描述文件。
 
 2026-08-24 已在 iPhone 15 Pro / iOS 26.5 上完成 Debug 真机构建、签名校验和启动。最终 App 签名中已确认包含：
 
 - `com.apple.developer.background-tasks.continued-processing.gpu = true`
-- `com.apple.developer.icloud-container-identifiers = iCloud.YiJie.speech-note`
+- `com.apple.developer.icloud-container-identifiers = iCloud.YiJie.speech_note`
 - `com.apple.developer.icloud-services = CloudDocuments`
 
 准备 TestFlight / App Store 构建前：
@@ -36,4 +36,4 @@
 
 3. 在 iOS 26 真机上用真实待处理录音验证系统进度、锁屏、取消、expiration 和发热降级。这些系统调度行为不能由签名成功替代。
 
-`Info.plist` 中的 `BGTaskSchedulerPermittedIdentifiers` 已配置为通配前缀 `YiJie.speech-note.transcription.*`。每次用户发起的转写使用带 UUID 后缀的唯一任务 ID，避免与旧 request 冲突。
+`Info.plist` 中的 `BGTaskSchedulerPermittedIdentifiers` 已配置为通配前缀 `YiJie.speech_note.transcription.*`。每次用户发起的转写使用带 UUID 后缀的唯一任务 ID，避免与旧 request 冲突。

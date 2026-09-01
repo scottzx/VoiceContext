@@ -785,7 +785,16 @@ nonisolated final class RecordingIndex: @unchecked Sendable {
                 """
                 INSERT INTO audio_chunks(id, recording_id, relative_path, start_sample, end_sample, started_at, ended_at, state, retention_pinned, audio_removed_at, requires_continuation)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO NOTHING
+                ON CONFLICT(id) DO UPDATE SET
+                    relative_path = excluded.relative_path,
+                    start_sample = excluded.start_sample,
+                    end_sample = excluded.end_sample,
+                    started_at = excluded.started_at,
+                    ended_at = excluded.ended_at,
+                    state = excluded.state,
+                    retention_pinned = excluded.retention_pinned,
+                    audio_removed_at = excluded.audio_removed_at,
+                    requires_continuation = excluded.requires_continuation
                 """,
                 chunk.bindings
             )

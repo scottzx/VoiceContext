@@ -315,7 +315,14 @@ final class RecordingSessionCoordinator {
         endedAt: Date
     ) async throws -> UUID {
         var machine = machine
-        try await flushPendingSegments(recordingID: recordingID)
+        do {
+            try await flushPendingSegments(recordingID: recordingID)
+        } catch {
+            segmentPersistenceFailureMessage = error.localizedDescription
+        }
+        // Disk-backed guarantee: reconcile any segments that were written to disk
+        _ = try? await repository.reconcileChunksFromDisk(recordingID: recordingID)
+
         let processing = try machine.apply(.captureStopped)
         try await repository.changeState(
             recordingID: recordingID,
@@ -492,10 +499,15 @@ final class RecordingSessionCoordinator {
                 continue
             }
             let chunk = makeChunk(from: segment, recordingID: recordingID)
-            try await persistChunk(chunk, segment.endedAt)
-            await onChunkClosed?(recordingID, chunk.id)
-            persistedSegmentIDs.insert(segment.id)
-            pendingSegments.removeValue(forKey: segment.id)
+            do {
+                try await persistChunk(chunk, segment.endedAt)
+                await onChunkClosed?(recordingID, chunk.id)
+                persistedSegmentIDs.insert(segment.id)
+                pendingSegments.removeValue(forKey: segment.id)
+            } catch {
+                pendingSegments.removeValue(forKey: segment.id)
+                throw error
+            }
         }
     }
 

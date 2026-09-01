@@ -277,6 +277,7 @@ struct ContentView: View {
     @State private var pendingRecordingIsMeeting: Bool?
     @State private var isSettingsPresented = false
     @State private var isRecordingScreenPresented = false
+    @State private var isScreenshotDetailPresented = false
     @State private var isMultiSelectMode = false
     @State private var selectedRecordingIDs: Set<UUID> = []
     @State private var deletingTargetRecording: Recording? = nil
@@ -344,7 +345,10 @@ struct ContentView: View {
             }
         }
         .task {
-            if isRecordingDetailFixtureEnabled {
+            if ScreenshotAutomation.isEnabled {
+                await ScreenshotAutomation.seedSampleData(model: model)
+                await runScreenshotAutomation()
+            } else if isRecordingDetailFixtureEnabled {
                 await installRecordingDetailFixture()
             }
             await model.recoverOnLaunch()
@@ -498,6 +502,13 @@ struct ContentView: View {
         }
         .sheet(isPresented: $isSettingsPresented) {
             SettingsScreen(model: model, reduceMotion: reduceMotion)
+        }
+        .sheet(isPresented: $isScreenshotDetailPresented) {
+            if let fixtureID = UUID(uuidString: "00000000-0000-0000-0000-000000000042") {
+                NavigationStack {
+                    RecordingDetailScreen(model: model, recordingID: fixtureID)
+                }
+            }
         }
         .confirmationDialog(
             "选择记录类型",
@@ -1266,6 +1277,50 @@ struct ContentView: View {
         } catch {
             modelError = "无法建立详情测试数据：\(error.localizedDescription)"
         }
+    }
+
+    private func runScreenshotAutomation() async {
+        // Step 1: Wait for initial render of recordsScreen
+        try? await Task.sleep(for: .seconds(1.5))
+        if let shot = ScreenshotAutomation.captureKeyWindow() {
+            ScreenshotAutomation.saveScreenshot(shot, name: "01_RecordsList")
+        }
+
+        // Step 2: Show Recording Detail
+        isScreenshotDetailPresented = true
+        try? await Task.sleep(for: .seconds(1.5))
+        if let shot = ScreenshotAutomation.captureKeyWindow() {
+            ScreenshotAutomation.saveScreenshot(shot, name: "02_RecordingDetail")
+        }
+        isScreenshotDetailPresented = false
+        try? await Task.sleep(for: .seconds(1.0))
+
+        // Step 3: Show Transcription Center
+        isTranscriptionCenterPresented = true
+        try? await Task.sleep(for: .seconds(1.5))
+        if let shot = ScreenshotAutomation.captureKeyWindow() {
+            ScreenshotAutomation.saveScreenshot(shot, name: "03_TranscriptionCenter")
+        }
+        isTranscriptionCenterPresented = false
+        try? await Task.sleep(for: .seconds(1.0))
+
+        // Step 4: Show Settings / Lifetime Unlock
+        isSettingsPresented = true
+        try? await Task.sleep(for: .seconds(1.5))
+        if let shot = ScreenshotAutomation.captureKeyWindow() {
+            ScreenshotAutomation.saveScreenshot(shot, name: "04_Settings")
+        }
+        isSettingsPresented = false
+        try? await Task.sleep(for: .seconds(1.0))
+
+        // Step 5: Show Client Management
+        isClientManagerPresented = true
+        try? await Task.sleep(for: .seconds(1.5))
+        if let shot = ScreenshotAutomation.captureKeyWindow() {
+            ScreenshotAutomation.saveScreenshot(shot, name: "05_ClientManagement")
+        }
+        isClientManagerPresented = false
+        print("[SCREENSHOTS_AUTOMATION_COMPLETED_SUCCESSFULLY]")
     }
 }
 

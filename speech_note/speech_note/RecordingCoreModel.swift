@@ -89,7 +89,7 @@ struct ImportActivity: Equatable, Sendable {
 @Observable
 final class RecordingCoreModel {
     private static let transcriptionCenterLog = Logger(
-        subsystem: "YiJie.speech-note",
+        subsystem: "YiJie.speech_note",
         category: "TranscriptionCenter"
     )
     struct RecoverySummary: Equatable {
@@ -253,7 +253,7 @@ final class RecordingCoreModel {
                     var temporarySpeakers: [String] = []
                     for chunk in chunks {
                         let result = try await inferenceService.transcribe(
-                            recordingURL: repository.rootURL.appendingPathComponent(chunk.relativePath),
+                            recordingURL: Self.audioURL(for: chunk, rootURL: repository.rootURL),
                             languageMode: recording.languageMode
                         )
                         transcriptionResults.append((chunkID: chunk.id, text: result.text))
@@ -296,7 +296,7 @@ final class RecordingCoreModel {
                 let result: SenseVoiceInferenceService.Result
                 do {
                     result = try await inferenceService.transcribe(
-                        recordingURLs: [repository.rootURL.appendingPathComponent(chunk.relativePath)],
+                        recordingURLs: [Self.audioURL(for: chunk, rootURL: repository.rootURL)],
                         startingAt: chunk.startSample,
                         languageMode: recording.languageMode
                     )
@@ -2050,21 +2050,22 @@ final class RecordingCoreModel {
     func enableSpeakerRecognition(recordingID: UUID) async {
         do {
             guard let recording = try await repository.recording(id: recordingID) else { return }
-            guard !recording.isMeeting else {
-                notice = "该记录已启用说话人识别。"
-                return
-            }
             try await repository.setRecordingMeeting(
                 recordingID: recordingID,
                 isMeeting: true,
                 at: Date()
             )
+            try await prepareSpeakerFinalizationForRetranscription(recordingID: recordingID)
             try await coordinator.retryProcessing(recordingID: recordingID)
-            let result = try await completionReconciler.reconcile(recordingID: recordingID)
-            if case .needsSpeakerFinalization = result {
+
+            let jobs = try await repository.jobs(recordingID: recordingID)
+            let transcription = jobs.filter { $0.kind == .transcription }
+            if transcription.allSatisfy({ $0.state == .completed }) && !transcription.isEmpty {
                 enqueueSpeakerFinalization(recordingIDs: [recordingID])
+                notice = "已启动说话人声纹识别任务。"
+            } else {
+                notice = "已启用说话人识别，将在转写完成后自动执行。"
             }
-            notice = "已启用说话人识别，将在转写完成后继续处理。"
         } catch {
             notice = "启用说话人识别失败：\(error.localizedDescription)"
         }
@@ -2593,6 +2594,7 @@ final class RecordingCoreModel {
     private func runRecovery() async {
         do {
             try await transcriptionScheduler.beginRecoveryBarrier()
+            _ = try? await repository.reconcileAllRecordingsFromDisk()
             _ = try await repository.recoverRunningSpeakerFinalizations(at: Date())
             let result = try await repository.recoverUnfinished(at: Date())
             // Retention for mic chunks and imported private assets (local-first).
@@ -2600,23 +2602,24 @@ final class RecordingCoreModel {
             
             // Clean up any historical continuation flags and ensure processing recordings re-queue
             let allRecordings = (try? await repository.recordings()) ?? []
-            for rec in allRecordings where rec.state == .processing {
+            for rec in allRecordings where rec.state == .processing || rec.state == .interrupted || rec.state == .failed {
                 let chunks = (try? await repository.chunks(recordingID: rec.id)) ?? []
                 for chunk in chunks {
                     _ = try? await repository.setChunkContinuation(id: chunk.id, requiresContinuation: false, at: Date())
                 }
-                let hasTranscript = (try? await transcriptStore.document(recordingID: rec.id)) != nil
-                if !hasTranscript {
+                let doc = try? await transcriptStore.document(recordingID: rec.id)
+                let isFullyTranscribed = doc?.state == RecordingState.complete.rawValue
+                if !isFullyTranscribed {
                     let jobs = (try? await repository.jobs(recordingID: rec.id)) ?? []
-                    guard !jobs.contains(where: {
-                        $0.kind == .transcription && $0.state == .cancelled
-                    }) else { continue }
                     let now = Date()
-                    for var job in jobs where job.kind == .transcription {
+                    for var job in jobs where job.kind == .transcription && (job.state == .failed || job.state == .running) {
                         job.state = .pending
                         job.lastError = nil
                         job.updatedAt = now
                         try? await repository.upsertJob(job, at: now)
+                    }
+                    if rec.state == .failed || rec.state == .interrupted {
+                        try? await repository.changeState(recordingID: rec.id, to: .processing, endedAt: rec.endedAt, at: now)
                     }
                 }
             }
@@ -2676,8 +2679,8 @@ final class RecordingCoreModel {
     private func enqueueHistoricalChunkJobs() async throws {
         let records = try await repository.recordings()
         for recording in records {
-            guard recording.endedAt != nil else { continue }
             if recording.origin == .importedAudio {
+                guard recording.endedAt != nil else { continue }
                 try await enqueueImportedRangeJobs(for: recording.id)
                 continue
             }
@@ -2685,6 +2688,9 @@ final class RecordingCoreModel {
                 .filter { $0.state == .closed }
                 .sorted { $0.startSample < $1.startSample }
             guard !chunks.isEmpty else { continue }
+            if recording.endedAt == nil, let last = chunks.last {
+                try? await repository.changeState(recordingID: recording.id, to: .processing, endedAt: last.endedAt, at: Date())
+            }
 
             let jobs = try await repository.jobs(recordingID: recording.id)
             let chunkJobIDs = Set(jobs.compactMap { job in
@@ -2737,11 +2743,9 @@ final class RecordingCoreModel {
                 try await repository.upsertJob(legacyJob, at: legacyJob.updatedAt)
             }
 
-            // A durable per-chunk queue already exists and will be resumed
-            // below. Do not create duplicate jobs on repeated launches.
-            guard chunkJobIDs.isEmpty else { continue }
-
-            for chunk in chunks {
+            // A durable per-chunk queue exists or is partially formed.
+            // Enqueue any newly reconciled or missing chunks without duplicating existing jobs.
+            for chunk in chunks where !chunkJobIDs.contains(chunk.id) {
                 try await transcriptionScheduler.enqueue(
                     recordingID: recording.id,
                     chunkID: chunk.id,
@@ -3294,6 +3298,25 @@ final class RecordingCoreModel {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
         return "speech_note \(version) (\(build))"
+    }
+
+    private static func audioURL(for chunk: AudioChunk, rootURL: URL) -> URL {
+        if chunk.relativePath.hasPrefix("Recordings/") {
+            return rootURL.appendingPathComponent(chunk.relativePath)
+        }
+        let direct = rootURL.appendingPathComponent(chunk.relativePath)
+        if FileManager.default.fileExists(atPath: direct.path) {
+            return direct
+        }
+        let folderCandidate = rootURL.appendingPathComponent("Recordings/\(chunk.recordingID.uuidString.lowercased())/audio")
+        if let enumerator = FileManager.default.enumerator(at: folderCandidate, includingPropertiesForKeys: nil) {
+            while let file = enumerator.nextObject() as? URL {
+                if file.lastPathComponent == chunk.relativePath || file.lastPathComponent.contains(chunk.id.uuidString.lowercased()) {
+                    return file
+                }
+            }
+        }
+        return direct
     }
 }
 

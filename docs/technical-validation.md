@@ -62,7 +62,7 @@ tools/verify-model-resources.sh
 - `tools/verify-model-resources.sh` 对 `sensevoice-q8-0`、`silero-vad` 与 `cam-plus` 均输出 `OK`。旧的 41,401,529-byte Q5 文件、693,006-byte Silero 文件及 24,723,456-byte CAM++ 文件均没有被用来固定新的哈希。
 - 在 Apple M3 的 transcribe.cpp Metal 路径上，Q8_0 成功转写 5.616 秒中文样本为“开放时间早上九点至下午五点”；模型加载 563.49 ms，编码加解码 92.7 ms（约 61x realtime），进程峰值内存 365,888,256 bytes。该结果只证明 GGUF 可加载、可使用 Metal 转写，不能替代 iPhone 15 上的真实 RTF、峰值内存、热状态和后台生命周期验收。
 - iPhone 15 Pro / iOS 26.5：以更新后的资源重新完成 Debug device 构建和 `codesign --verify --deep --strict`。Xcode 的文件系统同步资源步骤已将且仅将 `SenseVoiceSmall-Q8_0.gguf`（252,684,608 bytes）、`silero_vad.onnx`（643,854 bytes）、CAM++（39,593,765 bytes）和清单打入 App；旧的 41,401,529-byte 不完整 Q5 文件已移至 `/tmp` 隔离区，未被打包。App 安装到设备成功；随后的启动请求被 SpringBoard 以设备锁屏拒绝，故没有将此次安装误记为 Q8_0 真机加载或性能验证。
-- 设备解锁后重新启动：`YiJie.speech-note` 已在同一真机成功启动，设备进程列表显示 `speech_note` PID 为 2518。对最终 `.app` 目录再次运行 `tools/verify-model-resources.sh`，三个模型均输出 `OK`。这验证的是签名包内资源完整性与 App 进程存活；当前 App 尚未实际调用 SenseVoice、Silero 或 CAM++，因此仍不是模型推理性能结论。
+- 设备解锁后重新启动：`YiJie.speech_note` 已在同一真机成功启动，设备进程列表显示 `speech_note` PID 为 2518。对最终 `.app` 目录再次运行 `tools/verify-model-resources.sh`，三个模型均输出 `OK`。这验证的是签名包内资源完整性与 App 进程存活；当前 App 尚未实际调用 SenseVoice、Silero 或 CAM++，因此仍不是模型推理性能结论。
 - 结论：`#11` 的模型完整性阻塞已解除。`#13` 与 `#14` 仍需将真实推理接入 App 并在真机测量，不能因资源校验通过或桌面预检而关闭。
 
 ### 2026-08-04 — SenseVoice Q8_0 真机推理与生命周期

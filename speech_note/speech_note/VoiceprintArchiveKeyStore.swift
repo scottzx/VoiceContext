@@ -39,7 +39,7 @@ nonisolated struct InMemoryVoiceprintArchiveKeyStore: VoiceprintArchiveKeyProvid
 nonisolated struct VoiceprintArchiveKeyStore: VoiceprintArchiveKeyProviding {
     static let shared = VoiceprintArchiveKeyStore()
 
-    static let service = "YiJie.speech-note.voiceprint-archive"
+    static let service = "YiJie.speech_note.voiceprint-archive"
     static let account = "aes-gcm-v1"
 
     private let service: String

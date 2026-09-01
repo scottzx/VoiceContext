@@ -15,11 +15,17 @@ struct speech_noteApp: App {
     @State private var pendingStopRecording = false
 
     init() {
-        guard ProcessInfo.processInfo.arguments.contains("-uiTestingResetOnboarding") else { return }
-        let preferences = OnboardingPreferences()
-        preferences.hasCompleted = false
-        preferences.documentSyncEnabled = false
-        preferences.encryptedVoiceprintSyncEnabled = false
+        if ScreenshotAutomation.isEnabled {
+            let preferences = OnboardingPreferences()
+            preferences.hasCompleted = true
+            preferences.documentSyncEnabled = false
+            preferences.encryptedVoiceprintSyncEnabled = false
+        } else if ProcessInfo.processInfo.arguments.contains("-uiTestingResetOnboarding") {
+            let preferences = OnboardingPreferences()
+            preferences.hasCompleted = false
+            preferences.documentSyncEnabled = false
+            preferences.encryptedVoiceprintSyncEnabled = false
+        }
     }
 
     var body: some Scene {

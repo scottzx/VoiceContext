@@ -82,7 +82,7 @@ final class BackgroundTranscriptionContinuation {
     typealias ExpirationHandler = @Sendable (String) async -> Void
     typealias ProgressProvider = @Sendable () async -> BackgroundTranscriptionQueueProgress
 
-    nonisolated static let taskIdentifierPrefix = "YiJie.speech-note.transcription"
+    nonisolated static let taskIdentifierPrefix = "YiJie.speech_note.transcription"
 
     private(set) var state: State
 

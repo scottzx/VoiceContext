@@ -3125,6 +3125,71 @@ struct RecordingCoreTests {
             jobs: jobs
         ) == .speakerFinalization)
     }
+
+    @Test func diskReconciliationRestoresMissingChunksAndSampleRanges() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(startedAt: startedAt, state: .recording)
+        try await repository.createRecording(recording, at: startedAt)
+
+        let chunk1ID = UUID()
+        let chunk2ID = UUID()
+        let chunk3ID = UUID()
+        let recFolder = root.appendingPathComponent("Recordings/\(recording.id.uuidString.lowercased())/audio")
+        let dir00 = recFolder.appendingPathComponent("00/00")
+        let dir01 = recFolder.appendingPathComponent("00/01")
+        let dir02 = recFolder.appendingPathComponent("00/02")
+        try FileManager.default.createDirectory(at: dir00, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dir01, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dir02, withIntermediateDirectories: true)
+
+        let file1 = dir00.appendingPathComponent("audio-\(chunk1ID.uuidString.lowercased()).m4a")
+        let file2 = dir01.appendingPathComponent("audio-\(chunk2ID.uuidString.lowercased()).m4a")
+        let file3 = dir02.appendingPathComponent("audio-\(chunk3ID.uuidString.lowercased()).m4a")
+        try Data(repeating: 0x55, count: 4000).write(to: file1)
+        try Data(repeating: 0x55, count: 4000).write(to: file2)
+        try Data(repeating: 0x55, count: 4000).write(to: file3)
+
+        let restored = try await repository.reconcileChunksFromDisk(recordingID: recording.id)
+        #expect(restored.count == 3)
+
+        let indexedChunks = try await repository.chunks(recordingID: recording.id)
+            .sorted { $0.startSample < $1.startSample }
+        #expect(indexedChunks.count == 3)
+        #expect(indexedChunks[0].id == chunk1ID)
+        #expect(indexedChunks[1].id == chunk2ID)
+        #expect(indexedChunks[2].id == chunk3ID)
+        #expect(indexedChunks[0].startSample == 0)
+        #expect(indexedChunks[1].startSample == indexedChunks[0].endSample)
+        #expect(indexedChunks[2].startSample == indexedChunks[1].endSample)
+    }
+
+    @Test func recoverUnfinishedPerformsDiskReconciliationAndTransitionsState() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(startedAt: startedAt, state: .recording)
+        try await repository.createRecording(recording, at: startedAt)
+
+        let chunkID = UUID()
+        let recFolder = root.appendingPathComponent("Recordings/\(recording.id.uuidString.lowercased())/audio/00/00")
+        try FileManager.default.createDirectory(at: recFolder, withIntermediateDirectories: true)
+        let file = recFolder.appendingPathComponent("audio-\(chunkID.uuidString.lowercased()).m4a")
+        try Data(repeating: 0x55, count: 4000).write(to: file)
+
+        let result = try await repository.recoverUnfinished(at: startedAt.addingTimeInterval(60))
+        #expect(result.interruptedRecordingIDs.contains(recording.id))
+
+        let updated = try #require(await repository.recording(id: recording.id))
+        #expect(updated.state == .interrupted)
+        #expect(updated.endedAt != nil)
+        let chunks = try await repository.chunks(recordingID: recording.id)
+        #expect(chunks.count == 1)
+        #expect(chunks[0].id == chunkID)
+    }
 }
 
 final class SpeechNoteTestsBundleToken: NSObject {}

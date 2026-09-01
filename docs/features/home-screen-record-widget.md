@@ -19,7 +19,7 @@
 
 - **不需要 App Group**：Widget 只负责打开 URL，不共享录音或文稿数据。
 - **未设置** `CODE_SIGN_ENTITLEMENTS`，也未写入具体 iCloud container（沿用现有本地优先 / 真机签名策略）。
-- Widget bundle id：`YiJie.speech-note.RecordWidget`（主应用 `YiJie.speech-note` 的扩展）。
+- Widget bundle id：`YiJie.speech_note.RecordWidget`（主应用 `YiJie.speech_note` 的扩展）。
 
 ## 真机：如何添加 Widget
 
@@ -40,7 +40,7 @@
 
 仅当未来要在 Widget 上展示录音状态/时长等共享数据时，再考虑：
 
-1. 主应用与扩展同时开启 App Groups（例如 `group.YiJie.speech-note`）。
+1. 主应用与扩展同时开启 App Groups（例如 `group.YiJie.speech_note`）。
 2. 只共享非隐私状态字段；**禁止**把逐字稿写入 App Group。
 3. 仍保持 Widget UI 无文稿预览。
 

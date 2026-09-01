@@ -158,14 +158,15 @@ struct RecordingDetailScreen: View {
                     Label("重新转写 / 分析", systemImage: "arrow.clockwise")
                 }
 
-                if !currentRecording.isMeeting {
-                    Button {
-                        isSpeakerRecognitionConfirmationPresented = true
-                    } label: {
-                        Label("识别说话人…", systemImage: "person.2.wave.2")
-                    }
-                    .disabled(transcript == nil)
+                Button {
+                    isSpeakerRecognitionConfirmationPresented = true
+                } label: {
+                    Label(
+                        currentRecording.isMeeting ? "重新识别说话人…" : "识别说话人…",
+                        systemImage: "person.2.wave.2"
+                    )
                 }
+                .disabled(transcript == nil)
             }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -244,9 +245,9 @@ struct RecordingDetailScreen: View {
                     initialLocation: currentRecording.locationName
                 )
             }
-            .alert("启用说话人识别？", isPresented: $isSpeakerRecognitionConfirmationPresented) {
+            .alert(currentRecording.isMeeting ? "重新识别说话人？" : "启用说话人识别？", isPresented: $isSpeakerRecognitionConfirmationPresented) {
                 Button("取消", role: .cancel) {}
-                Button("开始识别") {
+                Button(currentRecording.isMeeting ? "重新识别" : "开始识别") {
                     Task {
                         await model.enableSpeakerRecognition(recordingID: recordingID)
                         await loadDetail()

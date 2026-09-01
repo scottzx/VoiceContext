@@ -20,7 +20,7 @@
           "locale" : "zh_CN"
         }
       ],
-      "productID" : "YiJie.speech-note.lifetimeUnlock",
+      "productID" : "YiJie.speech_note.lifetimeUnlock",
       "referenceName" : "LifetimeUnlock",
       "type" : "NonConsumable"
     }
