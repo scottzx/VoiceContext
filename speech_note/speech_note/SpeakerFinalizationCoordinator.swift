@@ -676,8 +676,13 @@ actor SpeakerFinalizationCoordinator {
 
         let bindingStartedAt = Date()
         if !recluster.speakers.isEmpty {
-            let archiveURL = try VoiceprintArchiveStorage.defaultURL()
-            let archive = try VoiceprintArchiveStorage.load(from: archiveURL)
+            let archive: VoiceprintArchive
+            do {
+                let archiveURL = try VoiceprintArchiveStorage.defaultURL()
+                archive = try VoiceprintArchiveStorage.load(from: archiveURL)
+            } catch {
+                archive = VoiceprintArchive()
+            }
             let bindings = SpeakerIdentityConfirmation.makeBindings(
                 speakers: recluster.speakers,
                 labels: recluster.labels,

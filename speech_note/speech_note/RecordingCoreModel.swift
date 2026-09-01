@@ -716,6 +716,7 @@ final class RecordingCoreModel {
 
     func retryTranscription(recordingID: UUID) async {
         do {
+            _ = try? await repository.reconcileChunksFromDisk(recordingID: recordingID)
             await transcriptionScheduler.prepareForRetranscription(recordingID: recordingID)
             try await coordinator.retryProcessing(recordingID: recordingID)
             try await prepareSpeakerFinalizationForRetranscription(

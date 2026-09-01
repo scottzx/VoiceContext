@@ -833,6 +833,7 @@ actor RecordingRepository {
             let chunkID: UUID
             let creationDate: Date
             let frameCount: Int64
+            let minuteBaseSample: Int64
         }
 
         var discovered: [DiscoveredFile] = []
@@ -855,6 +856,15 @@ actor RecordingRepository {
                 relPath = "Recordings/\(recordingID.uuidString.lowercased())/audio/\(fileURL.lastPathComponent)"
             }
 
+            var minuteBaseSample: Int64 = 0
+            if let range = fullPath.range(of: "/audio/") {
+                let afterAudio = fullPath[range.upperBound...]
+                let parts = afterAudio.split(separator: "/")
+                if parts.count >= 2, let hh = Int64(parts[0]), let mm = Int64(parts[1]) {
+                    minuteBaseSample = (hh * 60 + mm) * 60 * 16_000
+                }
+            }
+
             let date = (try? fileURL.resourceValues(forKeys: [.creationDateKey]).creationDate)
                 ?? (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
                 ?? Date()
@@ -873,15 +883,19 @@ actor RecordingRepository {
                 relativePath: relPath,
                 chunkID: chunkID,
                 creationDate: date,
-                frameCount: frames
+                frameCount: frames,
+                minuteBaseSample: minuteBaseSample
             ))
         }
 
         guard !discovered.isEmpty else { return [] }
-        discovered.sort { $0.relativePath < $1.relativePath }
+        discovered.sort { lhs, rhs in
+            if lhs.minuteBaseSample != rhs.minuteBaseSample {
+                return lhs.minuteBaseSample < rhs.minuteBaseSample
+            }
+            return lhs.relativePath < rhs.relativePath
+        }
 
-        let existingChunks = try index.chunks(recordingID: recordingID)
-        let existingMap = Dictionary(uniqueKeysWithValues: existingChunks.map { ($0.id, $0) })
         let recording = try index.recording(id: recordingID)
         let recordingStartedAt = recording?.startedAt ?? discovered.first?.creationDate ?? Date()
 
@@ -889,47 +903,27 @@ actor RecordingRepository {
         var newAddedChunks: [AudioChunk] = []
 
         for item in discovered {
-            if let existing = existingMap[item.chunkID] {
-                currentSampleCursor = max(currentSampleCursor, existing.endSample)
-                if !existing.relativePath.hasPrefix("Recordings/") {
-                    let updated = AudioChunk(
-                        id: existing.id,
-                        recordingID: existing.recordingID,
-                        relativePath: item.relativePath,
-                        startSample: existing.startSample,
-                        endSample: existing.endSample,
-                        startedAt: existing.startedAt,
-                        endedAt: existing.endedAt,
-                        state: existing.state,
-                        isPinned: existing.isPinned,
-                        audioRemovedAt: existing.audioRemovedAt,
-                        requiresContinuation: existing.requiresContinuation
-                    )
-                    try addChunk(updated, at: updated.endedAt)
-                }
-            } else {
-                let startSample = currentSampleCursor
-                let endSample = startSample + item.frameCount
-                currentSampleCursor = endSample
+            let startSample = max(currentSampleCursor, item.minuteBaseSample)
+            let endSample = startSample + item.frameCount
+            currentSampleCursor = endSample
 
-                let startSec = Double(startSample) / 16_000.0
-                let endSec = Double(endSample) / 16_000.0
-                let startedAt = recordingStartedAt.addingTimeInterval(startSec)
-                let endedAt = recordingStartedAt.addingTimeInterval(endSec)
+            let startSec = Double(startSample) / 16_000.0
+            let endSec = Double(endSample) / 16_000.0
+            let startedAt = recordingStartedAt.addingTimeInterval(startSec)
+            let endedAt = recordingStartedAt.addingTimeInterval(endSec)
 
-                let newChunk = AudioChunk(
-                    id: item.chunkID,
-                    recordingID: recordingID,
-                    relativePath: item.relativePath,
-                    startSample: startSample,
-                    endSample: endSample,
-                    startedAt: startedAt,
-                    endedAt: endedAt,
-                    state: .closed
-                )
-                try addChunk(newChunk, at: endedAt)
-                newAddedChunks.append(newChunk)
-            }
+            let chunkToSave = AudioChunk(
+                id: item.chunkID,
+                recordingID: recordingID,
+                relativePath: item.relativePath,
+                startSample: startSample,
+                endSample: endSample,
+                startedAt: startedAt,
+                endedAt: endedAt,
+                state: .closed
+            )
+            try addChunk(chunkToSave, at: endedAt)
+            newAddedChunks.append(chunkToSave)
         }
 
         let allChunks = (try index.chunks(recordingID: recordingID)).sorted { $0.startSample < $1.startSample }

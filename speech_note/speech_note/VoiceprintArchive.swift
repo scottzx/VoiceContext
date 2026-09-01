@@ -136,11 +136,25 @@ nonisolated enum VoiceprintArchiveStorage {
             if VoiceprintArchiveCrypto.looksLikeLegacyPlaintextArchive(data) {
                 return try JSONDecoder().decode(VoiceprintArchive.self, from: data)
             }
-            guard let key = try keyProvider.loadExistingKey() else {
-                throw VoiceprintArchiveCryptoError.missingKey
+            let existingKey: SymmetricKey?
+            do {
+                existingKey = try keyProvider.loadExistingKey()
+            } catch {
+                existingKey = nil
             }
-            let envelope = try VoiceprintArchiveCrypto.decodeEnvelope(from: data)
-            return try VoiceprintArchiveCrypto.open(envelope, using: key)
+            guard let key = existingKey else {
+                let backupURL = url.deletingPathExtension().appendingPathExtension("orphaned-\(Int(Date().timeIntervalSince1970)).aesgcm")
+                try? fileManager.moveItem(at: url, to: backupURL)
+                return VoiceprintArchive()
+            }
+            do {
+                let envelope = try VoiceprintArchiveCrypto.decodeEnvelope(from: data)
+                return try VoiceprintArchiveCrypto.open(envelope, using: key)
+            } catch {
+                let backupURL = url.deletingPathExtension().appendingPathExtension("corrupted-\(Int(Date().timeIntervalSince1970)).aesgcm")
+                try? fileManager.moveItem(at: url, to: backupURL)
+                return VoiceprintArchive()
+            }
         }
 
         // Migrate #27 plaintext file if present beside the new encrypted name.
