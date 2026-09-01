@@ -1,0 +1,4 @@
+# VoiceContext Version Configuration
+# 统一版本控制文件：修改此处或运行 ./tools/release.sh 即可自动同步所有 Target 与发布文档
+VERSION=1.0
+BUILD=5
