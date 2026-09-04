@@ -22,7 +22,7 @@
 2026-08-24 已在 iPhone 15 Pro / iOS 26.5 上完成 Debug 真机构建、签名校验和启动。最终 App 签名中已确认包含：
 
 - `com.apple.developer.background-tasks.continued-processing.gpu = true`
-- `com.apple.developer.icloud-container-identifiers = iCloud.YiJie.speech_note`
+- `com.apple.developer.icloud-container-identifiers = iCloud.YiJie.speech-note`
 - `com.apple.developer.icloud-services = CloudDocuments`
 
 准备 TestFlight / App Store 构建前：

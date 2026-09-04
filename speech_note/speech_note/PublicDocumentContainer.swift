@@ -14,7 +14,7 @@ nonisolated enum PublicDocumentContainer {
     /// Preferred identifier once Cloud Documents is provisioned for the app.
     /// Lookup still tries the default ubiquity container (`nil`) first so builds
     /// with an empty `icloud-container-identifiers` array remain green.
-    static let preferredContainerIdentifier = "iCloud.YiJie.speech_note"
+    static let preferredContainerIdentifier = "iCloud.YiJie.speech-note"
     static let displayName = "VoiceContext"
     static let documentsFolderName = "Documents"
 
