@@ -13,6 +13,10 @@
 - [generate-meeting-minutes Codex Skill](./features/generate-meeting-minutes-skill.md)：公开 VoiceContext Skill/模板导出、Mac Codex 安装与端到端验证（`#33`）。
 - [听记 1.0 App Store 发布设计与提交清单](./release/1.0-app-store-submission.md)：首发永久解锁定价、商店元数据、隐私合规、审核说明与手动发布验收。
 
+## 工程导航
+
+- [工程目录说明](./architecture/project-structure.md)：源码模块职责、测试分组、资源路径与新增文件规则。
+
 ## 文档约定
 
 - PRD 是产品范围和交互输入的仓库内单一事实源。

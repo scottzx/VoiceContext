@@ -1781,6 +1781,7 @@ struct RecordingCoreTests {
     @Test func transcriptSchemaFixturePassesRoundTripAndMarkdownConsistency() async throws {
         let fixtureURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
+            .deletingLastPathComponent()
             .appendingPathComponent("Fixtures/transcript_v1_schema_fixture.json")
         let fixtureData = try Data(contentsOf: fixtureURL)
         let root = temporaryDirectory()
@@ -1974,6 +1975,7 @@ struct RecordingCoreTests {
 
     @Test func transcriptLegacySourceChunkIDMigratesAndRollbackDualWrites() async throws {
         let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Fixtures/transcript_v1_legacy_source_chunk_fixture.json")
         let fixtureData = try Data(contentsOf: fixtureURL)

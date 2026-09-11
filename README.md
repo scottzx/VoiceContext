@@ -68,8 +68,8 @@
    - 依赖的 C/C++ 动态框架或静态库位于 `speech_note/speech_note/Frameworks/`（可通过相关脚本或 Release 下载）。
 
 4. **运行与测试**：
-   - 在 Xcode 中选择真机或 iOS 18 模拟器，点击 **Run (⌘ + R)** 即可启动。
-   - 运行单元测试：**Test (⌘ + U)**。
+   - 本项目禁止使用 iOS Simulator；经用户明确授权后，选择物理 iPhone，点击 **Run (⌘ + R)**。
+   - 真机测试同样需要明确授权；未授权时仅执行静态检查和非运行时验证。
 
 ---
 
@@ -77,19 +77,38 @@
 
 ```text
 VoiceContext/
-├── speech_note/                 # Xcode 主工程与源码
-│   ├── speech_note/             # SwiftUI 界面、录音核心、转写流与数据模型
-│   │   ├── AACSegmentRecorder.swift     # 60s 分段录音引擎
-│   │   ├── RecordingCoreModel.swift     # 核心录音对象与状态流
-│   │   ├── TranscriptDocumentV1.swift   # Markdown / JSON 文档导出器
-│   │   └── ...
-│   ├── RecordWidget/            # iOS 桌面 Widget 小组件
-│   └── speech_noteTests/        # 单元测试与端到端验证
-├── docs/                        # 产品需求文档 (PRD)、设计规范 (DESIGN.md) 与原型
-├── tools/                       # 自动化构建、模型转换与辅助脚本
-├── LICENSE                      # MIT 开源许可证
-└── README.md                    # 项目说明文档
+├── speech_note/
+│   ├── speech_note.xcodeproj/   # Xcode 工程，自动同步源码子目录
+│   ├── speech_note/
+│   │   ├── App/                # 应用入口、路由、本地化
+│   │   ├── Features/           # 按业务功能组织的源码
+│   │   │   ├── Home/           # 首页与录音筛选
+│   │   │   ├── Recording/      # 录音、详情、持久化与 Live Activity
+│   │   │   ├── Transcription/  # 转写调度、分句、前后台处理
+│   │   │   ├── Speakers/       # 说话人识别、聚类与声纹
+│   │   │   ├── Documents/      # 文稿、检索、公开文档与同步
+│   │   │   ├── Import/         # 音视频导入
+│   │   │   ├── Export/         # 音频与文稿导出
+│   │   │   ├── Clients/        # 客户资料
+│   │   │   ├── Folders/        # 文件夹管理与同步
+│   │   │   ├── Purchase/       # 购买、试用与共享权限
+│   │   │   └── Onboarding/     # 引导与隐私说明
+│   │   ├── Infrastructure/     # 推理运行时、系统权限、归档工具
+│   │   ├── Assets.xcassets/    # 应用图标与颜色资源
+│   │   ├── ModelResources/    # 离线模型
+│   │   └── Frameworks/        # 原生推理依赖
+│   ├── RecordWidget/           # 独立 Widget target
+│   ├── speech_noteTests/       # 按功能分组的单元测试及共享 Fixtures
+│   ├── speech_noteUITests/     # UI 测试与商店截图流程
+│   └── Supporting/            # 生成的公开 Skill/模板包
+├── docs/                       # 产品、设计、架构、测试、发布与公开站点
+├── tools/                      # 构建、发布、模型和资源包脚本
+├── memory/                     # 本地工程排障记录
+├── DESIGN.md                   # UI 设计规范
+└── README.md
 ```
+
+目录职责和新增文件规则见 [工程目录说明](docs/architecture/project-structure.md)。
 
 ---
 

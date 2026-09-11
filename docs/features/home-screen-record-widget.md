@@ -13,7 +13,7 @@
 | 组件 | 路径 |
 | --- | --- |
 | WidgetKit 扩展 | `speech_note/RecordWidget/` |
-| Deep link 解析 | `speech_note/speech_note/AppDeepLink.swift` |
+| Deep link 解析 | `speech_note/speech_note/App/AppDeepLink.swift` |
 | URL Scheme | `Info.plist` → `CFBundleURLTypes` / `voicecontext` |
 | 开录响应 | `ContentView.handleWidgetStartRecording()` |
 
