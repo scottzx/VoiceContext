@@ -8,8 +8,8 @@ import Foundation
 nonisolated enum TranscriptionLanguageMode: String, Codable, CaseIterable, Sendable, Identifiable {
     /// Force Mandarin Chinese LID (`zh`). This is the default for new work.
     case chinese = "chinese"
-    /// Autodetect across the languages supported by the bundled model.
-    /// Keep the legacy raw value so existing recording snapshots remain valid.
+    /// Chinese/English autodetect (`NULL` LID). Keep the legacy raw value so
+    /// existing recording snapshots remain valid.
     case zhEnBilingual = "zh_en_bilingual"
     /// Force Cantonese LID (`yue`).
     case cantonese = "cantonese"
@@ -25,11 +25,11 @@ nonisolated enum TranscriptionLanguageMode: String, Codable, CaseIterable, Senda
 
     var id: String { rawValue }
 
-    /// Title shown in Settings.
+    /// Chinese source title used as a localization key.
     var settingsTitle: String {
         switch self {
         case .chinese: "中文"
-        case .zhEnBilingual: "自动识别"
+        case .zhEnBilingual: "中英双语"
         case .cantonese: "粤语"
         case .englishOnly: "英语"
         case .japanese: "日语"
@@ -41,7 +41,7 @@ nonisolated enum TranscriptionLanguageMode: String, Codable, CaseIterable, Senda
     var shortLabel: String {
         switch self {
         case .chinese: "ZH"
-        case .zhEnBilingual: "AUTO"
+        case .zhEnBilingual: "ZH-EN"
         case .cantonese: "YUE"
         case .englishOnly: "EN"
         case .japanese: "JA"
@@ -49,7 +49,10 @@ nonisolated enum TranscriptionLanguageMode: String, Codable, CaseIterable, Senda
         }
     }
 
-    /// BCP-47-ish code for `transcribe_run_params.language`, or `nil` to autodetect.
+    /// Code for `transcribe_run_params.language`.
+    /// `nil` is autodetect (`supports_language_detect`). Do not pass `"auto"`:
+    /// the GGUF language list is `zh / yue / en / ja / ko`, and an unknown
+    /// hint is `TRANSCRIBE_ERR_UNSUPPORTED_LANGUAGE`.
     var senseVoiceLanguageHint: String? {
         switch self {
         case .chinese: "zh"

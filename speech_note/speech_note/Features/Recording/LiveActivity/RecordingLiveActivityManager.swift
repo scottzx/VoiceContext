@@ -1,7 +1,8 @@
 import ActivityKit
 import Foundation
 
-/// Manages the lifecycle of the Lock Screen Live Activity card for active recordings.
+/// Starts a Dynamic Island Live Activity for the active recording.
+/// Lock-screen banner content is intentionally empty so only the island shows.
 @MainActor
 final class RecordingLiveActivityManager {
     static let shared = RecordingLiveActivityManager()
@@ -11,12 +12,9 @@ final class RecordingLiveActivityManager {
 
     private init() {}
 
-    /// Starts a Live Activity for the active recording session.
     func startActivity(recordingID: UUID, startedAt: Date) {
-        // Ensure activities are supported and authorized
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
-        // End any preexisting activity to prevent duplicates
         endActivity()
 
         self.recordingStartedAt = startedAt
@@ -24,7 +22,8 @@ final class RecordingLiveActivityManager {
         let initialState = RecordingActivityAttributes.ContentState(
             isRecording: true,
             isPaused: false,
-            startedAt: startedAt
+            startedAt: startedAt,
+            isInterrupted: false
         )
 
         do {
@@ -39,26 +38,41 @@ final class RecordingLiveActivityManager {
         }
     }
 
-    /// Updates the Live Activity (e.g. pause / resume).
-    func updateActivity(isPaused: Bool) {
-        guard let activity = currentActivity, let startedAt = recordingStartedAt else { return }
+    func updateActivity(isPaused: Bool, isInterrupted: Bool = false) {
+        let activities = trackedActivities()
+        guard !activities.isEmpty else { return }
+        let startedAt = recordingStartedAt
+            ?? activities.first?.content.state.startedAt
+            ?? Date()
         let updatedState = RecordingActivityAttributes.ContentState(
-            isRecording: !isPaused,
-            isPaused: isPaused,
-            startedAt: startedAt
+            isRecording: !isPaused && !isInterrupted,
+            isPaused: isPaused && !isInterrupted,
+            startedAt: startedAt,
+            isInterrupted: isInterrupted
         )
         Task {
-            await activity.update(.init(state: updatedState, staleDate: nil))
+            for activity in activities {
+                await activity.update(.init(state: updatedState, staleDate: nil))
+            }
         }
     }
 
-    /// Ends and removes the Live Activity card immediately.
     func endActivity() {
-        guard let activity = currentActivity else { return }
-        Task {
-            await activity.end(nil, dismissalPolicy: .immediate)
-        }
+        let activities = trackedActivities()
         currentActivity = nil
         recordingStartedAt = nil
+        guard !activities.isEmpty else { return }
+        Task {
+            for activity in activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+        }
+    }
+
+    private func trackedActivities() -> [Activity<RecordingActivityAttributes>] {
+        if let currentActivity {
+            return [currentActivity]
+        }
+        return Array(Activity<RecordingActivityAttributes>.activities)
     }
 }

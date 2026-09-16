@@ -66,3 +66,18 @@ struct BackgroundTranscriptionContinuationTests {
         #expect(progress.finishedSuccessfully)
     }
 }
+
+struct RealtimeTranscriptionPreferencesTests {
+    @Test func preferenceDefaultsEnabledAndPersistsOptOut() throws {
+        let suiteName = "RealtimeTranscriptionPreferencesTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = RealtimeTranscriptionPreferences(defaults: defaults)
+
+        #expect(preferences.isEnabled)
+        preferences.isEnabled = false
+        #expect(!RealtimeTranscriptionPreferences(defaults: defaults).isEnabled)
+        preferences.isEnabled = true
+        #expect(RealtimeTranscriptionPreferences(defaults: defaults).isEnabled)
+    }
+}

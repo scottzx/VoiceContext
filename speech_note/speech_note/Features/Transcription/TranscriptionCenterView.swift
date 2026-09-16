@@ -732,6 +732,8 @@ struct TranscriptionCenterView: View {
             return "试用配额已达上限，待解锁后继续。"
         case "recoveredAfterTermination":
             return "应用退出后已自动恢复，排队转写中。"
+        case "unreadableAudioSkipped":
+            return "该音频分片无法读取，已跳过转写。"
         default:
             return error
         }

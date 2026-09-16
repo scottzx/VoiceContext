@@ -31,6 +31,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
     private var currentIndex = 0
     private var currentItemOffset: TimeInterval = 0
     private var timer: Timer?
+    private var didActivatePlaybackSession = false
 
     var loadedItemCount: Int { items.count }
     var residentPlayerCount: Int { player == nil ? 0 : 1 }
@@ -91,9 +92,8 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         // Recording leaves the shared session in the .record category, where
         // AVAudioPlayer refuses to start without throwing. Switch to playback
         // before the first player so a valid chunk is not silently ignored.
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default)
-        try? session.setActive(true)
+        RecordingAudioSession.activatePlayback()
+        didActivatePlaybackSession = true
 
         var skipped = 0
         while currentIndex < items.count {
@@ -127,6 +127,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         playbackError = skipped > 0
             ? "音频无法播放：所有分片都不可读。"
             : "音频无法播放。"
+        releasePlaybackSessionIfNeeded()
     }
 
     func pause() {
@@ -136,6 +137,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         isPlaying = false
         stopTimer()
         updateCurrentTime()
+        releasePlaybackSessionIfNeeded()
     }
 
     func stop() {
@@ -146,6 +148,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         currentItemOffset = 0
         currentTime = items.first?.timelineStart ?? 0
         stopTimer()
+        releasePlaybackSessionIfNeeded()
     }
 
     func seek(by offset: TimeInterval) {
@@ -212,6 +215,13 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         isPlaying = false
         currentTime = duration
         stopTimer()
+        releasePlaybackSessionIfNeeded()
+    }
+
+    private func releasePlaybackSessionIfNeeded() {
+        guard didActivatePlaybackSession else { return }
+        didActivatePlaybackSession = false
+        RecordingAudioSession.notifyPlaybackReleased()
     }
 
     private func startTimer() {
@@ -256,6 +266,7 @@ struct ContentView: View {
     private static var didPrepareRecordingDetailFixtureRoot = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var languageCenter = AppLanguageCenter.shared
     @State private var model: RecordingCoreModel
     @State private var modelError: String?
     @State private var filterCriteria = RecordingFilterCriteria()
@@ -411,7 +422,7 @@ struct ContentView: View {
     private var workspace: some View {
         NavigationStack {
             recordsScreen
-                .navigationTitle(folderNavigationTitle)
+                .navigationTitle(Text(LocalizedStringKey(folderNavigationTitle)))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
@@ -722,9 +733,9 @@ struct ContentView: View {
                 }
             } else if recordingGroups.isEmpty {
                 ContentUnavailableView {
-                    Label(emptyListTitle, systemImage: "waveform")
+                    Label(LocalizedStringKey(emptyListTitle), systemImage: "waveform")
                 } description: {
-                    Text(emptyListDescription)
+                    Text(LocalizedStringKey(emptyListDescription))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 32)
@@ -916,22 +927,16 @@ struct ContentView: View {
     }
 
     private func formattedDateHeader(_ date: Date) -> String {
-        let isChinese = AppLanguageCenter.shared.isChinese ||
-            Locale.preferredLanguages.contains(where: { $0.hasPrefix("zh") }) ||
-            Locale.current.identifier.hasPrefix("zh") ||
-            AppLanguageCenter.shared.selectedLanguage != .english
-        if isChinese {
-            let calendar = Calendar.current
-            let y = calendar.component(.year, from: date)
-            let m = String(format: "%02d", calendar.component(.month, from: date))
-            let d = String(format: "%02d", calendar.component(.day, from: date))
-            let weekday = calendar.component(.weekday, from: date)
-            let weekdays = ["", "周日", "周一", "周二", "周三", "周四", "周五", "周六"]
-            let wStr = (weekday >= 1 && weekday <= 7) ? weekdays[weekday] : ""
-            return "\(y)-\(m)-\(d), \(wStr)"
-        } else {
-            return date.formatted(date: .complete, time: .omitted)
-        }
+        let calendar = Calendar.current
+        let y = calendar.component(.year, from: date)
+        let m = String(format: "%02d", calendar.component(.month, from: date))
+        let d = String(format: "%02d", calendar.component(.day, from: date))
+        let weekday = calendar.component(.weekday, from: date)
+        let weekdays = languageCenter.isChinese
+            ? ["", "周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+            : ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        let wStr = (weekday >= 1 && weekday <= 7) ? weekdays[weekday] : ""
+        return "\(y)-\(m)-\(d), \(wStr)"
     }
 
     @ViewBuilder
@@ -1497,7 +1502,7 @@ private struct RecordingRow: View {
         switch recording.state {
         case .recording: "录音中"
         case .paused: "已暂停"
-        case .interrupted: "中断需注意"
+        case .interrupted: "已中断"
         case .stopping: "正在停止"
         case .processing: "正在处理"
         case .complete: "已完成"
@@ -1654,7 +1659,9 @@ struct RecordingBar: View {
         return switch model.presentation {
         case .stopping:
             "正在安全保存"
-        case .recording, .paused, .interrupted:
+        case .interrupted:
+            "可点继续恢复"
+        case .recording, .paused:
             model.isInBackground ? "录音继续，转写待前台处理" : "分钟级增量转写"
         case .processing, .idle, .failed:
             "可返回记录查看进度"
@@ -1755,11 +1762,13 @@ private struct ImportNoticeBanner: View {
 
 private struct SettingsScreen: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var languageCenter = AppLanguageCenter.shared
     @AppStorage(OnboardingPreferences.documentSyncKey) private var documentSyncEnabled = false
     @AppStorage(OnboardingPreferences.encryptedVoiceprintSyncKey) private var encryptedVoiceprintSyncEnabled = false
     @AppStorage(TranscriptionLanguageMode.preferenceKey) private var languageModeRaw =
         TranscriptionLanguageMode.default.rawValue
     @AppStorage(BackgroundTranscriptionPreferences.enabledKey) private var backgroundTranscriptionEnabled = false
+    @AppStorage(RealtimeTranscriptionPreferences.enabledKey) private var realtimeTranscriptionEnabled = true
     @AppStorage(ExportPackagePreferences.includesOriginalAudioKey) private var exportPackageIncludesOriginalAudio = false
     @State private var syncStatus = DocumentSyncStatusCenter.shared
     let model: RecordingCoreModel
@@ -1780,10 +1789,7 @@ private struct SettingsScreen: View {
                 }
 
                 Section("界面语言") {
-                    Picker("语言 / Language", selection: Binding(
-                        get: { AppLanguageCenter.shared.selectedLanguage },
-                        set: { AppLanguageCenter.shared.selectedLanguage = $0 }
-                    )) {
+                    Picker("语言 / Language", selection: $languageCenter.selectedLanguage) {
                         ForEach(AppLanguage.allCases) { lang in
                             Text(lang.displayName).tag(lang)
                         }
@@ -1794,11 +1800,17 @@ private struct SettingsScreen: View {
                 Section("转写") {
                     Picker("语言模式", selection: languageModeBinding) {
                         ForEach(TranscriptionLanguageMode.allCases) { mode in
-                            Text(mode.settingsTitle).tag(mode)
+                            Text(LocalizedStringKey(mode.settingsTitle)).tag(mode)
                         }
                     }
                     .accessibilityIdentifier("settings-language-mode")
-                    Text("默认为中文。自动识别会让模型在中文、粤语、英语、日语和韩语之间判断。仅影响之后开始的新录音与新导入；已完成文稿不会自动重跑。")
+                    Text("默认为中文。中英双语会让模型在中文和英语之间自动判断；也可指定粤语、英语、日语或韩语。仅影响之后开始的新录音与新导入；已完成文稿不会自动重跑。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    Toggle("录音时实时转写", isOn: $realtimeTranscriptionEnabled)
+                        .accessibilityIdentifier("settings-realtime-transcription")
+                    Text("开启后，每段录音一结束就开始转写。关闭后，等你停止录音再排队，录音过程更省电、也少抢性能。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
@@ -2073,10 +2085,10 @@ private struct RecordingCoreValidationScreen: View {
                 .tint(model.captureIsActive ? .red : .primary)
 
                 if model.captureIsActive {
-                    Button(model.presentation == .paused ? "继续" : "暂停") {
+                    Button((model.presentation == .paused || model.presentation == .interrupted) ? "继续" : "暂停") {
                         Task { await model.pauseOrResume() }
                     }
-                    .disabled(model.presentation == .interrupted)
+                    .disabled(model.presentation == .stopping)
                 }
             }
 

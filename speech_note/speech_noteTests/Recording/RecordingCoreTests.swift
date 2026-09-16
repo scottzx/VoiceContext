@@ -1383,6 +1383,8 @@ struct RecordingCoreTests {
             try machine.apply(.processingCompleted)
         }
         #expect(try machine.apply(.resume) == .recording)
+        #expect(try machine.apply(.interruptionBegan) == .interrupted)
+        #expect(try machine.apply(.resume) == .recording)
         #expect(try machine.apply(.stopRequested) == .stopping)
         #expect(try machine.apply(.captureStopped) == .processing)
         #expect(try machine.apply(.processingCompleted) == .complete)
@@ -1464,6 +1466,160 @@ struct RecordingCoreTests {
         #expect(chunks.count == 1)
         #expect(chunks[0].startSample == 0)
         #expect(chunks[0].endSample == 48_000)
+    }
+
+    @Test @MainActor func returningToAppResumesCaptureAfterOtherAudioInterruption() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false,
+            now: { startedAt }
+        )
+
+        _ = try await coordinator.start()
+        coordinator.applicationEnteredBackground()
+        capture.emit(.init(
+            kind: .interruptionBegan,
+            occurredAt: startedAt.addingTimeInterval(2),
+            sampleIndex: 16_000
+        ))
+        #expect(await presentationState(of: coordinator, becomes: .interrupted))
+
+        capture.emit(.init(
+            kind: .interruptionEnded(shouldResume: false),
+            occurredAt: startedAt.addingTimeInterval(3),
+            sampleIndex: 16_000
+        ))
+        #expect(await presentationState(of: coordinator, becomes: .interrupted))
+        #expect(capture.resumeCount == 0)
+
+        coordinator.applicationBecameActive()
+        #expect(await presentationState(of: coordinator, becomes: .recording))
+        #expect(capture.resumeCount == 1)
+        #expect(try await repository.recording(id: coordinator.activeRecordingID!)?.state == .recording)
+    }
+
+    @Test @MainActor func foregroundInterruptionWithoutShouldResumeStillContinuesCapture() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false,
+            now: { startedAt }
+        )
+
+        _ = try await coordinator.start()
+        capture.emit(.init(
+            kind: .interruptionBegan,
+            occurredAt: startedAt.addingTimeInterval(1),
+            sampleIndex: 8_000
+        ))
+        #expect(await presentationState(of: coordinator, becomes: .interrupted))
+
+        capture.emit(.init(
+            kind: .interruptionEnded(shouldResume: false),
+            occurredAt: startedAt.addingTimeInterval(2),
+            sampleIndex: 8_000
+        ))
+        #expect(await presentationState(of: coordinator, becomes: .recording))
+        #expect(capture.resumeCount == 1)
+    }
+
+    @Test @MainActor func userPauseSurvivesInterruptionWhenReturningToApp() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false,
+            now: { startedAt }
+        )
+
+        _ = try await coordinator.start()
+        try await coordinator.pause()
+        #expect(coordinator.presentationState == .paused)
+
+        capture.emit(.init(
+            kind: .interruptionBegan,
+            occurredAt: startedAt.addingTimeInterval(2),
+            sampleIndex: 8_000
+        ))
+        #expect(await presentationState(of: coordinator, becomes: .interrupted))
+
+        coordinator.applicationBecameActive()
+        #expect(await presentationState(of: coordinator, becomes: .paused))
+        #expect(capture.resumeCount == 0)
+    }
+
+    @Test @MainActor func failedAutoResumeKeepsInterruptedUI() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        capture.resumeError = AACSegmentRecorder.RecorderError.notRecording
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false,
+            now: { startedAt }
+        )
+
+        let recordingID = try await coordinator.start()
+        capture.emit(.init(
+            kind: .interruptionBegan,
+            occurredAt: startedAt.addingTimeInterval(1),
+            sampleIndex: 8_000
+        ))
+        #expect(await presentationState(of: coordinator, becomes: .interrupted))
+
+        coordinator.applicationBecameActive()
+        #expect(await presentationState(of: coordinator, becomes: .interrupted))
+        #expect(capture.resumeCount == 1)
+        #expect(try await repository.recording(id: recordingID)?.state == .interrupted)
+        #expect(RecordingStatusStyle.barTitle(for: .interrupted) == "已中断")
+        #expect(RecordingStatusStyle.text(for: RecordingState.interrupted) == "已中断")
+    }
+
+    @Test @MainActor func liveActivityCommandsPauseResumeAndStopWithoutOpeningApp() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let capture = MockRecordingCapture()
+        let coordinator = RecordingSessionCoordinator(
+            repository: repository,
+            capture: capture,
+            lowStorageGuard: LowStorageGuard(minimumAvailableBytes: 1) { _ in 1_000 },
+            enablesRemoteStopCommand: false
+        )
+
+        _ = try await coordinator.start()
+        await coordinator.handleLiveActivityCommand(.pause)
+        #expect(coordinator.presentationState == .paused)
+
+        await coordinator.handleLiveActivityCommand(.resume)
+        #expect(coordinator.presentationState == .recording)
+        #expect(capture.resumeCount == 1)
+
+        await coordinator.handleLiveActivityCommand(.stop)
+        #expect(coordinator.presentationState == .idle)
+        #expect(capture.stopCount == 1)
     }
 
     @Test func retentionPurgesExpiredMeetingAndPersonalAudioButPreservesPinnedAudioAndDocuments() async throws {
@@ -3040,6 +3196,55 @@ struct RecordingCoreTests {
             == RecordingState.complete.rawValue)
     }
 
+    @Test func completionReconcilerSkipsUnreadableFailedChunksAndCompletesRecording() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let transcriptStore = try TranscriptDocumentStore(rootURL: root)
+        let reconciler = CompletionReconciler(repository: repository, transcriptStore: transcriptStore)
+        let startedAt = Date(timeIntervalSince1970: 1_785_913_200)
+        let recording = Recording(
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(120),
+            state: .processing
+        )
+        try await repository.createRecording(recording, at: startedAt)
+
+        let relativePath = "Recordings/\(recording.id.uuidString.lowercased())/audio/broken.m4a"
+        let url = root.appendingPathComponent(relativePath)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([0x00, 0x01, 0x02, 0x03]).write(to: url)
+
+        let chunk = AudioChunk(
+            recordingID: recording.id,
+            relativePath: relativePath,
+            startSample: 0,
+            endSample: 16_000,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(1)
+        )
+        try await repository.addChunk(chunk, at: chunk.endedAt)
+        try await repository.upsertJob(RecordingJob(
+            recordingID: recording.id,
+            chunkID: chunk.id,
+            kind: .transcription,
+            state: .failed,
+            attemptCount: 2,
+            lastError: "The operation couldn’t be completed. (com.apple.coreaudio.avfaudio error 1685348671.)",
+            createdAt: startedAt,
+            updatedAt: startedAt.addingTimeInterval(10)
+        ), at: startedAt.addingTimeInterval(10))
+
+        #expect(try await reconciler.reconcile(
+            recordingID: recording.id,
+            at: startedAt.addingTimeInterval(11)
+        ) == .completed)
+        #expect(try await repository.recording(id: recording.id)?.state == .complete)
+        let job = try #require(await repository.jobs(recordingID: recording.id).first)
+        #expect(job.state == .completed)
+        #expect(job.lastError == "unreadableAudioSkipped")
+    }
+
     @Test func realDeviceStaleSpeakerFinalizationRecoversToPendingWithoutHidingTranscriptProgress() async throws {
         struct DeviceSnapshot: Decodable {
             struct Finalization: Decodable {
@@ -3298,6 +3503,8 @@ private final class MockRecordingCapture: RecordingCapturing {
     private(set) var startCount = 0
     private(set) var stopCount = 0
     private(set) var cancelCount = 0
+    private(set) var resumeCount = 0
+    var resumeError: Error?
     private(set) var segmentDurations: [TimeInterval] = []
     var emitsSegmentClosedOnStop = true
     private(set) var lastStoppedSegment: AACSegmentRecorder.Segment?
@@ -3311,7 +3518,10 @@ private final class MockRecordingCapture: RecordingCapturing {
 
     func pause() throws {}
 
-    func resume() throws {}
+    func resume() throws {
+        resumeCount += 1
+        if let resumeError { throw resumeError }
+    }
 
     func cancel() {
         cancelCount += 1

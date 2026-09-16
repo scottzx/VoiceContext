@@ -40,26 +40,31 @@ final class AppLanguageCenter: ObservableObject {
     }
 
     var currentLocale: Locale {
-        switch selectedLanguage {
-        case .followSystem:
-            return Locale.current
-        case .simplifiedChinese:
-            return Locale(identifier: "zh-Hans")
-        case .english:
-            return Locale(identifier: "en")
-        }
+        Self.locale(forStoredRaw: selectedLanguage.rawValue)
     }
 
     var isChinese: Bool {
-        switch selectedLanguage {
-        case .simplifiedChinese:
-            return true
-        case .english:
-            return false
-        case .followSystem:
-            let lang = Locale.preferredLanguages.first ?? "zh-Hans"
-            return lang.hasPrefix("zh")
+        Self.isChinese(locale: currentLocale)
+    }
+
+    /// Safe to call off the main actor (status copy, formatters).
+    nonisolated static func locale(forStoredRaw raw: String?) -> Locale {
+        switch raw {
+        case AppLanguage.english.rawValue:
+            return Locale(identifier: "en")
+        case AppLanguage.simplifiedChinese.rawValue:
+            return Locale(identifier: "zh-Hans")
+        default:
+            return Locale.current
         }
+    }
+
+    nonisolated static func preferredLocale() -> Locale {
+        locale(forStoredRaw: UserDefaults.standard.string(forKey: "app_preferred_language"))
+    }
+
+    nonisolated static func isChinese(locale: Locale = preferredLocale()) -> Bool {
+        locale.identifier.lowercased().hasPrefix("zh")
     }
 
     func text(_ key: AppStringKey) -> String {
@@ -393,6 +398,11 @@ extension String {
     static func appLocalized(_ key: AppStringKey) -> String {
         AppLanguageCenter.shared.text(key)
     }
+}
+
+/// Looks up a Chinese source string in `Localizable.xcstrings` using the in-app language.
+nonisolated func L(_ key: String) -> String {
+    String(localized: String.LocalizationValue(key), locale: AppLanguageCenter.preferredLocale())
 }
 
 /// Standardized date/time formatters ensuring unified YYYY-MM-DD HH:MM format across the app.

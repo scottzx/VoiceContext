@@ -77,6 +77,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     private var directory: URL?
     private var pendingPacketCount = 0
     private var tapInstalled = false
+    private var isCapturePaused = false
     private var lastClosedSegment: Segment?
     private var interruptionObserver: NSObjectProtocol?
     private var routeChangeObserver: NSObjectProtocol?
@@ -107,8 +108,8 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         }
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try session.setCategory(.record, mode: .default)
-        try session.setActive(true)
+        statusLock.withLock { isCapturePaused = false }
+        try activateCaptureSession()
 
         let input = engine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
@@ -213,6 +214,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
 
     func pause() throws {
         guard statusLock.withLock({ tapInstalled }) else { throw RecorderError.notRecording }
+        statusLock.withLock { isCapturePaused = true }
         engine.pause()
         writerQueue.sync {
             _ = closeSegment(at: Date())
@@ -224,8 +226,18 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
 
     func resume() throws {
         guard statusLock.withLock({ tapInstalled }) else { throw RecorderError.notRecording }
-        try session.setActive(true)
-        try engine.start()
+        statusLock.withLock { isCapturePaused = false }
+        try activateCaptureSession()
+        if !engine.isRunning {
+            try engine.start()
+        }
+    }
+
+    /// Restore the `.record` category after other audio. Engine start is owned
+    /// by the session coordinator so UI only shows 正在录音 after resume succeeds.
+    func restoreCaptureSessionIfOwned() {
+        guard statusLock.withLock({ tapInstalled }) else { return }
+        try? activateCaptureSession()
     }
 
     private func bufferFromAudioCallback(_ buffer: AVAudioPCMBuffer) {
@@ -440,13 +452,24 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         activeSegmentEndSample = startingSample
     }
 
+    private func activateCaptureSession() throws {
+        try session.setCategory(.record, mode: .default)
+        try session.setActive(true)
+    }
+
     private func closeSegment(at endedAt: Date) -> Segment? {
         guard
             let id = activeID,
             let url = activeURL,
             let startedAt = activeStartedAt
         else { return nil }
-        activeFile = nil
+        // Drop AVAudioFile on this writer queue so the moov atom is written
+        // before persistence/transcription see the path.
+        do {
+            let fileToClose = activeFile
+            activeFile = nil
+            withExtendedLifetime(fileToClose) {}
+        }
         activeID = nil
         activeURL = nil
         activeStartedAt = nil
@@ -490,14 +513,16 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         else { return }
         switch type {
         case .began:
+            writerQueue.sync {
+                _ = closeSegment(at: Date())
+                isVoiced = false
+                remainingHangoverSamples = 0
+                preRollBuffer.removeAll()
+            }
             emit(.interruptionBegan)
         case .ended:
             let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
-            if shouldResume, statusLock.withLock({ tapInstalled }) {
-                try? session.setActive(true)
-                try? engine.start()
-            }
             emit(.interruptionEnded(shouldResume: shouldResume))
         @unknown default:
             break

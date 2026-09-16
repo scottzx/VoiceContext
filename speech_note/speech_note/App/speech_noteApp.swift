@@ -30,27 +30,46 @@ struct speech_noteApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                if hasCompletedOnboarding {
-                    ContentView(
-                        openStartRecording: $pendingStartRecording,
-                        openStopRecording: $pendingStopRecording
-                    )
-                } else {
-                    OnboardingFlowView()
+            AppLanguageGate {
+                Group {
+                    if hasCompletedOnboarding {
+                        ContentView(
+                            openStartRecording: $pendingStartRecording,
+                            openStopRecording: $pendingStopRecording
+                        )
+                    } else {
+                        OnboardingFlowView()
+                    }
                 }
-            }
-            .onOpenURL { url in
-                guard let link = AppDeepLink.parse(url) else { return }
-                switch link {
-                case .startRecording:
-                    pendingStartRecording = true
-                case .stopRecording:
-                    pendingStopRecording = true
-                case .openRecording:
-                    break
+                .onOpenURL { url in
+                    guard let link = AppDeepLink.parse(url) else { return }
+                    switch link {
+                    case .startRecording:
+                        pendingStartRecording = true
+                    case .stopRecording:
+                        pendingStopRecording = true
+                    case .openRecording:
+                        break
+                    }
                 }
             }
         }
+    }
+}
+
+/// Pushes the in-app language onto SwiftUI's locale environment so `Text("中文")`
+/// lookups in `Localizable.xcstrings` update immediately.
+private struct AppLanguageGate<Content: View>: View {
+    @ObservedObject private var languageCenter = AppLanguageCenter.shared
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .environment(\.locale, languageCenter.currentLocale)
+            .environmentObject(languageCenter)
     }
 }

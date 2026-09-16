@@ -631,6 +631,8 @@ nonisolated struct RecordingStateMachine: Sendable {
         let next: RecordingState = switch (state, event) {
         case (.recording, .pause): .paused
         case (.paused, .resume): .recording
+        case (.interrupted, .resume): .recording
+        case (.interrupted, .pause): .paused
         case (.recording, .interruptionBegan), (.paused, .interruptionBegan): .interrupted
         case (.interrupted, .interruptionEnded(shouldResume: true)): .recording
         case (.interrupted, .interruptionEnded(shouldResume: false)): .interrupted

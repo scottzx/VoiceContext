@@ -165,6 +165,7 @@ final class RecordingCoreModel {
     let trialEntitlement: TrialEntitlementController
     private let trialLedger: TrialQuotaLedger
     private let diagnostics = RecordingDiagnostics()
+    private let realtimeTranscription: RealtimeTranscriptionPreferences
     private var refreshTask: Task<Void, Never>?
     private var pendingSpeakerFinalizationIDs: Set<UUID> = []
     private var speakerFinalizationDrainTask: Task<Void, Never>?
@@ -181,7 +182,8 @@ final class RecordingCoreModel {
         purchaseClient: (any PurchaseUnlockClient)? = nil,
         voiceprintArchiveURL: URL? = nil,
         voiceprintKeyProvider: any VoiceprintArchiveKeyProviding = VoiceprintArchiveKeyStore.shared,
-        voiceprintSyncConfiguration: EncryptedVoiceprintiCloudMirror.Configuration = .init()
+        voiceprintSyncConfiguration: EncryptedVoiceprintiCloudMirror.Configuration = .init(),
+        realtimeTranscription: RealtimeTranscriptionPreferences = RealtimeTranscriptionPreferences()
     ) throws {
         repository = try RecordingRepository(rootURL: rootURL)
         let transcriptStore = try TranscriptDocumentStore(rootURL: rootURL)
@@ -200,6 +202,7 @@ final class RecordingCoreModel {
         self.voiceprintArchiveURL = try voiceprintArchiveURL ?? VoiceprintArchiveStorage.defaultURL()
         self.voiceprintKeyProvider = voiceprintKeyProvider
         self.voiceprintSyncConfiguration = voiceprintSyncConfiguration
+        self.realtimeTranscription = realtimeTranscription
         coordinator = customCoordinator ?? RecordingSessionCoordinator(repository: repository, capture: recorder)
         let lifecycleGate = InferenceLifecycleGate()
         let inferenceService = SenseVoiceInferenceService(lifecycleGate: lifecycleGate)
@@ -320,9 +323,9 @@ final class RecordingCoreModel {
                     )
                     return
                 } catch let error as SenseVoiceInferenceService.InferenceError {
-                    guard case .emptyTranscript = error else { throw error }
-                    // ASR returned empty transcript:
-                    // Safely mark continuation cleared and consider this chunk job cleanly completed.
+                    guard error.isSkippableEmptyChunk else { throw error }
+                    // Empty ASR or an unreadable/truncated chunk: clear
+                    // continuation and complete the job so the recording can finish.
                     guard try await repository.validateExecutionLease(lease) else {
                         throw JobExecutionLeaseError.invalidated
                     }
@@ -470,13 +473,8 @@ final class RecordingCoreModel {
         }
         coordinator.onChunkClosed = { [weak self] recordingID, chunkID in
             guard let self else { return }
-            try? await self.transcriptionScheduler.enqueue(
-                recordingID: recordingID,
-                chunkID: chunkID,
-                onOutcome: { [weak self] outcome in
-                    await self?.applyTranscriptionOutcome(outcome)
-                }
-            )
+            guard self.realtimeTranscription.isEnabled else { return }
+            await self.enqueueChunkTranscription(recordingID: recordingID, chunkID: chunkID)
         }
 
         // Best-effort: local Documents always gets Skill/Templates for Codex.
@@ -641,7 +639,7 @@ final class RecordingCoreModel {
 
     func pauseOrResume() async {
         do {
-            if presentation == .paused {
+            if presentation == .paused || presentation == .interrupted {
                 try await coordinator.resume()
             } else {
                 try await coordinator.pause()
@@ -654,16 +652,37 @@ final class RecordingCoreModel {
 
     func stop() async {
         do {
-            // The final under-60s chunk is closed and enqueued inside
-            // coordinator.stop() (via onChunkClosed). The minute-level queue
-            // owns transcription, so stop must not also enqueue a legacy
-            // whole-recording job with a nil chunkID.
-            _ = try await coordinator.stop()
+            // The final under-60s chunk is closed inside coordinator.stop()
+            // (via onChunkClosed). Realtime mode enqueues there; otherwise
+            // every closed chunk is queued here after capture ends.
+            let recordingID = try await coordinator.stop()
+            await enqueueClosedChunksForTranscription(recordingID: recordingID)
             await backgroundTranscriptionContinuation.beginUserInitiatedTask()
         } catch {
             notice = error.localizedDescription
         }
         await refresh()
+    }
+
+    private func enqueueChunkTranscription(recordingID: UUID, chunkID: UUID) async {
+        try? await transcriptionScheduler.enqueue(
+            recordingID: recordingID,
+            chunkID: chunkID,
+            onOutcome: { [weak self] outcome in
+                await self?.applyTranscriptionOutcome(outcome)
+            }
+        )
+    }
+
+    private func enqueueClosedChunksForTranscription(recordingID: UUID) async {
+        let chunks = (try? await repository.chunks(recordingID: recordingID)) ?? []
+        let jobs = (try? await repository.jobs(recordingID: recordingID)) ?? []
+        let existingChunkIDs = Set(jobs.compactMap { job -> UUID? in
+            job.kind == .transcription ? job.chunkID : nil
+        })
+        for chunk in chunks where chunk.state == .closed && !existingChunkIDs.contains(chunk.id) {
+            await enqueueChunkTranscription(recordingID: recordingID, chunkID: chunk.id)
+        }
     }
 
     func cancelRecording(id: UUID? = nil) async {
@@ -2875,7 +2894,7 @@ final class RecordingCoreModel {
         } catch let error as SenseVoiceInferenceService.InferenceError {
             // Empty ASR on a voiced window must not fail the whole import.
             // Keep earlier transcript segments and allow remaining jobs / complete.
-            guard case .emptyTranscript = error else { throw error }
+            guard error.isSkippableEmptyChunk else { throw error }
             guard try await repository.validateExecutionLease(lease) else {
                 throw JobExecutionLeaseError.invalidated
             }

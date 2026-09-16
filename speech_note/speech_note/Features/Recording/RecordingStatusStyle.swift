@@ -6,13 +6,13 @@ import SwiftUI
 enum RecordingStatusStyle {
     static func text(for state: RecordingState) -> String {
         switch state {
-        case .recording: "正在录音"
-        case .paused: "已暂停"
-        case .interrupted: "录音中断，需要注意"
-        case .stopping: "正在停止"
-        case .processing: "正在处理"
-        case .complete: "已完成"
-        case .failed: "需要注意"
+        case .recording: L("正在录音")
+        case .paused: L("已暂停")
+        case .interrupted: L("已中断")
+        case .stopping: L("正在停止")
+        case .processing: L("正在处理")
+        case .complete: L("已完成")
+        case .failed: L("需要注意")
         }
     }
 
@@ -37,12 +37,12 @@ enum RecordingStatusStyle {
 
     static func text(for presentation: RecordingSessionCoordinator.PresentationState) -> String {
         switch presentation {
-        case .recording: "正在录音"
-        case .paused: "已暂停"
-        case .interrupted: "已中断，等待恢复"
-        case .stopping: "正在安全停止"
-        case .processing: "正在处理"
-        case .idle, .failed: "录音已结束"
+        case .recording: L("正在录音")
+        case .paused: L("已暂停")
+        case .interrupted: L("已中断")
+        case .stopping: L("正在安全停止")
+        case .processing: L("正在处理")
+        case .idle, .failed: L("录音已结束")
         }
     }
 
@@ -69,13 +69,13 @@ enum RecordingStatusStyle {
     /// Compact titles for the global recording bar (capture-owned only).
     static func barTitle(for presentation: RecordingSessionCoordinator.PresentationState) -> String {
         switch presentation {
-        case .recording: "正在录音"
-        case .paused: "录音已暂停"
-        case .interrupted: "录音已中断"
-        case .stopping: "正在安全停止"
-        case .processing: "正在处理"
-        case .idle: "录音状态变化中"
-        case .failed: "需要注意"
+        case .recording: L("正在录音")
+        case .paused: L("录音已暂停")
+        case .interrupted: L("已中断")
+        case .stopping: L("正在安全停止")
+        case .processing: L("正在处理")
+        case .idle: L("录音状态变化中")
+        case .failed: L("需要注意")
         }
     }
 
@@ -83,12 +83,12 @@ enum RecordingStatusStyle {
 
     static func captureText(for capture: RecordingCaptureState) -> String {
         switch capture {
-        case .idle: "录音已停止"
-        case .preparing: "正在准备录音"
-        case .recording: "正在录音"
-        case .paused: "已暂停"
-        case .interrupted: "录音中断，需要注意"
-        case .stopping: "正在安全停止"
+        case .idle: L("录音已停止")
+        case .preparing: L("正在准备录音")
+        case .recording: L("正在录音")
+        case .paused: L("已暂停")
+        case .interrupted: L("已中断")
+        case .stopping: L("正在安全停止")
         }
     }
 
@@ -113,14 +113,14 @@ enum RecordingStatusStyle {
 
     static func processingText(for processing: RecordingProcessingState) -> String {
         switch processing {
-        case .idle: "尚未开始转写"
-        case .queued: "排队处理中"
-        case .processing: "正在处理"
-        case .speakerFinalization: "逐字稿已完成，正在整理说话人"
-        case .deferredUntilForeground: "待回到前台后继续"
-        case .lockedPendingPurchase: "音频已保存，转写等待解锁"
-        case .needsAttention: "需要注意，可重试"
-        case .complete: "全部完成"
+        case .idle: L("尚未开始转写")
+        case .queued: L("排队处理中")
+        case .processing: L("正在处理")
+        case .speakerFinalization: L("逐字稿已完成，正在整理说话人")
+        case .deferredUntilForeground: L("待回到前台后继续")
+        case .lockedPendingPurchase: L("音频已保存，转写等待解锁")
+        case .needsAttention: L("需要注意，可重试")
+        case .complete: L("全部完成")
         }
     }
 
@@ -148,12 +148,12 @@ enum RecordingStatusStyle {
     /// Honest minute-level progress. Never invents a value from animation timers.
     static func transcribedUpToText(_ interval: TimeInterval?) -> String? {
         guard let interval else { return nil }
-        return "已转写至 +\(formatDuration(interval))"
+        return String(format: L("已转写至 +%@"), formatDuration(interval))
     }
 
     static func outstandingItemsText(_ count: Int) -> String? {
         guard count > 0 else { return nil }
-        return "还剩 \(count) 项"
+        return String(format: L("还剩 %lld 项"), count)
     }
 
     /// Secondary line for capture chrome / detail: progress without chunk jargon.
@@ -170,7 +170,7 @@ enum RecordingStatusStyle {
         }
         switch progress.processing {
         case .deferredUntilForeground:
-            parts.append(isInBackground ? "转写待回到前台后继续" : processingText(for: .deferredUntilForeground))
+            parts.append(isInBackground ? L("转写待回到前台后继续") : processingText(for: .deferredUntilForeground))
         case .lockedPendingPurchase:
             parts.append(processingText(for: .lockedPendingPurchase))
         case .needsAttention:
@@ -182,8 +182,10 @@ enum RecordingStatusStyle {
                 parts.append(processingText(for: progress.processing))
             }
         case .idle:
-            if progress.capture == .recording || progress.capture == .paused || progress.capture == .interrupted {
-                parts.append(isInBackground ? "录音继续，转写待前台处理" : "分钟级增量转写")
+            if progress.capture == .interrupted {
+                parts.append(L("可点继续恢复"))
+            } else if progress.capture == .recording || progress.capture == .paused {
+                parts.append(isInBackground ? L("录音继续，转写待前台处理") : L("分钟级增量转写"))
             }
         case .complete:
             if parts.isEmpty {

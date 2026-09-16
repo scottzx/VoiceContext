@@ -23,7 +23,12 @@ actor CompletionReconciler {
         guard let recording = try await repository.recording(id: recordingID),
               recording.endedAt != nil else { return .unchanged }
         let jobs = try await repository.jobs(recordingID: recordingID)
-        let transcription = jobs.filter { $0.kind == .transcription }
+        let healed = try await completeUnreadableFailedJobs(
+            recordingID: recordingID,
+            jobs: jobs,
+            at: date
+        )
+        let transcription = healed.filter { $0.kind == .transcription }
         guard !transcription.isEmpty else { return .unchanged }
 
         if transcription.contains(where: { $0.state == .failed }) {
@@ -49,7 +54,7 @@ actor CompletionReconciler {
             return .completed
         }
 
-        let finalization = jobs.filter { $0.kind == .speakerFinalization }
+        let finalization = healed.filter { $0.kind == .speakerFinalization }
         if finalization.isEmpty {
             if recording.state == .complete {
                 try await repository.changeState(
@@ -104,6 +109,37 @@ actor CompletionReconciler {
 
         try await completeRecording(recording, at: date)
         return .completed
+    }
+
+    /// Interrupted capture can leave AAC files without a moov atom. Those jobs
+    /// must not keep the Recording in `processing` forever.
+    private func completeUnreadableFailedJobs(
+        recordingID: UUID,
+        jobs: [RecordingJob],
+        at date: Date
+    ) async throws -> [RecordingJob] {
+        let failed = jobs.filter { $0.kind == .transcription && $0.state == .failed }
+        guard !failed.isEmpty else { return jobs }
+        let chunks = Dictionary(
+            uniqueKeysWithValues: (try await repository.chunks(recordingID: recordingID)).map { ($0.id, $0) }
+        )
+        var healed = jobs
+        for job in failed {
+            guard let chunkID = job.chunkID, let chunk = chunks[chunkID] else { continue }
+            let url = repository.rootURL.appendingPathComponent(chunk.relativePath)
+            guard !PCM16KMonoLoader.isReadable(url) else { continue }
+            var updated = job
+            updated.state = .completed
+            updated.lastError = "unreadableAudioSkipped"
+            updated.executionToken = nil
+            updated.startedAt = nil
+            updated.updatedAt = date
+            try await repository.upsertJob(updated, at: date)
+            if let index = healed.firstIndex(where: { $0.id == job.id }) {
+                healed[index] = updated
+            }
+        }
+        return healed
     }
 
     private func completeRecording(_ recording: Recording, at date: Date) async throws {

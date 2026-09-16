@@ -112,8 +112,7 @@ nonisolated struct RecordingDiagnostics: Sendable {
     }
 
     private static func avAudioIsReadable(_ url: URL) -> Bool {
-        guard let file = try? AVAudioFile(forReading: url) else { return false }
-        return file.length > 0 && file.processingFormat.sampleRate > 0
+        PCM16KMonoLoader.isReadable(url)
     }
 }
 

@@ -295,6 +295,22 @@ struct speech_noteTests {
         #expect(!samples.isEmpty)
     }
 
+    @Test func pcmLoaderTreatsTruncatedAACAsUnreadable() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "truncated-\(UUID().uuidString).m4a"
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(repeating: 0, count: 64).write(to: url)
+
+        #expect(!PCM16KMonoLoader.isReadable(url))
+        do {
+            _ = try PCM16KMonoLoader.samples(from: url)
+            Issue.record("expected unreadableAudio")
+        } catch SenseVoiceInferenceService.InferenceError.unreadableAudio {
+            // Interrupted capture can leave m4a files without a moov atom.
+        }
+    }
+
     @Test func vadUtteranceAssemblyKeepsNearbySpeechAndSplitsLongGaps() {
         let source = Array(repeating: Float(0.2), count: 70_000)
         let spans = [

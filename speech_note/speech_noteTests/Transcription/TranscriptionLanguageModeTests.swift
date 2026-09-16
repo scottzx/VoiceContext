@@ -12,9 +12,9 @@ struct TranscriptionLanguageModeTests {
         #expect(TranscriptionLanguageMode.japanese.senseVoiceLanguageHint == "ja")
         #expect(TranscriptionLanguageMode.korean.senseVoiceLanguageHint == "ko")
         #expect(TranscriptionLanguageMode.chinese.settingsTitle == "中文")
-        #expect(TranscriptionLanguageMode.zhEnBilingual.settingsTitle == "自动识别")
+        #expect(TranscriptionLanguageMode.zhEnBilingual.settingsTitle == "中英双语")
         #expect(TranscriptionLanguageMode.englishOnly.settingsTitle == "英语")
-        #expect(TranscriptionLanguageMode.zhEnBilingual.shortLabel == "AUTO")
+        #expect(TranscriptionLanguageMode.zhEnBilingual.shortLabel == "ZH-EN")
         #expect(TranscriptionLanguageMode.englishOnly.shortLabel == "EN")
     }
 

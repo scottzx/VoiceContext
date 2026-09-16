@@ -35,9 +35,14 @@ protocol PurchaseUnlockClient: Sendable {
 
 struct StoreKitPurchaseUnlockClient: PurchaseUnlockClient {
     let productID: String
+    private let sharedKeychain: any SharedKeychainEntitlementStoring
 
-    init(productID: String = TrialQuotaLedger.productID) {
+    init(
+        productID: String = TrialQuotaLedger.productID,
+        sharedKeychain: any SharedKeychainEntitlementStoring = SharedKeychainEntitlementStore.shared
+    ) {
         self.productID = productID
+        self.sharedKeychain = sharedKeychain
     }
 
     func currentEntitlementActive() async -> Bool {
@@ -47,6 +52,9 @@ struct StoreKitPurchaseUnlockClient: PurchaseUnlockClient {
                transaction.revocationDate == nil {
                 return true
             }
+        }
+        if let shared = try? sharedKeychain.loadSharedUnlock(), !shared.productID.isEmpty {
+            return true
         }
         return false
     }
@@ -75,7 +83,11 @@ struct StoreKitPurchaseUnlockClient: PurchaseUnlockClient {
         case let .success(verification):
             let transaction = try checkVerified(verification)
             await transaction.finish()
-            return (transaction.productID == productID || TrialQuotaLedger.supportedProductIDs.contains(transaction.productID)) && transaction.revocationDate == nil
+            let isEntitled = (transaction.productID == productID || TrialQuotaLedger.supportedProductIDs.contains(transaction.productID)) && transaction.revocationDate == nil
+            if isEntitled {
+                try? sharedKeychain.saveSharedUnlock(SharedUnlockRecord(productID: transaction.productID))
+            }
+            return isEntitled
         case .userCancelled:
             throw PurchaseUnlockError.purchaseCancelled
         case .pending:
@@ -111,27 +123,37 @@ final class FakePurchaseUnlockClient: PurchaseUnlockClient, @unchecked Sendable 
     var shouldFailPurchase: Bool
     var shouldFailRestore: Bool
     private let price: String
+    private let sharedKeychain: (any SharedKeychainEntitlementStoring)?
 
     init(
         entitled: Bool = false,
         shouldFailPurchase: Bool = false,
         shouldFailRestore: Bool = false,
-        price: String = "¥30"
+        price: String = "¥30",
+        sharedKeychain: (any SharedKeychainEntitlementStoring)? = nil
     ) {
         self.entitled = entitled
         self.shouldFailPurchase = shouldFailPurchase
         self.shouldFailRestore = shouldFailRestore
         self.price = price
+        self.sharedKeychain = sharedKeychain
     }
 
     func setEntitled(_ value: Bool) {
         lock.lock(); defer { lock.unlock() }
         entitled = value
+        if value {
+            try? sharedKeychain?.saveSharedUnlock(SharedUnlockRecord(productID: TrialQuotaLedger.productID))
+        }
     }
 
     func currentEntitlementActive() async -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return entitled
+        if entitled { return true }
+        if let shared = try? sharedKeychain?.loadSharedUnlock(), !shared.productID.isEmpty {
+            return true
+        }
+        return false
     }
 
     func loadDisplayPrice() async -> String? { price }

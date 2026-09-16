@@ -522,6 +522,80 @@ struct TrialEntitlementTests {
         try await Task.sleep(nanoseconds: 50_000_000)
         #expect(changeNotified == true)
     }
+
+    @Test func sharedKeychainUnlockInProductBUnlocksProductAOnBoot() throws {
+        let url = temporaryQuotaURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let sharedStore = InMemorySharedKeychainEntitlementStore(
+            record: SharedUnlockRecord(
+                productID: TrialQuotaLedger.productID,
+                unlockedAt: Date(),
+                sourceBundleID: "YiJie.productB"
+            )
+        )
+
+        let ledger = TrialQuotaLedger(
+            fileURL: url,
+            keychain: InMemoryTrialStartTimestampStore(),
+            sharedKeychain: sharedStore
+        )
+
+        #expect(ledger.isUnlocked == true)
+        #expect(ledger.isPurchaseLocked == false)
+    }
+
+    @Test func localUnlockWritesSharedKeychainRecordForOtherProducts() throws {
+        let url1 = temporaryQuotaURL()
+        let url2 = temporaryQuotaURL()
+        defer {
+            try? FileManager.default.removeItem(at: url1.deletingLastPathComponent())
+            try? FileManager.default.removeItem(at: url2.deletingLastPathComponent())
+        }
+
+        let sharedStore = InMemorySharedKeychainEntitlementStore()
+
+        let ledgerA = TrialQuotaLedger(
+            fileURL: url1,
+            keychain: InMemoryTrialStartTimestampStore(),
+            sharedKeychain: sharedStore
+        )
+        #expect(ledgerA.isUnlocked == false)
+
+        ledgerA.markUnlocked()
+        #expect(ledgerA.isUnlocked == true)
+
+        let saved = try sharedStore.loadSharedUnlock()
+        #expect(saved != nil)
+        #expect(saved?.productID == TrialQuotaLedger.productID)
+
+        // Product B spins up with fresh local quota file, but shared Keychain has the unlock record
+        let ledgerB = TrialQuotaLedger(
+            fileURL: url2,
+            keychain: InMemoryTrialStartTimestampStore(),
+            sharedKeychain: sharedStore
+        )
+        #expect(ledgerB.isUnlocked == true)
+        #expect(ledgerB.isPurchaseLocked == false)
+    }
+
+    @Test func clientRecognizesSharedKeychainUnlockEvenIfStoreKitEntitlementMissing() async throws {
+        let sharedStore = InMemorySharedKeychainEntitlementStore(
+            record: SharedUnlockRecord(
+                productID: TrialQuotaLedger.productID,
+                unlockedAt: Date(),
+                sourceBundleID: "YiJie.productB"
+            )
+        )
+
+        let client = FakePurchaseUnlockClient(
+            entitled: false,
+            sharedKeychain: sharedStore
+        )
+
+        let active = await client.currentEntitlementActive()
+        #expect(active == true)
+    }
 }
 
 private actor TrialSchedulerExecutorProbe {

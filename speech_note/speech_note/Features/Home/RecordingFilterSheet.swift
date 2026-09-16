@@ -21,7 +21,7 @@ struct RecordingFilterSheet: View {
                 Section("时间范围") {
                     Picker("时间范围", selection: $draftCriteria.timePreset) {
                         ForEach(RecordingTimePreset.allCases) { preset in
-                            Text(preset.title).tag(preset)
+                            Text(LocalizedStringKey(preset.title)).tag(preset)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -62,7 +62,7 @@ struct RecordingFilterSheet: View {
                 Section("记录类型") {
                     Picker("记录类型", selection: $draftCriteria.originFilter) {
                         ForEach(RecordingOriginFilter.allCases) { origin in
-                            Text(origin.title).tag(origin)
+                            Text(LocalizedStringKey(origin.title)).tag(origin)
                         }
                     }
                 }

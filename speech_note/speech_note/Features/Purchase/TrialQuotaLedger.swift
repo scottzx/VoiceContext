@@ -69,16 +69,19 @@ nonisolated final class TrialQuotaLedger: @unchecked Sendable {
     private let lock = NSLock()
     private let fileURL: URL
     private let keychain: any TrialStartTimestampStoring
+    private let sharedKeychain: any SharedKeychainEntitlementStoring
     private let now: @Sendable () -> Date
     private var snapshot: Snapshot
 
     init(
         fileURL: URL,
         keychain: any TrialStartTimestampStoring = KeychainTrialStartTimestampStore(),
+        sharedKeychain: any SharedKeychainEntitlementStoring = SharedKeychainEntitlementStore.shared,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.fileURL = fileURL
         self.keychain = keychain
+        self.sharedKeychain = sharedKeychain
         self.now = now
 
         var loaded = Snapshot.empty
@@ -96,11 +99,19 @@ nonisolated final class TrialQuotaLedger: @unchecked Sendable {
             }
         }
 
+        // Cross-app Shared Keychain entitlement check (e.g. purchased in Product B).
+        if !loaded.isUnlocked, let shared = try? sharedKeychain.loadSharedUnlock(), !shared.productID.isEmpty {
+            loaded.isUnlocked = true
+        }
+
         loaded.schemaVersion = Self.currentSchemaVersion
         snapshot = loaded
         // Persist migrated shape so subsequent boots are v2-native.
         persistLocked()
         syncKeychainLocked()
+        if snapshot.isUnlocked {
+            syncSharedKeychainLocked()
+        }
     }
 
     convenience init(applicationSupportBase: URL = TrialQuotaLedger.defaultApplicationSupportBase()) {
@@ -185,6 +196,7 @@ nonisolated final class TrialQuotaLedger: @unchecked Sendable {
         guard !snapshot.isUnlocked else { return }
         snapshot.isUnlocked = true
         persistLocked()
+        syncSharedKeychainLocked()
     }
 
     func setUnlocked(_ unlocked: Bool) {
@@ -193,6 +205,9 @@ nonisolated final class TrialQuotaLedger: @unchecked Sendable {
         guard snapshot.isUnlocked != unlocked else { return }
         snapshot.isUnlocked = unlocked
         persistLocked()
+        if unlocked {
+            syncSharedKeychainLocked()
+        }
     }
 
     /// Test helper: force trial start into the past so the lock boundary trips.
@@ -220,6 +235,7 @@ nonisolated final class TrialQuotaLedger: @unchecked Sendable {
         defer { lock.unlock() }
         try? keychain.clear()
         try? keychain.save(start)
+        try? sharedKeychain.clearSharedUnlock()
         snapshot.trialStartedAt = start
         snapshot.maxObservedElapsed = 0
         snapshot.isUnlocked = false
@@ -263,6 +279,11 @@ nonisolated final class TrialQuotaLedger: @unchecked Sendable {
     private func syncKeychainLocked() {
         guard let start = snapshot.trialStartedAt else { return }
         try? keychain.save(start)
+    }
+
+    private func syncSharedKeychainLocked() {
+        guard snapshot.isUnlocked else { return }
+        try? sharedKeychain.saveSharedUnlock(SharedUnlockRecord(productID: Self.productID))
     }
 }
 

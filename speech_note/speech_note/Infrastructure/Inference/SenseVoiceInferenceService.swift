@@ -49,6 +49,7 @@ actor SenseVoiceInferenceService {
         case invalidPCMFormat(sampleRate: Double, channels: AVAudioChannelCount)
         case runtime(String)
         case emptyTranscript
+        case unreadableAudio
         case abortedForBackground
 
         var errorDescription: String? {
@@ -59,8 +60,17 @@ actor SenseVoiceInferenceService {
                 "SenseVoice 运行失败：\(message)"
             case .emptyTranscript:
                 "SenseVoice 返回空文本，保留录音以便重试。"
+            case .unreadableAudio:
+                "音频分片无法读取，已跳过转写。"
             case .abortedForBackground:
                 "App 进入后台，已停止尚未完成的转写。"
+            }
+        }
+
+        var isSkippableEmptyChunk: Bool {
+            switch self {
+            case .emptyTranscript, .unreadableAudio: true
+            default: false
             }
         }
     }
@@ -357,8 +367,9 @@ actor SenseVoiceInferenceService {
         // SenseVoice couples punctuation output to its ITN prefix. Sentence
         // boundaries therefore require ITN to be explicitly enabled.
         runParams.itn = TRANSCRIBE_ITN_MODE_ON
-        // NULL asks SenseVoice to autodetect; explicit settings pass the
-        // corresponding zh / yue / en / ja / ko LID hint.
+        // NULL asks SenseVoice to autodetect (zh / yue / en / ja / ko).
+        // Explicit settings pass the corresponding LID hint. Do not pass
+        // the string "auto": it is not in the model's language list.
         let languageHint = languageMode.senseVoiceLanguageHint
         let runStatus: transcribe_status
         if let languageHint {
@@ -492,8 +503,19 @@ private final class InferenceCancellationFlag: @unchecked Sendable {
 }
 
 enum PCM16KMonoLoader {
+    nonisolated static func isReadable(_ url: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        guard let file = try? AVAudioFile(forReading: url) else { return false }
+        return file.length > 0 && file.processingFormat.sampleRate > 0
+    }
+
     nonisolated static func samples(from url: URL) throws -> [Float] {
-        let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
+        let file: AVAudioFile
+        do {
+            file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
+        } catch {
+            throw SenseVoiceInferenceService.InferenceError.unreadableAudio
+        }
         let format = file.processingFormat
         guard format.sampleRate == 16_000, format.channelCount == 1 else {
             throw SenseVoiceInferenceService.InferenceError.invalidPCMFormat(
@@ -505,18 +527,24 @@ enum PCM16KMonoLoader {
         var samples: [Float] = []
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_096)!
 
-        while file.framePosition < file.length {
-            let remainingFrames = file.length - file.framePosition
-            try file.read(into: buffer, frameCount: AVAudioFrameCount(min(4_096, remainingFrames)))
-            guard let channel = buffer.floatChannelData?[0] else {
-                throw SenseVoiceInferenceService.InferenceError.runtime("无法读取浮点 PCM 音频")
-            }
+        do {
+            while file.framePosition < file.length {
+                let remainingFrames = file.length - file.framePosition
+                try file.read(into: buffer, frameCount: AVAudioFrameCount(min(4_096, remainingFrames)))
+                guard let channel = buffer.floatChannelData?[0] else {
+                    throw SenseVoiceInferenceService.InferenceError.runtime("无法读取浮点 PCM 音频")
+                }
 
-            samples.append(contentsOf: UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+                samples.append(contentsOf: UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+            }
+        } catch let error as SenseVoiceInferenceService.InferenceError {
+            throw error
+        } catch {
+            throw SenseVoiceInferenceService.InferenceError.unreadableAudio
         }
 
         guard !samples.isEmpty else {
-            throw SenseVoiceInferenceService.InferenceError.runtime("录音没有可转写的 PCM 样本")
+            throw SenseVoiceInferenceService.InferenceError.unreadableAudio
         }
         return samples
     }

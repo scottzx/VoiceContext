@@ -431,6 +431,12 @@ struct RecordingDetailScreen: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
 
+                Text("·").foregroundStyle(.tertiary)
+                Text(currentRecording.languageMode.shortLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(LocalizedStringKey(currentRecording.languageMode.settingsTitle))
+
                 if let folderName = model.folderName(for: currentRecording.id) {
                     Text("·").foregroundStyle(.tertiary)
                     HStack(spacing: 4) {
@@ -690,14 +696,14 @@ struct RecordingDetailScreen: View {
                     Task { await model.pauseOrResume() }
                 } label: {
                     Label(
-                        model.presentation == .paused ? "继续" : "暂停",
-                        systemImage: model.presentation == .paused ? "play.fill" : "pause.fill"
+                        (model.presentation == .paused || model.presentation == .interrupted) ? "继续" : "暂停",
+                        systemImage: (model.presentation == .paused || model.presentation == .interrupted) ? "play.fill" : "pause.fill"
                     )
                     .font(.subheadline.weight(.medium))
                     .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
-                .disabled(model.presentation == .interrupted || model.presentation == .stopping)
+                .disabled(model.presentation == .stopping)
 
                 Button(role: .destructive) {
                     Task {
@@ -1428,9 +1434,17 @@ struct RecordingDetailScreen: View {
                 Divider()
                 detailRow(label: "录音时长", value: durationText)
                 Divider()
-                detailRow(label: "录音语言", value: transcript?.language.isEmpty == false ? (transcript?.language ?? "自动") : "自动")
+                detailRow(
+                    label: "语言模式",
+                    value: L(currentRecording.languageMode.settingsTitle)
+                )
                 Divider()
-                detailRow(label: "录音地点", value: currentRecording.locationName ?? "未记录")
+                detailRow(
+                    label: "检测语言",
+                    value: transcript?.language.isEmpty == false ? (transcript?.language ?? L("自动")) : L("自动")
+                )
+                Divider()
+                detailRow(label: "录音地点", value: currentRecording.locationName ?? L("未记录"))
                 Divider()
                 detailRow(label: "录音格式", value: "16kHz 16-bit 单声道 AAC")
                 Divider()
