@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import MediaPlayer
 import SwiftUI
 import UniformTypeIdentifiers
 import PhotosUI
@@ -32,6 +33,10 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
     private var currentItemOffset: TimeInterval = 0
     private var timer: Timer?
     private var didActivatePlaybackSession = false
+    private var didInstallPlaybackRemoteCommands = false
+    private var playCommandTarget: Any?
+    private var pauseCommandTarget: Any?
+    private var toggleCommandTarget: Any?
 
     var loadedItemCount: Int { items.count }
     var residentPlayerCount: Int { player == nil ? 0 : 1 }
@@ -103,6 +108,8 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
                 if activePlayer.play() {
                     isPlaying = true
                     startTimer()
+                    installPlaybackRemoteCommandsIfNeeded()
+                    publishNowPlaying()
                     if skipped > 0 {
                         playbackError = "已跳过 \(skipped) 个无法读取的分片。"
                     }
@@ -137,6 +144,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         isPlaying = false
         stopTimer()
         updateCurrentTime()
+        publishNowPlaying()
         releasePlaybackSessionIfNeeded()
     }
 
@@ -148,6 +156,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         currentItemOffset = 0
         currentTime = items.first?.timelineStart ?? 0
         stopTimer()
+        clearNowPlaying()
         releasePlaybackSessionIfNeeded()
     }
 
@@ -183,6 +192,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
     func setRate(_ rate: Float) {
         playbackRate = rate
         player?.rate = rate
+        if isPlaying { publishNowPlaying() }
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
@@ -215,6 +225,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         isPlaying = false
         currentTime = duration
         stopTimer()
+        clearNowPlaying()
         releasePlaybackSessionIfNeeded()
     }
 
@@ -243,6 +254,40 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         currentItemOffset = player?.currentTime ?? currentItemOffset
         let item = items[currentIndex]
         currentTime = min(duration, item.timelineStart + currentItemOffset)
+    }
+
+    private func installPlaybackRemoteCommandsIfNeeded() {
+        guard !didInstallPlaybackRemoteCommands else { return }
+        didInstallPlaybackRemoteCommands = true
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.isEnabled = true
+        center.pauseCommand.isEnabled = true
+        center.togglePlayPauseCommand.isEnabled = true
+        playCommandTarget = center.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.play() }
+            return .success
+        }
+        pauseCommandTarget = center.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.pause() }
+            return .success
+        }
+        toggleCommandTarget = center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.togglePlayback() }
+            return .success
+        }
+    }
+
+    private func publishNowPlaying() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+            MPMediaItemPropertyTitle: "听记",
+            MPMediaItemPropertyPlaybackDuration: duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? Double(playbackRate) : 0,
+        ]
+    }
+
+    private func clearNowPlaying() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 }
 

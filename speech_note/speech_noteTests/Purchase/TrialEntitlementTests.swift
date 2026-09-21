@@ -1,4 +1,5 @@
 import Foundation
+import StoreKit
 import Testing
 @testable import speech_note
 
@@ -256,6 +257,34 @@ struct TrialEntitlementTests {
         await restoreController.restore()
         #expect(restoreController.isUnlocked == true)
         #expect(restoreUnlocks == 1)
+    }
+
+    @Test func storeKitCancellationsAreNotStoreFailures() {
+        #expect(PurchaseUnlockError.fromStoreFailure(StoreKitError.userCancelled) == .purchaseCancelled)
+        #expect(PurchaseUnlockError.fromStoreFailure(CancellationError()) == .purchaseCancelled)
+        let skCancel = NSError(
+            domain: SKError.errorDomain,
+            code: SKError.Code.paymentCancelled.rawValue
+        )
+        #expect(PurchaseUnlockError.fromStoreFailure(skCancel) == .purchaseCancelled)
+        #expect(PurchaseUnlockError.fromStoreFailure(StoreKitError.notAvailableInStorefront) == .productUnavailable)
+    }
+
+    @Test @MainActor
+    func cancelledPurchaseDoesNotShowAnErrorBanner() async throws {
+        let url = temporaryQuotaURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let ledger = TrialQuotaLedger(
+            fileURL: url,
+            keychain: InMemoryTrialStartTimestampStore()
+        )
+        let controller = TrialEntitlementController(
+            ledger: ledger,
+            client: FakePurchaseUnlockClient(shouldCancelPurchase: true)
+        )
+        await controller.purchase()
+        #expect(controller.isUnlocked == false)
+        #expect(controller.statusMessage == nil)
     }
 
     @Test @MainActor

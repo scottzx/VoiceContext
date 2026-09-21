@@ -155,6 +155,17 @@
         }
       }
     },
+    "继续": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue"
+          }
+        }
+      }
+    },
     "分享": {
       "extractionState": "manual",
       "localizations": {
@@ -3994,13 +4005,24 @@
         }
       }
     },
-    "允许麦克风": {
+    "继续后将显示系统麦克风权限请求": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow Microphone"
+            "value": "Continue to the system microphone permission request"
+          }
+        }
+      }
+    },
+    "进入下一步，不会开始录音": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue. Recording does not start yet."
           }
         }
       }

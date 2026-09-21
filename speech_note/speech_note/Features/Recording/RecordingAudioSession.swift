@@ -11,8 +11,17 @@ enum RecordingAudioSession {
 
     static func activatePlayback() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default)
-        try? session.setActive(true)
+        // `.spokenAudio` + `.playback` keeps recorded voice playing after the
+        // user leaves the app, which is the audible background mode App Review
+        // checks under guideline 2.5.4. Fall back to `.default` if the session
+        // is still tearing down a just-ended `.record` capture.
+        do {
+            try session.setCategory(.playback, mode: .spokenAudio, options: [])
+            try session.setActive(true)
+        } catch {
+            try? session.setCategory(.playback, mode: .default, options: [])
+            try? session.setActive(true)
+        }
     }
 
     static func notifyPlaybackReleased() {

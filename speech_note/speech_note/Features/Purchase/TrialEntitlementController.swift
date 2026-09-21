@@ -132,7 +132,7 @@ final class TrialEntitlementController {
                 statusMessage = "未检测到有效购买。"
             }
         } catch let error as PurchaseUnlockError where error == .purchaseCancelled {
-            statusMessage = error.localizedDescription
+            statusMessage = nil
         } catch {
             statusMessage = error.localizedDescription
         }

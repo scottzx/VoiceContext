@@ -80,6 +80,29 @@ struct speech_noteTests {
         #expect(MicrophoneAccess.settingsURL.absoluteString.contains("App-Prefs") || MicrophoneAccess.settingsURL.scheme == "app-settings" || !MicrophoneAccess.settingsURL.absoluteString.isEmpty)
     }
 
+    @Test @MainActor func onboardingMicrophoneContinueAlwaysReachesSystemPrompt() {
+        #expect(OnboardingMicrophoneAdvance.shouldRequestSystemPrompt(.undetermined))
+        #expect(!OnboardingMicrophoneAdvance.shouldRequestSystemPrompt(.granted))
+        #expect(!OnboardingMicrophoneAdvance.shouldRequestSystemPrompt(.denied))
+
+        #expect(
+            OnboardingMicrophoneAdvance.action(permissionBefore: .undetermined, permissionAfter: .granted)
+            == .advance
+        )
+        #expect(
+            OnboardingMicrophoneAdvance.action(permissionBefore: .undetermined, permissionAfter: .denied)
+            == .stayToShowSettings
+        )
+        #expect(
+            OnboardingMicrophoneAdvance.action(permissionBefore: .granted, permissionAfter: .granted)
+            == .advance
+        )
+        #expect(
+            OnboardingMicrophoneAdvance.action(permissionBefore: .denied, permissionAfter: .denied)
+            == .advance
+        )
+    }
+
     @Test func onboardingStepsStayOrderedAndIndependentOfCloud() {
         #expect(OnboardingStep.allCases.map(\.rawValue) == [0, 1, 2, 3])
         #expect(OnboardingStep.privacy.rawValue < OnboardingStep.microphone.rawValue)

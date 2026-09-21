@@ -98,12 +98,38 @@ enum MicrophoneAccess {
     }
 }
 
+/// Guideline 5.1.1(iv): after the educational microphone message, Continue
+/// always proceeds to the system permission prompt. There is no Skip / Not Now
+/// that delays the request. A later Continue after denial only advances setup.
+enum OnboardingMicrophoneAdvance: Equatable, Sendable {
+    /// Stay on the educational step so Settings is visible after a denial.
+    case stayToShowSettings
+    /// Leave the educational step; the system prompt already ran or is not needed.
+    case advance
+
+    static func action(
+        permissionBefore: MicrophonePermission,
+        permissionAfter: MicrophonePermission
+    ) -> OnboardingMicrophoneAdvance {
+        if permissionBefore == .undetermined {
+            if permissionAfter == .denied { return .stayToShowSettings }
+            return .advance
+        }
+        return .advance
+    }
+
+    static func shouldRequestSystemPrompt(_ permission: MicrophonePermission) -> Bool {
+        permission == .undetermined
+    }
+}
+
 struct OnboardingFlowView: View {
     @AppStorage(OnboardingPreferences.completedKey) private var hasCompleted = false
     @AppStorage(OnboardingPreferences.documentSyncKey) private var documentSyncEnabled = false
     @AppStorage(OnboardingPreferences.encryptedVoiceprintSyncKey) private var encryptedVoiceprintSyncEnabled = false
     @State private var step: OnboardingStep = .privacy
     @State private var microphonePermission = MicrophoneAccess.recordPermission
+    @State private var isRequestingMicrophone = false
 
     var body: some View {
         NavigationStack {
@@ -223,27 +249,20 @@ struct OnboardingFlowView: View {
             } else if microphonePermission == .granted {
                 Label("麦克风已允许", systemImage: "checkmark.circle")
                     .foregroundStyle(.secondary)
-            } else {
-                Button("允许麦克风") {
-                    Task { await requestMicrophonePermission() }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.primary)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .accessibilityHint("只请求权限，不会开始录音")
             }
 
-            if microphonePermission == .granted {
-                Button("继续") { step = .iCloud }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.primary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-            } else {
-                Button("暂不允许") { step = .iCloud }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .accessibilityHint("继续引导且不开始录音")
+            Button("继续") {
+                Task { await continueFromMicrophoneStep() }
             }
+            .buttonStyle(.borderedProminent)
+            .tint(.primary)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .disabled(isRequestingMicrophone)
+            .accessibilityHint(
+                microphonePermission == .undetermined
+                    ? "继续后将显示系统麦克风权限请求"
+                    : "进入下一步，不会开始录音"
+            )
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 24)
@@ -334,8 +353,19 @@ struct OnboardingFlowView: View {
         .padding(.bottom, 24)
     }
 
-    private func requestMicrophonePermission() async {
-        microphonePermission = await MicrophoneAccess.requestPermissionIfNeeded()
+    private func continueFromMicrophoneStep() async {
+        let before = microphonePermission
+        if OnboardingMicrophoneAdvance.shouldRequestSystemPrompt(before) {
+            isRequestingMicrophone = true
+            microphonePermission = await MicrophoneAccess.requestPermissionIfNeeded()
+            isRequestingMicrophone = false
+        }
+        if OnboardingMicrophoneAdvance.action(
+            permissionBefore: before,
+            permissionAfter: microphonePermission
+        ) == .advance {
+            step = .iCloud
+        }
     }
 
     private func completeOnboarding() {

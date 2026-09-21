@@ -14,6 +14,7 @@ struct AppLocalizationTests {
         let bundle = Bundle(for: AppLanguageCenter.self)
         let english = Locale(identifier: "en")
         #expect(String(localized: String.LocalizationValue("开始录音"), bundle: bundle, locale: english) == "Start Recording")
+        #expect(String(localized: String.LocalizationValue("继续"), bundle: bundle, locale: english) == "Continue")
         #expect(String(localized: String.LocalizationValue("中英双语"), bundle: bundle, locale: english) == "Chinese & English")
         #expect(String(localized: String.LocalizationValue("界面语言"), bundle: bundle, locale: english) == "App Language")
         #expect(String(localized: String.LocalizationValue("语言模式"), bundle: bundle, locale: english) == "Language Mode")

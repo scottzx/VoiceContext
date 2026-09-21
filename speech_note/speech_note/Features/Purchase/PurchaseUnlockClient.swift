@@ -1,5 +1,6 @@
 import Foundation
 import StoreKit
+import UIKit
 
 enum PurchaseUnlockError: LocalizedError, Equatable {
     case productUnavailable
@@ -21,6 +22,31 @@ enum PurchaseUnlockError: LocalizedError, Equatable {
         case let .storeUnavailable(message):
             "App Store 暂不可用：\(message)"
         }
+    }
+
+    /// Maps StoreKit / SKError / Task cancellation into the surface the paywall
+    /// shows. User cancellation must not appear as a store failure — App Review
+    /// treated that banner as a purchase bug on iPad.
+    static func fromStoreFailure(_ error: Error) -> PurchaseUnlockError {
+        if error is CancellationError {
+            return .purchaseCancelled
+        }
+        if let storeKit = error as? StoreKitError {
+            switch storeKit {
+            case .userCancelled:
+                return .purchaseCancelled
+            case .notAvailableInStorefront:
+                return .productUnavailable
+            default:
+                return .storeUnavailable(storeKit.localizedDescription)
+            }
+        }
+        let nsError = error as NSError
+        if nsError.domain == SKError.errorDomain,
+           nsError.code == SKError.Code.paymentCancelled.rawValue {
+            return .purchaseCancelled
+        }
+        return .storeUnavailable(error.localizedDescription)
     }
 }
 
@@ -69,15 +95,12 @@ struct StoreKitPurchaseUnlockClient: PurchaseUnlockClient {
     }
 
     func purchase() async throws -> Bool {
-        let products = try await Product.products(for: [productID])
-        guard let product = products.first(where: { $0.id == productID }) else {
-            throw PurchaseUnlockError.productUnavailable
-        }
+        let product = try await loadProduct()
         let result: Product.PurchaseResult
         do {
-            result = try await product.purchase()
+            result = try await purchaseConfirmingInActiveScene(product)
         } catch {
-            throw PurchaseUnlockError.storeUnavailable(error.localizedDescription)
+            throw PurchaseUnlockError.fromStoreFailure(error)
         }
         switch result {
         case let .success(verification):
@@ -95,6 +118,43 @@ struct StoreKitPurchaseUnlockClient: PurchaseUnlockClient {
         @unknown default:
             throw PurchaseUnlockError.storeUnavailable("未知购买结果")
         }
+    }
+
+    private func loadProduct() async throws -> Product {
+        var lastError: Error?
+        for attempt in 0..<2 {
+            if attempt > 0 {
+                try? await Task.sleep(for: .milliseconds(400))
+            }
+            do {
+                let products = try await Product.products(for: [productID])
+                if let product = products.first(where: { $0.id == productID }) {
+                    return product
+                }
+            } catch {
+                lastError = error
+            }
+        }
+        if let lastError {
+            throw PurchaseUnlockError.fromStoreFailure(lastError)
+        }
+        throw PurchaseUnlockError.productUnavailable
+    }
+
+    /// iPhone apps running on iPad often fail `product.purchase()` unless the
+    /// confirmation sheet is anchored to the active window scene.
+    @MainActor
+    private func purchaseConfirmingInActiveScene(_ product: Product) async throws -> Product.PurchaseResult {
+        if let scene = Self.activeWindowScene() {
+            return try await product.purchase(confirmIn: scene)
+        }
+        return try await product.purchase()
+    }
+
+    @MainActor
+    private static func activeWindowScene() -> UIWindowScene? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first
     }
 
     func restore() async throws -> Bool {
@@ -121,6 +181,7 @@ final class FakePurchaseUnlockClient: PurchaseUnlockClient, @unchecked Sendable 
     private let lock = NSLock()
     private var entitled: Bool
     var shouldFailPurchase: Bool
+    var shouldCancelPurchase: Bool
     var shouldFailRestore: Bool
     private let price: String
     private let sharedKeychain: (any SharedKeychainEntitlementStoring)?
@@ -128,12 +189,14 @@ final class FakePurchaseUnlockClient: PurchaseUnlockClient, @unchecked Sendable 
     init(
         entitled: Bool = false,
         shouldFailPurchase: Bool = false,
+        shouldCancelPurchase: Bool = false,
         shouldFailRestore: Bool = false,
         price: String = "¥30",
         sharedKeychain: (any SharedKeychainEntitlementStoring)? = nil
     ) {
         self.entitled = entitled
         self.shouldFailPurchase = shouldFailPurchase
+        self.shouldCancelPurchase = shouldCancelPurchase
         self.shouldFailRestore = shouldFailRestore
         self.price = price
         self.sharedKeychain = sharedKeychain
@@ -159,6 +222,9 @@ final class FakePurchaseUnlockClient: PurchaseUnlockClient, @unchecked Sendable 
     func loadDisplayPrice() async -> String? { price }
 
     func purchase() async throws -> Bool {
+        if shouldCancelPurchase {
+            throw PurchaseUnlockError.purchaseCancelled
+        }
         if shouldFailPurchase {
             throw PurchaseUnlockError.storeUnavailable("模拟商店离线")
         }
