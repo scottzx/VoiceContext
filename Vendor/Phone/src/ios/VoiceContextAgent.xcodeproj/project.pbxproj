@@ -88,14 +88,21 @@
 			<key>fileRef</key>
 			<string>E5VMA0015</string>
 		</dict>
+		<key>BKP000134</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000234</string>
+		</dict>
 		<key>F2A00000000000000000008</key>
 		<dict>
 			<key>isa</key>
 			<string>XCBuildConfiguration</string>
 			<key>buildSettings</key>
 			<dict>
-				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
-				<string>16.0</string>
+				<key>FLAVOR_ID</key>
+				<string>english</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.1agents.phone.english</string>
 				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
@@ -127,10 +134,10 @@
 				<string>YES</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
-				<key>SWIFT_EMIT_LOC_STRINGS</key>
-				<string>YES</string>
 				<key>SWIFT_VERSION</key>
 				<string>5.0</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
 				<key>INFOPLIST_KEY_UILaunchStoryboardName</key>
 				<string>Launch Screen</string>
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
@@ -144,10 +151,10 @@
 					<string>$(inherited)</string>
 					<string>@executable_path/Frameworks</string>
 				</array>
-				<key>INFOPLIST_FILE</key>
-				<string>$(SRCROOT)/Info.plist</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>1,2</string>
+				<key>INFOPLIST_FILE</key>
+				<string>$(SRCROOT)/Info.plist</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>Minis</string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -176,10 +183,10 @@
 				<string>$(SRCROOT)/../../deps/libs</string>
 				<key>SWIFT_OBJC_INTERFACE_HEADER_NAME</key>
 				<string>Minis-Swift.h</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>16.0</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
-				<key>FLAVOR_ID</key>
-				<string>english</string>
 			</dict>
 			<key>name</key>
 			<string>Debug</string>
@@ -317,6 +324,17 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000219</key>
+		<dict>
+			<key>path</key>
+			<string>BackupRestoreJournal.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E5AD0001</key>
 		<dict>
 			<key>isa</key>
@@ -419,6 +437,17 @@
 			<key>fileRef</key>
 			<string>HB00000000000000000000A1</string>
 		</dict>
+		<key>BKP000243</key>
+		<dict>
+			<key>path</key>
+			<string>BackupTransferStatus.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E5D00199</key>
 		<dict>
 			<key>path</key>
@@ -441,16 +470,9 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E5OARC003</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E52000012</string>
-		</dict>
 		<key>F1A00000000000000000002</key>
 		<dict>
-			<key>dependencies</key>
+			<key>buildRules</key>
 			<array/>
 			<key>buildConfigurationList</key>
 			<string>F1A00000000000000000007</string>
@@ -475,6 +497,8 @@
 				<string>AA0838CB2F3CA8A900049557</string>
 				<string>AK00000000000000000000A1</string>
 			</array>
+			<key>dependencies</key>
+			<array/>
 			<key>buildPhases</key>
 			<array>
 				<string>AC0000200</string>
@@ -488,8 +512,54 @@
 			</array>
 			<key>name</key>
 			<string>MinisSales</string>
-			<key>buildRules</key>
-			<array/>
+		</dict>
+		<key>E5OARC003</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E52000012</string>
+		</dict>
+		<key>BKP000010</key>
+		<dict>
+			<key>path</key>
+			<string>Backup</string>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>children</key>
+			<array>
+				<string>BKP000201</string>
+				<string>BKP000219</string>
+				<string>BKP000218</string>
+				<string>BKP000214</string>
+				<string>BKP000230</string>
+				<string>BKP000231</string>
+				<string>BKP000240</string>
+				<string>BKP000241</string>
+				<string>BKP000242</string>
+				<string>BKP000243</string>
+				<string>BKP000232</string>
+				<string>BKP000233</string>
+				<string>RCL000218</string>
+				<string>RCL000217</string>
+				<string>RCL000210</string>
+				<string>RCL000213</string>
+				<string>RCL000212</string>
+				<string>RCL000211</string>
+				<string>BKP000217</string>
+				<string>BKP000213</string>
+				<string>BKP000212</string>
+				<string>BKP000209</string>
+				<string>BKP000210</string>
+				<string>BKP000211</string>
+				<string>BKP000206</string>
+				<string>BKP000204</string>
+				<string>BKP000205</string>
+				<string>BKP000202</string>
+				<string>BKP000203</string>
+			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E57000016</key>
 		<dict>
@@ -537,13 +607,6 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E5E0000A1</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5E0000A2</string>
-		</dict>
 		<key>E5BSH0100</key>
 		<dict>
 			<key>path</key>
@@ -557,6 +620,24 @@
 				<string>E5BSH0012</string>
 				<string>E5BSH0013</string>
 			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5E0000A1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5E0000A2</string>
+		</dict>
+		<key>RCL000218</key>
+		<dict>
+			<key>path</key>
+			<string>BackupRunController.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -638,8 +719,8 @@
 				<string></string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
-				<key>SWIFT_VERSION</key>
-				<string>5.0</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
 				<key>MARKETING_VERSION</key>
 				<string>1.0</string>
 				<key>INFOPLIST_FILE</key>
@@ -651,11 +732,13 @@
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>智能体活动</string>
+				<string>一芥伙伴活动</string>
 				<key>CODE_SIGN_ENTITLEMENTS</key>
 				<string>AgentWidget/AgentWidget.entitlements</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SWIFT_EMIT_LOC_STRINGS</key>
@@ -664,12 +747,12 @@
 				<string>18.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note.AgentWidget</string>
-				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
 				<key>SUPPORTED_PLATFORMS</key>
 				<string>iphoneos</string>
 				<key>SDKROOT</key>
 				<string>iphoneos</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/AgentWidgetExtension/Release</string>
 			</dict>
 			<key>name</key>
 			<string>Release</string>
@@ -680,6 +763,13 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>AAF10F0D2F50A00000049557</string>
+		</dict>
+		<key>BKP000144</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000244</string>
 		</dict>
 		<key>E5TRC0010</key>
 		<dict>
@@ -808,6 +898,13 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>RCL000119</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000219</string>
+		</dict>
 		<key>F1MCPOAUTH</key>
 		<dict>
 			<key>path</key>
@@ -909,6 +1006,19 @@
 			<key>sourceTree</key>
 			<string>SDKROOT</string>
 		</dict>
+		<key>E5IP00019</key>
+		<dict>
+			<key>path</key>
+			<string>ru.lproj/InfoPlist.strings</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>ru</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.strings</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>F1M00014</key>
 		<dict>
 			<key>isa</key>
@@ -960,6 +1070,17 @@
 			<array/>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
+		</dict>
+		<key>BKP000204</key>
+		<dict>
+			<key>path</key>
+			<string>BackupFileTreeExporter.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>AAF00F012F50A00000049557</key>
 		<dict>
@@ -1157,6 +1278,13 @@
 			<string>wrapper.framework</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BKP000105</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000205</string>
 		</dict>
 		<key>E5X000011</key>
 		<dict>
@@ -1435,17 +1563,10 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E5OARC023</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5OARC031</string>
-		</dict>
-		<key>E5F000012</key>
+		<key>BKP000214</key>
 		<dict>
 			<key>path</key>
-			<string>MinisFsRouter.swift</string>
+			<string>BackupDelivery.swift</string>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
@@ -1453,14 +1574,21 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>E5OARC023</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5OARC031</string>
+		</dict>
 		<key>BB1000090F700000000000AA</key>
 		<dict>
 			<key>isa</key>
 			<string>XCBuildConfiguration</string>
 			<key>buildSettings</key>
 			<dict>
-				<key>SWIFT_VERSION</key>
-				<string>6.0</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>2</string>
 				<key>BUNDLE_LOADER</key>
 				<string>$(TEST_HOST)</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -1489,6 +1617,8 @@
 				</array>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
+				<key>SWIFT_VERSION</key>
+				<string>6.0</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>SWIFT_EMIT_LOC_STRINGS</key>
@@ -1497,11 +1627,20 @@
 				<string>26.2</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.openminis.MinisTests</string>
-				<key>CURRENT_PROJECT_VERSION</key>
-				<string>2</string>
 			</dict>
 			<key>name</key>
 			<string>Release</string>
+		</dict>
+		<key>E5F000012</key>
+		<dict>
+			<key>path</key>
+			<string>MinisFsRouter.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E52000032</key>
 		<dict>
@@ -1587,8 +1726,8 @@
 			<string>XCBuildConfiguration</string>
 			<key>buildSettings</key>
 			<dict>
-				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
-				<string>16.0</string>
+				<key>FLAVOR_ID</key>
+				<string>sales</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.1agents.phone.sales</string>
 				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
@@ -1620,10 +1759,10 @@
 				<string>YES</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
-				<key>SWIFT_EMIT_LOC_STRINGS</key>
-				<string>YES</string>
 				<key>SWIFT_VERSION</key>
 				<string>5.0</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
 				<key>INFOPLIST_KEY_UILaunchStoryboardName</key>
 				<string>Launch Screen</string>
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
@@ -1637,10 +1776,10 @@
 					<string>$(inherited)</string>
 					<string>@executable_path/Frameworks</string>
 				</array>
-				<key>INFOPLIST_FILE</key>
-				<string>$(SRCROOT)/Info.plist</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>1,2</string>
+				<key>INFOPLIST_FILE</key>
+				<string>$(SRCROOT)/Info.plist</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>Minis</string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -1669,10 +1808,10 @@
 				<string>$(SRCROOT)/../../deps/libs</string>
 				<key>SWIFT_OBJC_INTERFACE_HEADER_NAME</key>
 				<string>Minis-Swift.h</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>16.0</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
-				<key>FLAVOR_ID</key>
-				<string>sales</string>
 			</dict>
 			<key>name</key>
 			<string>Release</string>
@@ -1736,9 +1875,19 @@
 			<key>buildActionMask</key>
 			<string>2147483647</string>
 			<key>files</key>
-			<array/>
+			<array>
+				<string>E5LC00003</string>
+				<string>7CED03647FD3A687A43D34CF</string>
+			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
+		</dict>
+		<key>BKP000115</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000215</string>
 		</dict>
 		<key>E5CCB0001</key>
 		<dict>
@@ -1813,22 +1962,22 @@
 		</dict>
 		<key>E54000AD0</key>
 		<dict>
-			<key>name</key>
-			<string>Generate Debug Skill</string>
+			<key>alwaysOutOfDate</key>
+			<string>1</string>
 			<key>inputPaths</key>
 			<array/>
 			<key>buildActionMask</key>
 			<string>2147483647</string>
 			<key>shellPath</key>
 			<string>/bin/sh</string>
-			<key>outputPaths</key>
-			<array>
-				<string>$(SRCROOT)/Generated/DebugSkillGenerated.swift</string>
-			</array>
 			<key>isa</key>
 			<string>PBXShellScriptBuildPhase</string>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
+			<key>outputPaths</key>
+			<array>
+				<string>$(SRCROOT)/Generated/DebugSkillGenerated.swift</string>
+			</array>
 			<key>shellScript</key>
 			<string>set -eu
 if [ "${CONFIGURATION}" = "Debug" ]; then
@@ -1840,10 +1989,23 @@ else
   printf '#if DEBUG\nenum DebugSkillGenerated {\n    static let skillMarkdownB64 = ""\n    static let clientPythonB64 = ""\n    static let clientNodeB64 = ""\n    static let clientBashB64 = ""\n}\n#endif\n' &gt; "$OUT"
 fi
 </string>
+			<key>name</key>
+			<string>Generate Debug Skill</string>
 			<key>files</key>
 			<array/>
-			<key>alwaysOutOfDate</key>
-			<string>1</string>
+		</dict>
+		<key>RCL000213</key>
+		<dict>
+			<key>path</key>
+			<string>Remote/RcloneBackendCatalog.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>RcloneBackendCatalog.swift</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>AA26BD162F2E651900AECF2D</key>
 		<dict>
@@ -1984,6 +2146,13 @@ fi
 			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>RCL000114</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000214</string>
 		</dict>
 		<key>E5VMD0001</key>
 		<dict>
@@ -2216,55 +2385,22 @@ fi
 			<key>fileRef</key>
 			<string>E5M000017</string>
 		</dict>
-		<key>E5H000003</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5G000014</string>
-		</dict>
-		<key>E5T000030</key>
-		<dict>
-			<key>path</key>
-			<string>Intents</string>
-			<key>isa</key>
-			<string>PBXGroup</string>
-			<key>children</key>
-			<array>
-				<string>E5T000011</string>
-				<string>E5T000012</string>
-				<string>E5T000013</string>
-				<string>E5T0000A2</string>
-				<string>E5F200016</string>
-				<string>E5T000014</string>
-				<string>E5T000015</string>
-				<string>E5T000016</string>
-				<string>E5T000017</string>
-				<string>E5T000018</string>
-				<string>E5T000019</string>
-				<string>E5SD00019</string>
-				<string>E5T00001A</string>
-				<string>E5T00001B</string>
-			</array>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
 		<key>E54000AE0</key>
 		<dict>
-			<key>name</key>
-			<string>Strip Third-Party VAD Framework Symbols</string>
+			<key>alwaysOutOfDate</key>
+			<string>1</string>
 			<key>inputPaths</key>
 			<array/>
 			<key>buildActionMask</key>
 			<string>2147483647</string>
 			<key>shellPath</key>
 			<string>/bin/sh</string>
-			<key>outputPaths</key>
-			<array/>
 			<key>isa</key>
 			<string>PBXShellScriptBuildPhase</string>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
+			<key>outputPaths</key>
+			<array/>
 			<key>shellScript</key>
 			<string># [T-ios-strip-vad-symbols] Strip local symbols from the prebuilt
 # RealTimeCutVADCXXLibrary framework (RealTimeCutVADLibrary SPM package).
@@ -2328,10 +2464,43 @@ else
 fi
 echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 </string>
+			<key>name</key>
+			<string>Strip Third-Party VAD Framework Symbols</string>
 			<key>files</key>
 			<array/>
-			<key>alwaysOutOfDate</key>
-			<string>1</string>
+		</dict>
+		<key>E5T000030</key>
+		<dict>
+			<key>path</key>
+			<string>Intents</string>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>children</key>
+			<array>
+				<string>E5T000011</string>
+				<string>E5T000012</string>
+				<string>E5T000013</string>
+				<string>E5T0000A2</string>
+				<string>E5F200016</string>
+				<string>E5T000014</string>
+				<string>E5T000015</string>
+				<string>E5T000016</string>
+				<string>E5T000017</string>
+				<string>E5T000018</string>
+				<string>E5T000019</string>
+				<string>E5SD00019</string>
+				<string>E5T00001A</string>
+				<string>E5T00001B</string>
+			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5H000003</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5G000014</string>
 		</dict>
 		<key>E5N0000122F3B941A00049557</key>
 		<dict>
@@ -2369,6 +2538,30 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>fileRef</key>
 			<string>E5T00001A</string>
 		</dict>
+		<key>E5FP00040</key>
+		<dict>
+			<key>productType</key>
+			<string>com.apple.product-type.app-extension</string>
+			<key>productReference</key>
+			<string>E5FP00010</string>
+			<key>buildConfigurationList</key>
+			<string>E5FP00050</string>
+			<key>productName</key>
+			<string>MinisFileProvider</string>
+			<key>isa</key>
+			<string>PBXNativeTarget</string>
+			<key>buildPhases</key>
+			<array>
+				<string>E5FP00041</string>
+				<string>E5FP00042</string>
+			</array>
+			<key>dependencies</key>
+			<array/>
+			<key>name</key>
+			<string>MinisFileProvider</string>
+			<key>buildRules</key>
+			<array/>
+		</dict>
 		<key>AA26CCB62F31067900AECF2D</key>
 		<dict>
 			<key>path</key>
@@ -2392,30 +2585,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
-		</dict>
-		<key>E5FP00040</key>
-		<dict>
-			<key>buildConfigurationList</key>
-			<string>E5FP00050</string>
-			<key>productReference</key>
-			<string>E5FP00010</string>
-			<key>productType</key>
-			<string>com.apple.product-type.app-extension</string>
-			<key>productName</key>
-			<string>MinisFileProvider</string>
-			<key>isa</key>
-			<string>PBXNativeTarget</string>
-			<key>buildPhases</key>
-			<array>
-				<string>E5FP00041</string>
-				<string>E5FP00042</string>
-			</array>
-			<key>dependencies</key>
-			<array/>
-			<key>name</key>
-			<string>MinisFileProvider</string>
-			<key>buildRules</key>
-			<array/>
 		</dict>
 		<key>E5E000005</key>
 		<dict>
@@ -2500,6 +2669,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 		<dict>
 			<key>path</key>
 			<string>MinisURLPathDecoding.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BKP000234</key>
+		<dict>
+			<key>path</key>
+			<string>BackupAndRestoreView.swift</string>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
@@ -2775,17 +2955,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E5D00014</key>
-		<dict>
-			<key>path</key>
-			<string>ModelGroup.swift</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
 		<key>E53000030</key>
 		<dict>
 			<key>path</key>
@@ -2795,6 +2964,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>children</key>
 			<array>
 				<string>F1A00014</string>
+				<string>BKP000010</string>
 				<string>E57000030</string>
 				<string>F1A00010</string>
 				<string>E5T000030</string>
@@ -2808,6 +2978,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>F1A00013</string>
 				<string>E5LD00003</string>
 			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5D00014</key>
+		<dict>
+			<key>path</key>
+			<string>ModelGroup.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -2863,6 +3044,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<array>
 				<string>E5FP00070</string>
 				<string>E5FP00071</string>
+				<string>AA80ACF10ABB2C6FB818FDA3</string>
 			</array>
 		</dict>
 		<key>E5E000015</key>
@@ -2896,6 +3078,13 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5FP00011</string>
+		</dict>
+		<key>BKP000110</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000210</string>
 		</dict>
 		<key>E5AD0003</key>
 		<dict>
@@ -2960,6 +3149,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>fileRef</key>
 			<string>AADDA9E02F6ECCF400B66649</string>
 		</dict>
+		<key>BKP000244</key>
+		<dict>
+			<key>path</key>
+			<string>BackupSkippedFilesView.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E55000011</key>
 		<dict>
 			<key>path</key>
@@ -2999,10 +3199,8 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 		</dict>
 		<key>BB1000070F700000000000AA</key>
 		<dict>
-			<key>dependencies</key>
-			<array>
-				<string>BB10000C0F700000000000AA</string>
-			</array>
+			<key>buildRules</key>
+			<array/>
 			<key>buildConfigurationList</key>
 			<string>BB10000A0F700000000000AA</string>
 			<key>productReference</key>
@@ -3017,6 +3215,11 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<array>
 				<string>BB1000012F700000000000AA</string>
 			</array>
+			<key>dependencies</key>
+			<array>
+				<string>BB10000C0F700000000000AA</string>
+				<string>BB1000B00F700000000000AA</string>
+			</array>
 			<key>buildPhases</key>
 			<array>
 				<string>BB1000030F700000000000AA</string>
@@ -3025,8 +3228,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			</array>
 			<key>name</key>
 			<string>MinisTests</string>
-			<key>buildRules</key>
-			<array/>
 		</dict>
 		<key>AA26BD462F2E663600AECF2D</key>
 		<dict>
@@ -3116,6 +3317,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>RCL000219</key>
+		<dict>
+			<key>path</key>
+			<string>BackupHistoryDetailView.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E8A000001</key>
 		<dict>
 			<key>isa</key>
@@ -3127,28 +3339,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 		<dict>
 			<key>path</key>
 			<string>DebugRPCProviderChat.swift</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>E5L2000F1</key>
-		<dict>
-			<key>path</key>
-			<string>ModelUseOffload.m</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.c.objc</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>EAB00001F</key>
-		<dict>
-			<key>path</key>
-			<string>WebAppPathClassifier.swift</string>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
@@ -3169,6 +3359,28 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>F1VMCP03</string>
 				<string>F1VMCP04</string>
 			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>EAB00001F</key>
+		<dict>
+			<key>path</key>
+			<string>WebAppPathClassifier.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5L2000F1</key>
+		<dict>
+			<key>path</key>
+			<string>ModelUseOffload.m</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.c.objc</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -3284,18 +3496,9 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>isa</key>
 			<string>PBXGroup</string>
 			<key>children</key>
-			<array/>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>E5PRIV12</key>
-		<dict>
-			<key>path</key>
-			<string>EnvVarRedactor.swift</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
+			<array>
+				<string>E5R000012</string>
+			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -3309,6 +3512,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<array>
 				<string>E8A000011</string>
 			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5PRIV12</key>
+		<dict>
+			<key>path</key>
+			<string>EnvVarRedactor.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -3329,6 +3543,13 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>RCL000010</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000020</string>
 		</dict>
 		<key>E5FP00011</key>
 		<dict>
@@ -3439,6 +3660,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000205</key>
+		<dict>
+			<key>path</key>
+			<string>BackupExporter.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E51000020</key>
 		<dict>
 			<key>isa</key>
@@ -3464,6 +3696,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>E5M000002</string>
 				<string>E5S000005</string>
 				<string>891443CAA4679D09A6D32AE4</string>
+				<string>RCL000010</string>
 				<string>9A44F8C8DAA4F7C3FFFCB831</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
@@ -3580,6 +3813,13 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>fileRef</key>
 			<string>E5L2000B1</string>
 		</dict>
+		<key>BKP000106</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000206</string>
+		</dict>
 		<key>E57000002</key>
 		<dict>
 			<key>isa</key>
@@ -3612,16 +3852,59 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E5T000011</key>
+		<key>E5FP00070</key>
 		<dict>
-			<key>path</key>
-			<string>SessionEntity.swift</string>
 			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
+			<string>XCBuildConfiguration</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+					<string>@executable_path/../../Frameworks</string>
+				</array>
+				<key>INFOPLIST_KEY_NSHumanReadableCopyright</key>
+				<string></string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>3HJ3R6SXAL</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
+				<key>MARKETING_VERSION</key>
+				<string>1.0</string>
+				<key>INFOPLIST_FILE</key>
+				<string>FileProvider/Info.plist</string>
+				<key>SKIP_INSTALL</key>
+				<string>YES</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
+				<string>一芥伙伴文件</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>FileProvider/FileProvider.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>18.0</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>YiJie.speech-note.FileProvider</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/MinisFileProvider/Debug</string>
+			</dict>
+			<key>name</key>
+			<string>Debug</string>
 		</dict>
 		<key>E53000001</key>
 		<dict>
@@ -3648,10 +3931,10 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E5MNT0102</key>
+		<key>E5T000011</key>
 		<dict>
 			<key>path</key>
-			<string>MountedFolderCoordinator.swift</string>
+			<string>SessionEntity.swift</string>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
@@ -3670,57 +3953,16 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E5FP00070</key>
+		<key>E5MNT0102</key>
 		<dict>
+			<key>path</key>
+			<string>MountedFolderCoordinator.swift</string>
 			<key>isa</key>
-			<string>XCBuildConfiguration</string>
-			<key>buildSettings</key>
-			<dict>
-				<key>LD_RUNPATH_SEARCH_PATHS</key>
-				<array>
-					<string>$(inherited)</string>
-					<string>@executable_path/Frameworks</string>
-					<string>@executable_path/../../Frameworks</string>
-				</array>
-				<key>INFOPLIST_KEY_NSHumanReadableCopyright</key>
-				<string></string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>3HJ3R6SXAL</string>
-				<key>SWIFT_VERSION</key>
-				<string>5.0</string>
-				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
-				<key>INFOPLIST_FILE</key>
-				<string>FileProvider/Info.plist</string>
-				<key>SKIP_INSTALL</key>
-				<string>YES</string>
-				<key>TARGETED_DEVICE_FAMILY</key>
-				<string>1,2</string>
-				<key>GENERATE_INFOPLIST_FILE</key>
-				<string>YES</string>
-				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>听记文件</string>
-				<key>CODE_SIGN_ENTITLEMENTS</key>
-				<string>FileProvider/FileProvider.entitlements</string>
-				<key>CODE_SIGN_STYLE</key>
-				<string>Automatic</string>
-				<key>PRODUCT_NAME</key>
-				<string>$(TARGET_NAME)</string>
-				<key>SWIFT_EMIT_LOC_STRINGS</key>
-				<string>YES</string>
-				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
-				<string>18.0</string>
-				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>YiJie.speech-note.FileProvider</string>
-				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
-				<key>SUPPORTED_PLATFORMS</key>
-				<string>iphoneos</string>
-				<key>SDKROOT</key>
-				<string>iphoneos</string>
-			</dict>
-			<key>name</key>
-			<string>Debug</string>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5L200DB0</key>
 		<dict>
@@ -3740,12 +3982,32 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>fileRef</key>
 			<string>E54000014</string>
 		</dict>
+		<key>RCL000020</key>
+		<dict>
+			<key>path</key>
+			<string>../../deps/frameworks/Rclone.xcframework</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>Rclone.xcframework</string>
+			<key>lastKnownFileType</key>
+			<string>wrapper.xcframework</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E5VMA0001</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5VMA0011</string>
+		</dict>
+		<key>BKP000130</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000230</string>
 		</dict>
 		<key>E5Q000013</key>
 		<dict>
@@ -3760,7 +4022,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 		</dict>
 		<key>F3A00000000000000000002</key>
 		<dict>
-			<key>dependencies</key>
+			<key>buildRules</key>
 			<array/>
 			<key>buildConfigurationList</key>
 			<string>F3A00000000000000000007</string>
@@ -3785,6 +4047,8 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>AA0838CB2F3CA8A900049557</string>
 				<string>AK00000000000000000000A1</string>
 			</array>
+			<key>dependencies</key>
+			<array/>
 			<key>buildPhases</key>
 			<array>
 				<string>AC0000200</string>
@@ -3798,8 +4062,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			</array>
 			<key>name</key>
 			<string>MinisFitness</string>
-			<key>buildRules</key>
-			<array/>
 		</dict>
 		<key>E5BRM0011</key>
 		<dict>
@@ -3866,17 +4128,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>fileRef</key>
 			<string>D7656F4130247E4002A3AC0C</string>
 		</dict>
-		<key>E5L200CG0</key>
-		<dict>
-			<key>path</key>
-			<string>ConfigOffload.h</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.c.h</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
 		<key>F2A00000000000000000007</key>
 		<dict>
 			<key>isa</key>
@@ -3890,6 +4141,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>F2A00000000000000000008</string>
 				<string>F2A00000000000000000009</string>
 			</array>
+		</dict>
+		<key>E5L200CG0</key>
+		<dict>
+			<key>path</key>
+			<string>ConfigOffload.h</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.c.h</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5MNT0003</key>
 		<dict>
@@ -4091,11 +4353,28 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>8B138451D5A0F64885C81AE7</string>
 				<string>6B1EAA8355D504713660B8CA</string>
 				<string>2AF58B5C2A7C1D37580C3D08</string>
+				<string>466E718AAB8A589451CEB5E4</string>
 				<string>2D871345D1E38ACF991C91FF</string>
 				<string>639730705DEFB91B1B15ABA5</string>
 				<string>0DFD4B395BE679F07CDC288D</string>
 				<string>1F735BF4F13D0C06676E8EA3</string>
+				<string>5BC55D283ABC5834CAB02A15</string>
+				<string>51C1C4868C80FD4CCEF5CC6E</string>
+				<string>06225E73CA3E73A7A5A24CEF</string>
+				<string>62236324E7462917E9990755</string>
+				<string>28567AAFE75900F1D57A2135</string>
 			</array>
+		</dict>
+		<key>BKP000215</key>
+		<dict>
+			<key>path</key>
+			<string>BackupSettingsView.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>AA0838D22F3B941A00049557</key>
 		<dict>
@@ -4222,6 +4501,13 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>fileRef</key>
 			<string>BB1000110F700000000000AA</string>
 		</dict>
+		<key>BKP000116</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000216</string>
+		</dict>
 		<key>AA26BD542F2E663700AECF2D</key>
 		<dict>
 			<key>path</key>
@@ -4314,6 +4600,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>RCL000214</key>
+		<dict>
+			<key>path</key>
+			<string>RcloneAddServerView.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>F1A00000000000000000001</key>
 		<dict>
 			<key>path</key>
@@ -4373,6 +4670,13 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000140</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000240</string>
+		</dict>
 		<key>E5M000022</key>
 		<dict>
 			<key>isa</key>
@@ -4422,16 +4726,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>RCL000115</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000215</string>
+		</dict>
 		<key>E51000040</key>
 		<dict>
-			<key>dependencies</key>
-			<array>
-				<string>E5E000080</string>
-				<string>E5H000080</string>
-				<string>E5FP00080</string>
-				<string>C5721804C89B888B79D6620D</string>
-				<string>19F2FCC89F3281D441D258D9</string>
-			</array>
+			<key>buildRules</key>
+			<array/>
 			<key>buildConfigurationList</key>
 			<string>E51000050</string>
 			<key>productReference</key>
@@ -4456,6 +4761,14 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>AK00000000000000000000A1</string>
 				<string>HB00000000000000000000A4</string>
 			</array>
+			<key>dependencies</key>
+			<array>
+				<string>E5E000080</string>
+				<string>E5H000080</string>
+				<string>E5FP00080</string>
+				<string>C5721804C89B888B79D6620D</string>
+				<string>19F2FCC89F3281D441D258D9</string>
+			</array>
 			<key>buildPhases</key>
 			<array>
 				<string>AC0000200</string>
@@ -4471,8 +4784,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			</array>
 			<key>name</key>
 			<string>VoiceContextAgent</string>
-			<key>buildRules</key>
-			<array/>
 		</dict>
 		<key>E5V000002</key>
 		<dict>
@@ -4521,6 +4832,13 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5R000001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5R000011</string>
 		</dict>
 		<key>E5S000004</key>
 		<dict>
@@ -4637,13 +4955,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>fileRef</key>
 			<string>E5T00001B</string>
 		</dict>
-		<key>E5L200BU4</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5L200BU3</string>
-		</dict>
 		<key>E5FP00041</key>
 		<dict>
 			<key>isa</key>
@@ -4657,9 +4968,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>E5FP00003</string>
 				<string>E5FP00200</string>
 				<string>E5SHV0002</string>
+				<string>C59FDF1B91B60FF417524725</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
+		</dict>
+		<key>E5L200BU4</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5L200BU3</string>
 		</dict>
 		<key>AA26BD0F2F2E5FA500AECF2D</key>
 		<dict>
@@ -4681,6 +5000,13 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>fileRef</key>
 			<string>E5E000016</string>
 		</dict>
+		<key>BKP000101</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000201</string>
+		</dict>
 		<key>F1VMCP01</key>
 		<dict>
 			<key>path</key>
@@ -4698,6 +5024,15 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>AA26CCC42F31090100AECF2D</string>
+		</dict>
+		<key>BB1000B00F700000000000AA</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXTargetDependency</string>
+			<key>target</key>
+			<string>E51000040</string>
+			<key>targetProxy</key>
+			<string>BB1000B10F700000000000AA</string>
 		</dict>
 		<key>AA8A56922F6FBB7A00A3E54E</key>
 		<dict>
@@ -4721,8 +5056,8 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<string>XCBuildConfiguration</string>
 			<key>buildSettings</key>
 			<dict>
-				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
-				<string>16.0</string>
+				<key>FLAVOR_ID</key>
+				<string>fitness</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.1agents.phone.fitness</string>
 				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
@@ -4754,10 +5089,10 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>YES</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
-				<key>SWIFT_EMIT_LOC_STRINGS</key>
-				<string>YES</string>
 				<key>SWIFT_VERSION</key>
 				<string>5.0</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
 				<key>INFOPLIST_KEY_UILaunchStoryboardName</key>
 				<string>Launch Screen</string>
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
@@ -4771,10 +5106,10 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 					<string>$(inherited)</string>
 					<string>@executable_path/Frameworks</string>
 				</array>
-				<key>INFOPLIST_FILE</key>
-				<string>$(SRCROOT)/Info.plist</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>1,2</string>
+				<key>INFOPLIST_FILE</key>
+				<string>$(SRCROOT)/Info.plist</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>Minis</string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -4803,10 +5138,10 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>$(SRCROOT)/../../deps/libs</string>
 				<key>SWIFT_OBJC_INTERFACE_HEADER_NAME</key>
 				<string>Minis-Swift.h</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>16.0</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
-				<key>FLAVOR_ID</key>
-				<string>fitness</string>
 			</dict>
 			<key>name</key>
 			<string>Release</string>
@@ -4874,6 +5209,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<array>
 				<string>E51000072</string>
 				<string>E51000073</string>
+				<string>560A72BB5AECEE1A16B63F0F</string>
 			</array>
 		</dict>
 		<key>E5V000012</key>
@@ -4940,6 +5276,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.c.h</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5R000011</key>
+		<dict>
+			<key>path</key>
+			<string>ICloudBackupManager.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -5044,6 +5391,17 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>fileRef</key>
 			<string>E5VMA0017</string>
 		</dict>
+		<key>BKP000210</key>
+		<dict>
+			<key>path</key>
+			<string>BackupZipExtractor.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E5JB00002</key>
 		<dict>
 			<key>isa</key>
@@ -5144,6 +5502,13 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>E5LC00003</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5LC00002</string>
+		</dict>
 		<key>E5T00001B</key>
 		<dict>
 			<key>path</key>
@@ -5192,8 +5557,8 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<string>XCBuildConfiguration</string>
 			<key>buildSettings</key>
 			<dict>
-				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
-				<string>16.0</string>
+				<key>FLAVOR_ID</key>
+				<string>sales</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.1agents.phone.sales</string>
 				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
@@ -5225,10 +5590,10 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>YES</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
-				<key>SWIFT_EMIT_LOC_STRINGS</key>
-				<string>YES</string>
 				<key>SWIFT_VERSION</key>
 				<string>5.0</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
 				<key>INFOPLIST_KEY_UILaunchStoryboardName</key>
 				<string>Launch Screen</string>
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
@@ -5242,10 +5607,10 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 					<string>$(inherited)</string>
 					<string>@executable_path/Frameworks</string>
 				</array>
-				<key>INFOPLIST_FILE</key>
-				<string>$(SRCROOT)/Info.plist</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>1,2</string>
+				<key>INFOPLIST_FILE</key>
+				<string>$(SRCROOT)/Info.plist</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>Minis</string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -5274,10 +5639,10 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>$(SRCROOT)/../../deps/libs</string>
 				<key>SWIFT_OBJC_INTERFACE_HEADER_NAME</key>
 				<string>Minis-Swift.h</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>16.0</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
-				<key>FLAVOR_ID</key>
-				<string>sales</string>
 			</dict>
 			<key>name</key>
 			<string>Debug</string>
@@ -5307,6 +5672,13 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000111</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000211</string>
+		</dict>
 		<key>E5AD0005</key>
 		<dict>
 			<key>isa</key>
@@ -5324,10 +5696,10 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>3HJ3R6SXAL</string>
 				<key>MARKETING_VERSION</key>
 				<string>1.0</string>
-				<key>TARGETED_DEVICE_FAMILY</key>
-				<string>1,2</string>
 				<key>TEST_TARGET_NAME</key>
 				<string>Minis</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>ENABLE_USER_SCRIPT_SANDBOXING</key>
@@ -5336,12 +5708,12 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>NO</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
-				<key>PRODUCT_NAME</key>
-				<string>$(TARGET_NAME)</string>
 				<key>SWIFT_EMIT_LOC_STRINGS</key>
 				<string>NO</string>
 				<key>SWIFT_VERSION</key>
 				<string>6.0</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
 				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
 				<string>26.2</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
@@ -5396,12 +5768,12 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 		</dict>
 		<key>E5E000040</key>
 		<dict>
-			<key>buildConfigurationList</key>
-			<string>E5E000050</string>
-			<key>productReference</key>
-			<string>E5E000010</string>
 			<key>productType</key>
 			<string>com.apple.product-type.app-extension</string>
+			<key>productReference</key>
+			<string>E5E000010</string>
+			<key>buildConfigurationList</key>
+			<string>E5E000050</string>
 			<key>productName</key>
 			<string>MinisShare</string>
 			<key>isa</key>
@@ -5462,6 +5834,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>fr</string>
 				<string>de</string>
 				<string>ru</string>
+				<string>es</string>
 			</array>
 			<key>isa</key>
 			<string>PBXProject</string>
@@ -5496,6 +5869,11 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 						<key>CreatedOnToolsVersion</key>
 						<string>15.0</string>
 					</dict>
+					<key>E5E000040</key>
+					<dict>
+						<key>CreatedOnToolsVersion</key>
+						<string>15.0</string>
+					</dict>
 					<key>AA8A568A2F6FBB7A00A3E54E</key>
 					<dict>
 						<key>TestTargetID</key>
@@ -5509,11 +5887,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 						<string>15.0</string>
 					</dict>
 					<key>F2A00000000000000000002</key>
-					<dict>
-						<key>CreatedOnToolsVersion</key>
-						<string>15.0</string>
-					</dict>
-					<key>E5E000040</key>
 					<dict>
 						<key>CreatedOnToolsVersion</key>
 						<string>15.0</string>
@@ -5647,22 +6020,22 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 		</dict>
 		<key>AC0000200</key>
 		<dict>
-			<key>name</key>
-			<string>Generate Provider Customization</string>
+			<key>alwaysOutOfDate</key>
+			<string>1</string>
 			<key>inputPaths</key>
 			<array/>
 			<key>buildActionMask</key>
 			<string>2147483647</string>
 			<key>shellPath</key>
 			<string>/bin/sh</string>
-			<key>outputPaths</key>
-			<array>
-				<string>$(SRCROOT)/Generated/ProviderCustomizationGenerated.swift</string>
-			</array>
 			<key>isa</key>
 			<string>PBXShellScriptBuildPhase</string>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
+			<key>outputPaths</key>
+			<array>
+				<string>$(SRCROOT)/Generated/ProviderCustomizationGenerated.swift</string>
+			</array>
 			<key>shellScript</key>
 			<string>set -eu
 OUT="$SRCROOT/Generated/ProviderCustomizationGenerated.swift"
@@ -5682,10 +6055,10 @@ TMP="$OUT.tmp"
 # Only replace when changed, to avoid needless recompiles.
 if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f "$TMP"; fi
 </string>
+			<key>name</key>
+			<string>Generate Provider Customization</string>
 			<key>files</key>
 			<array/>
-			<key>alwaysOutOfDate</key>
-			<string>1</string>
 		</dict>
 		<key>E8A000002</key>
 		<dict>
@@ -5700,6 +6073,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5L2000F1</string>
+		</dict>
+		<key>RCL000110</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000210</string>
 		</dict>
 		<key>E5VMA0017</key>
 		<dict>
@@ -5800,17 +6180,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>AA8A56872F6FBB7A00A3E54E</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXSourcesBuildPhase</string>
-			<key>buildActionMask</key>
-			<string>2147483647</string>
-			<key>files</key>
-			<array/>
-			<key>runOnlyForDeploymentPostprocessing</key>
-			<string>0</string>
-		</dict>
 		<key>E5IP00010</key>
 		<dict>
 			<key>isa</key>
@@ -5826,9 +6195,22 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>E5IP00014</string>
 				<string>E5IP00015</string>
 				<string>E5IP00016</string>
+				<string>E5IP00018</string>
+				<string>E5IP00019</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>AA8A56872F6FBB7A00A3E54E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXSourcesBuildPhase</string>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>files</key>
+			<array/>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
 		</dict>
 		<key>E5N0000132F3B941A00049557</key>
 		<dict>
@@ -5985,6 +6367,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<array>
 				<string>E5E000070</string>
 				<string>E5E000071</string>
+				<string>DF1BB49B37CD0891F52A00F8</string>
 			</array>
 		</dict>
 		<key>E5I000002</key>
@@ -6034,13 +6417,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>YES</string>
 				<key>ENABLE_STRICT_OBJC_MSGSEND</key>
 				<string>YES</string>
-				<key>CLANG_WARN_DOCUMENTATION_COMMENTS</key>
-				<string>YES</string>
 				<key>CLANG_WARN_SUSPICIOUS_MOVE</key>
+				<string>YES</string>
+				<key>CLANG_WARN_EMPTY_BODY</key>
 				<string>YES</string>
 				<key>SDKROOT</key>
 				<string>iphoneos</string>
-				<key>CLANG_WARN_EMPTY_BODY</key>
+				<key>CLANG_WARN_DOCUMENTATION_COMMENTS</key>
 				<string>YES</string>
 				<key>MTL_ENABLE_DEBUG_INFO</key>
 				<string>INCLUDE_SOURCE</string>
@@ -6165,6 +6548,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000206</key>
+		<dict>
+			<key>path</key>
+			<string>BackupPackageReader.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E5L100006</key>
 		<dict>
 			<key>isa</key>
@@ -6178,6 +6572,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5CFG0019</string>
+		</dict>
+		<key>E5VCTR001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5VCTR002</string>
 		</dict>
 		<key>BB1000030F700000000000AA</key>
 		<dict>
@@ -6235,10 +6636,28 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>RCL000120</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000220</string>
+		</dict>
 		<key>F1VMCP02</key>
 		<dict>
 			<key>path</key>
 			<string>MCPFormSheet.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BKP000230</key>
+		<dict>
+			<key>path</key>
+			<string>BackupDestinations.swift</string>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
@@ -6303,6 +6722,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5CKB0002</string>
+		</dict>
+		<key>BKP000107</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000207</string>
 		</dict>
 		<key>E5C000030</key>
 		<dict>
@@ -6372,21 +6798,64 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5CFG001D</string>
 		</dict>
+		<key>E5FP00071</key>
+		<dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+					<string>@executable_path/../../Frameworks</string>
+				</array>
+				<key>INFOPLIST_KEY_NSHumanReadableCopyright</key>
+				<string></string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>3HJ3R6SXAL</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
+				<key>MARKETING_VERSION</key>
+				<string>1.0</string>
+				<key>INFOPLIST_FILE</key>
+				<string>FileProvider/Info.plist</string>
+				<key>SKIP_INSTALL</key>
+				<string>YES</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
+				<string>一芥伙伴文件</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>FileProvider/FileProvider.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>18.0</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>YiJie.speech-note.FileProvider</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/MinisFileProvider/Release</string>
+			</dict>
+			<key>name</key>
+			<string>Release</string>
+		</dict>
 		<key>E5T000012</key>
 		<dict>
 			<key>path</key>
 			<string>ListSessionsIntent.swift</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>E5MNT0103</key>
-		<dict>
-			<key>path</key>
-			<string>MountedFoldersSettingsView.swift</string>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
@@ -6407,64 +6876,23 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>E5MNT0103</key>
+		<dict>
+			<key>path</key>
+			<string>MountedFoldersSettingsView.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E53000002</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E53000012</string>
-		</dict>
-		<key>E5FP00071</key>
-		<dict>
-			<key>isa</key>
-			<string>XCBuildConfiguration</string>
-			<key>buildSettings</key>
-			<dict>
-				<key>LD_RUNPATH_SEARCH_PATHS</key>
-				<array>
-					<string>$(inherited)</string>
-					<string>@executable_path/Frameworks</string>
-					<string>@executable_path/../../Frameworks</string>
-				</array>
-				<key>INFOPLIST_KEY_NSHumanReadableCopyright</key>
-				<string></string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>3HJ3R6SXAL</string>
-				<key>SWIFT_VERSION</key>
-				<string>5.0</string>
-				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
-				<key>INFOPLIST_FILE</key>
-				<string>FileProvider/Info.plist</string>
-				<key>SKIP_INSTALL</key>
-				<string>YES</string>
-				<key>TARGETED_DEVICE_FAMILY</key>
-				<string>1,2</string>
-				<key>GENERATE_INFOPLIST_FILE</key>
-				<string>YES</string>
-				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>听记文件</string>
-				<key>CODE_SIGN_ENTITLEMENTS</key>
-				<string>FileProvider/FileProvider.entitlements</string>
-				<key>CODE_SIGN_STYLE</key>
-				<string>Automatic</string>
-				<key>PRODUCT_NAME</key>
-				<string>$(TARGET_NAME)</string>
-				<key>SWIFT_EMIT_LOC_STRINGS</key>
-				<string>YES</string>
-				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
-				<string>18.0</string>
-				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>YiJie.speech-note.FileProvider</string>
-				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
-				<key>SUPPORTED_PLATFORMS</key>
-				<string>iphoneos</string>
-				<key>SDKROOT</key>
-				<string>iphoneos</string>
-			</dict>
-			<key>name</key>
-			<string>Release</string>
 		</dict>
 		<key>E5BSH0013</key>
 		<dict>
@@ -6513,21 +6941,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5VMA0012</string>
 		</dict>
+		<key>BKP000131</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000231</string>
+		</dict>
 		<key>E5Q000014</key>
 		<dict>
 			<key>path</key>
 			<string>FontSettings.swift</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>E5M000013</key>
-		<dict>
-			<key>path</key>
-			<string>MinisMarkdownParser.swift</string>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
@@ -6552,6 +6976,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>E5M000013</key>
+		<dict>
+			<key>path</key>
+			<string>MinisMarkdownParser.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E5VC00006</key>
 		<dict>
 			<key>isa</key>
@@ -6571,6 +7006,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>0</string>
 			<key>dstPath</key>
 			<string></string>
+			<key>name</key>
+			<string>Embed Foundation Extensions</string>
 			<key>files</key>
 			<array>
 				<string>E5E000009</string>
@@ -6578,8 +7015,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>E5FP00009</string>
 				<string>0E93FC4ED6725C423CBDC179</string>
 			</array>
-			<key>name</key>
-			<string>Embed Foundation Extensions</string>
 		</dict>
 		<key>E5VC1000C</key>
 		<dict>
@@ -6669,6 +7104,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.c.h</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BKP000216</key>
+		<dict>
+			<key>path</key>
+			<string>BackupRestoreView.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -6774,6 +7220,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5AD0016</string>
 		</dict>
+		<key>BKP000240</key>
+		<dict>
+			<key>path</key>
+			<string>BackupKeepAlive.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E5QA0102</key>
 		<dict>
 			<key>path</key>
@@ -6802,6 +7259,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5D00031</string>
+		</dict>
+		<key>BKP000117</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000217</string>
 		</dict>
 		<key>E5SOUL001</key>
 		<dict>
@@ -6889,6 +7353,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>RCL000215</key>
+		<dict>
+			<key>path</key>
+			<string>BackupDestinationPicker.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E54000015</key>
 		<dict>
 			<key>path</key>
@@ -6921,6 +7396,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BKP000141</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000241</string>
 		</dict>
 		<key>F1VMCPB1</key>
 		<dict>
@@ -6956,8 +7438,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string></string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
-				<key>SWIFT_VERSION</key>
-				<string>5.0</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
 				<key>MARKETING_VERSION</key>
 				<string>1.0</string>
 				<key>INFOPLIST_FILE</key>
@@ -6969,11 +7451,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>发送到听记</string>
+				<string>发送到一芥伙伴</string>
 				<key>CODE_SIGN_ENTITLEMENTS</key>
 				<string>ShareExtension/ShareExtension.entitlements</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SWIFT_EMIT_LOC_STRINGS</key>
@@ -6982,12 +7466,12 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>18.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note.ShareExtension</string>
-				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
 				<key>SUPPORTED_PLATFORMS</key>
 				<string>iphoneos</string>
 				<key>SDKROOT</key>
 				<string>iphoneos</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/MinisShare/Debug</string>
 			</dict>
 			<key>name</key>
 			<string>Debug</string>
@@ -7026,6 +7510,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5N0000132F3B941A00049557</string>
+		</dict>
+		<key>RCL000116</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000216</string>
 		</dict>
 		<key>E5D00036</key>
 		<dict>
@@ -7460,11 +7951,57 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>8B886DA8A270E8FB58A9A1FA</string>
 				<string>7A49962E84F115865D41B933</string>
 				<string>C0B1AF9A75C90C3C178A8804</string>
+				<string>E5VCTR001</string>
+				<string>A11Y0001</string>
+				<string>LOC00001</string>
+				<string>E5R000001</string>
+				<string>E5R000002</string>
+				<string>BKP000101</string>
+				<string>BKP000119</string>
+				<string>BKP000118</string>
+				<string>BKP000117</string>
+				<string>BKP000116</string>
+				<string>BKP000114</string>
+				<string>BKP000130</string>
+				<string>BKP000131</string>
+				<string>BKP000140</string>
+				<string>BKP000141</string>
+				<string>BKP000142</string>
+				<string>BKP000143</string>
+				<string>BKP000144</string>
+				<string>BKP000132</string>
+				<string>BKP000133</string>
+				<string>RCL000118</string>
+				<string>RCL000117</string>
+				<string>RCL000110</string>
+				<string>RCL000113</string>
+				<string>RCL000112</string>
+				<string>RCL000111</string>
+				<string>BKP000115</string>
+				<string>BKP000134</string>
+				<string>RCL000114</string>
+				<string>RCL000115</string>
+				<string>RCL000119</string>
+				<string>RCL000120</string>
+				<string>RCL000121</string>
+				<string>RCL000116</string>
+				<string>BKP000113</string>
+				<string>BKP000112</string>
+				<string>BKP000109</string>
+				<string>BKP000110</string>
+				<string>BKP000111</string>
+				<string>BKP000106</string>
+				<string>BKP000107</string>
+				<string>BKP000104</string>
+				<string>BKP000105</string>
+				<string>BKP000102</string>
+				<string>BKP000103</string>
 				<string>203ED43E7D29FB646255D541</string>
 				<string>8B5A16018E4D067D7F7DDE44</string>
 				<string>D9F5CA5599ACC68DF546BB0A</string>
 				<string>8BEE81873C005E304C127BA1</string>
 				<string>107D84F45B286EA326550DBA</string>
+				<string>64FB247A0ACBBD00E802B814</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
@@ -7512,6 +8049,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5W000016</string>
+		</dict>
+		<key>E5R000002</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5R000012</string>
 		</dict>
 		<key>E5VC0001A</key>
 		<dict>
@@ -7627,6 +8171,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000201</key>
+		<dict>
+			<key>path</key>
+			<string>BackupFormat.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>AA26BD5B2F2E663700AECF2D</key>
 		<dict>
 			<key>path</key>
@@ -7707,7 +8262,9 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>buildActionMask</key>
 			<string>2147483647</string>
 			<key>files</key>
-			<array/>
+			<array>
+				<string>A09B3EEFA60658E145E15CF5</string>
+			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
 		</dict>
@@ -7837,6 +8394,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000102</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000202</string>
+		</dict>
 		<key>AA26BD642F2E663700AECF2D</key>
 		<dict>
 			<key>path</key>
@@ -7849,6 +8413,15 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>wrapper.framework</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5E000080</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXTargetDependency</string>
+			<key>target</key>
+			<string>E5E000040</string>
+			<key>targetProxy</key>
+			<string>E5E000081</string>
 		</dict>
 		<key>AA26CCB72F31067900AECF2D</key>
 		<dict>
@@ -7867,15 +8440,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
-		</dict>
-		<key>E5E000080</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXTargetDependency</string>
-			<key>target</key>
-			<string>E5E000040</string>
-			<key>targetProxy</key>
-			<string>E5E000081</string>
 		</dict>
 		<key>E5MDS0013</key>
 		<dict>
@@ -7906,13 +8470,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5TRS002</string>
 		</dict>
-		<key>E58000001</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E58000011</string>
-		</dict>
 		<key>E5AS00010</key>
 		<dict>
 			<key>isa</key>
@@ -7927,6 +8484,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E58000001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E58000011</string>
 		</dict>
 		<key>891443CAA4679D09A6D32AE4</key>
 		<dict>
@@ -8008,6 +8572,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>E5WD0011</string>
 				<string>E5ICM0011</string>
 				<string>AADDA9E02F6ECCF400B66649</string>
+				<string>LOC00002</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -8067,6 +8632,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.c.objc</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5R000012</key>
+		<dict>
+			<key>path</key>
+			<string>ICloudBackupView.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -8205,6 +8781,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 		<dict>
 			<key>path</key>
 			<string>AntigravityOAuthManager.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BKP000211</key>
+		<dict>
+			<key>path</key>
+			<string>BackupImporter+Categories.swift</string>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
@@ -8389,6 +8976,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5FP00013</string>
 		</dict>
+		<key>BKP000112</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000212</string>
+		</dict>
 		<key>E5AD0007</key>
 		<dict>
 			<key>isa</key>
@@ -8445,17 +9039,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5D00032</string>
 		</dict>
-		<key>AA26CCBD2F31080100AECF2D</key>
-		<dict>
-			<key>path</key>
-			<string>ISHTerminalView.swift</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
 		<key>E5E000041</key>
 		<dict>
 			<key>isa</key>
@@ -8468,9 +9051,34 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>E5E000003</string>
 				<string>E5E000004</string>
 				<string>E5E000005</string>
+				<string>155B8DB968E7D4F6574CD808</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
+		</dict>
+		<key>AA26CCBD2F31080100AECF2D</key>
+		<dict>
+			<key>path</key>
+			<string>ISHTerminalView.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>RCL000210</key>
+		<dict>
+			<key>path</key>
+			<string>Remote/RcloneBridge.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>RcloneBridge.swift</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5L200090</key>
 		<dict>
@@ -8494,19 +9102,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>HB00000000000000000000A1</key>
-		<dict>
-			<key>path</key>
-			<string>../../../../speech_note/speech_note/Frameworks/TranscribeCpp.xcframework</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>name</key>
-			<string>TranscribeCpp.xcframework</string>
-			<key>lastKnownFileType</key>
-			<string>wrapper.xcframework</string>
-			<key>sourceTree</key>
-			<string>SOURCE_ROOT</string>
-		</dict>
 		<key>E51000061</key>
 		<dict>
 			<key>isa</key>
@@ -8519,7 +9114,21 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<array>
 				<string>E51000070</string>
 				<string>E51000071</string>
+				<string>63BD63DAAC1EFEA89D97EE44</string>
 			</array>
+		</dict>
+		<key>HB00000000000000000000A1</key>
+		<dict>
+			<key>path</key>
+			<string>../../../../speech_note/speech_note/Frameworks/TranscribeCpp.xcframework</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>TranscribeCpp.xcframework</string>
+			<key>lastKnownFileType</key>
+			<string>wrapper.xcframework</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
 		</dict>
 		<key>E5PRIV01</key>
 		<dict>
@@ -8667,6 +9276,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>RCL000111</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000211</string>
+		</dict>
 		<key>E5OARC030</key>
 		<dict>
 			<key>path</key>
@@ -8711,53 +9327,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E5L200SS1</key>
-		<dict>
-			<key>path</key>
-			<string>SessionsOffload.m</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.c.objc</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>E5L100021</key>
-		<dict>
-			<key>path</key>
-			<string>ClipboardOffload.h</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.c.h</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>EXA000013</key>
-		<dict>
-			<key>path</key>
-			<string>XAIOAuthManager.swift</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>E5W000001</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5W000011</string>
-		</dict>
-		<key>EAB000071</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>EAB000070</string>
-		</dict>
 		<key>F1A00010</key>
 		<dict>
 			<key>path</key>
@@ -8797,6 +9366,53 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5L200SS1</key>
+		<dict>
+			<key>path</key>
+			<string>SessionsOffload.m</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.c.objc</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5L100021</key>
+		<dict>
+			<key>path</key>
+			<string>ClipboardOffload.h</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.c.h</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>EXA000013</key>
+		<dict>
+			<key>path</key>
+			<string>XAIOAuthManager.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>EAB000071</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>EAB000070</string>
+		</dict>
+		<key>E5W000001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5W000011</string>
 		</dict>
 		<key>E5D00037</key>
 		<dict>
@@ -8910,6 +9526,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>RCL000220</key>
+		<dict>
+			<key>path</key>
+			<string>BackupCategoryIcon.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E7A000030</key>
 		<dict>
 			<key>path</key>
@@ -8943,30 +9570,30 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>XCBuildConfiguration</string>
 			<key>buildSettings</key>
 			<dict>
-				<key>CLANG_WARN_DOCUMENTATION_COMMENTS</key>
-				<string>YES</string>
 				<key>CLANG_WARN_UNGUARDED_AVAILABILITY</key>
 				<string>YES_AGGRESSIVE</string>
-				<key>CLANG_WARN_DIRECT_OBJC_ISA_USAGE</key>
-				<string>YES_ERROR</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>16.0</string>
 				<key>CLANG_ENABLE_OBJC_ARC</key>
 				<string>YES</string>
+				<key>CLANG_WARN_DIRECT_OBJC_ISA_USAGE</key>
+				<string>YES_ERROR</string>
 				<key>CLANG_WARN_SUSPICIOUS_MOVE</key>
 				<string>YES</string>
 				<key>CLANG_WARN__DUPLICATE_METHOD_MATCH</key>
 				<string>YES</string>
 				<key>CLANG_ENABLE_OBJC_WEAK</key>
 				<string>YES</string>
-				<key>ENABLE_NS_ASSERTIONS</key>
-				<string>NO</string>
-				<key>CLANG_WARN_INFINITE_RECURSION</key>
-				<string>YES</string>
-				<key>GCC_WARN_UNDECLARED_SELECTOR</key>
-				<string>YES</string>
-				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
-				<string>16.0</string>
 				<key>SWIFT_COMPILATION_MODE</key>
 				<string>wholemodule</string>
+				<key>CLANG_WARN_INFINITE_RECURSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_OBJC_LITERAL_CONVERSION</key>
+				<string>YES</string>
+				<key>DEBUG_INFORMATION_FORMAT</key>
+				<string>dwarf-with-dsym</string>
+				<key>CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF</key>
+				<string>YES</string>
 				<key>CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION</key>
 				<string>YES_AGGRESSIVE</string>
 				<key>SDKROOT</key>
@@ -8985,34 +9612,34 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>YES</string>
 				<key>CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING</key>
 				<string>YES</string>
-				<key>CLANG_WARN_STRICT_PROTOTYPES</key>
-				<string>YES</string>
-				<key>CLANG_WARN_ENUM_CONVERSION</key>
-				<string>YES</string>
-				<key>CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER</key>
-				<string>YES</string>
 				<key>GCC_PREPROCESSOR_DEFINITIONS</key>
 				<array>
 					<string>ISH_INTERNAL=1</string>
 					<string>GUEST_ARM64=1</string>
 					<string>$(inherited)</string>
 				</array>
+				<key>CLANG_WARN_ENUM_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_STRICT_PROTOTYPES</key>
+				<string>YES</string>
 				<key>GCC_WARN_64_TO_32_BIT_CONVERSION</key>
 				<string>YES</string>
-				<key>ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS</key>
+				<key>CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER</key>
 				<string>YES</string>
-				<key>CLANG_WARN_EMPTY_BODY</key>
+				<key>GCC_WARN_UNINITIALIZED_AUTOS</key>
+				<string>YES_AGGRESSIVE</string>
+				<key>ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS</key>
 				<string>YES</string>
 				<key>GCC_WARN_ABOUT_RETURN_TYPE</key>
 				<string>YES_ERROR</string>
-				<key>GCC_WARN_UNINITIALIZED_AUTOS</key>
-				<string>YES_AGGRESSIVE</string>
+				<key>CLANG_WARN_EMPTY_BODY</key>
+				<string>YES</string>
 				<key>CLANG_WARN_COMMA</key>
+				<string>YES</string>
+				<key>GCC_WARN_UNUSED_VARIABLE</key>
 				<string>YES</string>
 				<key>GCC_C_LANGUAGE_STANDARD</key>
 				<string>gnu17</string>
-				<key>GCC_WARN_UNUSED_VARIABLE</key>
-				<string>YES</string>
 				<key>CLANG_WARN_RANGE_LOOP_ANALYSIS</key>
 				<string>YES</string>
 				<key>CLANG_ENABLE_MODULES</key>
@@ -9043,11 +9670,11 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>YES</string>
 				<key>GCC_WARN_UNUSED_FUNCTION</key>
 				<string>YES</string>
-				<key>CLANG_WARN_OBJC_LITERAL_CONVERSION</key>
+				<key>ENABLE_NS_ASSERTIONS</key>
+				<string>NO</string>
+				<key>CLANG_WARN_DOCUMENTATION_COMMENTS</key>
 				<string>YES</string>
-				<key>DEBUG_INFORMATION_FORMAT</key>
-				<string>dwarf-with-dsym</string>
-				<key>CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF</key>
+				<key>GCC_WARN_UNDECLARED_SELECTOR</key>
 				<string>YES</string>
 			</dict>
 			<key>name</key>
@@ -9100,6 +9727,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.c.objc</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BKP000207</key>
+		<dict>
+			<key>path</key>
+			<string>DebugRPCBackup.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -9163,6 +9801,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>E5VCTR002</key>
+		<dict>
+			<key>path</key>
+			<string>VoiceCorrectionTrace.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E5CADM02</key>
 		<dict>
 			<key>isa</key>
@@ -9199,10 +9848,28 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>RCL000121</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000221</string>
+		</dict>
 		<key>F1VMCP04</key>
 		<dict>
 			<key>path</key>
 			<string>SessionMCPsView.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BKP000231</key>
+		<dict>
+			<key>path</key>
+			<string>BackupActivityLock.swift</string>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
@@ -9264,12 +9931,29 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5D00014</string>
 		</dict>
-		<key>EAB000081</key>
+		<key>FK1000040000000000000001</key>
 		<dict>
+			<key>alwaysOutOfDate</key>
+			<string>1</string>
+			<key>inputPaths</key>
+			<array/>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>shellPath</key>
+			<string>/bin/sh</string>
 			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>EAB000080</string>
+			<string>PBXShellScriptBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+			<key>outputPaths</key>
+			<array/>
+			<key>shellScript</key>
+			<string>bash "$SRCROOT/scripts/embed_role_pack.sh"
+</string>
+			<key>name</key>
+			<string>Embed Role Pack</string>
+			<key>files</key>
+			<array/>
 		</dict>
 		<key>E5CKB0002</key>
 		<dict>
@@ -9282,38 +9966,14 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>FK1000040000000000000001</key>
-		<dict>
-			<key>name</key>
-			<string>Embed Role Pack</string>
-			<key>inputPaths</key>
-			<array/>
-			<key>buildActionMask</key>
-			<string>2147483647</string>
-			<key>shellPath</key>
-			<string>/bin/sh</string>
-			<key>outputPaths</key>
-			<array/>
-			<key>isa</key>
-			<string>PBXShellScriptBuildPhase</string>
-			<key>runOnlyForDeploymentPostprocessing</key>
-			<string>0</string>
-			<key>shellScript</key>
-			<string>bash "$SRCROOT/scripts/embed_role_pack.sh"
-</string>
-			<key>files</key>
-			<array/>
-			<key>alwaysOutOfDate</key>
-			<string>1</string>
-		</dict>
 		<key>F3A00000000000000000008</key>
 		<dict>
 			<key>isa</key>
 			<string>XCBuildConfiguration</string>
 			<key>buildSettings</key>
 			<dict>
-				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
-				<string>16.0</string>
+				<key>FLAVOR_ID</key>
+				<string>fitness</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.1agents.phone.fitness</string>
 				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
@@ -9345,10 +10005,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>YES</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
-				<key>SWIFT_EMIT_LOC_STRINGS</key>
-				<string>YES</string>
 				<key>SWIFT_VERSION</key>
 				<string>5.0</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
 				<key>INFOPLIST_KEY_UILaunchStoryboardName</key>
 				<string>Launch Screen</string>
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
@@ -9362,10 +10022,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 					<string>$(inherited)</string>
 					<string>@executable_path/Frameworks</string>
 				</array>
-				<key>INFOPLIST_FILE</key>
-				<string>$(SRCROOT)/Info.plist</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>1,2</string>
+				<key>INFOPLIST_FILE</key>
+				<string>$(SRCROOT)/Info.plist</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>Minis</string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -9394,13 +10054,20 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>$(SRCROOT)/../../deps/libs</string>
 				<key>SWIFT_OBJC_INTERFACE_HEADER_NAME</key>
 				<string>Minis-Swift.h</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>16.0</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
-				<key>FLAVOR_ID</key>
-				<string>fitness</string>
 			</dict>
 			<key>name</key>
 			<string>Debug</string>
+		</dict>
+		<key>EAB000081</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>EAB000080</string>
 		</dict>
 		<key>E5C000031</key>
 		<dict>
@@ -9563,6 +10230,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000132</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000232</string>
+		</dict>
 		<key>E5L000011</key>
 		<dict>
 			<key>path</key>
@@ -9593,10 +10267,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>0</string>
 			<key>dstPath</key>
 			<string></string>
-			<key>files</key>
-			<array/>
 			<key>name</key>
 			<string>Copy Alpine Rootfs</string>
+			<key>files</key>
+			<array/>
 		</dict>
 		<key>E58000031</key>
 		<dict>
@@ -9673,6 +10347,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>children</key>
 			<array>
 				<string>E54000011</string>
+				<string>BKP000207</string>
 				<string>E54000AB2</string>
 				<string>E54000041</string>
 				<string>E54000051</string>
@@ -9684,6 +10359,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>E54000019</string>
 				<string>E5DRC0020</string>
 				<string>E5VC00014</string>
+				<string>E5VCTR002</string>
 				<string>E5400009B</string>
 				<string>E54000014</string>
 				<string>E5VIC0011</string>
@@ -9795,6 +10471,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000217</key>
+		<dict>
+			<key>path</key>
+			<string>BackupOpenRouter.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E54300002</key>
 		<dict>
 			<key>isa</key>
@@ -9804,7 +10491,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 		</dict>
 		<key>F2A00000000000000000002</key>
 		<dict>
-			<key>dependencies</key>
+			<key>buildRules</key>
 			<array/>
 			<key>buildConfigurationList</key>
 			<string>F2A00000000000000000007</string>
@@ -9829,6 +10516,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>AA0838CB2F3CA8A900049557</string>
 				<string>AK00000000000000000000A1</string>
 			</array>
+			<key>dependencies</key>
+			<array/>
 			<key>buildPhases</key>
 			<array>
 				<string>AC0000200</string>
@@ -9842,8 +10531,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			</array>
 			<key>name</key>
 			<string>MinisEnglish</string>
-			<key>buildRules</key>
-			<array/>
 		</dict>
 		<key>D7656F4130247E4002A3AC0C</key>
 		<dict>
@@ -9872,13 +10559,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5J000041</string>
 		</dict>
-		<key>E5VC0000B</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5VC0001B</string>
-		</dict>
 		<key>F1A00000000000000000007</key>
 		<dict>
 			<key>isa</key>
@@ -9892,6 +10572,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>F1A00000000000000000008</string>
 				<string>F1A00000000000000000009</string>
 			</array>
+		</dict>
+		<key>E5VC0000B</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5VC0001B</string>
 		</dict>
 		<key>E5CR00100</key>
 		<dict>
@@ -9922,6 +10609,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5TRC002</string>
+		</dict>
+		<key>BKP000241</key>
+		<dict>
+			<key>path</key>
+			<string>BackupProgressReporter.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5VMB0015</key>
 		<dict>
@@ -9973,6 +10671,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				</array>
 			</dict>
 		</dict>
+		<key>BKP000118</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000218</string>
+		</dict>
 		<key>E5SOUL002</key>
 		<dict>
 			<key>isa</key>
@@ -9988,6 +10693,19 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>SC1000030000000000000001</key>
+		<dict>
+			<key>path</key>
+			<string>Scenes</string>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>children</key>
+			<array>
+				<string>SC1000030000000000000002</string>
+			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -10008,19 +10726,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>F2941B643B8A2F048A2B154E</string>
-		</dict>
-		<key>SC1000030000000000000001</key>
-		<dict>
-			<key>path</key>
-			<string>Scenes</string>
-			<key>isa</key>
-			<string>PBXGroup</string>
-			<key>children</key>
-			<array>
-				<string>SC1000030000000000000002</string>
-			</array>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5CFG001E</key>
 		<dict>
@@ -10056,6 +10761,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5PRIV12</string>
+		</dict>
+		<key>RCL000216</key>
+		<dict>
+			<key>path</key>
+			<string>BackupDestinationDetailView.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E54000016</key>
 		<dict>
@@ -10139,6 +10855,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000142</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000242</string>
+		</dict>
 		<key>AA0838CC2F3B941A00049557</key>
 		<dict>
 			<key>isa</key>
@@ -10180,8 +10903,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string></string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
-				<key>SWIFT_VERSION</key>
-				<string>5.0</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
 				<key>MARKETING_VERSION</key>
 				<string>1.0</string>
 				<key>INFOPLIST_FILE</key>
@@ -10193,11 +10916,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>发送到听记</string>
+				<string>发送到一芥伙伴</string>
 				<key>CODE_SIGN_ENTITLEMENTS</key>
 				<string>ShareExtension/ShareExtension.entitlements</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SWIFT_EMIT_LOC_STRINGS</key>
@@ -10206,12 +10931,12 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>18.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note.ShareExtension</string>
-				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
 				<key>SUPPORTED_PLATFORMS</key>
 				<string>iphoneos</string>
 				<key>SDKROOT</key>
 				<string>iphoneos</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/MinisShare/Release</string>
 			</dict>
 			<key>name</key>
 			<string>Release</string>
@@ -10358,9 +11083,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>9AB4751F1CDD650D51A70787</string>
 				<string>561BD78E1431C56002FDBB18</string>
 				<string>2F7422003D4691484AFC3A91</string>
+				<string>38C26F4440A8055BA5B0CD3E</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
+		</dict>
+		<key>RCL000117</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000217</string>
 		</dict>
 		<key>AA26BD392F2E65AB00AECF2D</key>
 		<dict>
@@ -10506,26 +11239,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5W000180</string>
 		</dict>
-		<key>AAF00F002F50A00000049557</key>
-		<dict>
-			<key>path</key>
-			<string>../../deps/frameworks/FFmpeg.framework</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>name</key>
-			<string>FFmpeg.framework</string>
-			<key>lastKnownFileType</key>
-			<string>wrapper.framework</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>E5T000009</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5T000019</string>
-		</dict>
 		<key>F1M00010</key>
 		<dict>
 			<key>path</key>
@@ -10540,6 +11253,26 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>F1M00019</string>
 				<string>F1M00013</string>
 			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5T000009</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5T000019</string>
+		</dict>
+		<key>AAF00F002F50A00000049557</key>
+		<dict>
+			<key>path</key>
+			<string>../../deps/frameworks/FFmpeg.framework</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>FFmpeg.framework</string>
+			<key>lastKnownFileType</key>
+			<string>wrapper.framework</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -10575,12 +11308,30 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>EAB00001A</string>
 		</dict>
+		<key>LOC00001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>LOC00002</string>
+		</dict>
 		<key>E6A000004</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E6A000014</string>
+		</dict>
+		<key>BKP000202</key>
+		<dict>
+			<key>path</key>
+			<string>BackupBlobStore.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>AA0838A02F3B941A00049557</key>
 		<dict>
@@ -10589,12 +11340,19 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>AA0838A12F3B941A00049557</string>
 		</dict>
-		<key>E5G000003</key>
+		<key>E52000020</key>
 		<dict>
 			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5G000013</string>
+			<string>XCRemoteSwiftPackageReference</string>
+			<key>repositoryURL</key>
+			<string>https://github.com/jamesrochabrun/SwiftAnthropic</string>
+			<key>requirement</key>
+			<dict>
+				<key>kind</key>
+				<string>exactVersion</string>
+				<key>version</key>
+				<string>2.2.0</string>
+			</dict>
 		</dict>
 		<key>E5QA0003</key>
 		<dict>
@@ -10631,19 +11389,12 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5CFG0015</string>
 		</dict>
-		<key>E52000020</key>
+		<key>E5G000003</key>
 		<dict>
 			<key>isa</key>
-			<string>XCRemoteSwiftPackageReference</string>
-			<key>repositoryURL</key>
-			<string>https://github.com/jamesrochabrun/SwiftAnthropic</string>
-			<key>requirement</key>
-			<dict>
-				<key>kind</key>
-				<string>exactVersion</string>
-				<key>version</key>
-				<string>2.2.0</string>
-			</dict>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5G000013</string>
 		</dict>
 		<key>33643CC21B9402F949D76C3C</key>
 		<dict>
@@ -10753,6 +11504,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000103</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000203</string>
+		</dict>
 		<key>E5E000081</key>
 		<dict>
 			<key>isa</key>
@@ -10811,13 +11569,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E5D00005</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5D00015</string>
-		</dict>
 		<key>AA0838CB2F3CA8A900049557</key>
 		<dict>
 			<key>path</key>
@@ -10830,6 +11581,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>&lt;group&gt;</string>
 			<key>explicitFolders</key>
 			<array/>
+		</dict>
+		<key>E5D00005</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5D00015</string>
 		</dict>
 		<key>E5U000011</key>
 		<dict>
@@ -10975,14 +11733,14 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>XCBuildConfiguration</string>
 			<key>buildSettings</key>
 			<dict>
-				<key>SWIFT_EMIT_LOC_STRINGS</key>
-				<string>NO</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>26.2</string>
 				<key>BUNDLE_LOADER</key>
 				<string>$(TEST_HOST)</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
-				<key>SWIFT_VERSION</key>
-				<string>6.0</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>com.openminis.MinisTests</string>
 				<key>MARKETING_VERSION</key>
 				<string>1.0</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
@@ -11005,6 +11763,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 					<string>$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers</string>
 					<string>$(SRCROOT)/Vendor/cppjieba/include</string>
 				</array>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>NO</string>
+				<key>SWIFT_VERSION</key>
+				<string>6.0</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>PRODUCT_NAME</key>
@@ -11016,10 +11778,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				</array>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>2</string>
-				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
-				<string>26.2</string>
-				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.openminis.MinisTests</string>
 			</dict>
 			<key>name</key>
 			<string>Debug</string>
@@ -11030,8 +11788,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>XCBuildConfiguration</string>
 			<key>buildSettings</key>
 			<dict>
-				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
-				<string>16.0</string>
+				<key>FLAVOR_ID</key>
+				<string>english</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.1agents.phone.english</string>
 				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
@@ -11063,10 +11821,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>YES</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
-				<key>SWIFT_EMIT_LOC_STRINGS</key>
-				<string>YES</string>
 				<key>SWIFT_VERSION</key>
 				<string>5.0</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
 				<key>INFOPLIST_KEY_UILaunchStoryboardName</key>
 				<string>Launch Screen</string>
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
@@ -11080,10 +11838,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 					<string>$(inherited)</string>
 					<string>@executable_path/Frameworks</string>
 				</array>
-				<key>INFOPLIST_FILE</key>
-				<string>$(SRCROOT)/Info.plist</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>1,2</string>
+				<key>INFOPLIST_FILE</key>
+				<string>$(SRCROOT)/Info.plist</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>Minis</string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -11112,10 +11870,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>$(SRCROOT)/../../deps/libs</string>
 				<key>SWIFT_OBJC_INTERFACE_HEADER_NAME</key>
 				<string>Minis-Swift.h</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>16.0</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
-				<key>FLAVOR_ID</key>
-				<string>english</string>
 			</dict>
 			<key>name</key>
 			<string>Release</string>
@@ -11188,6 +11946,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5OARC030</string>
+		</dict>
+		<key>BKP000212</key>
+		<dict>
+			<key>path</key>
+			<string>BackupSecrets.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5JB00004</key>
 		<dict>
@@ -11373,12 +12142,12 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 		</dict>
 		<key>E5H000040</key>
 		<dict>
-			<key>buildConfigurationList</key>
-			<string>E5H000050</string>
-			<key>productReference</key>
-			<string>E5H000010</string>
 			<key>productType</key>
 			<string>com.apple.product-type.app-extension</string>
+			<key>productReference</key>
+			<string>E5H000010</string>
+			<key>buildConfigurationList</key>
+			<string>E5H000050</string>
 			<key>productName</key>
 			<string>AgentWidgetExtension</string>
 			<key>isa</key>
@@ -11407,6 +12176,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>wrapper.framework</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BKP000113</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000213</string>
 		</dict>
 		<key>E5F200011</key>
 		<dict>
@@ -11510,9 +12286,23 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>files</key>
 			<array>
 				<string>E5E00000A</string>
+				<string>DDB3FD1513852F081D74F84A</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
+		</dict>
+		<key>RCL000211</key>
+		<dict>
+			<key>path</key>
+			<string>Remote/RcloneRemoteStore.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>RcloneRemoteStore.swift</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5400003A</key>
 		<dict>
@@ -11536,17 +12326,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E5L200091</key>
-		<dict>
-			<key>path</key>
-			<string>SpeechOffload.m</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.c.objc</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
 		<key>AA8A56952F6FBB7A00A3E54E</key>
 		<dict>
 			<key>isa</key>
@@ -11560,6 +12339,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>AA8A56932F6FBB7A00A3E54E</string>
 				<string>AA8A56942F6FBB7A00A3E54E</string>
 			</array>
+		</dict>
+		<key>E5L200091</key>
+		<dict>
+			<key>path</key>
+			<string>SpeechOffload.m</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.c.objc</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5L200BT1</key>
 		<dict>
@@ -11692,6 +12482,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5L2000F3</string>
 		</dict>
+		<key>RCL000112</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000212</string>
+		</dict>
 		<key>E5OARC031</key>
 		<dict>
 			<key>path</key>
@@ -11747,6 +12544,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>F1T00010</string>
 				<string>E53000015</string>
 				<string>F1W00012</string>
+				<string>A11Y0002</string>
 				<string>F1W0E100</string>
 				<string>A44D403A6D05BD06BBADC1CF</string>
 			</array>
@@ -11759,6 +12557,22 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5L200SS1</string>
+		</dict>
+		<key>F1A00012</key>
+		<dict>
+			<key>path</key>
+			<string>Markdown</string>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>children</key>
+			<array>
+				<string>E5U000011</string>
+				<string>E5M000013</string>
+				<string>E5X000011</string>
+				<string>E5Y000011</string>
+			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5L100022</key>
 		<dict>
@@ -11777,22 +12591,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5W000012</string>
-		</dict>
-		<key>F1A00012</key>
-		<dict>
-			<key>path</key>
-			<string>Markdown</string>
-			<key>isa</key>
-			<string>PBXGroup</string>
-			<key>children</key>
-			<array>
-				<string>E5U000011</string>
-				<string>E5M000013</string>
-				<string>E5X000011</string>
-				<string>E5Y000011</string>
-			</array>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5TWF002</key>
 		<dict>
@@ -11911,6 +12709,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<array>
 				<string>E5H000070</string>
 				<string>E5H000071</string>
+				<string>9E72F0C51AA73A044B50CFFF</string>
 			</array>
 		</dict>
 		<key>AA26BD2E2F2E65AB00AECF2D</key>
@@ -11969,6 +12768,28 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5H000011</string>
 		</dict>
+		<key>LOC00002</key>
+		<dict>
+			<key>path</key>
+			<string>AppLocalization.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>RCL000221</key>
+		<dict>
+			<key>path</key>
+			<string>BackupHUD.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E7A000031</key>
 		<dict>
 			<key>path</key>
@@ -11979,17 +12800,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<array>
 				<string>E7A000012</string>
 			</array>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>E5L200BU1</key>
-		<dict>
-			<key>path</key>
-			<string>BrowserUseOffload.m</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.c.objc</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -12008,18 +12818,18 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 					<string>$(SRCROOT)/../../build/frameworks</string>
 					<string>$(SRCROOT)/../../deps/frameworks</string>
 				</array>
+				<key>SUPPORTS_MACCATALYST</key>
+				<string>YES</string>
 				<key>CODE_SIGN_IDENTITY</key>
 				<string>Apple Development</string>
 				<key>DEVELOPMENT_ASSET_PATHS</key>
 				<string>"Preview Content"</string>
-				<key>SUPPORTS_MACCATALYST</key>
-				<string>YES</string>
 				<key>INFOPLIST_KEY_NSSupportsLiveActivities</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone</key>
 				<string>UIInterfaceOrientationPortrait</string>
 				<key>INFOPLIST_KEY_CFBundleName</key>
-				<string>VoiceContext</string>
+				<string>Yima</string>
 				<key>INFOPLIST_FILE</key>
 				<string>$(SRCROOT)/../../../../Integration/Info.plist</string>
 				<key>INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents</key>
@@ -12094,7 +12904,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>SWIFT_EMIT_LOC_STRINGS</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>听记</string>
+				<string>一芥伙伴</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note</string>
 				<key>SUPPORTED_PLATFORMS</key>
@@ -12105,9 +12915,22 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>Minis</string>
 				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
 				<string>$(inherited) VOICE_AGENT_FUSION</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/VoiceContextAgent/Debug</string>
 			</dict>
 			<key>name</key>
 			<string>Debug</string>
+		</dict>
+		<key>E5L200BU1</key>
+		<dict>
+			<key>path</key>
+			<string>BrowserUseOffload.m</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.c.objc</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5F00002</key>
 		<dict>
@@ -12161,19 +12984,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5F100011</string>
 		</dict>
-		<key>AA26BD372F2E65AB00AECF2D</key>
-		<dict>
-			<key>path</key>
-			<string>../../build/frameworks/zstd.1.framework</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>name</key>
-			<string>zstd.1.framework</string>
-			<key>lastKnownFileType</key>
-			<string>wrapper.framework</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
 		<key>BB10000A0F700000000000AA</key>
 		<dict>
 			<key>isa</key>
@@ -12187,6 +12997,19 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>BB1000080F700000000000AA</string>
 				<string>BB1000090F700000000000AA</string>
 			</array>
+		</dict>
+		<key>AA26BD372F2E65AB00AECF2D</key>
+		<dict>
+			<key>path</key>
+			<string>../../build/frameworks/zstd.1.framework</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>zstd.1.framework</string>
+			<key>lastKnownFileType</key>
+			<string>wrapper.framework</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5L100008</key>
 		<dict>
@@ -12250,6 +13073,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>F1W0E100</string>
 		</dict>
+		<key>BKP000232</key>
+		<dict>
+			<key>path</key>
+			<string>BackupExportJournal.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E5VMB0006</key>
 		<dict>
 			<key>isa</key>
@@ -12303,6 +13137,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5D00016</string>
+		</dict>
+		<key>BKP000109</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000209</string>
 		</dict>
 		<key>E5S000011</key>
 		<dict>
@@ -12409,6 +13250,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5VMA0014</string>
+		</dict>
+		<key>BKP000133</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000233</string>
 		</dict>
 		<key>E5DRC0020</key>
 		<dict>
@@ -12525,6 +13373,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5L200061</string>
 		</dict>
+		<key>BKP000218</key>
+		<dict>
+			<key>path</key>
+			<string>BackupSecretsImporter.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E51000033</key>
 		<dict>
 			<key>path</key>
@@ -12623,6 +13482,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>E5F2009B1</string>
 		</dict>
+		<key>BKP000242</key>
+		<dict>
+			<key>path</key>
+			<string>BackupZipWriter.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>F1W00101</key>
 		<dict>
 			<key>isa</key>
@@ -12691,6 +13561,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5OARC010</string>
+		</dict>
+		<key>BKP000119</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000219</string>
 		</dict>
 		<key>E57000015</key>
 		<dict>
@@ -12776,28 +13653,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E54000017</key>
+		<key>RCL000217</key>
 		<dict>
 			<key>path</key>
-			<string>AutoTouch.m</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.c.objc</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>E5CR00002</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5CR00012</string>
-		</dict>
-		<key>EAB00001D</key>
-		<dict>
-			<key>path</key>
-			<string>WebAppHtmlMetadata.swift</string>
+			<string>BackupHistory.swift</string>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
@@ -12807,10 +13666,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 		</dict>
 		<key>AA8A568A2F6FBB7A00A3E54E</key>
 		<dict>
-			<key>dependencies</key>
-			<array>
-				<string>AA8A56922F6FBB7A00A3E54E</string>
-			</array>
+			<key>buildRules</key>
+			<array/>
 			<key>buildConfigurationList</key>
 			<string>AA8A56952F6FBB7A00A3E54E</string>
 			<key>productReference</key>
@@ -12825,6 +13682,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<array>
 				<string>AA8A568C2F6FBB7A00A3E54E</string>
 			</array>
+			<key>dependencies</key>
+			<array>
+				<string>AA8A56922F6FBB7A00A3E54E</string>
+			</array>
 			<key>buildPhases</key>
 			<array>
 				<string>AA8A56872F6FBB7A00A3E54E</string>
@@ -12833,8 +13694,35 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			</array>
 			<key>name</key>
 			<string>MinisUITests</string>
-			<key>buildRules</key>
-			<array/>
+		</dict>
+		<key>E5CR00002</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5CR00012</string>
+		</dict>
+		<key>E54000017</key>
+		<dict>
+			<key>path</key>
+			<string>AutoTouch.m</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.c.objc</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>EAB00001D</key>
+		<dict>
+			<key>path</key>
+			<string>WebAppHtmlMetadata.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5AD0014</key>
 		<dict>
@@ -12858,19 +13746,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>AA26BD1E2F2E651900AECF2D</key>
-		<dict>
-			<key>path</key>
-			<string>../../build/frameworks/qemu-aarch64-softmmu.framework</string>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>name</key>
-			<string>qemu-aarch64-softmmu.framework</string>
-			<key>lastKnownFileType</key>
-			<string>wrapper.framework</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
 		<key>E5H000070</key>
 		<dict>
 			<key>isa</key>
@@ -12887,8 +13762,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string></string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
-				<key>SWIFT_VERSION</key>
-				<string>5.0</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
 				<key>MARKETING_VERSION</key>
 				<string>1.0</string>
 				<key>INFOPLIST_FILE</key>
@@ -12900,11 +13775,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>智能体活动</string>
+				<string>一芥伙伴活动</string>
 				<key>CODE_SIGN_ENTITLEMENTS</key>
 				<string>AgentWidget/AgentWidget.entitlements</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SWIFT_EMIT_LOC_STRINGS</key>
@@ -12913,15 +13790,35 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>18.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note.AgentWidget</string>
-				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
 				<key>SUPPORTED_PLATFORMS</key>
 				<string>iphoneos</string>
 				<key>SDKROOT</key>
 				<string>iphoneos</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/AgentWidgetExtension/Debug</string>
 			</dict>
 			<key>name</key>
 			<string>Debug</string>
+		</dict>
+		<key>AA26BD1E2F2E651900AECF2D</key>
+		<dict>
+			<key>path</key>
+			<string>../../build/frameworks/qemu-aarch64-softmmu.framework</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>qemu-aarch64-softmmu.framework</string>
+			<key>lastKnownFileType</key>
+			<string>wrapper.framework</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BKP000143</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000243</string>
 		</dict>
 		<key>2BB45FC87D39AE9AB4495BE9</key>
 		<dict>
@@ -13018,6 +13915,16 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>E5N0000142F3B941A00049557</string>
 				<string>E8A000013</string>
 				<string>AA0838CD2F3B941A00049557</string>
+				<string>BKP000215</string>
+				<string>BKP000234</string>
+				<string>RCL000214</string>
+				<string>RCL000215</string>
+				<string>RCL000219</string>
+				<string>BKP000244</string>
+				<string>RCL000220</string>
+				<string>RCL000221</string>
+				<string>RCL000216</string>
+				<string>BKP000216</string>
 				<string>E5MNT0101</string>
 				<string>E5MNT0102</string>
 				<string>E5MNT0103</string>
@@ -13040,11 +13947,25 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>children</key>
 			<array>
 				<string>E5S000012</string>
+				<string>E5R000011</string>
 				<string>E5S000016</string>
 				<string>F1A00099</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BB1000B10F700000000000AA</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXContainerItemProxy</string>
+			<key>containerPortal</key>
+			<string>E51000060</string>
+			<key>remoteGlobalIDString</key>
+			<string>E51000040</string>
+			<key>remoteInfo</key>
+			<string>Minis</string>
+			<key>proxyType</key>
+			<string>1</string>
 		</dict>
 		<key>E5U000002</key>
 		<dict>
@@ -13064,43 +13985,22 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>E7A000002</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E7A000012</string>
-		</dict>
-		<key>E5L200072</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5L200071</string>
-		</dict>
-		<key>E5N0000052F3B941A00049557</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>E5N0000152F3B941A00049557</string>
-		</dict>
 		<key>AA8A56932F6FBB7A00A3E54E</key>
 		<dict>
 			<key>isa</key>
 			<string>XCBuildConfiguration</string>
 			<key>buildSettings</key>
 			<dict>
-				<key>SWIFT_VERSION</key>
-				<string>6.0</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>com.openminis.MinisUITests</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>MARKETING_VERSION</key>
 				<string>1.0</string>
-				<key>TARGETED_DEVICE_FAMILY</key>
-				<string>1,2</string>
 				<key>TEST_TARGET_NAME</key>
 				<string>Minis</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>ENABLE_USER_SCRIPT_SANDBOXING</key>
@@ -13109,8 +14009,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>NO</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
-				<key>PRODUCT_NAME</key>
-				<string>$(TARGET_NAME)</string>
 				<key>SWIFT_EMIT_LOC_STRINGS</key>
 				<string>NO</string>
 				<key>GCC_PREPROCESSOR_DEFINITIONS</key>
@@ -13118,15 +14016,45 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 					<string>DEBUG=1</string>
 					<string>$(inherited)</string>
 				</array>
+				<key>SWIFT_VERSION</key>
+				<string>6.0</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>2</string>
 				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
 				<string>26.2</string>
-				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.openminis.MinisUITests</string>
 			</dict>
 			<key>name</key>
 			<string>Debug</string>
+		</dict>
+		<key>E5L200072</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5L200071</string>
+		</dict>
+		<key>E7A000002</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E7A000012</string>
+		</dict>
+		<key>E5N0000052F3B941A00049557</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5N0000152F3B941A00049557</string>
+		</dict>
+		<key>RCL000118</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000218</string>
 		</dict>
 		<key>E5Q000001</key>
 		<dict>
@@ -13195,6 +14123,19 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>E5IP00018</key>
+		<dict>
+			<key>path</key>
+			<string>es.lproj/InfoPlist.strings</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>es</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.strings</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>F1M00012</key>
 		<dict>
 			<key>isa</key>
@@ -13234,6 +14175,24 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>EAB00001B</string>
 		</dict>
+		<key>A11Y0001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A11Y0002</string>
+		</dict>
+		<key>BKP000203</key>
+		<dict>
+			<key>path</key>
+			<string>BackupJSONLWriter.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E5F000001</key>
 		<dict>
 			<key>isa</key>
@@ -13258,6 +14217,9 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXFileSystemSynchronizedBuildFileExceptionSet</string>
 			<key>membershipExceptions</key>
 			<array>
+				<string>Standalone/CJKPaginationThresholdTests.swift</string>
+				<string>Standalone/InLoopCompactOrderTests.swift</string>
+				<string>Standalone/SkillDescriptionStaleTests.swift</string>
 				<string>ThinkingLevelTests.swift</string>
 			</array>
 			<key>target</key>
@@ -13445,6 +14407,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>sourcecode.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BKP000104</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000204</string>
 		</dict>
 		<key>E5F200002</key>
 		<dict>
@@ -13745,6 +14714,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BKP000213</key>
+		<dict>
+			<key>path</key>
+			<string>BackupCrypto.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E5OARC022</key>
 		<dict>
 			<key>isa</key>
@@ -14040,9 +15020,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>E5H000002</string>
 				<string>E5H000003</string>
 				<string>E5AT00003</string>
+				<string>DD596BB229713D17645C3C39</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
+		</dict>
+		<key>BKP000114</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BKP000214</string>
 		</dict>
 		<key>E5X000020</key>
 		<dict>
@@ -14113,6 +15101,19 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5D00036</string>
+		</dict>
+		<key>RCL000212</key>
+		<dict>
+			<key>path</key>
+			<string>Remote/RcloneChunkedUpload.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>RcloneChunkedUpload.swift</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5400003B</key>
 		<dict>
@@ -14244,6 +15245,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>RCL000113</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000213</string>
+		</dict>
 		<key>BB1000040F700000000000AA</key>
 		<dict>
 			<key>isa</key>
@@ -14271,6 +15279,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>0</string>
 			<key>dstPath</key>
 			<string></string>
+			<key>name</key>
+			<string>Embed Frameworks</string>
 			<key>files</key>
 			<array>
 				<string>HB00000000000000000000A3</string>
@@ -14283,8 +15293,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>AAF10F112F50A00000049557</string>
 				<string>E52AD00935A448F8CEC26FFF</string>
 			</array>
-			<key>name</key>
-			<string>Embed Frameworks</string>
 		</dict>
 		<key>E5JB00015</key>
 		<dict>
@@ -14571,6 +15579,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>AA26BD502F2E663700AECF2D</string>
 				<string>AA26BD592F2E663700AECF2D</string>
 				<string>AA26BD4E2F2E663700AECF2D</string>
+				<string>RCL000020</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -14581,6 +15590,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5H000012</string>
+		</dict>
+		<key>A11Y0002</key>
+		<dict>
+			<key>path</key>
+			<string>ChatAccessibilityAnnouncer.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5AD0102</key>
 		<dict>
@@ -14615,18 +15635,18 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 					<string>$(SRCROOT)/../../build/frameworks</string>
 					<string>$(SRCROOT)/../../deps/frameworks</string>
 				</array>
+				<key>SUPPORTS_MACCATALYST</key>
+				<string>YES</string>
 				<key>CODE_SIGN_IDENTITY</key>
 				<string>Apple Development</string>
 				<key>DEVELOPMENT_ASSET_PATHS</key>
 				<string>"Preview Content"</string>
-				<key>SUPPORTS_MACCATALYST</key>
-				<string>YES</string>
 				<key>INFOPLIST_KEY_NSSupportsLiveActivities</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone</key>
 				<string>UIInterfaceOrientationPortrait</string>
 				<key>INFOPLIST_KEY_CFBundleName</key>
-				<string>VoiceContext</string>
+				<string>Yima</string>
 				<key>INFOPLIST_FILE</key>
 				<string>$(SRCROOT)/../../../../Integration/Info.plist</string>
 				<key>INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents</key>
@@ -14701,7 +15721,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>SWIFT_EMIT_LOC_STRINGS</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>听记</string>
+				<string>一芥伙伴</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note</string>
 				<key>SUPPORTED_PLATFORMS</key>
@@ -14712,6 +15732,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>Minis</string>
 				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
 				<string>$(inherited) VOICE_AGENT_FUSION</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/VoiceContextAgent/Release</string>
 			</dict>
 			<key>name</key>
 			<string>Release</string>
@@ -14742,6 +15764,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>Minis</string>
 			<key>proxyType</key>
 			<string>1</string>
+		</dict>
+		<key>BKP000209</key>
+		<dict>
+			<key>path</key>
+			<string>BackupImporter.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5N0000062F3B941A00049557</key>
 		<dict>
@@ -14792,6 +15825,17 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5FMI0011</string>
+		</dict>
+		<key>BKP000233</key>
+		<dict>
+			<key>path</key>
+			<string>BackupRescueIndex.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>AA26BD312F2E65AB00AECF2D</key>
 		<dict>
@@ -15097,6 +16141,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<array>
 				<string>D2155B1E3020A7E300F29231</string>
 				<string>D2155B1F3020A7E300F29231</string>
+				<string>6B326F3441AFB6E73DC07968</string>
 			</array>
 		</dict>
 		<key>D2155AF73020A7E100F29231</key>
@@ -15547,7 +16592,9 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>buildActionMask</key>
 			<string>2147483647</string>
 			<key>files</key>
-			<array/>
+			<array>
+				<string>5DC68B9BC8D408EF3DA9349E</string>
+			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
 		</dict>
@@ -15851,6 +16898,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<array>
 				<string>A70WDG01000000000000000C</string>
 				<string>A70WDG01000000000000000D</string>
+				<string>E448B88E257A852815F812C5</string>
 			</array>
 		</dict>
 		<key>D2155B0B3020A7E300F29231</key>
@@ -15894,7 +16942,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>7</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>录音</string>
+				<string>一芥伙伴录音</string>
 				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
 				<string>WIDGET_EXTENSION $(inherited)</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
@@ -15927,6 +16975,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>$(SRCROOT)/../../../../speech_note/RecordWidget/Info.plist</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/RecordWidgetExtension/Debug</string>
 			</dict>
 			<key>name</key>
 			<string>Debug</string>
@@ -16080,7 +17130,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>7</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>录音</string>
+				<string>一芥伙伴录音</string>
 				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
 				<string>WIDGET_EXTENSION $(inherited)</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
@@ -16113,6 +17163,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>$(SRCROOT)/../../../../speech_note/RecordWidget/Info.plist</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/RecordWidgetExtension/Release</string>
 			</dict>
 			<key>name</key>
 			<string>Release</string>
@@ -18203,6 +19255,45 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>2AF58B5C2A7C1D37580C3D08</string>
 		</dict>
+		<key>466E718AAB8A589451CEB5E4</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/Shared/AgentBuildIdentity.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>64FB247A0ACBBD00E802B814</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>466E718AAB8A589451CEB5E4</string>
+		</dict>
+		<key>155B8DB968E7D4F6574CD808</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>466E718AAB8A589451CEB5E4</string>
+		</dict>
+		<key>DD596BB229713D17645C3C39</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>466E718AAB8A589451CEB5E4</string>
+		</dict>
+		<key>C59FDF1B91B60FF417524725</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>466E718AAB8A589451CEB5E4</string>
+		</dict>
 		<key>C5721804C89B888B79D6620D</key>
 		<dict>
 			<key>isa</key>
@@ -18325,6 +19416,631 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>1F735BF4F13D0C06676E8EA3</string>
+		</dict>
+		<key>63BD63DAAC1EFEA89D97EE44</key>
+		<dict>
+			<key>baseConfigurationReference</key>
+			<string>AC0000001</string>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>CLANG_WARN_RANGE_LOOP_ANALYSIS</key>
+				<string>YES</string>
+				<key>ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS</key>
+				<string>YES</string>
+				<key>SWIFT_OPTIMIZATION_LEVEL</key>
+				<string>-Onone</string>
+				<key>CLANG_WARN_INFINITE_RECURSION</key>
+				<string>YES</string>
+				<key>ONLY_ACTIVE_ARCH</key>
+				<string>YES</string>
+				<key>GCC_WARN_UNUSED_VARIABLE</key>
+				<string>YES</string>
+				<key>CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING</key>
+				<string>YES</string>
+				<key>CLANG_WARN_UNGUARDED_AVAILABILITY</key>
+				<string>YES_AGGRESSIVE</string>
+				<key>COPY_PHASE_STRIP</key>
+				<string>NO</string>
+				<key>CLANG_WARN_BOOL_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_ENUM_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS</key>
+				<string>YES</string>
+				<key>CLANG_WARN_COMMA</key>
+				<string>YES</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string>DEBUG $(inherited)</string>
+				<key>CLANG_WARN_INT_CONVERSION</key>
+				<string>YES</string>
+				<key>ENABLE_STRICT_OBJC_MSGSEND</key>
+				<string>YES</string>
+				<key>CLANG_WARN_SUSPICIOUS_MOVE</key>
+				<string>YES</string>
+				<key>CLANG_WARN_EMPTY_BODY</key>
+				<string>YES</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>CLANG_WARN_DOCUMENTATION_COMMENTS</key>
+				<string>YES</string>
+				<key>MTL_ENABLE_DEBUG_INFO</key>
+				<string>INCLUDE_SOURCE</string>
+				<key>MTL_FAST_MATH</key>
+				<string>YES</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>16.0</string>
+				<key>CLANG_ENABLE_OBJC_ARC</key>
+				<string>YES</string>
+				<key>GCC_WARN_UNINITIALIZED_AUTOS</key>
+				<string>YES_AGGRESSIVE</string>
+				<key>GCC_C_LANGUAGE_STANDARD</key>
+				<string>gnu17</string>
+				<key>CLANG_ENABLE_MODULES</key>
+				<string>YES</string>
+				<key>ALWAYS_SEARCH_USER_PATHS</key>
+				<string>NO</string>
+				<key>ENABLE_TESTABILITY</key>
+				<string>YES</string>
+				<key>CLANG_WARN_DIRECT_OBJC_ISA_USAGE</key>
+				<string>YES_ERROR</string>
+				<key>CLANG_WARN_CONSTANT_CONVERSION</key>
+				<string>YES</string>
+				<key>GCC_NO_COMMON_BLOCKS</key>
+				<string>YES</string>
+				<key>CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF</key>
+				<string>YES</string>
+				<key>CLANG_WARN_OBJC_ROOT_CLASS</key>
+				<string>YES_ERROR</string>
+				<key>LOCALIZATION_PREFERS_STRING_CATALOGS</key>
+				<string>YES</string>
+				<key>CLANG_CXX_LANGUAGE_STANDARD</key>
+				<string>gnu++20</string>
+				<key>GCC_WARN_64_TO_32_BIT_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN__DUPLICATE_METHOD_MATCH</key>
+				<string>YES</string>
+				<key>GCC_DYNAMIC_NO_PIC</key>
+				<string>NO</string>
+				<key>DEBUG_INFORMATION_FORMAT</key>
+				<string>dwarf</string>
+				<key>GCC_WARN_UNDECLARED_SELECTOR</key>
+				<string>YES</string>
+				<key>CLANG_ANALYZER_NONNULL</key>
+				<string>YES</string>
+				<key>CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION</key>
+				<string>YES_AGGRESSIVE</string>
+				<key>CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER</key>
+				<string>YES</string>
+				<key>CLANG_ENABLE_OBJC_WEAK</key>
+				<string>YES</string>
+				<key>CLANG_WARN_STRICT_PROTOTYPES</key>
+				<string>YES</string>
+				<key>GCC_OPTIMIZATION_LEVEL</key>
+				<string>0</string>
+				<key>ENABLE_USER_SCRIPT_SANDBOXING</key>
+				<string>NO</string>
+				<key>GCC_WARN_ABOUT_RETURN_TYPE</key>
+				<string>YES_ERROR</string>
+				<key>GCC_WARN_UNUSED_FUNCTION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_UNREACHABLE_CODE</key>
+				<string>YES</string>
+				<key>CLANG_WARN_NON_LITERAL_NULL_CONVERSION</key>
+				<string>YES</string>
+				<key>GCC_PREPROCESSOR_DEFINITIONS</key>
+				<array>
+					<string>DEBUG=1</string>
+					<string>ISH_INTERNAL=1</string>
+					<string>GUEST_ARM64=1</string>
+					<string>$(inherited)</string>
+				</array>
+				<key>CLANG_WARN_OBJC_LITERAL_CONVERSION</key>
+				<string>YES</string>
+			</dict>
+			<key>name</key>
+			<string>Debug-Dev</string>
+		</dict>
+		<key>560A72BB5AECEE1A16B63F0F</key>
+		<dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>3HJ3R6SXAL</string>
+				<key>FRAMEWORK_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/../../build/frameworks</string>
+					<string>$(SRCROOT)/../../deps/frameworks</string>
+				</array>
+				<key>SUPPORTS_MACCATALYST</key>
+				<string>YES</string>
+				<key>CODE_SIGN_IDENTITY</key>
+				<string>Apple Development</string>
+				<key>DEVELOPMENT_ASSET_PATHS</key>
+				<string>"Preview Content"</string>
+				<key>INFOPLIST_KEY_NSSupportsLiveActivities</key>
+				<string>YES</string>
+				<key>INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone</key>
+				<string>UIInterfaceOrientationPortrait</string>
+				<key>INFOPLIST_KEY_CFBundleName</key>
+				<string>Yima</string>
+				<key>INFOPLIST_FILE</key>
+				<string>$(SRCROOT)/../../../../Integration/VoiceContextAgentDev.Info.plist</string>
+				<key>INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents</key>
+				<string>YES</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1</string>
+				<key>INFOPLIST_KEY_ITSAppUsesNonExemptEncryption</key>
+				<string>NO</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>OTHER_LDFLAGS</key>
+				<array>
+					<string>-lish_emu</string>
+					<string>-lish</string>
+					<string>-lfakefs</string>
+				</array>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>18.0</string>
+				<key>INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace</key>
+				<string>YES</string>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+				</array>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
+				<string>YES</string>
+				<key>MARKETING_VERSION</key>
+				<string>1.0</string>
+				<key>OTHER_SWIFT_FLAGS</key>
+				<string></string>
+				<key>HEADER_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/../../deps/include</string>
+					<string>$(SRCROOT)/../../deps/include/ish</string>
+					<string>$(SRCROOT)/NativeOffloads</string>
+					<string>$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers</string>
+					<string>$(SRCROOT)/Vendor/cppjieba/include</string>
+				</array>
+				<key>INFOPLIST_KEY_UILaunchStoryboardName</key>
+				<string>Launch Screen</string>
+				<key>LIBRARY_SEARCH_PATHS</key>
+				<string>$(SRCROOT)/../../deps/libs</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>$(SRCROOT)/../../../../Integration/VoiceContextAgentDev.entitlements</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
+				<string>$(SRCROOT)/MinisApp-Bridging-Header.h</string>
+				<key>PROVISIONING_PROFILE_SPECIFIER</key>
+				<string></string>
+				<key>ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME</key>
+				<string>AccentColor</string>
+				<key>INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad</key>
+				<string>UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight</string>
+				<key>ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS</key>
+				<string>YES</string>
+				<key>INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates</key>
+				<string>YES</string>
+				<key>ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES</key>
+				<string>YES</string>
+				<key>FLAVOR_ID</key>
+				<string>openminis</string>
+				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
+				<string>AppIcon</string>
+				<key>ENABLE_PREVIEWS</key>
+				<string>YES</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
+				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
+				<string>一芥伙伴 Dev</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>YiJie.speech-note.dev</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>PRODUCT_MODULE_NAME</key>
+				<string>Minis</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string>$(inherited) VOICE_AGENT_FUSION VOICE_AGENT_DEV</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/VoiceContextAgent/Debug-Dev</string>
+			</dict>
+			<key>name</key>
+			<string>Debug-Dev</string>
+		</dict>
+		<key>DF1BB49B37CD0891F52A00F8</key>
+		<dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+					<string>@executable_path/../../Frameworks</string>
+				</array>
+				<key>INFOPLIST_KEY_NSHumanReadableCopyright</key>
+				<string></string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>3HJ3R6SXAL</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
+				<key>MARKETING_VERSION</key>
+				<string>1.0</string>
+				<key>INFOPLIST_FILE</key>
+				<string>$(SRCROOT)/../../../../Integration/MinisShareDev.Info.plist</string>
+				<key>SKIP_INSTALL</key>
+				<string>YES</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
+				<string>发送到一芥伙伴 Dev</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>$(SRCROOT)/../../../../Integration/MinisShareDev.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>18.0</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>YiJie.speech-note.dev.ShareExtension</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string>$(inherited) VOICE_AGENT_DEV</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/MinisShare/Debug-Dev</string>
+			</dict>
+			<key>name</key>
+			<string>Debug-Dev</string>
+		</dict>
+		<key>9E72F0C51AA73A044B50CFFF</key>
+		<dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+					<string>@executable_path/../../Frameworks</string>
+				</array>
+				<key>INFOPLIST_KEY_NSHumanReadableCopyright</key>
+				<string></string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>3HJ3R6SXAL</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
+				<key>MARKETING_VERSION</key>
+				<string>1.0</string>
+				<key>INFOPLIST_FILE</key>
+				<string>$(SRCROOT)/../../../../Integration/AgentWidgetExtensionDev.Info.plist</string>
+				<key>SKIP_INSTALL</key>
+				<string>YES</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
+				<string>一芥伙伴活动 Dev</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>$(SRCROOT)/../../../../Integration/AgentWidgetExtensionDev.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>18.0</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>YiJie.speech-note.dev.AgentWidget</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string>$(inherited) VOICE_AGENT_DEV</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/AgentWidgetExtension/Debug-Dev</string>
+			</dict>
+			<key>name</key>
+			<string>Debug-Dev</string>
+		</dict>
+		<key>AA80ACF10ABB2C6FB818FDA3</key>
+		<dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+					<string>@executable_path/../../Frameworks</string>
+				</array>
+				<key>INFOPLIST_KEY_NSHumanReadableCopyright</key>
+				<string></string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>3HJ3R6SXAL</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
+				<key>MARKETING_VERSION</key>
+				<string>1.0</string>
+				<key>INFOPLIST_FILE</key>
+				<string>$(SRCROOT)/../../../../Integration/MinisFileProviderDev.Info.plist</string>
+				<key>SKIP_INSTALL</key>
+				<string>YES</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
+				<string>一芥伙伴文件 Dev</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>$(SRCROOT)/../../../../Integration/MinisFileProviderDev.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>18.0</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>YiJie.speech-note.dev.FileProvider</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string>$(inherited) VOICE_AGENT_DEV</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/MinisFileProvider/Debug-Dev</string>
+			</dict>
+			<key>name</key>
+			<string>Debug-Dev</string>
+		</dict>
+		<key>6B326F3441AFB6E73DC07968</key>
+		<dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>YiJie.speech-note.dev.VoiceRecording</string>
+				<key>MARKETING_VERSION</key>
+				<string>1.0</string>
+				<key>SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY</key>
+				<string>YES</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>REGISTER_APP_GROUPS</key>
+				<string>YES</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>STRING_CATALOG_GENERATE_SYMBOLS</key>
+				<string>NO</string>
+				<key>SWIFT_DEFAULT_ACTOR_ISOLATION</key>
+				<string>MainActor</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
+				<key>PRODUCT_NAME</key>
+				<string>VoiceRecording</string>
+				<key>SWIFT_APPROACHABLE_CONCURRENCY</key>
+				<string>YES</string>
+				<key>ENABLE_USER_SELECTED_FILES</key>
+				<string>readonly</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>ENABLE_PREVIEWS</key>
+				<string>YES</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos</string>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<string>@executable_path/Frameworks</string>
+				<key>ENABLE_APP_SANDBOX</key>
+				<string>YES</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>ENABLE_HARDENED_RUNTIME</key>
+				<string>YES</string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>3HJ3R6SXAL</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>18.0</string>
+				<key>PRODUCT_MODULE_NAME</key>
+				<string>VoiceRecording</string>
+				<key>DEFINES_MODULE</key>
+				<string>YES</string>
+				<key>SKIP_INSTALL</key>
+				<string>YES</string>
+				<key>MACH_O_TYPE</key>
+				<string>mh_dylib</string>
+				<key>DYLIB_INSTALL_NAME_BASE</key>
+				<string>@rpath</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string>$(inherited) VOICE_AGENT_FUSION VOICE_AGENT_DEV</string>
+			</dict>
+			<key>name</key>
+			<string>Debug-Dev</string>
+		</dict>
+		<key>E448B88E257A852815F812C5</key>
+		<dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>MARKETING_VERSION</key>
+				<string>1.0</string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>3HJ3R6SXAL</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>YiJie.speech-note.dev.RecordWidget</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>7</string>
+				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
+				<string>一芥伙伴录音 Dev</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string>WIDGET_EXTENSION $(inherited) VOICE_AGENT_DEV</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+					<string>@executable_path/../../Frameworks</string>
+				</array>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SWIFT_APPROACHABLE_CONCURRENCY</key>
+				<string>YES</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>18.0</string>
+				<key>INFOPLIST_KEY_NSHumanReadableCopyright</key>
+				<string></string>
+				<key>SKIP_INSTALL</key>
+				<string>YES</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
+				<key>INFOPLIST_FILE</key>
+				<string>$(SRCROOT)/../../../../Integration/RecordWidgetExtensionDev.Info.plist</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>YIMA_BRANDING_DIR</key>
+				<string>$(SRCROOT)/../../../../Integration/Resources/Branding/RecordWidgetExtension/Debug-Dev</string>
+			</dict>
+			<key>name</key>
+			<string>Debug-Dev</string>
+		</dict>
+		<key>5BC55D283ABC5834CAB02A15</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>$(YIMA_BRANDING_DIR)/InfoPlist.xcstrings</string>
+			<key>sourceTree</key>
+			<string>&lt;absolute&gt;</string>
+			<key>lastKnownFileType</key>
+			<string>text.json.xcstrings</string>
+		</dict>
+		<key>38C26F4440A8055BA5B0CD3E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>5BC55D283ABC5834CAB02A15</string>
+		</dict>
+		<key>51C1C4868C80FD4CCEF5CC6E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>$(YIMA_BRANDING_DIR)/InfoPlist.xcstrings</string>
+			<key>sourceTree</key>
+			<string>&lt;absolute&gt;</string>
+			<key>lastKnownFileType</key>
+			<string>text.json.xcstrings</string>
+		</dict>
+		<key>DDB3FD1513852F081D74F84A</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>51C1C4868C80FD4CCEF5CC6E</string>
+		</dict>
+		<key>06225E73CA3E73A7A5A24CEF</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>$(YIMA_BRANDING_DIR)/InfoPlist.xcstrings</string>
+			<key>sourceTree</key>
+			<string>&lt;absolute&gt;</string>
+			<key>lastKnownFileType</key>
+			<string>text.json.xcstrings</string>
+		</dict>
+		<key>7CED03647FD3A687A43D34CF</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>06225E73CA3E73A7A5A24CEF</string>
+		</dict>
+		<key>62236324E7462917E9990755</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>$(YIMA_BRANDING_DIR)/InfoPlist.xcstrings</string>
+			<key>sourceTree</key>
+			<string>&lt;absolute&gt;</string>
+			<key>lastKnownFileType</key>
+			<string>text.json.xcstrings</string>
+		</dict>
+		<key>A09B3EEFA60658E145E15CF5</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>62236324E7462917E9990755</string>
+		</dict>
+		<key>28567AAFE75900F1D57A2135</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>$(YIMA_BRANDING_DIR)/InfoPlist.xcstrings</string>
+			<key>sourceTree</key>
+			<string>&lt;absolute&gt;</string>
+			<key>lastKnownFileType</key>
+			<string>text.json.xcstrings</string>
+		</dict>
+		<key>5DC68B9BC8D408EF3DA9349E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>28567AAFE75900F1D57A2135</string>
 		</dict>
 	</dict>
 	<key>rootObject</key>

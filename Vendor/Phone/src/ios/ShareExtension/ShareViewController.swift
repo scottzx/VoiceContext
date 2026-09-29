@@ -69,7 +69,7 @@ class ShareViewController: UIViewController {
     // MARK: - Redirect to main app
 
     private func redirectToHostApp() {
-        guard let url = URL(string: "minis://share") else {
+        guard let url = URL(string: "\(AgentBuildIdentity.urlScheme)://share") else {
             NSLog("[ShareExt] ERROR: Failed to create minis://share URL")
             return
         }

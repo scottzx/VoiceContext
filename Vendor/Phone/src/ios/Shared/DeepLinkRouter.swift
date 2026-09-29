@@ -46,7 +46,7 @@ enum DeepLinkRouter {
 
     @MainActor
     static func handle(url: URL, shareCoordinator: ShareCoordinator) {
-        guard url.scheme == "minis", let host = url.host else {
+        guard url.scheme == "minis" || url.scheme == AgentBuildIdentity.urlScheme, let host = url.host else {
             deepLinkLog.info("ignored — non-minis or missing host: \(url.absoluteString)")
             return
         }
@@ -129,6 +129,13 @@ enum DeepLinkRouter {
 
         case "skills":
             coord.pendingSettingsTarget = .skills
+
+        // [T-ios-assistant-header-open-soul] Previously fell through to the
+        // `default` branch and landed on Settings home, even though the Soul
+        // screen exists — so a `minis://settings/soul` link (or the agent
+        // generating one) quietly under-delivered.
+        case "soul":
+            coord.pendingSettingsTarget = .soul
 
         // [T-mcp-oauth-deeplink] minis://settings/mcp-servers/<serverId> —
         // jump straight to the server's edit form (Authorize button). The

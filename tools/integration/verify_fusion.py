@@ -12,6 +12,7 @@ PHONE = ROOT / 'Vendor/Phone'
 parser = argparse.ArgumentParser()
 parser.add_argument('--products', type=Path, help='Xcode Build/Products/Debug-iphoneos directory')
 parser.add_argument('--check-cache', action='store_true')
+parser.add_argument('--variant', choices=['production', 'development'], default='production')
 args = parser.parse_args()
 
 def read_project(path):
@@ -36,9 +37,10 @@ legacy = read_project(ROOT / 'speech_note/speech_note.xcodeproj/project.pbxproj'
 legacy_target = target(legacy, 'speech_note')
 legacy_settings = {legacy[c]['name']: legacy[c]['buildSettings'] for c in legacy[legacy_target['buildConfigurationList']]['buildConfigurations']}
 for c in fusion[main['buildConfigurationList']]['buildConfigurations']:
-    config = fusion[c]; settings = config['buildSettings']; old = legacy_settings[config['name']]
+    config = fusion[c]; settings = config['buildSettings']; old = legacy_settings[config['name'].removesuffix('-Dev')]
     for key in ['PRODUCT_BUNDLE_IDENTIFIER', 'DEVELOPMENT_TEAM', 'MARKETING_VERSION', 'CURRENT_PROJECT_VERSION']:
-        assert settings[key] == old[key], f'Legacy identity changed: {key}'
+        expected = old[key] + ('.dev' if key == 'PRODUCT_BUNDLE_IDENTIFIER' and config['name'].endswith('-Dev') else '')
+        assert settings[key] == expected, f'Identity changed: {config["name"]}: {key}'
     assert settings['SUPPORTED_PLATFORMS'] == 'iphoneos'
     assert settings['IPHONEOS_DEPLOYMENT_TARGET'] == '18.0'
 
@@ -46,6 +48,23 @@ ent = plistlib.loads((ROOT / 'Integration/VoiceContextAgent.entitlements').read_
 assert ent['keychain-access-groups'] == plistlib.loads((ROOT / 'speech_note/speech_note/speech_note.entitlements').read_bytes())['keychain-access-groups']
 assert ent['com.apple.developer.icloud-container-identifiers'][0] == 'iCloud.YiJie.speech-note'
 assert ent['com.apple.security.application-groups'] == ['group.YiJie.speech-note.agent']
+dev_ent = plistlib.loads((ROOT / 'Integration/VoiceContextAgentDev.entitlements').read_bytes())
+for key in ['keychain-access-groups', 'com.apple.developer.icloud-container-identifiers',
+            'com.apple.developer.ubiquity-container-identifiers', 'com.apple.security.application-groups']:
+    assert not set(ent[key]) & set(dev_ent[key]), f'Development shares production data: {key}'
+for native_target in [x for x in fusion.values() if x.get('isa') == 'PBXNativeTarget' and x.get('name') in
+                      ['VoiceContextAgent', 'VoiceRecording', 'MinisShare', 'AgentWidgetExtension', 'MinisFileProvider', 'RecordWidgetExtension']]:
+    configurations = {fusion[c]['name']: fusion[c]['buildSettings'] for c in fusion[native_target['buildConfigurationList']]['buildConfigurations']}
+    dev = configurations['Debug-Dev']; production = configurations['Debug']
+    assert dev['PRODUCT_BUNDLE_IDENTIFIER'] == production['PRODUCT_BUNDLE_IDENTIFIER'].replace('YiJie.speech-note', 'YiJie.speech-note.dev')
+    assert 'VOICE_AGENT_DEV' in dev['SWIFT_ACTIVE_COMPILATION_CONDITIONS']
+    if 'CODE_SIGN_ENTITLEMENTS' in dev:
+        path = Path(dev['CODE_SIGN_ENTITLEMENTS'].replace('$(SRCROOT)', str(PHONE / 'src/ios')))
+        dev_capabilities = plistlib.loads(path.read_bytes())
+        assert dev_capabilities['com.apple.security.application-groups'] == ['group.YiJie.speech-note.dev.agent']
+    if native_target['name'] == 'MinisFileProvider':
+        path = Path(dev['INFOPLIST_FILE'].replace('$(SRCROOT)', str(PHONE / 'src/ios')))
+        assert plistlib.loads(path.read_bytes())['NSExtension']['NSExtensionFileProviderDocumentGroup'] == 'group.YiJie.speech-note.dev.agent'
 manifest = json.loads((ROOT / 'tools/integration/phone-source-manifest.json').read_text())
 modified = []
 for relative, digest in manifest['files'].items():
@@ -59,14 +78,28 @@ if args.check_cache:
         assert hashlib.sha256((PHONE / relative).read_bytes()).hexdigest() == digest, f'Native cache changed: {relative}'
 
 if args.products:
+    is_dev = args.variant == 'development'
+    bundle_id = 'YiJie.speech-note' + ('.dev' if is_dev else '')
     app = args.products / 'VoiceContextAgent.app'
     info = plistlib.loads((app / 'Info.plist').read_bytes())
-    assert info['CFBundleIdentifier'] == 'YiJie.speech-note'
-    assert info['CFBundleDisplayName'] == '听记'
+    assert info['CFBundleIdentifier'] == bundle_id
+    assert info['CFBundleDisplayName'] == ('一芥伙伴 Dev' if is_dev else '一芥伙伴')
+    suffix = ' Dev' if is_dev else ''
+    for language, display_name in [('en', 'Yima'), ('zh-Hans', '一芥伙伴'), ('zh-Hant', '一芥伙伴')]:
+        localized = plistlib.loads((app / f'{language}.lproj/InfoPlist.strings').read_bytes())
+        assert localized['CFBundleDisplayName'] == display_name + suffix
+    for extension in (app / 'PlugIns').glob('*.appex'):
+        for language in ['en', 'zh-Hans', 'zh-Hant']:
+            localized = plistlib.loads((extension / f'{language}.lproj/InfoPlist.strings').read_bytes())
+            assert localized['CFBundleDisplayName'].endswith(' Dev') == is_dev
     assert info['MinimumOSVersion'] == '18.0'
     assert '会议' in info['NSMicrophoneUsageDescription']
     assert '待办' in info['NSRemindersFullAccessUsageDescription']
-    assert any('voicecontext' in entry['CFBundleURLSchemes'] for entry in info['CFBundleURLTypes'])
+    schemes = {scheme for entry in info['CFBundleURLTypes'] for scheme in entry['CFBundleURLSchemes']}
+    assert ('voicecontext-dev' if is_dev else 'voicecontext') in schemes
+    assert ('minis-dev' if is_dev else 'minis') in schemes
+    if is_dev: assert not {'voicecontext', 'minis'} & schemes
+    assert set(info['NSUbiquitousContainers']) == {f'iCloud.{bundle_id}', f'iCloud.{bundle_id}.agent'}
     recording = app / 'Frameworks/VoiceRecording.framework/VoiceRecording'
     assert recording.is_file()
     recording_install_name = '@rpath/VoiceRecording.framework/VoiceRecording'
@@ -91,13 +124,16 @@ if args.products:
     assert {p.name for p in extensions} == {'MinisShare.appex', 'MinisFileProvider.appex', 'AgentWidgetExtension.appex', 'RecordWidgetExtension.appex'}
     for extension in extensions:
         x = plistlib.loads((extension / 'Info.plist').read_bytes())
-        assert x['CFBundleIdentifier'].startswith('YiJie.speech-note.')
+        assert x['CFBundleIdentifier'].startswith(bundle_id + '.')
+        if not is_dev: assert not x['CFBundleIdentifier'].startswith(bundle_id + '.dev.')
         assert x['CFBundleVersion'] == info['CFBundleVersion']
         assert x['CFBundleShortVersionString'] == info['CFBundleShortVersionString']
     for key, value in info.items():
-        if key.endswith('UsageDescription'): assert 'Yima' not in value, f'Old product permission text: {key}'
+        if key.endswith('UsageDescription'):
+            assert not any(old in value for old in ['听记', '一伴', 'VoiceContext']), f'Old product permission text: {key}'
 
 print(json.dumps({'sourceFilesPresent': len(manifest['files']),
                   'phoneCompilationInputsPreserved': len(members(upstream, original, 'PBXSourcesBuildPhase')),
                   'identityAndContainers': 'passed', 'deviceProduct': 'passed' if args.products else 'not requested',
+                  'variant': args.variant,
                   'localSourcePatches': sorted(modified)}, ensure_ascii=False, indent=2))

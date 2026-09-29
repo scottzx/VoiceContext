@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "flavor_id": "openminis",
-  "display_name": "听记",
+  "display_name": "Yima",
   "pack": {
     "resource_dir": "RolePack",
     "id": "openminis-default",
@@ -11,8 +11,8 @@
   "scene_module_id": null,
   "branding": {
     "chat_placeholder": null,
-    "onboarding_title": null,
-    "onboarding_body": null
+    "onboarding_title": "Yima",
+    "onboarding_body": "Your personal agent on your phone."
   },
   "defaults": {
     "prefer_bundled_soul_on_first_launch": false,

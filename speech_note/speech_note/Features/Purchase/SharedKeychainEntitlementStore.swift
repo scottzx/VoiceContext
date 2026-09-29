@@ -28,7 +28,11 @@ struct SharedKeychainEntitlementStore: SharedKeychainEntitlementStoring {
 
     static let defaultService = "YiJie.shared.entitlements"
     static let defaultAccount = "lifetimeUnlock"
+    #if VOICE_AGENT_DEV
+    static let defaultAccessGroup = "3HJ3R6SXAL.com.yijie.shared_entitlements.dev"
+    #else
     static let defaultAccessGroup = "3HJ3R6SXAL.com.yijie.shared_entitlements"
+    #endif
 
     private let service: String
     private let account: String

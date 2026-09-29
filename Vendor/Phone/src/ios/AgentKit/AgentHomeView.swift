@@ -188,7 +188,8 @@ struct AgentHomeView: View {
             name: agent.name,
             emoji: existing?.metadata.emoji ?? "",
             style: existing?.metadata.style ?? "",
-            lang: existing?.metadata.lang ?? "auto"
+            lang: existing?.metadata.lang ?? "auto",
+            icon: existing?.metadata.icon ?? ""
         )
         do {
             try SoulStore.save(SoulFile(metadata: metadata, body: persona), for: agentId)

@@ -54,7 +54,11 @@ Vendor/Phone/deps/include/
 Vendor/Phone/deps/frameworks/
 Vendor/Phone/deps/resources/
 Vendor/Phone/deps/lame-build/
+Vendor/Phone/deps/ish/build-ios/
 Vendor/Phone/src/ios/Generated/
 Vendor/Phone/src/ios/Configs/ProviderCustomization.xcconfig
 Integration/Resources/Assets.xcassets/
 Integration/Resources/Localizable.xcstrings
+
+# Generated product display-name localizations
+Integration/Resources/Branding/

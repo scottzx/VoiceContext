@@ -73,6 +73,14 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
+## Repository Ownership and Upstream
+
+- `voice_type` is the sole product development and delivery repository. Make recording, Agent, and integration changes here.
+- Track Agent upstream directly from `https://github.com/OpenMinis/OpenMinis.git` (`main`; local remote name `openminis`).
+- `1agents_phone` is historical import provenance only; do not maintain it as a second product repository or require its checkout for builds.
+- Preserve imported fork customizations and fusion changes in `Vendor/Phone`. Do not merge the upstream repository into the product root or overwrite the vendored tree.
+- Follow `docs/architecture/openminis-upstream.md` for provenance and update procedure.
+
 ## iOS Runtime Verification
 
 **Never use an iOS Simulator in this project.**

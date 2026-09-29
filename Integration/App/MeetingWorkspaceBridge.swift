@@ -18,7 +18,7 @@ actor MeetingWorkspaceBridge {
                 let content = """
                 ---
                 name: voicecontext
-                description: 整理听记录音、会议文稿并提取行动事项。用户提到录音或会议内容时使用。
+                description: 整理一芥伙伴录音、会议文稿并提取行动事项。用户提到录音或会议内容时使用。
                 version: 1.0.0
                 ---
                 先读取 /var/minis/shared/VoiceContext/README.md，再按 recordingID 查找 Source 中的文稿。

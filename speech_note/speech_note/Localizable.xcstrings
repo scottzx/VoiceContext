@@ -7,7 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Voice Notes"
+            "value": "Yima"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一芥伙伴"
           }
         }
       }
@@ -18,7 +24,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "VoiceContext"
+            "value": "Yima"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一芥伙伴"
           }
         }
       }
@@ -1173,7 +1185,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow VoiceContext to save the location where a recording starts? You can change this later in Settings."
+            "value": "Allow Yima to save the location where a recording starts? You can change this later in Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "是否允许 一芥伙伴 在录音时自动记录当前发生的地理位置与地址？你也可以稍后在「设置」中随时更改。"
           }
         }
       }
@@ -3791,7 +3809,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Let VoiceContext hear the recordings you start on purpose."
+            "value": "Let Yima hear the recordings you start on purpose."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让 一芥伙伴 听见你主动开始的记录。"
           }
         }
       }
@@ -3912,7 +3936,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "VoiceContext never listens on its own. The microphone is used only after you tap Start Recording."
+            "value": "Yima never listens on its own. The microphone is used only after you tap Start Recording."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一芥伙伴 不会自动监听。只有在你明确点按“开始录音”后，才会访问麦克风。"
           }
         }
       }
@@ -4132,7 +4162,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "One-time unlock of VoiceContext: on-device transcription, speaker identification, and meeting organization."
+            "value": "One-time unlock of Yima: on-device transcription, speaker identification, and meeting organization."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一次性永久解锁 一芥伙伴 全部功能（本地端侧 AI 转写、说话人识别与会议整理）。"
           }
         }
       }
@@ -4418,7 +4454,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "VoiceContext is recording"
+            "value": "Yima is recording"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一芥伙伴 正在录音"
           }
         }
       }
@@ -4429,7 +4471,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "VoiceContext recording paused"
+            "value": "Yima recording paused"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一芥伙伴 录音已暂停"
           }
         }
       }
@@ -5662,6 +5710,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "Transcribed to +%@"
+          }
+        }
+      }
+    },
+    "一芥伙伴": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yima"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一芥伙伴"
+          }
+        }
+      }
+    },
+    "手机上的个人助手": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personal Agent"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手机上的个人助手"
+          }
+        }
+      }
+    },
+    "一芥伙伴（Yima）是手机上的个人助手，帮助你记录、理解和处理日常事务。基于 OpenMinis 开源项目构建。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yima is your personal agent on your phone, helping you capture, understand, and act on everyday tasks. Built on OpenMinis."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一芥伙伴（Yima）是手机上的个人助手，帮助你记录、理解和处理日常事务。基于 OpenMinis 开源项目构建。"
           }
         }
       }

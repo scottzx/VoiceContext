@@ -184,7 +184,7 @@ enum AppStringKey {
 
     var zh: String {
         switch self {
-        case .appName: "语音便签"
+        case .appName: "一芥伙伴"
         case .recordingsTitle: "全部录音"
         case .searchPlaceholder: "搜索转写内容与标签…"
         case .filterButton: "筛选"
@@ -289,7 +289,7 @@ enum AppStringKey {
 
     var en: String {
         switch self {
-        case .appName: "VoiceContext"
+        case .appName: "Yima"
         case .recordingsTitle: "All Recordings"
         case .searchPlaceholder: "Search transcripts & tags…"
         case .filterButton: "Filter"

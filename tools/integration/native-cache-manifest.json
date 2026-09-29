@@ -1,9 +1,9 @@
 {
-  "provenance": "Local upstream build cache; not rebuilt from the imported source snapshot in this session.",
+  "provenance": "iSH rebuilt from vendored 3f6384c70eefd1a370f121d3492a5f21f7767df9 plus local build adaptation; Rclone built from v1.13 pinned Go modules for iphoneos only. Other native artifacts remain the original local cache, not a clean rebuild.",
   "files": {
-    "deps/libs/libfakefs.a": "6380f1c993910e3db9e6bf9902bd1c1c5346f2ae1e7cc1d9458f47656767e78b",
-    "deps/libs/libish.a": "cc0c8cd67144dbb71ca8d6760f2f9e2e0c0a18d46823ae14bed955134e4624be",
-    "deps/libs/libish_emu.a": "a84eafa9161072ed9a77201d8e073b8d19ea7ff9ad64d2aef2b36e2f4f486dc2",
+    "deps/libs/libfakefs.a": "460d42e5ae11f8ce5e2d44c03915c8b603a776857fc914218afad967a4bd0b20",
+    "deps/libs/libish.a": "0a42e3883fc50792e3b7a24089e2cf564e23d8b46c571a21abecbc6914c141ad",
+    "deps/libs/libish_emu.a": "09b1b6106ba26f7a6173d6900777dc4ff9bef1ee864fb23d8056491b2b799356",
     "deps/include/ish/xX_main_Xx.h": "5826ff9021bd16d4a7f8c11ed9fc6e9c605b0bac778e12431a602f9eb16d924b",
     "deps/include/ish/debug.h": "99a06ad332b55ebc61ca31fbb6d3edceee9d3c53b784874fdaeeae71d2acd4cc",
     "deps/include/ish/misc.h": "754a8196fc486fa998d942b4a955ec170d7bbe01a54453a5252d6d0a1a53ce70",
@@ -845,6 +845,19 @@
     "deps/resources/alpine-rootfs/data/lib/apk/db/triggers": "1a75128408ac43c7420df78af88cd8013d7509dd1ca5d2907b2e82afb062441e",
     "deps/resources/alpine-rootfs/data/lib/apk/db/installed": "fd0b624eb8552efa2cbdd41423c50ba71d0f841c8698fed880a391c83d6cc820",
     "deps/resources/alpine-rootfs/data/lib/apk/db/lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "deps/resources/alpine-rootfs/data/lib/apk/db/scripts.tar": "a34d8399eec9e574d66e0f22bb63016b49a0a0cda60a2d75fbff55569465c766"
+    "deps/resources/alpine-rootfs/data/lib/apk/db/scripts.tar": "a34d8399eec9e574d66e0f22bb63016b49a0a0cda60a2d75fbff55569465c766",
+    "deps/frameworks/Rclone.xcframework/Info.plist": "594e2fb3bb8a317c23b6e6670330bbf733757a11e6a2dd3e64b722bc0ded20de",
+    "deps/frameworks/Rclone.xcframework/ios-arm64/librclone.a": "865f3f65fd41dceefd367be83a39e21cabafed431b317bcfbb9cfc35c0694d49",
+    "deps/frameworks/Rclone.xcframework/ios-arm64/Headers/librclone.h": "53d07b6ed77cbae927ced677234ac042efa5752c2e3078f6451d25c67c4482a4"
+  },
+  "rebuilds": {
+    "date": "2026-09-29",
+    "ishRevision": "3f6384c70eefd1a370f121d3492a5f21f7767df9",
+    "rcloneGoModSHA256": "6e6ef8a552da890eb5b335b9e666471edc3f6653dadae762c7f723917df42c24",
+    "platform": "iphoneos",
+    "logs": [
+      "build/upstream-v1.13/ish-build.log",
+      "build/upstream-v1.13/rclone-build.log"
+    ]
   }
 }

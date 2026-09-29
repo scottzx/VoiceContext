@@ -29,6 +29,7 @@ final class AudioSessionCoordinator {
 
     enum Intent: Int {
         // Higher rawValue = higher priority.
+        case backupKeepAlive = -1
         case backgroundKeepAlive = 0
         case replyTTS = 1
         case toolTTS = 2
@@ -64,6 +65,7 @@ final class AudioSessionCoordinator {
         }
         // Synchronous observers stop chat capture before the recorder takes the mic.
         NotificationCenter.default.post(name: Self.recordingWillStart, object: nil)
+        BackupKeepAlive.end()
         SpeechRecognitionManager.shared.stopRecording()
         GlobalAudioPlayer.shared.stop()
         PlayerOffloadBridge.pauseForRecording()
@@ -144,6 +146,7 @@ final class AudioSessionCoordinator {
 
     private func beginInternal(_ intent: Intent) {
         guard !isRecording || intent == .recording else { return }
+        if intent == .capture || intent == .toolCapture { BackupKeepAlive.end() }
         // Media attachment preempts reply TTS (mutually exclusive voice content):
         // stop the cloud queue directly and notify the chat VM to stop System TTS,
         // BEFORE media takes the session. (TTS is not auto-resumed afterwards.)
@@ -188,7 +191,7 @@ final class AudioSessionCoordinator {
             return (.playback, .default, [.duckOthers])
         case .replyTTS, .toolTTS:
             return (.playback, .spokenAudio, [.duckOthers])
-        case .backgroundKeepAlive:
+        case .backgroundKeepAlive, .backupKeepAlive:
             return (.playback, .default, [.mixWithOthers])
         }
     }

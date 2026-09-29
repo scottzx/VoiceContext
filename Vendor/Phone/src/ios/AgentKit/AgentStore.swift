@@ -128,7 +128,7 @@ final class AgentStore: ObservableObject {
         )
         AgentProfile.ensureDirectories(for: agent.id)
         try? SoulStore.save(
-            SoulFile(metadata: SoulMetadata(name: name, emoji: "", style: "", lang: "auto"),
+            SoulFile(metadata: SoulMetadata(name: name, emoji: "", style: "", lang: "auto", icon: ""),
                      body: personaBody),
             for: agent.id
         )

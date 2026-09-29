@@ -217,7 +217,7 @@ public struct SyncedSession: Codable, Equatable, Sendable {
 
 public struct SyncedMessage: Codable, Equatable, Sendable {
     public static let recordType = "MessageV2"
-    public static let fieldKeys: Set<String> = ["messageId", "sessionId", "role", "partsJson", "tokenUsageJson", "reasoningContent", "streamInterruptCount", "sortOrder", "createdAt", "updatedAt"]
+    public static let fieldKeys: Set<String> = ["messageId", "sessionId", "role", "partsJson", "tokenUsageJson", "reasoningContent", "streamInterruptCount", "sortOrder", "createdAt", "updatedAt", "modelId", "modelDisplayName", "providerType", "providerInstanceId"]
 
     public var id: String
     public var sessionId: String
@@ -229,18 +229,26 @@ public struct SyncedMessage: Codable, Equatable, Sendable {
     public var sortOrder: Int
     public var createdAt: Date
     public var updatedAt: Date
+    public var modelId: String?
+    public var modelDisplayName: String?
+    public var providerType: String?
+    public var providerInstanceId: String?
 
-    public init(id: String, sessionId: String, role: String, partsJson: String, tokenUsageJson: String? = nil, reasoningContent: String? = nil, streamInterruptCount: Int = 0, sortOrder: Int = 0, createdAt: Date, updatedAt: Date) {
+    public init(id: String, sessionId: String, role: String, partsJson: String, tokenUsageJson: String? = nil, reasoningContent: String? = nil, streamInterruptCount: Int = 0, sortOrder: Int = 0, createdAt: Date, updatedAt: Date, modelId: String? = nil, modelDisplayName: String? = nil, providerType: String? = nil, providerInstanceId: String? = nil) {
         self.id = id; self.sessionId = sessionId; self.role = role; self.partsJson = partsJson
         self.tokenUsageJson = tokenUsageJson; self.reasoningContent = reasoningContent
         self.streamInterruptCount = streamInterruptCount; self.sortOrder = sortOrder
         self.createdAt = createdAt; self.updatedAt = updatedAt
+        self.modelId = modelId
+        self.modelDisplayName = modelDisplayName
+        self.providerType = providerType
+        self.providerInstanceId = providerInstanceId
     }
 
     public static func from(_ message: RawMessage, updatedAt: Date) -> SyncedMessage {
         let parts = (try? String(data: JSONEncoder().encode(message.parts), encoding: .utf8)) ?? "[]"
         let usage = message.tokenUsage.flatMap { try? String(data: JSONEncoder().encode($0), encoding: .utf8) }
-        return SyncedMessage(id: message.id, sessionId: message.sessionId, role: message.role.rawValue, partsJson: parts, tokenUsageJson: usage, reasoningContent: message.reasoningContent, streamInterruptCount: message.streamInterruptCount, sortOrder: message.sortOrder, createdAt: message.createdAt, updatedAt: updatedAt)
+        return SyncedMessage(id: message.id, sessionId: message.sessionId, role: message.role.rawValue, partsJson: parts, tokenUsageJson: usage, reasoningContent: message.reasoningContent, streamInterruptCount: message.streamInterruptCount, sortOrder: message.sortOrder, createdAt: message.createdAt, updatedAt: updatedAt, modelId: message.modelId, modelDisplayName: message.modelDisplayName, providerType: message.providerType, providerInstanceId: message.providerInstanceId)
     }
 
     public func portableRecord(unknownFields: [String: PortableFieldValue] = [:]) -> PortableRecord {
@@ -251,7 +259,11 @@ public struct SyncedMessage: Codable, Equatable, Sendable {
                 "partsJson": .string(partsJson), "tokenUsageJson": tokenUsageJson.map(PortableFieldValue.string) ?? .null,
                 "reasoningContent": reasoningContent.map(PortableFieldValue.string) ?? .null,
                 "streamInterruptCount": .int(streamInterruptCount), "sortOrder": .int(sortOrder),
-                "createdAt": .date(createdAt), "updatedAt": .date(updatedAt)
+                "createdAt": .date(createdAt), "updatedAt": .date(updatedAt),
+                "modelId": modelId.map(PortableFieldValue.string) ?? .null,
+                "modelDisplayName": modelDisplayName.map(PortableFieldValue.string) ?? .null,
+                "providerType": providerType.map(PortableFieldValue.string) ?? .null,
+                "providerInstanceId": providerInstanceId.map(PortableFieldValue.string) ?? .null
             ], schemaVersion: 1, unknownFields: unknownFields, updatedAt: updatedAt
         )
     }
@@ -268,7 +280,11 @@ public struct SyncedMessage: Codable, Equatable, Sendable {
                   reasoningContent: record.fields.optionalString("reasoningContent"),
                   streamInterruptCount: record.fields.int("streamInterruptCount") ?? 0,
                   sortOrder: record.fields.int("sortOrder") ?? 0, createdAt: createdAt,
-                  updatedAt: record.fields.date("updatedAt") ?? record.updatedAt)
+                  updatedAt: record.fields.date("updatedAt") ?? record.updatedAt,
+                  modelId: record.fields.optionalString("modelId"),
+                  modelDisplayName: record.fields.optionalString("modelDisplayName"),
+                  providerType: record.fields.optionalString("providerType"),
+                  providerInstanceId: record.fields.optionalString("providerInstanceId"))
     }
 }
 

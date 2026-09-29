@@ -96,6 +96,9 @@ for file in sorted((ROOT / 'Integration/Recording').glob('*.swift')):
     add(record,'PBXSourcesBuildPhase',ref(file,'sourcecode.swift'))
 for file in sorted((ROOT / 'Integration/App').glob('*.swift')):
     add(main,'PBXSourcesBuildPhase',ref(file,'sourcecode.swift'))
+for tid in p['targets']:
+    if tid not in [record_id, widget_id]:
+        add(o[tid], 'PBXSourcesBuildPhase', ref(ROOT / 'Integration/Shared/AgentBuildIdentity.swift', 'sourcecode.swift'))
 # The recording module keeps its original actor isolation; the phone module keeps its own.
 for cid in o[record['buildConfigurationList']]['buildConfigurations']:
     bs = o[cid]['buildSettings']
@@ -137,7 +140,7 @@ for bid in list(resources['files']):
     if x.get('path') in ['Localizable.xcstrings','Assets.xcassets']:
         resources['files'].remove(bid)
     if x.get('name')=='InfoPlist.strings':
-        resources['files'].remove(bid)  # old localized Minis display name must not override 听记
+        resources['files'].remove(bid)  # localized branding is generated per target and build identity
 for path,kind in [(ROOT/'Integration/Resources/Localizable.xcstrings','text.json.xcstrings'),
                   (ROOT/'Integration/Resources/Assets.xcassets','folder.assetcatalog'),
                   (ROOT/'speech_note/speech_note/ModelResources','folder'),
@@ -151,25 +154,25 @@ with (ROOT/'speech_note/speech_note/Info.plist').open('rb') as f: original=plist
 phone_settings = o[o[main['buildConfigurationList']]['buildConfigurations'][0]]['buildSettings']
 for key, value in phone_settings.items():
     if key.startswith('INFOPLIST_KEY_') and key.endswith('UsageDescription'):
-        info[key.removeprefix('INFOPLIST_KEY_')] = value.replace('Yima', '听记')
+        info[key.removeprefix('INFOPLIST_KEY_')] = value.replace('一伴', '一芥伙伴').replace('听记', '一芥伙伴')
 for key,value in original.items():
     if key in ['UIBackgroundModes','CFBundleURLTypes','BGTaskSchedulerPermittedIdentifiers']:
         info[key]=info.get(key,[])+[x for x in value if x not in info.get(key,[])]
     else: info[key]=value
 # Do not advertise the old app's shortcut branding.
 info.pop('UIApplicationShortcutItems',None)
-info['CFBundleDisplayName']='听记'
-info['CFBundleName']='VoiceContext'
-info['NSMicrophoneUsageDescription']='听记使用麦克风录制你主动开始的会议或日常语音，并在你选择语音输入时转为聊天文字。'
+info['CFBundleDisplayName']='一芥伙伴'
+info['CFBundleName']='Yima'
+info['NSMicrophoneUsageDescription']='一芥伙伴使用麦克风录制你主动开始的会议或日常语音，并在你选择语音输入时转为聊天文字。'
 info['NSRemindersFullAccessUsageDescription']='在待办事项中展示和管理你的系统提醒事项，并让你授权的智能体任务使用同一份待办。'
 for key, value in info.items():
     if key.endswith('UsageDescription') and isinstance(value, str):
-        info[key] = value.replace('Yima', '听记')
+        info[key] = value.replace('一伴', '一芥伙伴').replace('听记', '一芥伙伴')
 info['NSUbiquitousContainers'] = {
     identifier: {'NSUbiquitousContainerIsDocumentScopePublic': True,
                  'NSUbiquitousContainerName': title, 'NSUbiquitousContainerSupportedFolderLevels': 'Any'}
     for identifier, title in [('iCloud.YiJie.speech-note', 'VoiceContext'),
-                              ('iCloud.YiJie.speech-note.agent', '听记智能体')]
+                              ('iCloud.YiJie.speech-note.agent', 'Yima')]
 }
 with (ROOT/'Integration/Info.plist').open('wb') as f: plistlib.dump(info,f)
 with (PHONE/'Minis.entitlements').open('rb') as f: ent=plistlib.load(f)
@@ -199,13 +202,13 @@ for tid in p['targets']:
                       CODE_SIGN_ENTITLEMENTS='$(SRCROOT)/../../../../Integration/VoiceContextAgent.entitlements',
                       FLAVOR_ID='openminis', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon',
                       SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) VOICE_AGENT_FUSION',
-                      TARGETED_DEVICE_FAMILY='1', INFOPLIST_KEY_CFBundleDisplayName='听记',
-                      INFOPLIST_KEY_CFBundleName='VoiceContext',
+                      TARGETED_DEVICE_FAMILY='1', INFOPLIST_KEY_CFBundleDisplayName='一芥伙伴',
+                      INFOPLIST_KEY_CFBundleName='Yima',
                       INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone='UIInterfaceOrientationPortrait')
         elif tid not in [record_id,widget_id]:
             bs['PRODUCT_BUNDLE_IDENTIFIER']=bs.get('PRODUCT_BUNDLE_IDENTIFIER','').replace('com.1agents.phone','YiJie.speech-note')
             bs['INFOPLIST_KEY_CFBundleDisplayName'] = {
-                'MinisShare': '发送到听记', 'MinisFileProvider': '听记文件', 'AgentWidgetExtension': '智能体活动'
+                'MinisShare': '发送到一芥伙伴', 'MinisFileProvider': '一芥伙伴文件', 'AgentWidgetExtension': '智能体活动'
             }[t['name']]
 # Separate resources must not rewrite upstream or original asset catalogs.
 import shutil
@@ -223,6 +226,79 @@ strings['strings'].update(vc['strings'])
 for path,kind in [(assets,'folder.assetcatalog'),(ROOT/'Integration/Resources/Localizable.xcstrings','text.json.xcstrings')]:
     fid=ref(path,kind)
     if not any(o[x].get('fileRef')==fid for x in resources['files']): add(main,'PBXResourcesBuildPhase',fid)
+# A separate configuration keeps development installs beside the released app.
+# All dependencies receive the same configuration, including the four extensions.
+def development_value(value):
+    if isinstance(value, dict):
+        return {development_value(k): development_value(v) for k, v in value.items()}
+    if isinstance(value, list): return [development_value(v) for v in value]
+    if isinstance(value, str):
+        value = value.replace('YiJie.speech-note', 'YiJie.speech-note.dev')
+        value = value.replace('com.yijie.shared_entitlements', 'com.yijie.shared_entitlements.dev')
+        if value in ['voicecontext', 'minis']: value += '-dev'
+    return value
+
+for owner in [p, *[o[tid] for tid in p['targets']]]:
+    configurations = o[owner['buildConfigurationList']]['buildConfigurations']
+    debug = next(cid for cid in configurations if o[cid]['name'] == 'Debug')
+    dev_id = uid('development:' + debug)
+    dev = copy.deepcopy(o[debug]); dev['name'] = 'Debug-Dev'
+    bs = dev['buildSettings']
+    if owner is not p:
+        bs['PRODUCT_BUNDLE_IDENTIFIER'] = development_value(bs['PRODUCT_BUNDLE_IDENTIFIER'])
+        bs['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = bs.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS', '$(inherited)') + ' VOICE_AGENT_DEV'
+        display_name = bs.get('INFOPLIST_KEY_CFBundleDisplayName')
+        if display_name:
+            bs['INFOPLIST_KEY_CFBundleDisplayName'] = display_name + ' Dev'
+        for setting, suffix in [('INFOPLIST_FILE', 'Info.plist'), ('CODE_SIGN_ENTITLEMENTS', 'entitlements')]:
+            if setting not in bs: continue
+            source = Path(bs[setting].replace('$(SRCROOT)', str(PHONE)))
+            if not source.is_absolute(): source = PHONE / source
+            value = development_value(plistlib.loads(source.read_bytes()))
+            if setting == 'INFOPLIST_FILE' and 'CFBundleDisplayName' in value:
+                value['CFBundleDisplayName'] += ' Dev'
+            path = ROOT / 'Integration' / f"{owner['name']}Dev.{suffix}"
+            with path.open('wb') as f: plistlib.dump(value, f)
+            bs[setting] = '$(SRCROOT)/../../../../Integration/' + path.name
+    o[dev_id] = dev
+    configurations.append(dev_id)
+
+# Display names are localized independently of bundle IDs and storage paths.
+brand_names = {
+    'VoiceContextAgent': ('一芥伙伴', 'Yima'),
+    'MinisShare': ('发送到一芥伙伴', 'Send to Yima'),
+    'MinisFileProvider': ('一芥伙伴文件', 'Yima Files'),
+    'AgentWidgetExtension': ('一芥伙伴活动', 'Yima Activity'),
+    'RecordWidgetExtension': ('一芥伙伴录音', 'Yima Recording'),
+}
+for tid in p['targets']:
+    target = o[tid]
+    if target['name'] not in brand_names: continue
+    zh, en = brand_names[target['name']]
+    target_resources = phase(target, 'PBXResourcesBuildPhase')
+    for bid in list(target_resources['files']):
+        resource = o[o[bid]['fileRef']]
+        if resource.get('name') == 'InfoPlist.strings': target_resources['files'].remove(bid)
+    for cid in o[target['buildConfigurationList']]['buildConfigurations']:
+        config = o[cid]; bs = config['buildSettings']
+        suffix = ' Dev' if config['name'] == 'Debug-Dev' else ''
+        folder = ROOT / 'Integration/Resources/Branding' / target['name'] / config['name']
+        folder.mkdir(parents=True, exist_ok=True)
+        entries = {}
+        for key in ['CFBundleDisplayName', 'CFBundleName']:
+            entries[key] = {'extractionState': 'manual', 'localizations': {
+                lang: {'stringUnit': {'state': 'translated', 'value': name + suffix}}
+                for lang, name in [('en', en), ('zh-Hans', zh), ('zh-Hant', zh)]}}
+        (folder / 'InfoPlist.xcstrings').write_text(json.dumps(
+            {'sourceLanguage': 'en', 'strings': entries, 'version': '1.0'}, ensure_ascii=False, indent=2) + '\n')
+        bs['YIMA_BRANDING_DIR'] = '$(SRCROOT)/../../../../Integration/Resources/Branding/' + target['name'] + '/' + config['name']
+        bs['INFOPLIST_KEY_CFBundleDisplayName'] = zh + suffix
+    fid = uid('branding:' + target['name'])
+    o[fid] = {'isa': 'PBXFileReference', 'path': '$(YIMA_BRANDING_DIR)/InfoPlist.xcstrings',
+              'sourceTree': '<absolute>', 'lastKnownFileType': 'text.json.xcstrings'}
+    o[p['mainGroup']]['children'].append(fid)
+    add(target, 'PBXResourcesBuildPhase', fid)
+
 OUT.mkdir(exist_ok=True)
 with (OUT/'project.pbxproj').open('wb') as f: plistlib.dump(d,f,sort_keys=False)
 scheme_dir=OUT/'xcshareddata/xcschemes';scheme_dir.mkdir(parents=True,exist_ok=True)
@@ -233,6 +309,9 @@ for x in scheme.iter('BuildableReference'):
     x.set('ReferencedContainer','container:VoiceContextAgent.xcodeproj')
 for test in scheme.iter('Testables'): test.clear()
 scheme.write(scheme_dir/'VoiceContextAgent.xcscheme',encoding='UTF-8',xml_declaration=True)
+for action in scheme.getroot():
+    if 'buildConfiguration' in action.attrib: action.set('buildConfiguration', 'Debug-Dev')
+scheme.write(scheme_dir/'VoiceContextAgentDev.xcscheme',encoding='UTF-8',xml_declaration=True)
 workspace=ROOT/'VoiceContextAgent.xcworkspace';workspace.mkdir(exist_ok=True)
 (workspace/'contents.xcworkspacedata').write_text('<?xml version="1.0" encoding="UTF-8"?>\n<Workspace version="1.0"><FileRef location="group:Vendor/Phone/src/ios/VoiceContextAgent.xcodeproj"/></Workspace>\n')
-print('Generated VoiceContextAgent workspace and recording framework target.')
+print('Generated VoiceContextAgent workspace with production and isolated development schemes.')

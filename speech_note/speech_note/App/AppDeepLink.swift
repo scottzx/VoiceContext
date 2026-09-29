@@ -7,7 +7,11 @@ enum AppDeepLink: Equatable, Sendable {
     case stopRecording
     case openRecording
 
+    #if VOICE_AGENT_DEV
+    static let urlScheme = "voicecontext-dev"
+    #else
     static let urlScheme = "voicecontext"
+    #endif
     static let startRecordingHost = "start-recording"
     static let stopRecordingHost = "stop-recording"
     static let openRecordingHost = "recording"

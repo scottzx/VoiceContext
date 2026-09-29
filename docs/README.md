@@ -1,8 +1,10 @@
-# VoiceContext 文档
+# 一芥伙伴 · Yima 文档
 
-本目录保存 VoiceContext 的产品、设计和工程文档。文档中的产品边界以 PRD 为准，PM 看板用于跟踪需求、任务、依赖和里程碑。
+本目录保存一芥伙伴（Yima）的产品、设计和工程文档；历史 VoiceContext / 听记文档继续保留。文档中的产品边界以 PRD 为准，PM 看板用于跟踪需求、任务、依赖和里程碑。
 
 ## 产品文档
+
+- [产品身份与定位](./design/product-identity.md)：一芥伙伴 / Yima，手机上的个人助手（Personal Agent），命名及升级兼容性约定。
 
 - [个人智能体融合设计](./design/personal-agent-integration.md)：PM `#85`；已实现首轮工程融合，记录产品身份、完整 Agent 工程方向、四 Tab、录音优先和系统提醒事项，以及仍待真机验收的边界。涉及新范围时按此增补，v1 文档保留历史基线。
 - [VoiceContext v1 产品需求文档（PRD）](./PRD.md)：v1 产品边界、用户流程、信息架构、页面清单、状态矩阵、功能需求、验收标准，以及原型任务 `#39` / `#40` 的输入与交付定义。
@@ -16,9 +18,14 @@
 
 ## 工程导航
 
+- [OpenMinis v1.13 合并记录](./architecture/openminis-v1.13-integration.md)：合入范围、冲突处理、依赖重建和验证边界。
+
+- [OpenMinis 上游维护约定](./architecture/openminis-upstream.md)：单仓开发、历史来源、直接上游及更新流程。
+
+- [开发版、TestFlight 与正式版切换](./release/build-variants-and-release.md)：Scheme 与 Bundle ID 选择、数据隔离、版本号来源、Release 归档及发布流程。
 - [个人智能体融合工程](../Integration/README.md)：workspace、容器映射、完整能力清单、构建命令和验证记录。
 
-- [工程目录说明](./architecture/project-structure.md)：源码模块职责、测试分组、资源路径与新增文件规则。
+- [工程目录说明](./architecture/project-structure.md)：融合后的 Phone、录音与 Integration 模块边界，工程生成、版本同步、资源缓存及新增文件规则。
 
 ## 文档约定
 

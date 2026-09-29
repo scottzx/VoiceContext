@@ -1,4 +1,4 @@
-# VoiceContext 个人智能体融合设计
+# 一芥伙伴 / Yima 个人智能体融合设计
 
 ## 文档信息与决策状态
 
@@ -7,6 +7,9 @@
 - 状态：已按确认方案实现首轮融合，完成真机签名编译、同身份覆盖安装、启动闪退修复和启动验证；完整功能、升级及设计验收仍待完成。
 - 本轮产出：`VoiceContextAgent.xcworkspace`、完整 iOS 源码快照、录音 framework、四 Tab、系统提醒事项、统一音频协调、文稿与产物接线。工程事实、能力清单、构建及待验收项见 [融合工程说明](../../Integration/README.md)。已在用户授权的 scottxz 真机启动，持续运行超过两分钟且无新增崩溃报告。
 - 适用关系：本设计是下一阶段产品增补。仅对融合版本取代 v1 的单一录音首页、不内置 LLM、不提供分享扩展等范围限制；保留历史 v1 文档和验收事实。
+- 开发安装补充：按用户要求增加 `YiJie.speech-note.dev`（「听记 Dev」），通过 `VoiceContextAgentDev` scheme 与正式 App 并存；开发数据、扩展、iCloud、App Group 和 Keychain 分离，正式 `YiJie.speech-note` 的身份与数据路径继续保留。
+
+- 产品命名补充：正式中文名「一芥伙伴」，英文名「Yima」，定位「手机上的个人助手 / Personal Agent」；Bundle ID、容器和数据路径不变，见[产品身份](product-identity.md)。
 
 ## 背景与目标
 
@@ -19,7 +22,7 @@
 | 决定 | 约束 |
 |---|---|
 | 延续原产品 | 主 Bundle ID 保持 `YiJie.speech-note`；保持已有录音、文稿和附件路径，承接购买权益与 Keychain 访问 |
-| 仓库与工程 | 在 voice_type 仓库内建立融合 target，以 phone 完整工程装配为基础 |
+| 仓库与工程 | voice_type 为唯一产品开发与交付仓库；保留已导入的 phone 完整工程与定制，后续直接跟踪 OpenMinis/OpenMinis，不再单独维护 1agents_phone |
 | 完整 Agent 能力 | shell/iSH、Skills、浏览器必须同时纳入，其他已有 iOS Agent 能力按清单迁移，不以最小循环内核代替 |
 | 四 Tab | 固定顺序：聊天、会议、待办事项、拓展 |
 | 设置归属 | 现有我的、设置进入拓展 Tab |

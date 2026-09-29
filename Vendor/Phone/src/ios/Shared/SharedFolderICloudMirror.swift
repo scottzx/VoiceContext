@@ -21,7 +21,7 @@ extension Notification.Name {
 final class SharedFolderICloudMirror: ObservableObject {
     static let shared = SharedFolderICloudMirror()
 
-    static let iCloudContainerIdentifier = "iCloud.YiJie.speech-note.agent"
+    static let iCloudContainerIdentifier = AgentBuildIdentity.iCloudContainerID
     static let iCloudFolderName = "Minis Shared"
 
     @Published private(set) var isEnabled: Bool

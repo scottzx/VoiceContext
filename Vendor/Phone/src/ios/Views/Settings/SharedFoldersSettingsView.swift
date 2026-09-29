@@ -27,7 +27,7 @@ struct SharedFoldersSettingsView: View {
                 }
             }
 
-            Section(String(localized: "Folders")) {
+            Section(AppLocalized("Folders")) {
                 ForEach(model.entries) { entry in
                     NavigationLink {
                         MountDetailView(
@@ -208,7 +208,7 @@ final class SharedFoldersViewModel: ObservableObject {
         return [
             SharedFolderEntry(
                 name: "shared",
-                displayName: String(localized: "Shared"),
+                displayName: AppLocalized("Shared"),
                 linuxPath: "/var/minis/shared",
                 hostURL: root.appendingPathComponent("shared", isDirectory: true),
                 iconName: "folder.fill",
@@ -217,7 +217,7 @@ final class SharedFoldersViewModel: ObservableObject {
             ),
             SharedFolderEntry(
                 name: "skills",
-                displayName: String(localized: "Skills"),
+                displayName: AppLocalized("Skills"),
                 linuxPath: "/var/minis/skills",
                 hostURL: root.appendingPathComponent("skills", isDirectory: true),
                 iconName: "sparkles",
@@ -226,7 +226,7 @@ final class SharedFoldersViewModel: ObservableObject {
             ),
             SharedFolderEntry(
                 name: "memory",
-                displayName: String(localized: "Memory"),
+                displayName: AppLocalized("Memory"),
                 linuxPath: "/var/minis/memory",
                 hostURL: root.appendingPathComponent("memory", isDirectory: true),
                 iconName: "brain.head.profile",

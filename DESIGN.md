@@ -1,4 +1,4 @@
-# Design System — VoiceContext
+# Design System — 一芥伙伴 / Yima
 
 > Status: approved source of truth  
 > Approved by: Human product owner  
@@ -9,9 +9,11 @@ This file is the project-wide source of truth for visual and interaction design.
 
 ## Product Context
 
-- **What this is:** A local-first iPhone voice notebook evolving into a personal agent. It captures a personal thought, a conversation, or a meeting as one `Recording`, then connects open Markdown/JSON context with chat and agent execution. Recording reliability remains the priority.
+- **Name:** 一芥伙伴 (Chinese), Yima (English).
+- **Positioning:** Your personal assistant on your phone — Personal Agent.
+- **What this is:** An iPhone personal agent combining chat, reliable recording, meetings, system reminders, shell, Skills, and browser tools. It captures a personal thought, a conversation, or a meeting as one `Recording`, then connects open Markdown/JSON context with chat and agent execution. Recording reliability remains the priority.
 - **Who it is for:** Privacy-conscious Apple users who value reliable recording, local processing, open documents, and one-time purchase over cloud AI spectacle or subscriptions.
-- **Product type:** Native iOS productivity and recording utility.
+- **Product type:** Native iOS personal assistant (Personal Agent).
 - **Core promise:** The user's recording is private, understandable, recoverable, and under their control.
 - **Memorable impression:** It feels as simple and trustworthy as an Apple system recording tool.
 
@@ -237,3 +239,4 @@ Do not apply border, fill, radius, and shadow to the same element by default. Ca
 | 2026-08-03 | Keep system typography | Reinforces platform-native behavior, offline reliability, Dynamic Type, and Chinese support |
 | 2026-09-29 | Evolve VoiceContext into a personal agent with 聊天 / 会议 / 待办事项 / 拓展 tabs; move 我的 and settings to 拓展 | Explicit product-owner decision; retain VoiceContext identity and recording priority while using the complete phone agent framework |
 | 2026-09-29 | Use system Reminders as the Tasks source of truth | Explicit product-owner choice; the app and agent manage the same reminders without a parallel task database |
+| 2026-09-29 | Rename the product to 一芥伙伴 / Yima, positioned as a personal assistant on the phone (Personal Agent) | Explicit product-owner decision; retain Bundle IDs, data paths, recording reliability, and the existing visual system |

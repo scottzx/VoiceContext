@@ -37,7 +37,7 @@ struct VoiceContextRootView: View {
             if newValue == .active { Task { await MeetingWorkspaceBridge.shared.refresh() } }
         }
         .onOpenURL { url in
-            guard url.scheme == "voicecontext" else { return }
+            guard url.scheme == AgentBuildIdentity.recordingURLScheme else { return }
             selection = .meetings
             if url.host == "start-recording" { startRecording = true }
             if url.host == "stop-recording" { stopRecording = true }

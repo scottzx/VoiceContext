@@ -1,8 +1,15 @@
-# 听记个人智能体融合工程
+# 一芥伙伴 / Yima 融合工程
 
-需求：[#85 的设计依据](../docs/design/personal-agent-integration.md)。入口是仓库根目录 `VoiceContextAgent.xcworkspace`，scheme 为 `VoiceContextAgent`。
+需求：[#85 的设计依据](../docs/design/personal-agent-integration.md)。入口是仓库根目录 `VoiceContextAgent.xcworkspace`。日常开发选择 `VoiceContextAgentDev`；正式身份使用 `VoiceContextAgent`。
 
-这是同一听记产品的新工程装配，主 Bundle ID 仍为 `YiJie.speech-note`。安装融合版会替换同身份的旧版。原 `speech_note/speech_note.xcodeproj` 继续可独立构建。
+这是原听记产品延续而来的「一芥伙伴 / Yima」，定位为手机上的个人助手（Personal Agent），正式 Bundle ID 仍为 `YiJie.speech-note`。开发版使用独立的 `YiJie.speech-note.dev`，显示为「一芥伙伴 Dev / Yima Dev」，可与现有听记并存。只有安装正式身份的包才会覆盖现有听记。原 `speech_note/speech_note.xcodeproj` 继续可独立构建。
+
+| Scheme | 配置 | Bundle ID | 用途 |
+|---|---|---|---|
+| `VoiceContextAgentDev` | `Debug-Dev` | `YiJie.speech-note.dev` | 日常开发、真机调试；归档也保持开发身份 |
+| `VoiceContextAgent` | `Debug` / `Release` | `YiJie.speech-note` | 明确需要覆盖升级验证或正式发行时使用 |
+
+开发版独立保存录音、文稿、聊天、模型配置和 Keychain，不自动复制或迁移正式数据。新增开发版不会将之前覆盖安装的同身份融合版自动还原为 App Store 版本。系统提醒事项等 iPhone 系统服务仍是同一份系统数据，授权后的操作仍会影响系统记录。
 
 ## 实现边界
 
@@ -10,7 +17,7 @@
 - `Integration/App`：四 Tab、系统提醒事项、音频桥接、文稿快照、录音产物预览。
 - `Integration/Recording`：将原录音业务作为 `VoiceRecording.framework` 提供给宿主。独立 Swift 模块保留原 actor isolation，避免两套 `ContentView` 等类型冲突。
 - `speech_note/speech_note`：复用原录音、转写、SQLite/journal、文稿、购买和设置；仅增加宿主入口与必要桥接。旧数据不搬进新 Agent 容器。
-- 主模块名保留 `Minis`，以兼容 phone 原有 Objective-C/Swift 桥接与运行时类型查找；产品显示名、签名身份属于听记。
+- 主模块名保留 `Minis`，以兼容 phone 原有 Objective-C/Swift 桥接与运行时类型查找；产品显示名为一芥伙伴 / Yima，签名身份沿用原产品。
 
 录音服务由 App 层持有，四 Tab 和语言切换共用同一个实例。恢复完成后再显示会议页，避免冷启动深链先于数据恢复开始录音。
 
@@ -37,6 +44,8 @@
 | 原 Keychain group | `$(AppIdentifierPrefix)com.yijie.shared_entitlements` |
 
 生成器继承原听记的 Team、版本号、build 号，所有扩展保持一致。原文稿容器不可用时留在本地，不退到 Agent 容器。保留原 StoreKit 标识与既有数据相对路径。
+
+开发版将上表所有 `YiJie.speech-note` 前缀替换为 `YiJie.speech-note.dev`，包括四个扩展、两个 iCloud 容器和 App Group；Keychain group 为 `$(AppIdentifierPrefix)com.yijie.shared_entitlements.dev`。Swift 运行时代码通过 `VOICE_AGENT_DEV` 与签名配置选择同一组身份。录音 Widget 使用 `voicecontext-dev://`，分享扩展使用 `minis-dev://`；正式版继续使用原 scheme。第三方 OAuth 回调约定保留，不视为已完成双安装 OAuth 验收。开发版的新 Bundle ID 不继承正式 App Store 的内购商品关联，购买流程需要单独配置与验证。
 
 2026-09-29：已通过 Xcode 自动签名完成 USB iPhone 15 Pro 的开发编译。主应用和四个扩展的 embedded provisioning profile 均包含该设备；签名中的新 App Group、iCloud 容器均由描述文件覆盖，保留原 Keychain 组。此次验证为开发签名，尚未验证发行归档与真机运行。
 
@@ -77,10 +86,12 @@
 bash tools/integration/build_device.sh
 ```
 
+默认构建隔离开发版，产物位于 `build/VoiceContextAgent/Build/Products/Debug-Dev-iphoneos/VoiceContextAgent.app`。明确需要正式身份产物时运行 `bash tools/integration/build_device.sh production`。脚本仍不自动安装。
+
 已有工作区的依赖缓存已经就位；`build/`、原生缓存和生成资源不提交。新 checkout 需要：
 
 1. 恢复原听记使用的 `speech_note/speech_note/Frameworks/TranscribeCpp.xcframework` 与本地模型资源（原仓库既有依赖约定）。
-2. 在 `Vendor/Phone` 按 `BUILDING.md` 的 **iOS 真机**流程依次构建 `deps/build_lame.sh`、`deps/build_ffmpeg.sh`、`deps/build_ish.sh`、`deps/prepare_alpine_rootfs.sh`，或从相同来源缓存复制 `deps/{libs,include,frameworks,resources}`。本次使用的是本机已有缓存，没有声称完成干净源码重建。
+2. 在 `Vendor/Phone` 按 `BUILDING.md` 的 **iOS 真机**流程依次构建 `deps/build_lame.sh`、`deps/build_ffmpeg.sh`、`deps/build_ish.sh`、`deps/prepare_alpine_rootfs.sh` 和 `deps/build_rclone_ios.sh`（需要 Go 1.25 或兼容工具链，仅生成 iphoneos slice），或从相同来源缓存复制 `deps/{libs,include,frameworks,resources}`。首次导入使用本机缓存；v1.13 合并时已重建 iSH 和 Rclone，其余依赖继续使用原缓存，未声称全量干净重建。
 3. 运行 `python3 tools/integration/generate_project.py`。它会生成 assets/strings 和工程，并从 example 创建不含凭据的本地 provider 配置。
 4. 如 SwiftPM 尚无缓存，用 Xcode 解析 workspace 内已锁定的 `Package.resolved` 依赖，再执行设备编译。不要直接搬带有另一仓库绝对 artifact 路径的 `workspace-state.json`。
 
@@ -90,23 +101,30 @@ bash tools/integration/build_device.sh
 
 ```bash
 python3 tools/integration/verify_fusion.py \
-  --products build/VoiceContextAgent/Build/Products/Debug-iphoneos --check-cache
+  --variant development \
+  --products build/VoiceContextAgent/Build/Products/Debug-Dev-iphoneos --check-cache
 ```
 
-它核对原 phone 的 403 个编译输入、4643 个来源文件、产品身份、权限文案、原 Keychain、容器映射、四个扩展版本和关键资源。`--check-cache` 核对本次缓存指纹；自行重建原生库后二进制可不同，需要另行记录新构建来源。
+审计正式身份产物时省略 `--variant development` 并使用 `Debug-iphoneos` 路径。两种模式都检查开发配置与正式配置的数据容器不重合、扩展身份前缀，以及录音 framework 的加载路径。
+
+它核对当前 Phone 工程的 448 个编译输入（包含原有 403 个）、首次导入的 4643 个来源文件、产品身份、权限文案、原 Keychain、容器映射、四个扩展版本和关键资源。`--check-cache` 核对本次缓存指纹；自行重建原生库后二进制可不同，需要另行记录新构建来源。
 
 ## 来源与本地补丁
 
-- phone：`02956e269857e32335b16b4d5e6af999ff14c6e1`。
-- iSH：`19c690c3b979c3addef38318231b93a2dcdbe990`；libapps/libarchive 子模块 SHA 见 `Vendor/Phone/SOURCE_SNAPSHOT.json`。
+- 唯一产品仓库为 `voice_type`，后续直接跟踪 [OpenMinis/OpenMinis](https://github.com/OpenMinis/OpenMinis)，不再单独维护 `1agents_phone`；见[上游维护约定](../docs/architecture/openminis-upstream.md)。
+- 首次导入来自 `1agents_phone`：`02956e269857e32335b16b4d5e6af999ff14c6e1`；该快照的 OpenMinis 合入基线为 `09fc199928de0f26685e766c34e6d541c7a69e5a`。fork 定制已由本仓库承接，不将其冒记为纯上游源码。
+- 已合入 OpenMinis v1.13：`4ef29002e88db1e20e462ec2ff46916e8a7dcb45` 的 iOS 及共用依赖变化；冲突处理和验证见[v1.13 合并记录](../docs/architecture/openminis-v1.13-integration.md)。
+- 当前 iSH：`3f6384c70eefd1a370f121d3492a5f21f7767df9`，本次已重建设备库；首次导入为 `19c690c3b979c3addef38318231b93a2dcdbe990`。libapps/libarchive 固定版本不变。
 - Android PRoot 和未启用的 Linux kernel 子模块不进入 iOS 移植范围。
 - `tools/integration/phone-source-manifest.json` 保存修改前的来源指纹；审计输出列出本地补丁，包括身份映射、音频协调、入口、聊天草稿、SwiftUI 编译表达式拆分、浏览器媒体接线及快照构建支持。
-- `tools/integration/native-cache-manifest.json` 单独保存本机原生依赖缓存指纹；缓存可能来自上游工作区历史构建，不能据此推断与已导入源码逐字一致。
+- `tools/integration/native-cache-manifest.json` 保存当前缓存指纹和 iSH / Rclone 重建来源；其他缓存仍来自历史构建，不能据此推断全部依赖均与源码逐字一致。
 - 未带入上游未提交 Swift/iSH 修改、登录凭据或本地 provider 秘钥配置。
 - 提交前移除上游硬件桥源码内置的演示 API Key；Moss 继续使用硬件桥设置或 `MOSS_API_KEY` 配置，不随源码分发凭据。
 - 保留 `Vendor/Phone/LICENSE`（GPLv3）及 `THIRD_PARTY_LICENSES.md`。原录音源码和引入代码分别保留来源；不要把仓库原 MIT 文件解释为替代第三方许可。
 
 ## 验证记录与下一步验收
+
+2026-09-29 开发身份并存补充：`VoiceContextAgentDev` / `Debug-Dev` 完成实际 iPhone 目标的签名编译，主应用及四个扩展的描述文件均覆盖 `scottxz`，签名中的开发 App Group、iCloud 与 Keychain 已核对。产物及动态库审计通过，`YiJie.speech-note.dev` 已成功安装为「听记 Dev」。设备查询确认新旧两个 Bundle ID 同时存在，原 `YiJie.speech-note` 的安装 URL 和版本不变。开发版首次工具启动因锁屏被系统拒绝；用户解锁后已成功启动，同一进程持续运行 84 秒且无新增崩溃报告，再次确认原应用安装位置和版本未变。本次为启动及并存检查，不代替完整功能验收。日志与审计：`build/fusion-dev-build.log`、`build/fusion-dev-signing-audit.json`、`build/fusion-dev-coexistence-audit.json`。
 
 2026-09-29：融合 Debug unsigned iPhone build、原独立听记同类 build、装配审计、Python/shell 语法检查通过。日志在本机 `build/`。没有执行设备测试，未使用模拟器，未安装覆盖已发布应用，未上传 TestFlight。
 

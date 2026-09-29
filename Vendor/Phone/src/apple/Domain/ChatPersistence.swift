@@ -355,8 +355,13 @@ public struct RawMessage: Identifiable, Codable, Hashable, Sendable {
     public var sortOrder: Int
     public var errorInfo: String?
     public var senderAgentId: String?
+    // Snapshot attribution survives provider edits, sync, and backup/restore.
+    public var modelId: String?
+    public var modelDisplayName: String?
+    public var providerType: String?
+    public var providerInstanceId: String?
 
-    public init(id: String, sessionId: String, role: MessageRole, parts: [ContentPart], createdAt: Date, tokenUsage: StoredTokenUsage? = nil, reasoningContent: String? = nil, streamInterruptCount: Int = 0, sortOrder: Int = 0, errorInfo: String? = nil, senderAgentId: String? = nil) {
+    public init(id: String, sessionId: String, role: MessageRole, parts: [ContentPart], createdAt: Date, tokenUsage: StoredTokenUsage? = nil, reasoningContent: String? = nil, streamInterruptCount: Int = 0, sortOrder: Int = 0, errorInfo: String? = nil, senderAgentId: String? = nil, modelId: String? = nil, modelDisplayName: String? = nil, providerType: String? = nil, providerInstanceId: String? = nil) {
         self.id = id
         self.sessionId = sessionId
         self.role = role
@@ -368,11 +373,16 @@ public struct RawMessage: Identifiable, Codable, Hashable, Sendable {
         self.sortOrder = sortOrder
         self.errorInfo = errorInfo
         self.senderAgentId = senderAgentId
+        self.modelId = modelId
+        self.modelDisplayName = modelDisplayName
+        self.providerType = providerType
+        self.providerInstanceId = providerInstanceId
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, sessionId, role, parts, createdAt, tokenUsage, reasoningContent
         case streamInterruptCount, sortOrder, errorInfo, senderAgentId
+        case modelId, modelDisplayName, providerType, providerInstanceId
     }
 
     public init(from decoder: Decoder) throws {
@@ -388,6 +398,10 @@ public struct RawMessage: Identifiable, Codable, Hashable, Sendable {
         sortOrder = try container.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
         errorInfo = try container.decodeIfPresent(String.self, forKey: .errorInfo)
         senderAgentId = try container.decodeIfPresent(String.self, forKey: .senderAgentId)
+        modelId = try container.decodeIfPresent(String.self, forKey: .modelId)
+        modelDisplayName = try container.decodeIfPresent(String.self, forKey: .modelDisplayName)
+        providerType = try container.decodeIfPresent(String.self, forKey: .providerType)
+        providerInstanceId = try container.decodeIfPresent(String.self, forKey: .providerInstanceId)
     }
 
     public var isToolResultOnly: Bool {

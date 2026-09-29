@@ -14,7 +14,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     /// Root directory for all FileProvider-visible files in the App Group container.
     static var providerRoot: URL {
         let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: "group.YiJie.speech-note.agent"
+            forSecurityApplicationGroupIdentifier: AgentBuildIdentity.appGroupID
         )!
         let url = container.appendingPathComponent("MinisFileProvider", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -44,7 +44,25 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             let count = (try? fm.contentsOfDirectory(atPath: dir.path).count) ?? -1
             rootSummaries.append("\(sub)=\(count)")
         }
-        FPSyncTraceLog.log("init domain=\(domain.identifier.rawValue) providerRoot=\(root.path) resolved=\(resolvedRoot) [\(rootSummaries.joined(separator: " "))]")
+        // [T-ios-fp-mac-bootcrash] Stamp every SUCCESSFUL launch with the app
+        // version and the executable's mtime. The pre-main SIGILL launches
+        // (TestFlight D8_ZguC2Ikr7Wl0fRI7Ubn, macOS 27 beta) can never log —
+        // dyld dies before our code runs — so the diagnosis has to come from
+        // the other side: the main app appends an "app-updated" line to this
+        // same trace file when the bundle changes, and each init line here
+        // carries the executable generation. If a .crash timestamp falls
+        // between an "app-updated" line and the next init with a NEW exec
+        // mtime, the bundle-replacement theory is confirmed from field data.
+        let bundle = Bundle.main
+        let ver = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        var execStamp = "?"
+        if let execURL = bundle.executableURL,
+           let mod = (try? fm.attributesOfItem(atPath: execURL.path))?[.modificationDate] as? Date {
+            execStamp = ISO8601DateFormatter().string(from: mod)
+        }
+        let onMac = ProcessInfo.processInfo.isiOSAppOnMac
+        FPSyncTraceLog.log("init domain=\(domain.identifier.rawValue) ver=\(ver)(\(build)) exec=\(execStamp) mac=\(onMac) providerRoot=\(root.path) resolved=\(resolvedRoot) [\(rootSummaries.joined(separator: " "))]")
 
         Self.recoverFakeTrashDirIfNeeded(root: root)
         Self.cleanupLegacyLogsDirIfNeeded(root: root)
@@ -71,7 +89,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         }
 
         // Location 2: under MinisConfig (private but still pure cruft).
-        if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: "group.YiJie.speech-note.agent") {
+        if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: AgentBuildIdentity.appGroupID) {
             let inConfig = container.appendingPathComponent("MinisConfig/logs", isDirectory: true)
             if fm.fileExists(atPath: inConfig.path, isDirectory: &isDir), isDir.boolValue {
                 try? fm.removeItem(at: inConfig)
@@ -90,7 +108,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         guard fm.fileExists(atPath: legacy.path) else { return }
         // Only delete if the canonical copy already exists under MinisConfig —
         // otherwise we'd lose the data.
-        guard let container = fm.containerURL(forSecurityApplicationGroupIdentifier: "group.YiJie.speech-note.agent") else { return }
+        guard let container = fm.containerURL(forSecurityApplicationGroupIdentifier: AgentBuildIdentity.appGroupID) else { return }
         let canonical = container.appendingPathComponent("MinisConfig/mounted-folders.json")
         if fm.fileExists(atPath: canonical.path) {
             try? fm.removeItem(at: legacy)

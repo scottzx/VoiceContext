@@ -29,7 +29,11 @@ struct RecordWidgetView: View {
 
     /// Keep the URL in-extension (no App Group / shared framework required).
     private var startRecordingURL: URL {
+        #if VOICE_AGENT_DEV
+        URL(string: "voicecontext-dev://start-recording")!
+        #else
         URL(string: "voicecontext://start-recording")!
+        #endif
     }
 
     var body: some View {
@@ -71,7 +75,7 @@ struct RecordWidgetView: View {
                 .font(.title2)
                 .foregroundStyle(.red)
             VStack(alignment: .leading, spacing: 2) {
-                Text("VoiceContext")
+                Text("Yima")
                     .font(.headline)
                     .widgetAccentable()
                 Text("轻点开录")

@@ -1,6 +1,6 @@
 {
   "sourceRevision": "02956e269857e32335b16b4d5e6af999ff14c6e1",
-  "ishRevision": "19c690c3b979c3addef38318231b93a2dcdbe990",
+  "ishRevision": "3f6384c70eefd1a370f121d3492a5f21f7767df9",
   "nestedSubmodules": {
     "deps/ish/deps/libapps": "b8cacae35e5b11d64bb736a053921c16ca7faf9e",
     "deps/ish/deps/libarchive": "fc6563f5130d8a7ee1fc27c0e55baef35119f26c"
@@ -9,5 +9,18 @@
   "excludedSubmodules": {
     "deps/ish/deps/linux": "Unused by the iOS kernel=ish build; upstream update=none.",
     "deps/proot": "Android runtime, outside iOS migration scope."
+  },
+  "upstreamRepository": "https://github.com/OpenMinis/OpenMinis.git",
+  "upstreamBranch": "main",
+  "upstreamBaseRevision": "4ef29002e88db1e20e462ec2ff46916e8a7dcb45",
+  "importedFromRepository": "https://github.com/scottzx/1agents_phone.git",
+  "maintenancePolicy": "Develop only in voice_type; integrate future upstream changes directly from OpenMinis/OpenMinis. Preserve imported fork customizations; 1agents_phone is historical provenance only.",
+  "importedIshRevision": "19c690c3b979c3addef38318231b93a2dcdbe990",
+  "initialUpstreamBaseRevision": "09fc199928de0f26685e766c34e6d541c7a69e5a",
+  "upstreamIntegration": {
+    "date": "2026-09-29",
+    "scope": "iOS source and shared native dependencies, preserving fork and VoiceContext adaptations; excludes Android-only changes",
+    "manifest": "tools/integration/openminis-v1.13-manifest.json",
+    "notes": "docs/architecture/openminis-v1.13-integration.md"
   }
 }
