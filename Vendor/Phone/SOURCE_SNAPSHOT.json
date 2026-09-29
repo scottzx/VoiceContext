@@ -1,0 +1,13 @@
+{
+  "sourceRevision": "02956e269857e32335b16b4d5e6af999ff14c6e1",
+  "ishRevision": "19c690c3b979c3addef38318231b93a2dcdbe990",
+  "nestedSubmodules": {
+    "deps/ish/deps/libapps": "b8cacae35e5b11d64bb736a053921c16ca7faf9e",
+    "deps/ish/deps/libarchive": "fc6563f5130d8a7ee1fc27c0e55baef35119f26c"
+  },
+  "sourcePolicy": "committed HEAD only; upstream working-tree changes excluded",
+  "excludedSubmodules": {
+    "deps/ish/deps/linux": "Unused by the iOS kernel=ish build; upstream update=none.",
+    "deps/proot": "Android runtime, outside iOS migration scope."
+  }
+}

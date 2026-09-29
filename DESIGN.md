@@ -9,7 +9,7 @@ This file is the project-wide source of truth for visual and interaction design.
 
 ## Product Context
 
-- **What this is:** A local-first iPhone voice notebook and recording workspace. It captures a personal thought, a conversation, or a meeting as one `Recording`, then produces audio-first playback and open Markdown/JSON documents.
+- **What this is:** A local-first iPhone voice notebook evolving into a personal agent. It captures a personal thought, a conversation, or a meeting as one `Recording`, then connects open Markdown/JSON context with chat and agent execution. Recording reliability remains the priority.
 - **Who it is for:** Privacy-conscious Apple users who value reliable recording, local processing, open documents, and one-time purchase over cloud AI spectacle or subscriptions.
 - **Product type:** Native iOS productivity and recording utility.
 - **Core promise:** The user's recording is private, understandable, recoverable, and under their control.
@@ -113,7 +113,8 @@ Use regular, medium/semibold, and bold intentionally. If most text is bold, hier
 
 - **Approach:** Grid-disciplined, single-column iPhone layout.
 - **Navigation:** `NavigationStack`, native sheets, and value-based destinations.
-- **Top-level records screen:** Large title, restrained calendar strip, flat Recording rows, fixed bottom recording control, and a trailing profile/settings entry.
+- **Integration navigation (approved 2026-09-29):** Four tabs in order: 聊天, 会议, 待办事项, 拓展. Chat reuses the full phone agent capabilities; Meetings hosts the recording workspace; Tasks uses system Reminders; Extensions contains 我的 and settings. See `docs/design/personal-agent-integration.md` for confirmed scope and remaining page details.
+- **Records screen within Meetings:** Large title, restrained calendar strip, flat Recording rows, and a fixed bottom recording control. In the integration version, profile/settings move to Extensions. Recording state and a stop action remain reachable across tabs.
 - **Recording details:** Title and metadata, audio player, transcript, then secondary metadata/actions. Audio always precedes transcript.
 - **Settings:** Native `List` / `Form` grouping. Do not create a custom card for every setting row.
 - **Empty states:** One concise message and the recording control. No decorative illustration is required.
@@ -234,3 +235,5 @@ Do not apply border, fill, radius, and shadow to the same element by default. Ca
 | 2026-08-03 | Reserve saturated color for local semantic emphasis | The red recording control becomes the stable visual anchor; other colors explain state only |
 | 2026-08-03 | Replace card-heavy Recording presentation with flat list rows | Improves scan speed and removes generic AI-note visual language |
 | 2026-08-03 | Keep system typography | Reinforces platform-native behavior, offline reliability, Dynamic Type, and Chinese support |
+| 2026-09-29 | Evolve VoiceContext into a personal agent with 聊天 / 会议 / 待办事项 / 拓展 tabs; move 我的 and settings to 拓展 | Explicit product-owner decision; retain VoiceContext identity and recording priority while using the complete phone agent framework |
+| 2026-09-29 | Use system Reminders as the Tasks source of truth | Explicit product-owner choice; the app and agent manage the same reminders without a parallel task database |

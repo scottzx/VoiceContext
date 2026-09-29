@@ -9,7 +9,10 @@ enum RecordingAudioSession {
         "YiJie.speech_note.playbackDidReleaseAudioSession"
     )
 
-    static func activatePlayback() {
+    static func activatePlayback() -> Bool {
+        if let handlers = RecordingAudioBridge.handlers {
+            return handlers.playback()
+        }
         let session = AVAudioSession.sharedInstance()
         // `.spokenAudio` + `.playback` keeps recorded voice playing after the
         // user leaves the app, which is the audible background mode App Review
@@ -18,13 +21,18 @@ enum RecordingAudioSession {
         do {
             try session.setCategory(.playback, mode: .spokenAudio, options: [])
             try session.setActive(true)
+            return true
         } catch {
-            try? session.setCategory(.playback, mode: .default, options: [])
-            try? session.setActive(true)
+            do {
+                try session.setCategory(.playback, mode: .default, options: [])
+                try session.setActive(true)
+                return true
+            } catch { return false }
         }
     }
 
     static func notifyPlaybackReleased() {
+        RecordingAudioBridge.handlers?.releasePlayback()
         NotificationCenter.default.post(name: playbackDidRelease, object: nil)
     }
 }

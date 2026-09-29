@@ -41,7 +41,18 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
     var loadedItemCount: Int { items.count }
     var residentPlayerCount: Int { player == nil ? 0 : 1 }
 
-    deinit { timer?.invalidate() }
+    override init() {
+        super.init()
+        NotificationCenter.default.addObserver(self, selector: #selector(recordingWillStart),
+            name: Notification.Name("VoiceContext.recordingWillStart"), object: nil)
+    }
+
+    @objc private func recordingWillStart() { pause() }
+
+    deinit {
+        timer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+    }
 
     func load(chunks: [AudioChunk], rootURL: URL) {
         stop()
@@ -97,7 +108,10 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         // Recording leaves the shared session in the .record category, where
         // AVAudioPlayer refuses to start without throwing. Switch to playback
         // before the first player so a valid chunk is not silently ignored.
-        RecordingAudioSession.activatePlayback()
+        guard RecordingAudioSession.activatePlayback() else {
+            playbackError = "当前无法播放音频；如正在录音，请先结束录音。"
+            return
+        }
         didActivatePlaybackSession = true
 
         var skipped = 0
@@ -348,15 +362,22 @@ struct ContentView: View {
     @Binding private var openStartRecording: Bool
     /// Set by the lock-screen Live Activity stop button deep link (`voicecontext://stop-recording`).
     @Binding private var openStopRecording: Bool
+    private let isHostedWorkspace: Bool
     private let isRecordingDetailFixtureEnabled: Bool
 
     init(
         openStartRecording: Binding<Bool> = .constant(false),
-        openStopRecording: Binding<Bool> = .constant(false)
+        openStopRecording: Binding<Bool> = .constant(false),
+        sharedModel: RecordingCoreModel? = nil
     ) {
+        isHostedWorkspace = sharedModel != nil
         _openStartRecording = openStartRecording
         _openStopRecording = openStopRecording
         isRecordingDetailFixtureEnabled = ProcessInfo.processInfo.arguments.contains("-uiTestingSeedRecordingDetail")
+        if let sharedModel {
+            _model = State(initialValue: sharedModel)
+            return
+        }
         if isRecordingDetailFixtureEnabled {
             let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let fixtureRoot = documents.appendingPathComponent("VoiceContext-uiTesting", isDirectory: true)
@@ -393,7 +414,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            model.scenePhaseChanged(to: ScenePhaseLike(phase))
+            if !isHostedWorkspace { model.scenePhaseChanged(to: ScenePhaseLike(phase)) }
         }
         .onChange(of: model.captureIsActive) { _, isActive in
             if isActive, !model.trialEntitlement.isPurchaseLocked {
@@ -407,7 +428,7 @@ struct ContentView: View {
             } else if isRecordingDetailFixtureEnabled {
                 await installRecordingDetailFixture()
             }
-            await model.recoverOnLaunch()
+            if !isHostedWorkspace { await model.recoverOnLaunch() }
             if openStartRecording {
                 handleWidgetStartRecording()
             }
@@ -472,6 +493,7 @@ struct ContentView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Menu {
+                            #if !VOICE_AGENT_FUSION
                             Section("个人中心") {
                                 Button {
                                     isSettingsPresented = true
@@ -479,6 +501,7 @@ struct ContentView: View {
                                     Label("我的", systemImage: "person.circle")
                                 }
                             }
+                            #endif
                             Section("转写与调度") {
                                 Button {
                                     isTranscriptionCenterPresented = true
@@ -1805,7 +1828,7 @@ private struct ImportNoticeBanner: View {
     }
 }
 
-private struct SettingsScreen: View {
+struct SettingsScreen: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var languageCenter = AppLanguageCenter.shared
     @AppStorage(OnboardingPreferences.documentSyncKey) private var documentSyncEnabled = false

@@ -4,6 +4,7 @@
 
 ## 产品文档
 
+- [个人智能体融合设计](./design/personal-agent-integration.md)：PM `#85`；已实现首轮工程融合，记录产品身份、完整 Agent 工程方向、四 Tab、录音优先和系统提醒事项，以及仍待真机验收的边界。涉及新范围时按此增补，v1 文档保留历史基线。
 - [VoiceContext v1 产品需求文档（PRD）](./PRD.md)：v1 产品边界、用户流程、信息架构、页面清单、状态矩阵、功能需求、验收标准，以及原型任务 `#39` / `#40` 的输入与交付定义。
 - [消费级对标增补 PRD](./PRD-consumer-parity-addendum.md)：相对离线转写竞品的增补需求（执行基线；含首次打开起 72 小时试用、文件夹 iCloud、视频无上限、v1 不做 Share Extension）。
 - [v1 信息架构与低保真原型](./design/v1/information-architecture.md)：已通过的统一 Recording 页面树、流程、状态矩阵与可点击低保真交付。
@@ -14,6 +15,8 @@
 - [听记 1.0 App Store 发布设计与提交清单](./release/1.0-app-store-submission.md)：首发永久解锁定价、商店元数据、隐私合规、审核说明与手动发布验收。
 
 ## 工程导航
+
+- [个人智能体融合工程](../Integration/README.md)：workspace、容器映射、完整能力清单、构建命令和验证记录。
 
 - [工程目录说明](./architecture/project-structure.md)：源码模块职责、测试分组、资源路径与新增文件规则。
 

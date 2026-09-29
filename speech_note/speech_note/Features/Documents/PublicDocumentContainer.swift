@@ -12,7 +12,7 @@ import Foundation
 /// the team provisioning profile includes that container.
 nonisolated enum PublicDocumentContainer {
     /// Preferred identifier once Cloud Documents is provisioned for the app.
-    /// Lookup still tries the default ubiquity container (`nil`) first so builds
+    /// Lookup prefers this identity before the default container so builds
     /// with an empty `icloud-container-identifiers` array remain green.
     static let preferredContainerIdentifier = "iCloud.YiJie.speech-note"
     static let displayName = "VoiceContext"
@@ -66,9 +66,14 @@ nonisolated enum PublicDocumentContainer {
     ) -> URL? {
         guard fileManager.ubiquityIdentityToken != nil else { return nil }
 
-        // Prefer the default container from the entitlements array (may be empty
-        // today). A concrete id is only attempted as a secondary lookup.
-        let candidates: [String?] = [nil, preferredContainerIdentifier]
+        // Preserve the released document identity when Agent containers are added.
+        // The default remains a fallback for standalone development provisioning.
+        #if VOICE_AGENT_FUSION
+        // An unavailable legacy container must never redirect old documents into Agent iCloud.
+        let candidates: [String?] = [preferredContainerIdentifier]
+        #else
+        let candidates: [String?] = [preferredContainerIdentifier, nil]
+        #endif
         var seen = Set<String>()
         for candidate in candidates {
             let key = candidate ?? "::default::"

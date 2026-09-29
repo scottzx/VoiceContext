@@ -189,7 +189,12 @@ struct OnboardingFlowView: View {
             VStack(alignment: .leading, spacing: 16) {
                 OnboardingFact(symbol: "lock", text: "录音、转写和说话人处理在设备本地完成。")
                 OnboardingFact(symbol: "calendar", text: "原始音频默认保留 7 天；你可逐条选择长期保留。")
+                #if VOICE_AGENT_FUSION
+                OnboardingFact(symbol: "icloud", text: "录音同步不包含原始音频；智能体可同步你放入其工作区的文件。")
+                OnboardingFact(symbol: "bubble.left.and.bubble.right", text: "使用在线模型时，聊天文字、引用文稿和你选择的附件会发送给所配置的模型服务。")
+                #else
                 OnboardingFact(symbol: "icloud", text: "iCloud 只可能同步文本和结构化文档，从不上传原始音频。")
+                #endif
                 OnboardingFact(symbol: "record.circle", text: "录音时始终显示状态和可独立操作的停止入口。")
             }
 

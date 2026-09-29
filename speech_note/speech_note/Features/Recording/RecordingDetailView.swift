@@ -111,6 +111,25 @@ struct RecordingDetailScreen: View {
 
     private var topBarTrailingMenu: some View {
         Menu {
+            #if VOICE_AGENT_FUSION
+            Button {
+                NotificationCenter.default.post(
+                    name: Notification.Name("VoiceContext.openAgent"), object: nil,
+                    userInfo: ["recordingID": recordingID.uuidString]
+                )
+            } label: {
+                Label("交给智能体", systemImage: "bubble.left.and.bubble.right")
+            }
+            .disabled(transcript == nil)
+            Button {
+                NotificationCenter.default.post(
+                    name: Notification.Name("VoiceContext.openResults"), object: nil,
+                    userInfo: ["recordingID": recordingID.uuidString]
+                )
+            } label: {
+                Label("智能体产物", systemImage: "doc.text")
+            }
+            #endif
             Section {
                 Button {
                     Task {

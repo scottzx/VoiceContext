@@ -110,6 +110,7 @@ actor PublicDocumentPublisher {
                 DocumentSyncStatusCenter.shared.record(publicMirror: captured)
             }
         }
+        NotificationCenter.default.post(name: Notification.Name("VoiceContext.documentsChanged"), object: nil)
         return result
     }
 

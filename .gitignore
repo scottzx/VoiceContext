@@ -47,3 +47,14 @@ venv/
 .gstack/
 .1agents/
 .gemini/
+
+# Imported Phone native build cache and generated integration resources
+Vendor/Phone/deps/libs/
+Vendor/Phone/deps/include/
+Vendor/Phone/deps/frameworks/
+Vendor/Phone/deps/resources/
+Vendor/Phone/deps/lame-build/
+Vendor/Phone/src/ios/Generated/
+Vendor/Phone/src/ios/Configs/ProviderCustomization.xcconfig
+Integration/Resources/Assets.xcassets/
+Integration/Resources/Localizable.xcstrings

@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+#if !VOICE_AGENT_FUSION
 @main
 struct speech_noteApp: App {
     @AppStorage(OnboardingPreferences.completedKey) private var hasCompletedOnboarding = false
@@ -57,9 +58,11 @@ struct speech_noteApp: App {
     }
 }
 
+#endif
+
 /// Pushes the in-app language onto SwiftUI's locale environment so `Text("中文")`
 /// lookups in `Localizable.xcstrings` update immediately.
-private struct AppLanguageGate<Content: View>: View {
+struct AppLanguageGate<Content: View>: View {
     @ObservedObject private var languageCenter = AppLanguageCenter.shared
     let content: Content
 

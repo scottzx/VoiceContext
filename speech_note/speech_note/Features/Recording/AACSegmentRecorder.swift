@@ -64,6 +64,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     private var activeSegmentEndSample: Int64 = 0
 
     private let engine = AVAudioEngine()
+    private let audioOwner = UUID()
     private let session = AVAudioSession.sharedInstance()
     private let writerQueue = DispatchQueue(label: "VoiceContext.AACSegmentWriter", qos: .userInitiated)
     private let statusLock = NSLock()
@@ -110,6 +111,8 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         statusLock.withLock { isCapturePaused = false }
         try activateCaptureSession()
+        var started = false
+        defer { if !started { releaseCaptureSession() } }
 
         let input = engine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
@@ -152,11 +155,12 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         observeAudioSession()
         do {
             try engine.start()
+            started = true
         } catch {
             input.removeTap(onBus: 0)
             statusLock.withLock { tapInstalled = false }
             _ = writerQueue.sync { closeSegment(at: Date()) }
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            releaseCaptureSession()
             throw error
         }
     }
@@ -171,6 +175,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
 
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        defer { releaseCaptureSession() }
         let segment = try writerQueue.sync {
             let closed = closeSegment(at: Date()) ?? lastClosedSegment
             if let closed {
@@ -183,7 +188,6 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
             recordingFormat = nil
             return fallback
         }
-        try session.setActive(false, options: .notifyOthersOnDeactivation)
         return segment
     }
 
@@ -209,7 +213,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
             remainingHangoverSamples = 0
             preRollBuffer.removeAll()
         }
-        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        releaseCaptureSession()
     }
 
     func pause() throws {
@@ -452,7 +456,19 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         activeSegmentEndSample = startingSample
     }
 
+    private func releaseCaptureSession() {
+        if let handlers = RecordingAudioBridge.handlers {
+            handlers.release(audioOwner)
+        } else {
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
+
     private func activateCaptureSession() throws {
+        if let handlers = RecordingAudioBridge.handlers {
+            try handlers.capture(audioOwner)
+            return
+        }
         try session.setCategory(.record, mode: .default)
         try session.setActive(true)
     }
