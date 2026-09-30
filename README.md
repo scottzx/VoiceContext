@@ -141,4 +141,6 @@ bash tools/integration/build_device.sh production
 
 ## 源码来源与许可证
 
-原录音项目保留根目录 [MIT LICENSE](LICENSE)。导入的 Phone 源码保留其 [GPLv3 LICENSE](Vendor/Phone/LICENSE) 及[第三方许可证说明](Vendor/Phone/THIRD_PARTY_LICENSES.md)，原 MIT 声明不替代导入代码的许可证。具体来源版本见 [SOURCE_SNAPSHOT.json](Vendor/Phone/SOURCE_SNAPSHOT.json)。
+本项目采用与 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 相同的 [GNU General Public License v3.0（GPLv3）](LICENSE)。
+
+原录音项目的 MIT 版权与许可声明保留在 [LICENSE-MIT](LICENSE-MIT)。导入的 Phone 源码保留其 [GPLv3 LICENSE](Vendor/Phone/LICENSE) 及[第三方许可证说明](Vendor/Phone/THIRD_PARTY_LICENSES.md)；各第三方组件保留各自的许可证。具体来源版本见 [SOURCE_SNAPSHOT.json](Vendor/Phone/SOURCE_SNAPSHOT.json)。
