@@ -1994,6 +1994,8 @@ struct ContentView: View {
             detailView
                 .appFontScale()
         }
+        // [T-ios-tabbar-return-lag] See the compact twin in `stackLayout`.
+        .toolbar(selectedSessionId == nil ? .visible : .hidden, for: .tabBar)
     }
 
     // MARK: - Stack Layout (iPhone / narrow window)
@@ -2051,6 +2053,19 @@ struct ContentView: View {
                     }
                 }
         }
+        // [T-ios-tabbar-return-lag] The tab bar's RETURN must be declared from
+        // the list side, not left to the popped chat.
+        //
+        // AIChatView hides the bar for the full-screen chat
+        // (`.toolbar(.hidden, for: .tabBar)`), but nothing here ever declared
+        // `.visible` — and toolbar visibility is only (re)applied when the
+        // owning view is shown, so on pop the bar animated back AFTER the list
+        // was already on screen: the reported "bottom nav appears late".
+        // Binding it to the path flips it back to `.visible` in the same
+        // transaction that empties the path, so the bar rides the pop
+        // transition instead of trailing it. Same shape AgentListView already
+        // uses on its NavigationStack (AgentKit/AgentListView.swift).
+        .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
     }
 
     // MARK: - Detail View
@@ -3487,7 +3502,23 @@ struct ContentView: View {
                 CrashReporter.shared.clearCrashLoopFlag()
                 shareLog.warning("[Share] .task: crash-loop detected — skipping session restore, landing on the session list")
             } else {
-                // No share — normal launch screen behavior
+                // No share — normal launch screen behavior.
+                //
+                // [T-ios-launch-policy-not-a-tab] The 「Launch Session」 policy is
+                // an APP-ROOT behavior: upstream this view IS the root, so its
+                // `.task { loadInitialWorkspace() }` runs once at launch and
+                // opening the chosen destination there is correct. In the fusion
+                // build this view is the 聊天 TAB of VoiceContextRootView's
+                // TabView, so the `.task` re-runs on every return to that tab
+                // (the same appearance-driven reload `SystemRemindersView`
+                // relies on). Applying an app-launch policy from inside a tab
+                // pushed a fresh draft on every visit whose last session was
+                // older than 15 minutes. The 聊天 tab must always land on the
+                // session list — at launch too — so the policy is compiled out
+                // here and its picker is hidden in that build. Explicit,
+                // user-initiated routes (notification tap, share, quick action)
+                // are handled by the branches above and are unaffected.
+                #if !VOICE_AGENT_FUSION
                 switch launchScreen {
                 case 1:
                     if let latest = sessions.first {
@@ -3514,6 +3545,7 @@ struct ContentView: View {
                         withTransaction(tx) { openSession(latest.id) }
                     }
                 }
+                #endif
             }
             // iPad split launch: every launchScreen branch above has resolved
             // by now, so if the restored selection lives inside a collapsed
@@ -7239,6 +7271,12 @@ private struct AppearanceSettingsView: View {
                 Text("Override the display language for this app. \"System\" follows your device language.")
             }
 
+            // [T-ios-launch-policy-not-a-tab] Hidden in the fusion build: there
+            // the chat list is a TAB of VoiceContextRootView, so the app-launch
+            // policy is compiled out of `loadInitialWorkspace` and always
+            // landing on the session list is the product decision. A picker that
+            // changed nothing would be a lying control.
+            #if !VOICE_AGENT_FUSION
             Section {
                 Picker("Launch Session", selection: $launchScreen) {
                     Text("Auto").tag(0)
@@ -7251,6 +7289,7 @@ private struct AppearanceSettingsView: View {
             } footer: {
                 Text("Choose what to show when the app starts. \"Auto\" opens a new chat if the last session is older than 15 minutes.")
             }
+            #endif
 
             // Auto-grouping default is OFF on principle: it costs nothing
             // extra (it rides the title-generation call), but it moves user

@@ -188,6 +188,18 @@ struct AIChatView: View {
     private let showsHeaderBackButton: Bool
     @EnvironmentObject var shareCoordinator: ShareCoordinator
     @StateObject private var cached: CachedViewModel
+    /// Tab bar visibility for this screen. The full-screen chat hides it, and
+    /// the header's Back button hands it back BEFORE popping.
+    ///
+    /// [T-ios-tabbar-return-lag] A static `.toolbar(.hidden, for: .tabBar)`
+    /// leaves the bar's return to the host list's implicit default, which is
+    /// only applied when the list is shown again — so on pop the bar animated
+    /// back after the list was already on screen (the reported "bottom nav
+    /// appears late"). Flipping this to `.visible` before `dismiss()` removes
+    /// the hiding declaration while the pop starts, so the bar rides the
+    /// transition. `@State` is required: a plain property would not re-render
+    /// this view before the pop, which is the whole point.
+    @State private var tabBarVisibility: Visibility = .hidden
 
     /// The actual ViewModel — always derived from the @StateObject to avoid
     /// the @ObservedObject re-init-on-body-recompute problem.
@@ -737,7 +749,10 @@ struct AIChatView: View {
         // UINavigationBar. Back, title and actions therefore share one frame
         // from the first render and travel together during interactive pop.
         .toolbar(.hidden, for: .navigationBar)
-        .toolbar(.hidden, for: .tabBar)
+        // [T-ios-tabbar-return-lag] State-driven rather than a static `.hidden`:
+        // the header's Back button flips this to `.visible` before popping so the
+        // bar returns with the pop transition.
+        .toolbar(tabBarVisibility, for: .tabBar)
         .safeAreaInset(edge: .top, spacing: 0) {
             if showsPageHeader && !isHeaderHiddenForKeyboard {
                 chatPageHeader
@@ -1980,7 +1995,12 @@ struct AIChatView: View {
                     MinisHeaderIconButton(
                         systemName: "chevron.left",
                         accessibilityLabel: String(localized: "Back"),
-                        action: { dismiss() }
+                        action: {
+                            // [T-ios-tabbar-return-lag] Hand the tab bar back
+                            // before the pop — see `tabBarVisibility`.
+                            tabBarVisibility = .visible
+                            dismiss()
+                        }
                     )
                 }
             },
@@ -2938,7 +2958,11 @@ struct AIChatView: View {
                 readAloudToolbarToggle
                 Spacer()
             }
-            micButtonContainer
+            // [T-ios-hide-composer-mic] Voice input is out of scope for this
+            // build — the composer's mic entry point is commented out on
+            // request. `micButtonContainer` and the VAD panel behind it are left
+            // intact: uncommenting this single line brings the icon back.
+            // micButtonContainer
             sendButton
         }
         return AnyView(row)

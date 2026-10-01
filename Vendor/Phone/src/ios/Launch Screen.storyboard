@@ -35,15 +35,13 @@
                                 <color key="textColor" systemColor="labelColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
-                            <label opaque="NO" clipsSubviews="YES" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Open Minis" textAlignment="center" lineBreakMode="middleTruncation" baselineAdjustment="alignBaselines" minimumFontSize="18" translatesAutoresizingMaskIntoConstraints="NO" id="GJd-Yh-RWb">
-                                <rect key="frame" x="148.66666666666666" y="401" width="96" height="22"/>
+                            <!-- Brand title. Base (en) is "Yima"; zh-Hans / zh-Hant override
+                                 it to "一芥伙伴" via the variant group's Launch Screen.strings.
+                                 The old "Your Private On-Device Agent is starting" subtitle was
+                                 removed on request; the title + dots now own the centred mark. -->
+                            <label opaque="NO" clipsSubviews="YES" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Yima" textAlignment="center" lineBreakMode="middleTruncation" baselineAdjustment="alignBaselines" minimumFontSize="18" translatesAutoresizingMaskIntoConstraints="NO" id="GJd-Yh-RWb">
+                                <rect key="frame" x="176" y="403" width="41" height="22"/>
                                 <fontDescription key="fontDescription" type="boldSystem" pointSize="18"/>
-                                <nil key="highlightedColor"/>
-                            </label>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Your Private On-Device Agent is starting" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="ioh-oc-Fxv">
-                                <rect key="frame" x="111" y="431" width="171.66666666666663" height="17"/>
-                                <fontDescription key="fontDescription" type="system" pointSize="14"/>
-                                <color key="textColor" systemColor="secondaryLabelColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
                         </subviews>
@@ -51,9 +49,10 @@
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
                             <constraint firstItem="GJd-Yh-RWb" firstAttribute="centerX" secondItem="Bcu-3y-fUS" secondAttribute="centerX" id="cX3-title-sa"/>
-                            <constraint firstItem="ioh-oc-Fxv" firstAttribute="centerX" secondItem="Bcu-3y-fUS" secondAttribute="centerX" id="0mo-ik-j59"/>
-                            <constraint firstItem="ioh-oc-Fxv" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="LhO-Af-Md8"/>
-                            <constraint firstItem="GJd-Yh-RWb" firstAttribute="bottom" secondItem="ioh-oc-Fxv" secondAttribute="top" constant="-12" id="cY1-title-slogan"/>
+                            <!-- Title sits 12pt above the view's centre so title + dots read as
+                                 one vertically centred mark (the slot the removed subtitle
+                                 used to own). -->
+                            <constraint firstItem="GJd-Yh-RWb" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" constant="-12" id="title-cy"/>
                             <!-- Dot2 centered horizontally -->
                             <constraint firstItem="dot-2-id" firstAttribute="centerX" secondItem="Bcu-3y-fUS" secondAttribute="centerX" id="dot2-cx"/>
                             <!-- Dot spacing: 1-2-3 with 8pt gaps -->
@@ -62,8 +61,8 @@
                             <!-- All dots same centerY -->
                             <constraint firstItem="dot-1-id" firstAttribute="centerY" secondItem="dot-2-id" secondAttribute="centerY" id="dot1-cy"/>
                             <constraint firstItem="dot-3-id" firstAttribute="centerY" secondItem="dot-2-id" secondAttribute="centerY" id="dot3-cy"/>
-                            <!-- Dots 8pt below slogan -->
-                            <constraint firstItem="dot-2-id" firstAttribute="top" secondItem="ioh-oc-Fxv" secondAttribute="bottom" constant="15" id="dots-below"/>
+                            <!-- Dots 15pt below the brand title -->
+                            <constraint firstItem="dot-2-id" firstAttribute="top" secondItem="GJd-Yh-RWb" secondAttribute="bottom" constant="15" id="dots-below"/>
                         </constraints>
                     </view>
                 </viewController>

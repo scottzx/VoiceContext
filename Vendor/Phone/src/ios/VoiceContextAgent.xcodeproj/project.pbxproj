@@ -4357,7 +4357,10 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>CF6F423310B87AC1B6F34466</string>
 				<string>8B138451D5A0F64885C81AE7</string>
 				<string>EB66774AD5C7C277E96F9C1B</string>
+				<string>67F208ADD810EFDA6C649E58</string>
 				<string>6B1EAA8355D504713660B8CA</string>
+				<string>7954FC7013FEC5D24ECA0D1E</string>
+				<string>FC2077F47DF662865D8A2C9C</string>
 				<string>2AF58B5C2A7C1D37580C3D08</string>
 				<string>466E718AAB8A589451CEB5E4</string>
 				<string>2D871345D1E38ACF991C91FF</string>
@@ -4726,6 +4729,8 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<string>file.storyboard</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+			<key>name</key>
+			<string>Base</string>
 		</dict>
 		<key>E5D00034</key>
 		<dict>
@@ -7169,7 +7174,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>E5CR00100</string>
 				<string>E51000013</string>
 				<string>E51000033</string>
-				<string>AA71B0212F44BEB200A28A5E</string>
+				<string>249604B5E7BAFE02937D9985</string>
 				<string>AA26BD002F2E5F0A00AECF2D</string>
 			</array>
 			<key>sourceTree</key>
@@ -8017,7 +8022,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>8B5A16018E4D067D7F7DDE44</string>
 				<string>D9F5CA5599ACC68DF546BB0A</string>
 				<string>5D20CC3DA3C67A7F318880CC</string>
+				<string>31652B9FB34700411899B7EE</string>
 				<string>8BEE81873C005E304C127BA1</string>
+				<string>2EBE2250C94A8190EBE26795</string>
+				<string>1056456F0DB469C3B428CC83</string>
 				<string>107D84F45B286EA326550DBA</string>
 				<string>64FB247A0ACBBD00E802B814</string>
 			</array>
@@ -13439,7 +13447,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
-			<string>AA71B0212F44BEB200A28A5E</string>
+			<string>249604B5E7BAFE02937D9985</string>
 		</dict>
 		<key>E5F100011</key>
 		<dict>
@@ -19338,6 +19346,24 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>EB66774AD5C7C277E96F9C1B</string>
 		</dict>
+		<key>67F208ADD810EFDA6C649E58</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/SystemCalendarModel.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>31652B9FB34700411899B7EE</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>67F208ADD810EFDA6C649E58</string>
+		</dict>
 		<key>6B1EAA8355D504713660B8CA</key>
 		<dict>
 			<key>isa</key>
@@ -19355,6 +19381,42 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>6B1EAA8355D504713660B8CA</string>
+		</dict>
+		<key>7954FC7013FEC5D24ECA0D1E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/TaskCalendarRules.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>2EBE2250C94A8190EBE26795</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>7954FC7013FEC5D24ECA0D1E</string>
+		</dict>
+		<key>FC2077F47DF662865D8A2C9C</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/TaskCalendarView.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>1056456F0DB469C3B428CC83</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>FC2077F47DF662865D8A2C9C</string>
 		</dict>
 		<key>2AF58B5C2A7C1D37580C3D08</key>
 		<dict>
@@ -20339,6 +20401,47 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>28567AAFE75900F1D57A2135</string>
+		</dict>
+		<key>C124E74ACFC9A52BC52CB1AE</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.strings</string>
+			<key>name</key>
+			<string>zh-Hans</string>
+			<key>path</key>
+			<string>zh-Hans.lproj/Launch Screen.strings</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>F6EA2757C94AE766D258C610</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.strings</string>
+			<key>name</key>
+			<string>zh-Hant</string>
+			<key>path</key>
+			<string>zh-Hant.lproj/Launch Screen.strings</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>249604B5E7BAFE02937D9985</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXVariantGroup</string>
+			<key>children</key>
+			<array>
+				<string>AA71B0212F44BEB200A28A5E</string>
+				<string>C124E74ACFC9A52BC52CB1AE</string>
+				<string>F6EA2757C94AE766D258C610</string>
+			</array>
+			<key>name</key>
+			<string>Launch Screen.storyboard</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 	</dict>
 	<key>rootObject</key>

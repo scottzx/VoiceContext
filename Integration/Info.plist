@@ -202,7 +202,7 @@
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Yima uses Bluetooth so the AI agent can scan for, connect to, and communicate with nearby BLE devices on your behalf.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Yima uses calendar access so the AI agent can query your schedule, check availability, and create events on your behalf.</string>
+	<string>在待办事项中只读展示你的系统日历日程和日期标记，并支持你授权的智能体日历任务。</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Yima uses calendar access so the AI agent can query your schedule, check availability, and create events on your behalf.</string>
 	<key>NSCameraUsageDescription</key>

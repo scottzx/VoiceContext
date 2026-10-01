@@ -183,6 +183,7 @@ info['CFBundleDisplayName']='一芥伙伴'
 info['CFBundleName']='Yima'
 info['NSMicrophoneUsageDescription']='一芥伙伴使用麦克风录制你主动开始的会议或日常语音，并在你选择语音输入时转为聊天文字。'
 info['NSRemindersFullAccessUsageDescription']='在待办事项中展示和管理你的系统提醒事项，并让你授权的智能体任务使用同一份待办。'
+info['NSCalendarsFullAccessUsageDescription']='在待办事项中只读展示你的系统日历日程和日期标记，并支持你授权的智能体日历任务。'
 for key, value in info.items():
     if key.endswith('UsageDescription') and isinstance(value, str):
         info[key] = value.replace('一伴', '一芥伙伴').replace('听记', '一芥伙伴')
@@ -311,6 +312,13 @@ for tid in p['targets']:
             entries[key] = {'extractionState': 'manual', 'localizations': {
                 lang: {'stringUnit': {'state': 'translated', 'value': name + suffix}}
                 for lang, name in [('en', en), ('zh-Hans', zh), ('zh-Hant', zh)]}}
+        if target['name'] == 'VoiceContextAgent':
+            entries['NSCalendarsFullAccessUsageDescription'] = {'extractionState': 'manual', 'localizations': {
+                lang: {'stringUnit': {'state': 'translated', 'value': text}}
+                for lang, text in [
+                    ('en', 'View your system calendar events and date markers in Tasks, and support calendar tasks you authorize the agent to perform.'),
+                    ('zh-Hans', info['NSCalendarsFullAccessUsageDescription']),
+                    ('zh-Hant', '在待辦事項中唯讀顯示你的系統行事曆行程和日期標記，並支援你授權的智慧體行事曆任務。')]}}
         (folder / 'InfoPlist.xcstrings').write_text(json.dumps(
             {'sourceLanguage': 'en', 'strings': entries, 'version': '1.0'}, ensure_ascii=False, indent=2) + '\n')
         bs['YIMA_BRANDING_DIR'] = '$(SRCROOT)/../../../../Integration/Resources/Branding/' + target['name'] + '/' + config['name']
@@ -320,6 +328,36 @@ for tid in p['targets']:
               'sourceTree': '<absolute>', 'lastKnownFileType': 'text.json.xcstrings'}
     o[p['mainGroup']]['children'].append(fid)
     add(target, 'PBXResourcesBuildPhase', fid)
+
+# Localize the launch screen the same way the product name is localized: the
+# storyboard's Base text is the English brand ("Yima") and the two Chinese
+# localizations override the title to the Chinese brand ("一芥伙伴"). The
+# storyboard file itself is not moved — its existing file reference becomes the
+# Base member of a variant group, and the resources phase points at the group.
+launch_storyboard = 'Launch Screen.storyboard'
+launch_ref = next((key for key, value in o.items()
+                   if value.get('isa') == 'PBXFileReference'
+                   and value.get('path') == launch_storyboard), None)
+assert launch_ref, 'Launch screen storyboard not found in the imported project'
+o[launch_ref]['name'] = 'Base'
+launch_children = [launch_ref]
+for language in ['zh-Hans', 'zh-Hant']:
+    strings = PHONE / (language + '.lproj/Launch Screen.strings')
+    assert strings.is_file(), 'Missing launch screen localization: ' + str(strings)
+    kid = uid('launch-strings:' + language)
+    o[kid] = {'isa': 'PBXFileReference', 'lastKnownFileType': 'text.plist.strings',
+              'name': language, 'path': os.path.relpath(strings, PHONE), 'sourceTree': 'SOURCE_ROOT'}
+    launch_children.append(kid)
+launch_group = uid('launch-storyboard-group')
+o[launch_group] = {'isa': 'PBXVariantGroup', 'children': launch_children,
+                   'name': launch_storyboard, 'sourceTree': '<group>'}
+for key, value in list(o.items()):
+    if key == launch_group:
+        continue
+    if value.get('isa') in ('PBXGroup', 'PBXVariantGroup') and launch_ref in value.get('children', []):
+        value['children'] = [launch_group if child == launch_ref else child for child in value['children']]
+    if value.get('isa') == 'PBXBuildFile' and value.get('fileRef') == launch_ref:
+        value['fileRef'] = launch_group
 
 OUT.mkdir(exist_ok=True)
 with (OUT/'project.pbxproj').open('wb') as f: plistlib.dump(d,f,sort_keys=False)

@@ -110,6 +110,7 @@ if args.products:
     for language, display_name in [('en', 'Yima'), ('zh-Hans', '一芥伙伴'), ('zh-Hant', '一芥伙伴')]:
         localized = plistlib.loads((app / f'{language}.lproj/InfoPlist.strings').read_bytes())
         assert localized['CFBundleDisplayName'] == display_name + suffix
+        assert localized['NSCalendarsFullAccessUsageDescription']
     for extension in (app / 'PlugIns').glob('*.appex'):
         for language in ['en', 'zh-Hans', 'zh-Hant']:
             localized = plistlib.loads((extension / f'{language}.lproj/InfoPlist.strings').read_bytes())
@@ -117,6 +118,7 @@ if args.products:
     assert info['MinimumOSVersion'] == '18.0'
     assert '会议' in info['NSMicrophoneUsageDescription']
     assert '待办' in info['NSRemindersFullAccessUsageDescription']
+    assert '日程' in info['NSCalendarsFullAccessUsageDescription']
     schemes = {scheme for entry in info['CFBundleURLTypes'] for scheme in entry['CFBundleURLSchemes']}
     assert ('voicecontext-dev' if is_dev else 'voicecontext') in schemes
     assert ('minis-dev' if is_dev else 'minis') in schemes

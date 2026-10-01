@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>一芥伙伴 · 待办设计</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="workspace">
+ <div class="phone" data-theme="dark">
+  <div class="status"><span>9:41</span><span aria-label="信号、电量">▮▮▮　◔　▰</span></div>
+  <header id="navigation"></header>
+  <main id="screen"></main>
+  <nav class="tabs" aria-label="应用标签页"><span>◯<small>聊天</small></span><span>≋<small>会议</small></span><span class="active">☑<small>待办事项</small></span><span>⊞<small>拓展</small></span></nav>
+  <div class="home-indicator"></div>
+ </div>
+ <aside>
+  <p class="eyebrow">一芥伙伴 · 设计提案 01</p><h1>先看今天，<br>再管理全部。</h1>
+  <p>一张日历，一个事项区。<br>把日期、待办和日程放在同一条浏览路径上。</p>
+  <div class="review-controls"><button id="theme">切换浅色</button><label>预览状态<select id="preview"><option value="normal">有事项</option><option value="empty">当天无事项</option><option value="permission">日历未授权</option><option value="error">日历读取失败</option></select></label></div>
+  <ol><li>左右滑动日历切换月／周；右上角“今天”回到当天。红点表示待办，绿点表示日程。</li><li>点圆圈完成待办，点正文看详情。</li><li>点“全部”，勾选要展示的系统日历列表和待办列表。</li></ol>
+  <p class="note">2026年10月1日作为演示“今天”。所有事项为虚构数据，不连接系统。“全部”直接展示勾选的来源事项，日历仅在首页。</p>
+  <a href="../todo-overview.md">查看设计说明</a>
+ </aside>
+</div>
+<dialog id="detail"><form method="dialog"><div id="detail-content"></div><button class="primary">关闭</button></form></dialog>
+<script src="app.js"></script>
+</body></html>
