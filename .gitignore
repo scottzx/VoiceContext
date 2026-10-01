@@ -50,6 +50,7 @@ venv/
 
 # Private business discussions and customer details (local only)
 /docs/discussion/
+/tools/device-evidence/20260915-scottxz/
 
 # Imported Phone native build cache and generated integration resources
 Vendor/Phone/deps/libs/
