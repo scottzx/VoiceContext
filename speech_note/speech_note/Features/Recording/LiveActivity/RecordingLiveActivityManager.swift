@@ -1,14 +1,18 @@
 import ActivityKit
 import Foundation
+import UIKit
 
 /// Starts a Dynamic Island Live Activity for the active recording.
-/// Lock-screen banner content is intentionally empty so only the island shows.
+/// Keeps the lock-screen card and island synchronized with capture state.
 @MainActor
 final class RecordingLiveActivityManager {
     static let shared = RecordingLiveActivityManager()
 
     private var currentActivity: Activity<RecordingActivityAttributes>?
     private var recordingStartedAt: Date?
+    private var pendingUpdate: Task<Void, Never>?
+    private var updateRevision = 0
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
     private init() {}
 
@@ -50,7 +54,7 @@ final class RecordingLiveActivityManager {
             startedAt: startedAt,
             isInterrupted: isInterrupted
         )
-        Task {
+        enqueueUpdate {
             for activity in activities {
                 await activity.update(.init(state: updatedState, staleDate: nil))
             }
@@ -62,12 +66,44 @@ final class RecordingLiveActivityManager {
         currentActivity = nil
         recordingStartedAt = nil
         guard !activities.isEmpty else { return }
-        Task {
+        enqueueUpdate {
             for activity in activities {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
         }
     }
+
+    private func enqueueUpdate(_ operation: @escaping @MainActor () async -> Void) {
+        // Interrupted capture no longer grants audio background execution.
+        // Hold a short assertion until ActivityKit has accepted the new state.
+        if backgroundTask == .invalid {
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Recording activity update") { [weak self] in
+                MainActor.assumeIsolated { self?.finishBackgroundTask() }
+            }
+        }
+        let previous = pendingUpdate
+        updateRevision += 1
+        let revision = updateRevision
+        pendingUpdate = Task {
+            await previous?.value
+            await operation()
+            guard revision == updateRevision else { return }
+            pendingUpdate = nil
+            finishBackgroundTask()
+        }
+    }
+
+    private func finishBackgroundTask() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
+    }
+
+    #if DEBUG
+    func waitForPendingUpdates() async {
+        await pendingUpdate?.value
+    }
+    #endif
 
     private func trackedActivities() -> [Activity<RecordingActivityAttributes>] {
         if let currentActivity {

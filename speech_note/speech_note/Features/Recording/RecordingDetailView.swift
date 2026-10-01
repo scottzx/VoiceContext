@@ -120,7 +120,10 @@ struct RecordingDetailScreen: View {
             } label: {
                 Label("交给智能体", systemImage: "bubble.left.and.bubble.right")
             }
-            .disabled(transcript == nil)
+            .disabled(transcript == nil || transcript?.segments.isEmpty == true)
+            if transcript == nil || transcript?.segments.isEmpty == true {
+                Text(L(documentPlaceholder))
+            }
             Button {
                 NotificationCenter.default.post(
                     name: Notification.Name("VoiceContext.openResults"), object: nil,

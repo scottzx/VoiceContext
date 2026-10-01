@@ -116,6 +116,7 @@ Use regular, medium/semibold, and bold intentionally. If most text is bold, hier
 - **Approach:** Grid-disciplined, single-column iPhone layout.
 - **Navigation:** `NavigationStack`, native sheets, and value-based destinations.
 - **Integration navigation (approved 2026-09-29):** Four tabs in order: 聊天, 会议, 待办事项, 拓展. Chat reuses the full phone agent capabilities; Meetings hosts the recording workspace; Tasks uses system Reminders; Extensions contains 我的 and settings. See `docs/design/personal-agent-integration.md` for confirmed scope and remaining page details.
+- **Shared tab layout and preferences (2026-09-29):** Match Chat and Meetings with inline navigation titles, flat lists, system canvas backgrounds, and neutral navigation icons on Tasks and Extensions. Extensions offers one Settings entry; language and appearance are app-wide. Recording-specific preferences remain a subsection. Do not show an Agent-list shortcut in Extensions.
 - **Records screen within Meetings:** Large title, restrained calendar strip, flat Recording rows, and a fixed bottom recording control. In the integration version, profile/settings move to Extensions. Recording state and a stop action remain reachable across tabs.
 - **Recording details:** Title and metadata, audio player, transcript, then secondary metadata/actions. Audio always precedes transcript.
 - **Settings:** Native `List` / `Form` grouping. Do not create a custom card for every setting row.

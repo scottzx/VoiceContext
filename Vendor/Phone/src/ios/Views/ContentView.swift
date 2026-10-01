@@ -1,4 +1,7 @@
 import SwiftUI
+#if VOICE_AGENT_FUSION
+import VoiceRecording
+#endif
 
 private let shareLog = AppLogger(category: "Share")
 private let draftLog = AppLogger(category: "DraftSession")
@@ -1355,7 +1358,8 @@ struct ContentView: View {
             // Reopen the Settings sheet so the user lands back where they
             // were instead of stranded on the chat list. SettingsSheet's
             // own onAppear pushes the saved destination onto its navPath.
-            if UserDefaults.standard.string(forKey: "pendingSettingsReopen") != nil {
+            if UserDefaults.standard.string(forKey: "pendingSettingsReopen") != nil,
+               UserDefaults.standard.string(forKey: "settingsPresentationOwner") != "extensions" {
                 DispatchQueue.main.async {
                     activeToolSheet = .settings
                 }
@@ -7193,6 +7197,49 @@ private struct AppearanceSettingsView: View {
             }
 
             Section {
+                ForEach(supportedLanguages) { lang in
+                    Button {
+                        guard appLanguage != lang.id else { return }
+                        // Persist a reopen-hint BEFORE flipping appLanguage —
+                        // the @AppStorage write triggers the root
+                        // `.id(appLanguage)` rebuild in MinisApp.swift, which
+                        // drops the entire view tree including the Settings
+                        // sheet. ContentView/SettingsSheet read this flag on
+                        // re-mount and reopen the sheet + push back to the
+                        // Appearance page so the user lands where they were
+                        // with all strings rendered in the new language.
+                        UserDefaults.standard.set("appearance", forKey: "pendingSettingsReopen")
+                        // [T-ios-stacknav-transition-attributegraph-race] The
+                        // `.id(appLanguage)` re-key below is the app's only
+                        // unconditional WHOLE-TREE teardown, and a chat can be
+                        // streaming underneath this sheet while it happens —
+                        // the same hosting-subgraph race the push/pop observers
+                        // guard, with every mounted vm outgoing at once. Pin
+                        // them all across the re-mount. No-ops when nothing is
+                        // processing, which is the overwhelmingly common case.
+                        ViewModelCache.shared.suspendAllForTreeRemount()
+                        Bundle.setLanguage(lang.id.isEmpty ? nil : lang.id)
+                        appLanguage = lang.id
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(lang.id.isEmpty ? AppLocalized("System") : lang.name)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if appLanguage == lang.id {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.primary)
+                                    .fontWeight(.semibold)
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Language")
+            } footer: {
+                Text("Override the display language for this app. \"System\" follows your device language.")
+            }
+
+            Section {
                 Picker("Launch Session", selection: $launchScreen) {
                     Text("Auto").tag(0)
                     Text("Last Session").tag(1)
@@ -7331,7 +7378,7 @@ private struct AppearanceSettingsView: View {
                                 Spacer()
                                 if appIconMode == option.id {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(.blue)
+                                        .foregroundStyle(.primary)
                                         .font(.title3)
                                 }
                             }
@@ -7345,58 +7392,9 @@ private struct AppearanceSettingsView: View {
                 }
             }
 
-            Section {
-                ForEach(supportedLanguages) { lang in
-                    Button {
-                        // Persist a reopen-hint BEFORE flipping appLanguage —
-                        // the @AppStorage write triggers the root
-                        // `.id(appLanguage)` rebuild in MinisApp.swift, which
-                        // drops the entire view tree including the Settings
-                        // sheet. ContentView/SettingsSheet read this flag on
-                        // re-mount and reopen the sheet + push back to the
-                        // Appearance page so the user lands where they were
-                        // with all strings rendered in the new language.
-                        UserDefaults.standard.set("appearance", forKey: "pendingSettingsReopen")
-                        // [T-ios-stacknav-transition-attributegraph-race] The
-                        // `.id(appLanguage)` re-key below is the app's only
-                        // unconditional WHOLE-TREE teardown, and a chat can be
-                        // streaming underneath this sheet while it happens —
-                        // the same hosting-subgraph race the push/pop observers
-                        // guard, with every mounted vm outgoing at once. Pin
-                        // them all across the re-mount. No-ops when nothing is
-                        // processing, which is the overwhelmingly common case.
-                        ViewModelCache.shared.suspendAllForTreeRemount()
-                        appLanguage = lang.id
-                        Bundle.setLanguage(lang.id.isEmpty ? nil : lang.id)
-                    } label: {
-                        HStack(spacing: 12) {
-                            if !lang.flag.isEmpty {
-                                Text(lang.flag).font(.title2)
-                            } else {
-                                Image(systemName: "globe")
-                                    .font(.title3)
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 28)
-                            }
-                            Text(lang.name)
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if appLanguage == lang.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.blue)
-                                    .fontWeight(.semibold)
-                            }
-                        }
-                    }
-                }
-            } header: {
-                Text("Language")
-            } footer: {
-                Text("Override the display language for this app. \"System\" follows your device language.")
-            }
 
         }
-        .navigationTitle("Appearance")
+        .navigationTitle("语言与外观")
         .navigationBarTitleDisplayMode(.inline)
         .background(InteractivePopGestureDisabler())
     }
@@ -7642,6 +7640,11 @@ private enum SettingsDestination: Hashable {
 
 struct SettingsSheet: View {
     @Binding var showTerminal: Bool
+    var presentationOwner: String = "chat"
+    #if VOICE_AGENT_FUSION
+    @EnvironmentObject private var recordings: VoiceRecordingWorkspace
+    @State private var showRecordingSettings = false
+    #endif
     @AppStorage("appearanceMode") private var appearanceMode: Int = 0
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var deepLink = DeepLinkCoordinator.shared
@@ -7651,156 +7654,132 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack(path: $navPath) {
             List {
+                Section("通用") {
+                    NavigationLink {
+                        AppearanceSettingsView()
+                    } label: {
+                        Label("语言与外观", systemImage: "paintbrush")
+                    }
+                }
+                #if VOICE_AGENT_FUSION
+                Section("录音与我的") {
+                    Button { showRecordingSettings = true } label: {
+                        Label("录音与我的设置", systemImage: "waveform")
+                    }
+                    .foregroundStyle(.primary)
+                }
+                #endif
+
                 Section {
                     NavigationLink {
                         ProviderInstancesView()
                     } label: {
                         if #available(iOS 26, *) {
-                            Label(String(localized: "Manage Providers"), systemImage: "key.circle.fill")
+                            Label(AppLocalized("Manage Providers"), systemImage: "key.circle.fill")
                         } else {
-                            Label(String(localized: "Manage Providers"), systemImage: "lock.circle.fill")
+                            Label(AppLocalized("Manage Providers"), systemImage: "lock.circle.fill")
                         }
                     }
 
                     NavigationLink {
                         ModelGroupsView()
                     } label: {
-                        Label(String(localized: "Model Groups"), systemImage: "gearshape.circle.fill")
+                        Label(AppLocalized("Model Groups"), systemImage: "gearshape.circle.fill")
                     }
 
                     NavigationLink {
                         UsageStatsView()
                     } label: {
-                        Label(String(localized: "Token Usage"), systemImage: "chart.line.uptrend.xyaxis.circle.fill")
+                        Label(AppLocalized("Token Usage"), systemImage: "chart.line.uptrend.xyaxis.circle.fill")
                     }
                 } header: {
-                    Text(String(localized: "LLM Providers"))
+                    Text(AppLocalized("LLM Providers"))
                 } footer: {
                     Text("Configure which models the agent uses, manage API keys & OAuth for each provider, and create model groups for fallback or load balancing.")
                 }
 
-                Section(String(localized: "Appearance")) {
-                    NavigationLink {
-                        AppearanceSettingsView()
-                    } label: {
-                        Label {
-                            Text(String(localized: "Appearance"))
-                        } icon: {
-                            Image(systemName: "paintbrush.fill")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.indigo, in: Circle())
-                        }
-                    }
-                }
-
-                Section(String(localized: "Agent Runtime")) {
+                Section(AppLocalized("Agent Runtime")) {
                     NavigationLink {
                         SkillsManagementView()
                     } label: {
                         Label {
-                            Text(String(localized: "Skills"))
+                            Text(AppLocalized("Skills"))
                         } icon: {
                             Image(systemName: "puzzlepiece.extension")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.blue, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                     NavigationLink {
                         SoulSettingsView()
                     } label: {
                         Label {
-                            Text(String(localized: "Soul"))
+                            Text(AppLocalized("Soul"))
                         } icon: {
                             Image(systemName: "sparkles")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.pink, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                     NavigationLink {
                         MemoryManagementView()
                     } label: {
                         Label {
-                            Text(String(localized: "Memory"))
+                            Text(AppLocalized("Memory"))
                         } icon: {
                             Image(systemName: "brain.head.profile")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.purple, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                     NavigationLink {
                         MCPIntegrationsView()
                     } label: {
                         Label {
-                            Text(String(localized: "MCP Integrations"))
+                            Text(AppLocalized("MCP Integrations"))
                         } icon: {
                             Image(systemName: "square.stack.3d.up")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.teal, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                     NavigationLink {
                         EnvironmentVariablesView()
                     } label: {
                         Label {
-                            Text(String(localized: "Environment Variables"))
+                            Text(AppLocalized("Environment Variables"))
                         } icon: {
                             Image(systemName: "terminal")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.green, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
 
-                Section(String(localized: "Storage")) {
+                Section(AppLocalized("Storage")) {
                     NavigationLink {
                         StorageManagementView()
                     } label: {
                         Label {
-                            Text(String(localized: "Storage"))
+                            Text(AppLocalized("Storage"))
                         } icon: {
                             Image(systemName: "archivebox")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.blue, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                     NavigationLink {
                         SharedFoldersSettingsView()
                     } label: {
                         Label {
-                            Text(String(localized: "Shared Folders"))
+                            Text(AppLocalized("Shared Folders"))
                         } icon: {
                             Image(systemName: "folder.fill.badge.person.crop")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.green, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                     NavigationLink {
                         MountedFoldersSettingsView()
                     } label: {
                         Label {
-                            Text(String(localized: "Mount External Folders"))
+                            Text(AppLocalized("Mount External Folders"))
                         } icon: {
                             Image(systemName: "externaldrive.badge.plus")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.orange, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                     if #available(iOS 17.0, *) {
@@ -7810,13 +7789,10 @@ struct SettingsSheet: View {
                             CloudSyncSettingsV2View()
                         } label: {
                             Label {
-                                Text(String(localized: "iCloud Sync"))
+                                Text(AppLocalized("iCloud Sync"))
                             } icon: {
                                 Image(systemName: "icloud")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 21, height: 21)
-                                    .background(.cyan, in: Circle())
+                                    .foregroundStyle(.primary)
                             }
                         }
                     }
@@ -7832,26 +7808,20 @@ struct SettingsSheet: View {
                             // arrow.triangle.2.circlepath reads as a round trip
                             // rather than a one-way export.
                             Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.indigo, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
 
-                Section(String(localized: "Permissions")) {
+                Section(AppLocalized("Permissions")) {
                     NavigationLink {
                         OffloadPermissionSettingsView()
                     } label: {
                         Label {
-                            Text(String(localized: "Permissions"))
+                            Text(AppLocalized("Permissions"))
                         } icon: {
                             Image(systemName: "lock.shield")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.red, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                     if BiometricAuth.isAvailable {
@@ -7859,107 +7829,89 @@ struct SettingsSheet: View {
                             FaceIDProtectionSettingsView()
                         } label: {
                             Label {
-                                Text(String(format: String(localized: "%@ Protection"), BiometricAuth.biometryDisplayName))
+                                Text(String(format: AppLocalized("%@ Protection"), BiometricAuth.biometryDisplayName))
                             } icon: {
                                 // Match SF Symbol to the device's actual sensor — Touch ID
                                 // devices showed a Face ID glyph here before.
                                 Image(systemName: BiometricAuth.biometryIconName)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 21, height: 21)
-                                    .background(.teal, in: Circle())
+                                    .foregroundStyle(.primary)
                             }
                         }
                     }
                 }
 
-                Section(String(localized: "Hardware")) {
+                Section(AppLocalized("Hardware")) {
                     NavigationLink {
                         HardwareBridgeSettingsView()
                     } label: {
                         Label {
-                            Text(String(localized: "Hardware Devices"))
+                            Text(AppLocalized("Hardware Devices"))
                         } icon: {
                             Image(systemName: "antenna.radiowaves.left.and.right")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.blue, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
 
-                Section(String(localized: "Diagnostics")) {
+                Section(AppLocalized("Diagnostics")) {
                     NavigationLink {
                         LogManagementView()
                     } label: {
                         Label {
-                            Text(String(localized: "Logs"))
+                            Text(AppLocalized("Logs"))
                         } icon: {
                             Image(systemName: "doc.text")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.gray, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
 
-                Section(String(localized: "About")) {
+                Section(AppLocalized("About")) {
                     NavigationLink {
                         AboutView()
                     } label: {
                         Label {
-                            Text(String(localized: "About Yima"))
+                            Text(AppLocalized("About Yima"))
                         } icon: {
                             Image(systemName: "info")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.indigo, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                     Link(destination: URL(string: "https://openminis.github.io/privacy-policy.html")!) {
                         Label {
-                            Text(String(localized: "Privacy Policy"))
+                            Text(AppLocalized("Privacy Policy"))
                         } icon: {
                             Image(systemName: "hand.raised")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.teal, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                     Button {
                         showFeedbackDialog = true
                     } label: {
                         Label {
-                            Text(String(localized: "Feedback"))
+                            Text(AppLocalized("Feedback"))
                         } icon: {
                             Image(systemName: "bubble.left.and.bubble.right.fill")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.indigo, in: Circle())
+                                .foregroundStyle(.primary)
                         }
                     }
                     .foregroundStyle(.primary)
-                    .confirmationDialog(String(localized: "Feedback"), isPresented: $showFeedbackDialog, titleVisibility: .visible) {
-                        Button(String(localized: "Report a Bug (GitHub)")) {
+                    .confirmationDialog(AppLocalized("Feedback"), isPresented: $showFeedbackDialog, titleVisibility: .visible) {
+                        Button(AppLocalized("Report a Bug (GitHub)")) {
                             if let url = Self.makeBugReportURL() { UIApplication.shared.open(url) }
                         }
-                        Button(String(localized: "Feedback (Telegram)")) {
+                        Button(AppLocalized("Feedback (Telegram)")) {
                             if let url = URL(string: "https://t.me/+2NzhOJuzRyI1YmM1") { UIApplication.shared.open(url) }
                         }
-                        Button(String(localized: "Feedback (Email)")) {
+                        Button(AppLocalized("Feedback (Email)")) {
                             if let url = Self.makeFeedbackEmailURL() { UIApplication.shared.open(url) }
                         }
-                        Button(String(localized: "Cancel"), role: .cancel) {}
+                        Button(AppLocalized("Cancel"), role: .cancel) {}
                     }
                 }
 
             }
-            .navigationTitle(String(localized: "Settings"))
+            .navigationTitle(AppLocalized("Settings"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -8017,6 +7969,7 @@ struct SettingsSheet: View {
                 }
             }
             .onAppear {
+                UserDefaults.standard.set(presentationOwner, forKey: "settingsPresentationOwner")
                 applyPendingDeepLink()
                 // Legacy flags — kept so older call sites keep working.
                 if deepLink.showEnvironmentVariables {
@@ -8048,6 +8001,9 @@ struct SettingsSheet: View {
                 applyPendingDeepLink()
             }
         }
+        #if VOICE_AGENT_FUSION
+        .sheet(isPresented: $showRecordingSettings) { recordings.settings() }
+        #endif
         .preferredColorScheme(appearanceMode == 1 ? .light : appearanceMode == 2 ? .dark : nil)
         .appFontScale()
     }

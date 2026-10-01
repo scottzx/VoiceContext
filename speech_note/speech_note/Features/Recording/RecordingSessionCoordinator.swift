@@ -238,6 +238,10 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         userPausedCapture = true
         try capture.pause()
         let pausedAt = now()
+        stateMachine = machine
+        captureState = .paused
+        presentationState = .paused
+        RecordingLiveActivityManager.shared.updateActivity(isPaused: true)
         try await openGap(
             recordingID: recordingID,
             reason: .userPause,
@@ -245,10 +249,6 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
             at: pausedAt
         )
         try await repository.changeState(recordingID: recordingID, to: next, at: pausedAt)
-        stateMachine = machine
-        captureState = .paused
-        presentationState = .paused
-        RecordingLiveActivityManager.shared.updateActivity(isPaused: true)
     }
 
     func resume() async throws {
@@ -259,12 +259,12 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         try capture.resume()
         userPausedCapture = false
         let next = try machine.apply(.resume)
-        try await closeActiveGapIfNeeded(at: now(), sample: capture.currentSample)
-        try await repository.changeState(recordingID: recordingID, to: next, at: now())
         stateMachine = machine
         captureState = .recording
         presentationState = .recording
         RecordingLiveActivityManager.shared.updateActivity(isPaused: false)
+        try await closeActiveGapIfNeeded(at: now(), sample: capture.currentSample)
+        try await repository.changeState(recordingID: recordingID, to: next, at: now())
     }
 
     @discardableResult
@@ -592,6 +592,10 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
             guard var machine = stateMachine else { return }
             let next = try machine.apply(.interruptionBegan)
             stateMachine = machine
+            // Reflect stopped capture before any journal I/O can suspend or fail.
+            captureState = .interrupted
+            presentationState = .interrupted
+            RecordingLiveActivityManager.shared.updateActivity(isPaused: false, isInterrupted: true)
             try await repository.changeState(recordingID: recordingID, to: next, at: event.occurredAt)
             try await openGap(
                 recordingID: recordingID,
@@ -599,9 +603,6 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
                 sample: event.sampleIndex,
                 at: event.occurredAt
             )
-            captureState = .interrupted
-            presentationState = .interrupted
-            RecordingLiveActivityManager.shared.updateActivity(isPaused: false, isInterrupted: true)
         case let .interruptionEnded(shouldResume):
             try await closeActiveGapIfNeeded(at: event.occurredAt, sample: event.sampleIndex)
             await resumeAfterInterruptionIfNeeded(forceResume: shouldResume)

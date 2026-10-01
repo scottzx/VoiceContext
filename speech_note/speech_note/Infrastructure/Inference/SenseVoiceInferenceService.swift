@@ -1,5 +1,9 @@
 @preconcurrency import AVFoundation
+#if VOICE_AGENT_FUSION
+import TranscribeNative
+#else
 import CTranscribe
+#endif
 import Darwin
 import Foundation
 
@@ -333,6 +337,59 @@ actor SenseVoiceInferenceService {
         return resourceRoot
     }
 
+    #if VOICE_AGENT_FUSION
+    nonisolated private static func run(
+        samples: [Float],
+        resourceRoot: URL,
+        cancellation: InferenceCancellationFlag,
+        languageMode: TranscriptionLanguageMode
+    ) throws -> NativeResult {
+        guard !cancellation.shouldAbort else { throw InferenceError.abortedForBackground }
+        do {
+            let modelURL = resourceRoot.appending(path: "SenseVoiceSmall-Q8_0.gguf")
+            let model = try Model(path: modelURL.path, options: ModelOptions(backend: .metal))
+            let session = try model.session()
+            session.setCancellationToken(cancellation.nativeToken)
+            guard !cancellation.shouldAbort else { throw InferenceError.abortedForBackground }
+            let transcript = try session.run(
+                samples,
+                options: RunOptions(itn: .on, language: languageMode.senseVoiceLanguageHint)
+            )
+            guard !cancellation.shouldAbort else { throw InferenceError.abortedForBackground }
+            let text = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { throw InferenceError.emptyTranscript }
+            let rawText = transcript.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let detectedLanguage = (transcript.language ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let effectiveLanguage = detectedLanguage.isEmpty
+                ? languageMode.senseVoiceLanguageHint ?? ""
+                : detectedLanguage
+            var tokens: [ASRSentenceSegmenter.Token] = []
+            if case .token = transcript.timestampKind {
+                tokens = transcript.tokens.filter { $0.t1Ms > $0.t0Ms && !$0.text.isEmpty }.map {
+                    ASRSentenceSegmenter.Token(text: $0.text, startMilliseconds: $0.t0Ms, endMilliseconds: $0.t1Ms)
+                }
+            }
+            let timings = transcript.timings
+            let inferenceMilliseconds = timings.melMs + timings.encodeMs + timings.decodeMs
+            let audioDuration = Double(samples.count) / 16_000
+            return NativeResult(
+                text: text,
+                rawText: rawText,
+                detectedLanguage: effectiveLanguage,
+                tokens: tokens,
+                backend: model.backend,
+                loadMilliseconds: timings.loadMs,
+                inferenceMilliseconds: inferenceMilliseconds,
+                realtimeFactor: inferenceMilliseconds > 0 ? audioDuration / Double(inferenceMilliseconds / 1_000) : 0,
+                physicalFootprintBytes: physicalFootprintBytes()
+            )
+        } catch let error as TranscribeError {
+            if case .aborted = error { throw InferenceError.abortedForBackground }
+            throw InferenceError.runtime(String(describing: error))
+        }
+    }
+
+    #else
     nonisolated private static func run(
         samples: [Float],
         resourceRoot: URL,
@@ -449,6 +506,8 @@ actor SenseVoiceInferenceService {
         String(cString: transcribe_status_string(Int32(status.rawValue)))
     }
 
+    #endif
+
     nonisolated private static func thermalStateDescription() -> String {
         switch ProcessInfo.processInfo.thermalState {
         case .nominal: "nominal"
@@ -483,6 +542,16 @@ actor SenseVoiceInferenceService {
     }
 }
 
+#if VOICE_AGENT_FUSION
+private final class InferenceCancellationFlag: @unchecked Sendable {
+    let nativeToken = CancellationToken()
+
+    nonisolated init() {}
+    nonisolated var shouldAbort: Bool { nativeToken.isCancelled }
+    nonisolated func requestAbort() { nativeToken.cancel() }
+    nonisolated func clearAbort() { nativeToken.reset() }
+}
+#else
 private final class InferenceCancellationFlag: @unchecked Sendable {
     private let lock = NSLock()
     private nonisolated(unsafe) var abortRequested = false
@@ -501,6 +570,7 @@ private final class InferenceCancellationFlag: @unchecked Sendable {
         lock.withLock { abortRequested = false }
     }
 }
+#endif
 
 enum PCM16KMonoLoader {
     nonisolated static func isReadable(_ url: URL) -> Bool {

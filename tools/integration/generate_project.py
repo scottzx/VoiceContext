@@ -122,11 +122,26 @@ def embed_file(ph, fid):
     o[key]={'isa':'PBXBuildFile','fileRef':fid,'settings':{'ATTRIBUTES':['CodeSignOnCopy','RemoveHeadersOnCopy']}}
     ph['files'].append(key)
 embed_file(embed,record['productReference'])
-# Phone and recording use the same original CTranscribe framework binary.
-for fid,x in o.items():
-    if x.get('isa')=='PBXFileReference' and x.get('name')=='TranscribeCpp.xcframework':
-        import os
-        x.update(path=os.path.relpath(ROOT/'speech_note/speech_note/Frameworks/TranscribeCpp.xcframework',PHONE),sourceTree='SOURCE_ROOT')
+# Both modules consume the pinned TranscribeKit package, including its C binary.
+import os
+package_id = uid('package:TranscribeKit')
+o[package_id] = {'isa':'XCLocalSwiftPackageReference',
+                 'relativePath':os.path.relpath(ROOT/'Vendor/TranscribeKit', PHONE)}
+p.setdefault('packageReferences', []).append(package_id)
+transcribe_refs = {fid for fid,x in o.items() if x.get('isa') == 'PBXFileReference'
+                   and x.get('path', '').endswith('TranscribeCpp.xcframework')}
+for target in [main, record]:
+    for phid in target['buildPhases']:
+        ph = o[phid]
+        if ph['isa'] in ['PBXFrameworksBuildPhase', 'PBXCopyFilesBuildPhase']:
+            ph['files'] = [bid for bid in ph['files'] if o[bid].get('fileRef') not in transcribe_refs]
+    for product_name in ['TranscribeNative', 'CTranscribeRuntime']:
+        product_id = uid(target['name'] + ':' + product_name)
+        o[product_id] = {'isa':'XCSwiftPackageProductDependency', 'package':package_id, 'productName':product_name}
+        target.setdefault('packageProductDependencies', []).append(product_id)
+        build_id = uid(target['name'] + ':link:' + product_name)
+        o[build_id] = {'isa':'PBXBuildFile', 'productRef':product_id}
+        phase(target, 'PBXFrameworksBuildPhase')['files'].append(build_id)
 # Embed the original recording widget in addition to existing Agent extensions.
 extensions=next(o[x] for x in main['buildPhases'] if o[x].get('name')=='Embed Foundation Extensions')
 embed_file(extensions,o[widget_id]['productReference'])
@@ -143,9 +158,12 @@ for bid in list(resources['files']):
         resources['files'].remove(bid)  # localized branding is generated per target and build identity
 for path,kind in [(ROOT/'Integration/Resources/Localizable.xcstrings','text.json.xcstrings'),
                   (ROOT/'Integration/Resources/Assets.xcassets','folder.assetcatalog'),
-                  (ROOT/'speech_note/speech_note/ModelResources','folder'),
                   (ROOT/'speech_note/speech_note/VoiceContextPack.zip','archive.zip')]:
     if path.exists(): add(main,'PBXResourcesBuildPhase',ref(path,kind))
+# Copy model files individually so Bundle.main loaders share one flat resource root.
+for path in sorted((ROOT/'speech_note/speech_note/ModelResources').iterdir()):
+    if path.is_file(): add(main,'PBXResourcesBuildPhase',ref(path, 'text.json' if path.suffix == '.json' else 'file'))
+add(main,'PBXResourcesBuildPhase',ref(ROOT/'speech_note/speech_note/SenseVoiceFixture.m4a', 'file'))
 # Preserve the full platform plist but use the released product's identity and privacy text.
 with (PHONE/'Info.plist').open('rb') as f: info=plistlib.load(f)
 with (ROOT/'speech_note/speech_note/Info.plist').open('rb') as f: original=plistlib.load(f)
@@ -221,6 +239,10 @@ for name in ['AppIcon.appiconset','AccentColor.colorset']:
 strings=json.loads((PHONE/'Localizable.xcstrings').read_text())
 vc=json.loads((ROOT/'speech_note/speech_note/Localizable.xcstrings').read_text())
 strings['strings'].update(vc['strings'])
+fusion=json.loads((ROOT/'Integration/Resources/Fusion.xcstrings').read_text())
+for key, value in fusion['strings'].items():
+    entry = strings['strings'].setdefault(key, {'extractionState': 'manual', 'localizations': {}})
+    entry.setdefault('localizations', {}).update(value['localizations'])
 (ROOT/'Integration/Resources/Localizable.xcstrings').write_text(json.dumps(strings,ensure_ascii=False,indent=2)+'\n')
 # Resources are generated above; first generation may not have found them earlier.
 for path,kind in [(assets,'folder.assetcatalog'),(ROOT/'Integration/Resources/Localizable.xcstrings','text.json.xcstrings')]:

@@ -48,6 +48,9 @@ venv/
 .1agents/
 .gemini/
 
+# Private business discussions and customer details (local only)
+/docs/discussion/
+
 # Imported Phone native build cache and generated integration resources
 Vendor/Phone/deps/libs/
 Vendor/Phone/deps/include/

@@ -1,19 +1,9 @@
-import CTranscribe
+import TranscribeNative
 import Foundation
 
-/// Slim, direct wrapper over the CTranscribe C API (TranscribeCpp.xcframework,
-/// vendored from the voice_type/VoiceContext project) for single-utterance
-/// offline transcription of hardware-streamed audio.
-///
-/// Deliberately NOT a port of VoiceContext's SenseVoiceInferenceService: that
-/// service's file-based API pulls in a VAD + speaker-diarization pipeline
-/// (SherpaOnnx/OnnxRuntime + 2 more model files) needed for meeting
-/// transcription, none of which applies here — the device's long-press
-/// button already delimits the utterance, so there's no need for
-/// client-side VAD. This wrapper calls transcribe_open/transcribe_run/
-/// transcribe_full_text directly, mirroring the call sequence in
-/// SenseVoiceInferenceService.swift's private `run(samples:...)` (voice_type
-/// repo) but without its VAD/segmentation/diarization scaffolding.
+/// Single-utterance SenseVoice transcription through the shared TranscribeKit package.
+/// Hardware buttons delimit utterances; meeting VAD and speaker processing remain
+/// in the recording module. Both paths use TranscribeNative's Model/Session API.
 actor HardwareVoiceTranscriber {
     /// Shared across every caller (hardware bridge + composer voice input) so the
     /// 241MB model loads once, not once per feature.
@@ -35,19 +25,13 @@ actor HardwareVoiceTranscriber {
         }
     }
 
-    private var session: OpaquePointer?
+    private var session: Session?
 
     /// SenseVoice is a fast single-utterance recognizer rather than a stateful
     /// streaming decoder. Keep transport chunks small, but coalesce them into
     /// bounded inference windows so long device recordings never require one
     /// unbounded model call. At 16 kHz PCM16 mono, 30 seconds is 960,000 bytes.
     static let defaultSegmentSeconds = 30
-
-    deinit {
-        if let session {
-            transcribe_session_free(session)
-        }
-    }
 
     /// Converts raw little-endian PCM16 mono 16kHz bytes (as streamed by the
     /// device over L2CAP) to text.
@@ -57,22 +41,12 @@ actor HardwareVoiceTranscriber {
 
         let session = try openSessionIfNeeded()
 
-        var runParams = transcribe_run_params()
-        transcribe_run_params_init(&runParams)
-        // SenseVoice couples punctuation output to its ITN prefix; enable ITN
-        // to get sentence-final punctuation. Language left nil = autodetect.
-        runParams.itn = TRANSCRIBE_ITN_MODE_ON
-        runParams.language = nil
-
-        let runStatus = samples.withUnsafeBufferPointer { buffer in
-            transcribe_run(session, buffer.baseAddress, Int32(buffer.count), &runParams)
+        let text: String
+        do {
+            text = try Self.run(session: session, samples: samples)
+        } catch {
+            throw TranscriberError.runFailed(String(describing: error))
         }
-        guard runStatus == TRANSCRIBE_OK else {
-            throw TranscriberError.runFailed(Self.statusDescription(runStatus))
-        }
-
-        let text = String(cString: transcribe_full_text(session))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw TranscriberError.emptyTranscript }
         return text
     }
@@ -142,26 +116,25 @@ actor HardwareVoiceTranscriber {
         return merged
     }
 
-    private func openSessionIfNeeded() throws -> OpaquePointer {
+    private func openSessionIfNeeded() throws -> Session {
         if let session { return session }
-
         guard let modelURL = Bundle.main.url(forResource: "SenseVoiceSmall-Q8_0", withExtension: "gguf") else {
             throw TranscriberError.modelResourceMissing
         }
-
-        var loadParams = transcribe_model_load_params()
-        transcribe_model_load_params_init(&loadParams)
-        loadParams.backend = TRANSCRIBE_BACKEND_METAL
-
-        var newSession: OpaquePointer?
-        let openStatus = modelURL.path.withCString { path in
-            transcribe_open(path, &loadParams, nil, &newSession)
+        do {
+            let model = try Model(path: modelURL.path, options: ModelOptions(backend: .metal))
+            let newSession = try model.session()
+            session = newSession
+            return newSession
+        } catch {
+            throw TranscriberError.openFailed(String(describing: error))
         }
-        guard openStatus == TRANSCRIBE_OK, let newSession else {
-            throw TranscriberError.openFailed(Self.statusDescription(openStatus))
-        }
-        session = newSession
-        return newSession
+    }
+
+    // Use the synchronous overload within this actor's serialized inference call.
+    nonisolated private static func run(session: Session, samples: [Float]) throws -> String {
+        try session.run(samples, options: RunOptions(itn: .on, language: nil)).text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func floatSamples(fromLittleEndianPCM16 data: Data) -> [Float] {
@@ -181,7 +154,4 @@ actor HardwareVoiceTranscriber {
         return samples
     }
 
-    private static func statusDescription(_ status: transcribe_status) -> String {
-        String(cString: transcribe_status_string(Int32(status.rawValue)))
-    }
 }

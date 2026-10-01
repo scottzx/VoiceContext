@@ -40,7 +40,11 @@ final class AppLanguageCenter: ObservableObject {
     }
 
     var currentLocale: Locale {
+        #if VOICE_AGENT_FUSION
+        Self.preferredLocale()
+        #else
         Self.locale(forStoredRaw: selectedLanguage.rawValue)
+        #endif
     }
 
     var isChinese: Bool {
@@ -60,7 +64,12 @@ final class AppLanguageCenter: ObservableObject {
     }
 
     nonisolated static func preferredLocale() -> Locale {
-        locale(forStoredRaw: UserDefaults.standard.string(forKey: "app_preferred_language"))
+        #if VOICE_AGENT_FUSION
+        let raw = UserDefaults.standard.string(forKey: "appLanguage") ?? ""
+        return raw.isEmpty ? .current : Locale(identifier: raw)
+        #else
+        return locale(forStoredRaw: UserDefaults.standard.string(forKey: "app_preferred_language"))
+        #endif
     }
 
     nonisolated static func isChinese(locale: Locale = preferredLocale()) -> Bool {

@@ -1856,6 +1856,7 @@ struct SettingsScreen: View {
                     TrialQuotaSettingsSection(trial: model.trialEntitlement)
                 }
 
+                #if !VOICE_AGENT_FUSION
                 Section("界面语言") {
                     Picker("语言 / Language", selection: $languageCenter.selectedLanguage) {
                         ForEach(AppLanguage.allCases) { lang in
@@ -1864,6 +1865,7 @@ struct SettingsScreen: View {
                     }
                     .accessibilityIdentifier("settings-app-language")
                 }
+                #endif
 
                 Section("转写") {
                     Picker("语言模式", selection: languageModeBinding) {
@@ -2011,6 +2013,7 @@ struct SettingsScreen: View {
                 #endif
             }
             .navigationTitle("我的")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }

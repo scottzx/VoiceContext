@@ -25,9 +25,25 @@
 
 1. 聊天：保留 phone 会话和完整工具执行界面。
 2. 会议：承接原听记全部 Recording。详情菜单「交给智能体」先刷新文字快照，再创建聊天草稿；用户发送后才执行。
-3. 待办事项：EventKit 查询所有系统提醒事项列表，默认隐藏已完成；新增默认系统列表，编辑可选可写列表。可新增、修改、完成、删除，并响应外部变更和授权撤销。与 `apple-reminders` 共用系统数据。
-4. 拓展：Skills、模型与服务、浏览器、终端、智能体、录音设置和 Agent 设置。
+3. 待办事项：EventKit 查询所有系统提醒事项列表，默认隐藏已完成；工具栏筛选列表及显示已完成。新增优先筛选中的可写列表，否则使用系统默认可写列表。圆圈/滑动/可访问操作可完成与恢复，删除先确认；编辑可选日期、时间和独立定时提醒，保留未编辑属性，复杂时间组合引导到系统处理。读取失败、权限和无可写列表分别呈现；响应外部变更和授权撤销。与 `apple-reminders` 共用系统数据。
+4. 拓展：Skills、模型与服务、浏览器、终端，以及统一的「设置」入口；不再提供智能体列表跳转。设置内保留录音与我的、模型、工具和存储等功能分组，语言与外观使用应用级偏好。待办和拓展沿用聊天、会议的紧凑标题、平铺列表与系统底色。
 5. 录音详情「智能体产物」预览 `Generated/<recordingID>/` 的文件。来源 revision 由草稿和 Skill 要求写入结果；当前不是独立的 session/产物关系数据库。
+
+## 全局偏好
+
+融合版统一读取 `appLanguage`（空字符串为跟随系统）和 `appearanceMode`（0 系统 / 1 浅色 / 2 深色）。录音模块不再显示独立的界面语言选择器；转写语言仍是独立的业务选项。若尚未保存全局语言，启动时从旧的 `app_preferred_language` 迁移一次，已有全局选择优先。切换语言保留当前 Tab，并从原入口恢复设置页；录音服务继续由 App 持有。
+
+`Integration/Resources/Fusion.xcstrings` 保存融合页面的中英文文案，工程生成器将其合入主应用及录音 framework 使用的词表。原独立录音应用的语言行为保持原样。
+
+仅在 macOS 运行的偏好回归检查（不启动 iOS 应用）：
+
+```bash
+xcrun swiftc -D VOICE_AGENT_FUSION -default-isolation MainActor \
+  Integration/App/FusionPreferences.swift \
+  speech_note/speech_note/App/AppLocalization.swift \
+  tools/integration/test_global_preferences.swift -o build/test-global-preferences
+build/test-global-preferences
+```
 
 ## 容器及签名映射
 
@@ -123,6 +139,14 @@ python3 tools/integration/verify_fusion.py \
 - 保留 `Vendor/Phone/LICENSE`（GPLv3）及 `THIRD_PARTY_LICENSES.md`。原录音源码和引入代码分别保留来源；不要把仓库原 MIT 文件解释为替代第三方许可。
 
 ## 验证记录与下一步验收
+
+2026-10-01 最小体验迭代安装：用户明确授权真机安装后，完成开发版签名编译、主应用及四个扩展的设备授权与签名检查、融合装配审计，增量安装到 `scottxz`（iPhone 15 Pro）成功。安装后确认 `YiJie.speech-note.dev` 已更新，正式版安装 URL、名称和版本保持一致。未卸载、清除数据或启动应用，运行验收仍待执行。证据：`build/yima-minimum-deployment.json`、`build/yima-minimum-install.json`、`build/yima-minimum-signing-audit.json`。
+
+2026-10-01 最小体验迭代：待办筛选、行操作、时间与定时提醒、失败和只读状态已实现；录音整理补充模型配置入口和明确创建约定。`VoiceContextAgentDev` unsigned iphoneos 编译及融合装配审计、macOS 日期规则回归、中英文待办词条检查通过。没有安装或运行 App；工具执行、系统通知、视觉/无障碍与录音连续性仍待真机验收。见[检查记录与演示步骤](../docs/testing/yima-minimum-iteration.md)，编译日志位于本机 `build/yima-minimum-build.log`。
+
+2026-09-29 页面与设置统一部署：用户授权部署后，完成 `VoiceContextAgentDev` 的实际 iPhone 目标签名编译；签名、五个 Bundle 的设备授权与开发版 App Group、融合装配审计通过。已将 `YiJie.speech-note.dev` 增量安装到 `scottxz`，设备查询确认开发版更新成功，正式版安装 URL 保持不变。未卸载或清除数据，未启动应用；本次安装不代替视觉和交互验收。证据：`build/fusion-unified-settings-deployment.json`、`build/fusion-unified-settings-signing-audit.json`、`build/fusion-unified-settings-install.json`。
+
+2026-09-29 页面与设置统一：融合开发版 unsigned iPhone build、装配审计、43 条融合页面中英文词条合并检查通过；macOS 偏好回归检查覆盖旧语言迁移、已有全局选择优先、重复启动幂等和录音模块语言读取。原独立录音本地化源码的类型检查通过。未安装或启动 iOS 应用，布局、深浅色、语言切换后的设置页恢复和录音连续性仍需真机验收。日志：`build/fusion-unified-settings-build.log`、`build/fusion-unified-settings-final-build.log`。
 
 2026-09-29 开发身份并存补充：`VoiceContextAgentDev` / `Debug-Dev` 完成实际 iPhone 目标的签名编译，主应用及四个扩展的描述文件均覆盖 `scottxz`，签名中的开发 App Group、iCloud 与 Keychain 已核对。产物及动态库审计通过，`YiJie.speech-note.dev` 已成功安装为「听记 Dev」。设备查询确认新旧两个 Bundle ID 同时存在，原 `YiJie.speech-note` 的安装 URL 和版本不变。开发版首次工具启动因锁屏被系统拒绝；用户解锁后已成功启动，同一进程持续运行 84 秒且无新增崩溃报告，再次确认原应用安装位置和版本未变。本次为启动及并存检查，不代替完整功能验收。日志与审计：`build/fusion-dev-build.log`、`build/fusion-dev-signing-audit.json`、`build/fusion-dev-coexistence-audit.json`。
 

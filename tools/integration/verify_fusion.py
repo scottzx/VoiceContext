@@ -29,9 +29,31 @@ upstream = read_project(PHONE / 'src/ios/Minis.xcodeproj/project.pbxproj')
 fusion = read_project(PHONE / 'src/ios/VoiceContextAgent.xcodeproj/project.pbxproj')
 main = target(fusion, 'VoiceContextAgent')
 original = target(upstream, 'Minis')
+model_root = ROOT / 'speech_note/speech_note/ModelResources'
+model_manifest = json.loads((model_root / 'ModelManifest.json').read_text())
+model_resource_names = {'ModelManifest.json', *(artifact['relativePath'] for artifact in model_manifest)}
+resource_paths = {fusion[fid].get('path', '') for fid in members(fusion, main, 'PBXResourcesBuildPhase')}
+for name in model_resource_names:
+    assert any(Path(path).name == name for path in resource_paths), f'Model resource not copied to app root: {name}'
+assert not any(Path(path).name == 'ModelResources' for path in resource_paths), 'Nested model resources break Bundle.main loaders'
 for kind in ['PBXSourcesBuildPhase', 'PBXFrameworksBuildPhase']:
     missing = members(upstream, original, kind) - members(fusion, main, kind)
+    if kind == 'PBXFrameworksBuildPhase':
+        missing = {fid for fid in missing if not upstream[fid].get('path', '').endswith('TranscribeCpp.xcframework')}
     assert not missing, f'Dropped Phone build inputs: {kind}: {missing}'
+package_root = ROOT / 'Vendor/TranscribeKit'
+package_snapshot = json.loads((package_root / 'SOURCE_SNAPSHOT.json').read_text())
+for relative, expected_digest in package_snapshot['files'].items():
+    assert hashlib.sha256((package_root / relative).read_bytes()).hexdigest() == expected_digest, f'TranscribeKit snapshot changed: {relative}'
+package_ids = {key for key, value in fusion.items() if value.get('isa') == 'XCLocalSwiftPackageReference'
+               and (PHONE / 'src/ios' / value['relativePath']).resolve() == package_root}
+assert len(package_ids) == 1, 'Expected one pinned TranscribeKit package'
+for module_name in ['VoiceContextAgent', 'VoiceRecording']:
+    module = target(fusion, module_name)
+    assert any(fusion[pid].get('productName') == 'TranscribeNative' and fusion[pid].get('package') in package_ids
+               for pid in module.get('packageProductDependencies', [])), f'Missing shared native package: {module_name}'
+    assert not any(fusion[fid].get('path', '').endswith('TranscribeCpp.xcframework')
+                   for fid in members(fusion, module, 'PBXFrameworksBuildPhase')), f'Legacy native link remains: {module_name}'
 
 legacy = read_project(ROOT / 'speech_note/speech_note.xcodeproj/project.pbxproj')
 legacy_target = target(legacy, 'speech_note')
@@ -118,8 +140,17 @@ if args.products:
         if binary != recording and recording_install_name in dependencies:
             recording_linked = True
     assert recording_linked, 'App does not link the embedded recording framework'
-    for resource in ['alpine-rootfs.zip', 'RootfsPatch.bundle', 'ModelResources', 'VoiceContextPack.zip', 'FlavorConfig.json']:
+    for resource in ['alpine-rootfs.zip', 'RootfsPatch.bundle', 'VoiceContextPack.zip', 'FlavorConfig.json', *model_resource_names]:
         assert (app / resource).exists(), f'Missing bundled capability: {resource}'
+    assert json.loads((app / 'ModelManifest.json').read_text()) == model_manifest
+    for artifact in model_manifest:
+        hasher = hashlib.sha256()
+        with (app / artifact['relativePath']).open('rb') as model_file:
+            for chunk in iter(lambda: model_file.read(1 << 20), b''):
+                hasher.update(chunk)
+        assert hasher.hexdigest() == artifact['sha256'], f'Bundled model checksum mismatch: {artifact["id"]}'
+        if artifact['relativePath'].endswith('.gguf'):
+            assert list(app.rglob(artifact['relativePath'])) == [app / artifact['relativePath']], f'Duplicate bundled ASR model: {artifact["id"]}'
     extensions = list((app / 'PlugIns').glob('*.appex'))
     assert {p.name for p in extensions} == {'MinisShare.appex', 'MinisFileProvider.appex', 'AgentWidgetExtension.appex', 'RecordWidgetExtension.appex'}
     for extension in extensions:

@@ -148,6 +148,19 @@ struct MinisApp: App {
         _ = Self.processLaunchedAt
         #if DEBUG
         try? debugServer.start(port: 8321)
+        if ProcessInfo.processInfo.arguments.contains("--recording-activity-probe") {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                await RecordingLiveActivityProbe.run()
+            }
+        }
+        if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--asr-migration-probe=") }) {
+            let stage = String(argument.dropFirst("--asr-migration-probe=".count))
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                await ASRMigrationProbe.run(stage: stage)
+            }
+        }
         if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--inspect-shared=") }) {
             let terms = argument.dropFirst("--inspect-shared=".count)
                 .split(separator: ",")
@@ -189,6 +202,7 @@ struct MinisApp: App {
         // HangDetector dump path will print them when a stall fires.
         AttributeQueryRecorder.install()
         // Enable in-app language override for String(localized:) and UIKit strings
+        FusionPreferences.migrateLanguage()
         Bundle.enableLanguageOverride()
         let lang = UserDefaults.standard.string(forKey: "appLanguage") ?? ""
         Bundle.setLanguage(lang.isEmpty ? nil : lang)
