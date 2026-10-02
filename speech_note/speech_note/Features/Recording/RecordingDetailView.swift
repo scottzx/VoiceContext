@@ -192,7 +192,7 @@ struct RecordingDetailScreen: View {
             }
         } label: {
             Image(systemName: "ellipsis.circle")
-                .font(.body)
+                .font(YimaDesign.Typography.body)
         }
         .accessibilityLabel("更多操作")
     }
@@ -201,7 +201,7 @@ struct RecordingDetailScreen: View {
     private var copiedToastOverlay: some View {
         if isCopiedToastPresented {
             Text("已复制文本")
-                .font(.subheadline.weight(.medium))
+                .font(YimaDesign.Typography.metadata.weight(.medium))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -214,15 +214,16 @@ struct RecordingDetailScreen: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: YimaDesign.Layout.sectionGap) {
                     headerCard
                     contentTabsPicker
                     contentSection
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(.horizontal, YimaDesign.Layout.pageInset)
+                .padding(.vertical, YimaDesign.Space.lg)
             }
-            .background(Color(uiColor: .systemBackground))
+            .background(YimaDesign.Color.canvas)
+            .tint(YimaDesign.Color.ink)
             .onChange(of: transcript?.revision) { _, _ in
                 scrollToSearchHit(using: proxy)
             }
@@ -426,51 +427,22 @@ struct RecordingDetailScreen: View {
         timelinePlayer.stop()
     }
 
-    // MARK: - Header Card
+    // MARK: - Header
 
     private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: YimaDesign.Layout.headingGap) {
             Text(displayTitle)
-                .font(.title2.weight(.bold))
-                .foregroundStyle(.primary)
+                .font(YimaDesign.Typography.detailTitle)
+                .foregroundStyle(YimaDesign.Color.ink)
                 .accessibilityIdentifier("detail-title")
 
-            // Meta tags row: 时间、时长、文件夹、状态
-            HStack(spacing: 8) {
-                HStack(spacing: 4) {
-                    Image(systemName: "calendar")
-                    Text(currentRecording.startedAt.standardDateTimeString)
-                }
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-
-                Text("·").foregroundStyle(.tertiary)
-
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                    Text(durationText)
-                }
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-
-                Text("·").foregroundStyle(.tertiary)
-                Text(currentRecording.languageMode.shortLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(LocalizedStringKey(currentRecording.languageMode.settingsTitle))
-
-                if let folderName = model.folderName(for: currentRecording.id) {
-                    Text("·").foregroundStyle(.tertiary)
-                    HStack(spacing: 4) {
-                        Image(systemName: "folder")
-                        Text(folderName)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
+            HStack(alignment: .top, spacing: YimaDesign.Space.sm) {
+                headerMetadata
+                    .font(YimaDesign.Typography.metadata.monospacedDigit())
+                    .foregroundStyle(YimaDesign.Color.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(headerMetadataAccessibilityLabel)
                 statusPill
             }
 
@@ -479,7 +451,7 @@ struct RecordingDetailScreen: View {
                     RecordingStatusStyle.processingText(for: .speakerFinalization),
                     systemImage: RecordingStatusStyle.processingSymbolName(for: .speakerFinalization)
                 )
-                .font(.caption)
+                .font(YimaDesign.Typography.compactMetadata)
                 .foregroundStyle(RecordingStatusStyle.processingColor(for: .speakerFinalization))
             }
 
@@ -487,13 +459,13 @@ struct RecordingDetailScreen: View {
             if let location = currentRecording.locationName, !location.isEmpty {
                 HStack(spacing: 4) {
                     Image(systemName: "mappin.and.ellipse")
-                        .font(.caption)
+                        .font(YimaDesign.Typography.compactMetadata)
                     Text(location)
-                        .font(.caption)
+                        .font(YimaDesign.Typography.compactMetadata)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(YimaDesign.Color.muted)
             }
 
             if let transcript, !transcript.tags.isEmpty {
@@ -504,7 +476,7 @@ struct RecordingDetailScreen: View {
                                 .font(.caption2.weight(.medium))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
-                                .background(Color(uiColor: .secondarySystemBackground))
+                                .background(YimaDesign.Color.grouped)
                                 .clipShape(Capsule())
                         }
                     }
@@ -514,41 +486,57 @@ struct RecordingDetailScreen: View {
         .padding(.vertical, 4)
     }
 
+    private var headerMetadata: Text {
+        var metadata = Text("\(Image(systemName: "calendar")) \(currentRecording.startedAt.standardDateTimeString) · \(Image(systemName: "clock")) \(durationText) · \(currentRecording.languageMode.shortLabel)")
+        if let folderName = model.folderName(for: currentRecording.id) {
+            metadata = Text("\(metadata) · \(Image(systemName: "folder")) \(folderName)")
+        }
+        return metadata
+    }
+
+    private var headerMetadataAccessibilityLabel: String {
+        var label = "\(currentRecording.startedAt.standardDateTimeString), \(durationText), \(L(currentRecording.languageMode.settingsTitle))"
+        if let folderName = model.folderName(for: currentRecording.id) {
+            label += ", \(folderName)"
+        }
+        return label
+    }
+
     private var statusPill: some View {
         let processing = progress?.processing ?? .idle
         let capture = progress?.capture ?? (isCapturingThisRecording ? .recording : currentRecording.persistedCaptureState)
 
         let (title, icon, color): (String, String, Color) = {
             if isCapturingThisRecording || capture == .recording {
-                return (model.presentation == .paused ? "已暂停" : "录制中", "circle.fill", .red)
+                return (model.presentation == .paused ? "已暂停" : "录制中", "circle.fill", RecordingStatusStyle.color(for: model.presentation))
             }
             switch processing {
             case .processing, .queued:
-                return ("正在处理", "hourglass", .orange)
+                return ("正在处理", "hourglass", YimaDesign.Color.warningText)
             case .speakerFinalization:
-                return ("整理说话人", "person.2", .orange)
+                return ("整理说话人", "person.2", YimaDesign.Color.warningText)
             case .deferredUntilForeground:
-                return ("待恢复", "pause.circle", .orange)
+                return ("待恢复", "pause.circle", YimaDesign.Color.warningText)
             case .lockedPendingPurchase:
-                return ("待解锁", "lock", .orange)
+                return ("待解锁", "lock", YimaDesign.Color.warningText)
             case .needsAttention:
-                return ("注意", "exclamationmark.triangle", .red)
+                return ("注意", "exclamationmark.triangle", YimaDesign.Color.recordingText)
             case .complete:
-                return ("已就绪", "checkmark.circle.fill", .green)
+                return ("已就绪", "checkmark.circle.fill", YimaDesign.Color.muted)
             case .idle:
-                return (currentRecording.state == .complete ? "已就绪" : "待处理", "checkmark.circle", .secondary)
+                return (currentRecording.state == .complete ? "已就绪" : "待处理", "checkmark.circle", YimaDesign.Color.muted)
             }
         }()
 
         return HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.caption2)
+                .font(YimaDesign.Typography.status)
             Text(title)
-                .font(.caption2.weight(.medium))
+                .font(YimaDesign.Typography.status.weight(.medium))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(color.opacity(0.12))
+        .background(processing == .idle || processing == .complete ? Color.clear : color.opacity(0.08))
         .foregroundStyle(color)
         .clipShape(Capsule())
     }
@@ -580,7 +568,7 @@ struct RecordingDetailScreen: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Label("备忘录", systemImage: "note.text")
-                    .font(.headline)
+                    .font(YimaDesign.Typography.section)
 
                 Spacer()
 
@@ -590,15 +578,15 @@ struct RecordingDetailScreen: View {
             ZStack(alignment: .topLeading) {
                 if memoText.isEmpty {
                     Text("记录复听想法、转录要点或关键决策…")
-                        .font(.body)
-                        .foregroundStyle(.tertiary)
+                        .font(YimaDesign.Typography.body)
+                        .foregroundStyle(YimaDesign.Color.tertiary)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 12)
                         .allowsHitTesting(false)
                 }
 
                 TextEditor(text: $memoText)
-                    .font(.body)
+                    .font(YimaDesign.Typography.body)
                     .focused($isMemoFocused)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 120, maxHeight: 240)
@@ -607,12 +595,12 @@ struct RecordingDetailScreen: View {
                     .accessibilityHint("输入的内容会自动保存到这条录音")
                     .accessibilityIdentifier("recording-memo-editor")
             }
-            .background(Color(uiColor: .secondarySystemBackground))
+            .background(YimaDesign.Color.grouped)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             Text("自动保存到这条录音")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(YimaDesign.Typography.compactMetadata)
+                .foregroundStyle(YimaDesign.Color.muted)
         }
     }
 
@@ -623,16 +611,16 @@ struct RecordingDetailScreen: View {
             EmptyView()
         case .saving:
             Text("正在保存…")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(YimaDesign.Typography.compactMetadata)
+                .foregroundStyle(YimaDesign.Color.muted)
         case .saved:
             Label("已保存", systemImage: "checkmark")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(YimaDesign.Typography.compactMetadata)
+                .foregroundStyle(YimaDesign.Color.muted)
         case let .failed(message):
             Label(message, systemImage: "exclamationmark.triangle")
-                .font(.caption)
-                .foregroundStyle(.red)
+                .font(YimaDesign.Typography.compactMetadata)
+                .foregroundStyle(YimaDesign.Color.recordingText)
         }
     }
 
@@ -699,7 +687,7 @@ struct RecordingDetailScreen: View {
                 LiveWaveformView(
                     inputLevel: model.inputLevel,
                     isRecording: model.presentation == .recording,
-                    tintColor: .red,
+                    tintColor: YimaDesign.Color.recording,
                     barCount: 24,
                     maxHeight: 28
                 )
@@ -708,10 +696,10 @@ struct RecordingDetailScreen: View {
 
                 Text(elapsedText)
                     .font(.system(size: 26, weight: .regular, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(YimaDesign.Color.ink)
                     .contentTransition(.numericText())
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, YimaDesign.Layout.pageInset)
 
             HStack(spacing: 16) {
                 Button {
@@ -721,8 +709,8 @@ struct RecordingDetailScreen: View {
                         (model.presentation == .paused || model.presentation == .interrupted) ? "继续" : "暂停",
                         systemImage: (model.presentation == .paused || model.presentation == .interrupted) ? "play.fill" : "pause.fill"
                     )
-                    .font(.subheadline.weight(.medium))
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .font(YimaDesign.Typography.metadata.weight(.medium))
+                    .frame(maxWidth: .infinity, minHeight: YimaDesign.Layout.hitTarget)
                 }
                 .buttonStyle(.bordered)
                 .disabled(model.presentation == .stopping)
@@ -737,14 +725,14 @@ struct RecordingDetailScreen: View {
                         model.presentation == .stopping ? "停止中" : "完成录音",
                         systemImage: "stop.fill"
                     )
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .font(YimaDesign.Typography.metadata.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: YimaDesign.Layout.hitTarget)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.red)
+                .tint(YimaDesign.Color.recording)
                 .disabled(model.presentation == .stopping)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, YimaDesign.Layout.pageInset)
         }
         .padding(.top, 10)
         .padding(.bottom, 12)
@@ -762,14 +750,14 @@ struct RecordingDetailScreen: View {
                         ),
                         in: 0...max(timelinePlayer.duration, 0.01)
                     )
-                    .tint(.red)
+                    .tint(YimaDesign.Color.recording)
                     .accessibilityLabel("音频时间轴")
 
                     Text("-\(RecordingStatusStyle.formatDuration(max(0, timelinePlayer.duration - timelinePlayer.currentTime)))")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.compactMetadata.monospacedDigit())
+                        .foregroundStyle(YimaDesign.Color.muted)
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, YimaDesign.Layout.pageInset)
 
                 HStack(spacing: 28) {
                     Spacer()
@@ -778,9 +766,9 @@ struct RecordingDetailScreen: View {
                         timelinePlayer.seek(by: -15)
                     } label: {
                         Image(systemName: "gobackward.15")
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                            .frame(width: 44, height: 44)
+                            .font(YimaDesign.Typography.body)
+                            .foregroundStyle(YimaDesign.Color.ink)
+                            .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("快退 15 秒")
@@ -790,8 +778,8 @@ struct RecordingDetailScreen: View {
                     } label: {
                         ZStack {
                             Circle()
-                                .fill(Color.primary)
-                                .frame(width: 44, height: 44)
+                                .fill(YimaDesign.Color.ink)
+                                .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
                             Image(systemName: timelinePlayer.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.title3)
                                 .foregroundStyle(Color(uiColor: .systemBackground))
@@ -804,9 +792,9 @@ struct RecordingDetailScreen: View {
                         timelinePlayer.seek(by: 15)
                     } label: {
                         Image(systemName: "goforward.15")
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                            .frame(width: 44, height: 44)
+                            .font(YimaDesign.Typography.body)
+                            .foregroundStyle(YimaDesign.Color.ink)
+                            .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("快进 15 秒")
@@ -819,28 +807,30 @@ struct RecordingDetailScreen: View {
                         }
                     } label: {
                         Text("\(timelinePlayer.playbackRate, specifier: "%.2g")×")
-                            .font(.caption.weight(.semibold).monospacedDigit())
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color(uiColor: .secondarySystemBackground))
+                            .font(YimaDesign.Typography.compactMetadata.weight(.semibold).monospacedDigit())
+                            .padding(.horizontal, YimaDesign.Space.sm)
+                            .padding(.vertical, YimaDesign.Space.xs)
+                            .background(YimaDesign.Color.grouped)
                             .clipShape(Capsule())
+                            .frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
+                            .contentShape(Rectangle())
                     }
 
                     Spacer()
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, YimaDesign.Layout.pageInset)
             } else {
                 HStack(spacing: 12) {
                     Image(systemName: "waveform.slash")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(YimaDesign.Color.muted)
                     Text(transcript?.audio.availableOnThisDevice == false
                          ? "音频已在设备上清理"
                          : "暂无音频")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.metadata)
+                        .foregroundStyle(YimaDesign.Color.muted)
                     Spacer()
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, YimaDesign.Layout.pageInset)
                 .padding(.vertical, 8)
             }
         }
@@ -875,7 +865,7 @@ struct RecordingDetailScreen: View {
         let pendingOrRunningJobs = jobs.filter { $0.kind == .transcription && ($0.state == .running || $0.state == .pending) }
         let failedJobs = jobs.filter { $0.kind == .transcription && $0.state == .failed }
 
-        return VStack(alignment: .leading, spacing: 16) {
+        return VStack(alignment: .leading, spacing: YimaDesign.Layout.groupGap) {
             if roster.count >= 2 {
                 speakerLegend(
                     roster: roster,
@@ -885,11 +875,10 @@ struct RecordingDetailScreen: View {
             }
 
             if !displayedGroups.isEmpty {
-                LazyVStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: YimaDesign.Layout.groupGap) {
                     ForEach(displayedGroups) { group in
                         transcriptBubbleGroupView(
                             group: group,
-                            roster: roster,
                             activeID: activeID
                         )
                     }
@@ -900,8 +889,8 @@ struct RecordingDetailScreen: View {
                         ProgressView()
                             .controlSize(.small)
                         Text("已就绪 \(bubbles.count) 个分句 · 正在增量转写后续音频 (\(pendingOrRunningJobs.count) 个排队中)…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(YimaDesign.Typography.compactMetadata)
+                            .foregroundStyle(YimaDesign.Color.muted)
                     }
                     .padding(.vertical, 6)
                 }
@@ -917,8 +906,8 @@ struct RecordingDetailScreen: View {
                         ProgressView()
                             .controlSize(.regular)
                         Text("正在生成首个音频分片的转写文稿…")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(YimaDesign.Typography.metadata)
+                            .foregroundStyle(YimaDesign.Color.muted)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 36)
@@ -926,8 +915,8 @@ struct RecordingDetailScreen: View {
                     failedJobsCard(failedJobs: failedJobs)
                 } else {
                     Text(documentPlaceholder)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.body)
+                        .foregroundStyle(YimaDesign.Color.muted)
                         .padding(.vertical, 24)
                 }
             }
@@ -938,8 +927,8 @@ struct RecordingDetailScreen: View {
 
             if let transcriptError {
                 Label(transcriptError, systemImage: "exclamationmark.triangle")
-                    .font(.subheadline)
-                    .foregroundStyle(.red)
+                    .font(YimaDesign.Typography.metadata)
+                    .foregroundStyle(YimaDesign.Color.recordingText)
             }
         }
     }
@@ -947,14 +936,14 @@ struct RecordingDetailScreen: View {
     private func failedJobsWarningBanner(failedJobs: [RecordingJob]) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(YimaDesign.Color.warningText)
             VStack(alignment: .leading, spacing: 2) {
                 Text("部分后续分段暂缓或遇到异常")
-                    .font(.caption.weight(.medium))
+                    .font(YimaDesign.Typography.compactMetadata.weight(.medium))
                 if let err = failedJobs.first?.lastError {
                     Text(formatErrorMessage(err))
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(YimaDesign.Color.muted)
                         .lineLimit(2)
                 }
             }
@@ -966,11 +955,11 @@ struct RecordingDetailScreen: View {
                 }
             } label: {
                 Text("重试")
-                    .font(.caption.weight(.semibold))
+                    .font(YimaDesign.Typography.compactMetadata.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.15))
-                    .foregroundStyle(.orange)
+                    .background(YimaDesign.Color.warning.opacity(0.15))
+                    .foregroundStyle(YimaDesign.Color.warningText)
                     .clipShape(Capsule())
             }
         }
@@ -982,15 +971,15 @@ struct RecordingDetailScreen: View {
         VStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.title2)
-                .foregroundStyle(.orange)
+                .foregroundStyle(YimaDesign.Color.warningText)
             Text("转写暂缓或遇到异常")
-                .font(.subheadline.weight(.medium))
+                .font(YimaDesign.Typography.metadata.weight(.medium))
             if let err = failedJobs.first?.lastError {
                 Text(formatErrorMessage(err))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(YimaDesign.Typography.compactMetadata)
+                    .foregroundStyle(YimaDesign.Color.muted)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, YimaDesign.Layout.pageInset)
             }
             Button {
                 Task {
@@ -999,11 +988,11 @@ struct RecordingDetailScreen: View {
                 }
             } label: {
                 Text("重新转写")
-                    .font(.subheadline.weight(.medium))
+                    .font(YimaDesign.Typography.metadata.weight(.medium))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
-                    .background(Color.orange.opacity(0.15))
-                    .foregroundStyle(.orange)
+                    .background(YimaDesign.Color.warning.opacity(0.15))
+                    .foregroundStyle(YimaDesign.Color.warningText)
                     .clipShape(Capsule())
             }
             .padding(.top, 4)
@@ -1036,23 +1025,23 @@ struct RecordingDetailScreen: View {
                 .symbolEffect(.pulse, isActive: !reduceMotion && model.presentation == .recording)
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.presentation == .paused ? "录音已暂停" : "正在录音并实时转写…")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
+                    .font(YimaDesign.Typography.metadata.weight(.medium))
+                    .foregroundStyle(YimaDesign.Color.ink)
                 if let progress = model.sessionProgress {
                     Text(RecordingStatusStyle.progressDetailText(for: progress, isInBackground: model.isInBackground))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.compactMetadata.monospacedDigit())
+                        .foregroundStyle(YimaDesign.Color.muted)
                 } else {
                     Text("每约 60 秒增量转写已关闭分片")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.compactMetadata)
+                        .foregroundStyle(YimaDesign.Color.muted)
                 }
             }
             Spacer()
         }
         .padding(14)
-        .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.red.opacity(0.2), lineWidth: 1))
+        .background(YimaDesign.Color.recording.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(YimaDesign.Color.recording.opacity(0.2), lineWidth: 1))
     }
 
     @ViewBuilder
@@ -1062,45 +1051,45 @@ struct RecordingDetailScreen: View {
         selectedSpeaker: String?
     ) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: YimaDesign.Space.sm) {
                 if selectedSpeaker != nil {
                     Button {
                         selectedSpeakerFilter = nil
                     } label: {
                         Text("全部")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color(uiColor: .secondarySystemBackground))
-                            .clipShape(Capsule())
+                            .font(YimaDesign.Typography.metadata.weight(.medium))
+                            .foregroundStyle(YimaDesign.Color.ink)
+                            .padding(.horizontal, YimaDesign.Space.md)
+                            .frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("显示全部发言")
                 }
                 ForEach(roster, id: \.self) { speaker in
-                    let color = RecordingDetailPlaybackPresentation.color(for: speaker, roster: roster)
                     let isActive = activeSpeaker == speaker
                     let isSelected = selectedSpeaker == speaker
                     Button {
                         selectedSpeakerFilter = isSelected ? nil : speaker
                     } label: {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(color)
-                                .frame(width: 8, height: 8)
+                        HStack(spacing: YimaDesign.Space.xs) {
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                            } else if isActive {
+                                Image(systemName: "speaker.wave.2")
+                            }
                             Text(speaker)
-                                .font(.caption.weight(isActive || isSelected ? .semibold : .regular))
-                                .foregroundStyle(isActive || isSelected ? .primary : .secondary)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(isSelected ? color.opacity(0.18) : Color(uiColor: .secondarySystemBackground))
-                        .clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(isSelected ? color : .clear, lineWidth: 1))
+                        .font(YimaDesign.Typography.metadata.weight(isActive || isSelected ? .semibold : .regular))
+                        .foregroundStyle(isActive || isSelected ? YimaDesign.Color.ink : YimaDesign.Color.muted)
+                        .padding(.horizontal, YimaDesign.Space.md)
+                        .frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
+                        .background(isSelected ? YimaDesign.Color.grouped : Color.clear, in: RoundedRectangle(cornerRadius: YimaDesign.Radius.control))
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("筛选 (speaker) 的发言")
+                    .accessibilityLabel(Text("筛选 \(speaker) 的发言"))
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
         }
@@ -1109,27 +1098,18 @@ struct RecordingDetailScreen: View {
     @ViewBuilder
     private func transcriptBubbleGroupView(
         group: SpeakerBubbleGroup,
-        roster: [String],
         activeID: UUID?
     ) -> some View {
         let speaker = group.speaker
-        let speakerColor = speaker != nil ? RecordingDetailPlaybackPresentation.color(for: speaker!, roster: roster) : Color.secondary
-
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: YimaDesign.Layout.headingGap) {
             if let speaker, !speaker.isEmpty {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(speakerColor)
-                        .frame(width: 8, height: 8)
-                    Text(speaker)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
+                Text(speaker)
+                    .font(YimaDesign.Typography.metadata.weight(.semibold))
+                    .foregroundStyle(YimaDesign.Color.ink)
+                    .padding(.horizontal, YimaDesign.Space.md)
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: YimaDesign.Layout.rowContentGap) {
                 ForEach(group.bubbles) { bubble in
                     sentenceBubbleRow(
                         bubble: bubble,
@@ -1148,36 +1128,46 @@ struct RecordingDetailScreen: View {
         let isSelected = selectedBubbleID == bubble.id
         let showTimestamp = isCurrent || isSelected
 
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .bottom, spacing: 8) {
+        VStack(alignment: .leading, spacing: YimaDesign.Layout.rowContentGap) {
+            HStack(alignment: .bottom, spacing: YimaDesign.Space.sm) {
                 Text(bubble.text)
-                    .font(.body)
-                    .foregroundStyle(isCurrent ? Color.red : Color.primary)
+                    .font(YimaDesign.Typography.body)
+                    .foregroundStyle(YimaDesign.Color.ink)
                     .multilineTextAlignment(.leading)
-                    .lineSpacing(3)
+                    .lineSpacing(YimaDesign.Document.lineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if bubble.isManuallyEdited {
                     Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.blue)
+                        .font(YimaDesign.Typography.compactMetadata)
+                        .foregroundStyle(YimaDesign.Color.muted)
+                        .accessibilityLabel("已手动编辑")
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(isCurrent ? Color.red.opacity(0.12) : Color(uiColor: .secondarySystemBackground))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(isCurrent ? Color.red.opacity(0.45) : Color.clear, lineWidth: 1.5)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, YimaDesign.Space.md)
+            .padding(.vertical, YimaDesign.Layout.rowPaddingY)
+            .frame(maxWidth: .infinity, minHeight: YimaDesign.Layout.hitTarget, alignment: .leading)
+            .background(isSelected ? YimaDesign.Color.grouped : Color.clear)
+            .overlay(alignment: .leading) {
+                if isCurrent {
+                    Rectangle()
+                        .fill(YimaDesign.Color.ink)
+                        .frame(width: 2)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityValue(isCurrent ? Text("播放位置") : Text(""))
             .onTapGesture {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     selectedBubbleID = (selectedBubbleID == bubble.id ? nil : bubble.id)
                 }
+            }
+            .accessibilityAction {
+                selectedBubbleID = (selectedBubbleID == bubble.id ? nil : bubble.id)
             }
             .contextMenu {
                 Button {
@@ -1231,10 +1221,16 @@ struct RecordingDetailScreen: View {
             .id(bubble.id)
 
             if showTimestamp {
-                Text(transcriptOffset(bubble.offsetMilliseconds))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
+                HStack(spacing: YimaDesign.Space.xs) {
+                    if isCurrent {
+                        Image(systemName: "speaker.wave.2")
+                            .accessibilityHidden(true)
+                    }
+                    Text(transcriptOffset(bubble.offsetMilliseconds))
+                }
+                    .font(YimaDesign.Typography.compactMetadata.monospacedDigit())
+                    .foregroundStyle(YimaDesign.Color.muted)
+                    .padding(.horizontal, YimaDesign.Space.md)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -1248,7 +1244,7 @@ struct RecordingDetailScreen: View {
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 Text("本场参会人与声纹")
-                    .font(.headline)
+                    .font(YimaDesign.Typography.section)
 
                 Spacer()
 
@@ -1256,7 +1252,7 @@ struct RecordingDetailScreen: View {
                     isParticipantPickerPresented = true
                 } label: {
                     Label("添加参会人", systemImage: "person.badge.plus")
-                        .font(.subheadline.weight(.medium))
+                        .font(YimaDesign.Typography.metadata.weight(.medium))
                 }
                 .buttonStyle(.borderless)
                 .disabled(transcript == nil || !currentRecording.isMeeting)
@@ -1264,13 +1260,13 @@ struct RecordingDetailScreen: View {
             }
 
             Text("可手工补充未发言或未识别的参会人。确认或关联已有客户会绑定声纹；完成后长按已识别发言人可重新选择。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(YimaDesign.Typography.compactMetadata)
+                .foregroundStyle(YimaDesign.Color.muted)
 
             if bindings.isEmpty && participants.isEmpty {
                 Text("暂无参会人。可手工添加，已识别的发言人也会在此列出。")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(YimaDesign.Typography.metadata)
+                    .foregroundStyle(YimaDesign.Color.muted)
                     .padding(.vertical, 20)
             } else {
                 VStack(spacing: 12) {
@@ -1293,26 +1289,26 @@ struct RecordingDetailScreen: View {
                     .frame(width: 40, height: 40)
                 Image(systemName: "person.crop.circle")
                     .font(.title3)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(YimaDesign.Color.ink)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(participant.name)
-                    .font(.headline)
+                    .font(YimaDesign.Typography.section)
                 if !participant.displaySubtitle.isEmpty {
                     Text(participant.displaySubtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.compactMetadata)
+                        .foregroundStyle(YimaDesign.Color.muted)
                 }
                 Text("已参会 · 暂无发言声纹")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(YimaDesign.Typography.compactMetadata)
+                    .foregroundStyle(YimaDesign.Color.muted)
             }
 
             Spacer()
         }
         .padding(14)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(YimaDesign.Color.grouped, in: RoundedRectangle(cornerRadius: 14))
         .accessibilityElement(children: .combine)
     }
 
@@ -1330,29 +1326,29 @@ struct RecordingDetailScreen: View {
                         .frame(width: 40, height: 40)
                     Image(systemName: binding.state.isConfirmed ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
                         .font(.title3)
-                        .foregroundStyle(binding.state.isConfirmed ? .green : .primary)
+                        .foregroundStyle(binding.state.isConfirmed ? YimaDesign.Color.success : YimaDesign.Color.ink)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(binding.chipText)
-                            .font(.headline)
+                            .font(YimaDesign.Typography.section)
 
                         if let client = matchedClient {
                             Text("已关联: \(client.name)")
                                 .font(.caption2.weight(.medium))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Color.blue.opacity(0.12))
-                                .foregroundStyle(.blue)
+                                .background(YimaDesign.Color.ink.opacity(0.08))
+                                .foregroundStyle(YimaDesign.Color.ink)
                                 .clipShape(Capsule())
                         } else if binding.state.isConfirmed {
                             Text("已确认档案")
                                 .font(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Color.green.opacity(0.12))
-                                .foregroundStyle(.green)
+                                .background(YimaDesign.Color.success.opacity(0.12))
+                                .foregroundStyle(YimaDesign.Color.ink)
                                 .clipShape(Capsule())
                         } else if isResolved {
                             Text("本场已归属 · 未绑定声纹")
@@ -1360,22 +1356,22 @@ struct RecordingDetailScreen: View {
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color(uiColor: .tertiarySystemBackground))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(YimaDesign.Color.muted)
                                 .clipShape(Capsule())
                         } else if binding.state.isSuspected {
                             Text("疑似匹配")
                                 .font(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.12))
-                                .foregroundStyle(.orange)
+                                .background(YimaDesign.Color.warning.opacity(0.12))
+                                .foregroundStyle(YimaDesign.Color.warningText)
                                 .clipShape(Capsule())
                         }
                     }
 
                     Text(hasEmbeddings ? "包含 \(binding.candidateEmbeddings.count) 个可用声纹特征" : "暂未提取到有效声纹向量")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.compactMetadata)
+                        .foregroundStyle(YimaDesign.Color.muted)
                 }
 
                 Spacer()
@@ -1389,7 +1385,7 @@ struct RecordingDetailScreen: View {
                             Task { await applySpeakerAction(.confirm(name: name), temporaryLabel: binding.temporaryLabel) }
                         } label: {
                             Label("确定", systemImage: "checkmark")
-                                .font(.caption.weight(.medium))
+                                .font(YimaDesign.Typography.compactMetadata.weight(.medium))
                         }
                         .buttonStyle(.bordered)
                     }
@@ -1398,7 +1394,7 @@ struct RecordingDetailScreen: View {
                         selectedSpeakerForClientBinding = binding
                     } label: {
                         Label("关联客户…", systemImage: "link")
-                            .font(.caption.weight(.medium))
+                            .font(YimaDesign.Typography.compactMetadata.weight(.medium))
                     }
                     .buttonStyle(.bordered)
 
@@ -1408,7 +1404,7 @@ struct RecordingDetailScreen: View {
                         isRenameAlertPresented = true
                     } label: {
                         Label("重命名", systemImage: "pencil")
-                            .font(.caption.weight(.medium))
+                            .font(YimaDesign.Typography.compactMetadata.weight(.medium))
                     }
                     .buttonStyle(.bordered)
 
@@ -1417,7 +1413,7 @@ struct RecordingDetailScreen: View {
                             Task { await applySpeakerAction(.deny, temporaryLabel: binding.temporaryLabel) }
                         } label: {
                             Text("否认匹配")
-                                .font(.caption)
+                                .font(YimaDesign.Typography.compactMetadata)
                         }
                         .buttonStyle(.bordered)
                     }
@@ -1425,7 +1421,7 @@ struct RecordingDetailScreen: View {
             }
         }
         .padding(14)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(YimaDesign.Color.grouped, in: RoundedRectangle(cornerRadius: 14))
         .contextMenu {
             if isResolved {
                 Button {
@@ -1449,7 +1445,7 @@ struct RecordingDetailScreen: View {
     private var technicalDetailsView: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("录音元数据")
-                .font(.headline)
+                .font(YimaDesign.Typography.section)
 
             VStack(spacing: 0) {
                 detailRow(label: "录制时间", value: currentRecording.startedAt.standardDateTimeString)
@@ -1474,7 +1470,7 @@ struct RecordingDetailScreen: View {
                 Divider()
                 detailRow(label: "唯一标识", value: recordingID.uuidString)
             }
-            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            .background(YimaDesign.Color.grouped, in: RoundedRectangle(cornerRadius: 12))
 
             relatedFilesSection
 
@@ -1482,9 +1478,9 @@ struct RecordingDetailScreen: View {
                 isDeleteConfirmationPresented = true
             } label: {
                 Label("删除录音", systemImage: "trash")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .font(YimaDesign.Typography.metadata.weight(.medium))
+                    .foregroundStyle(YimaDesign.Color.recordingText)
+                    .frame(maxWidth: .infinity, minHeight: YimaDesign.Layout.hitTarget)
             }
             .buttonStyle(.bordered)
             .padding(.top, 8)
@@ -1510,24 +1506,24 @@ struct RecordingDetailScreen: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("相关文件")
-                    .font(.headline)
+                    .font(YimaDesign.Typography.section)
                 Spacer()
                 Button {
                     isAttachmentPickerPresented = true
                 } label: {
                     Label("添加文件", systemImage: "paperclip")
-                        .font(.subheadline.weight(.medium))
+                        .font(YimaDesign.Typography.metadata.weight(.medium))
                 }
                 .disabled(isAddingAttachments)
             }
 
             if isAddingAttachments {
                 ProgressView("正在复制到本录音…")
-                    .font(.caption)
+                    .font(YimaDesign.Typography.compactMetadata)
             } else if attachments.isEmpty {
                 Text("暂无相关文件。可添加会议通知、议程、文档或图片。")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(YimaDesign.Typography.metadata)
+                    .foregroundStyle(YimaDesign.Color.muted)
             } else {
                 VStack(spacing: 0) {
                     ForEach(attachments) { attachment in
@@ -1535,13 +1531,13 @@ struct RecordingDetailScreen: View {
                         if attachment.id != attachments.last?.id { Divider() }
                     }
                 }
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .background(YimaDesign.Color.grouped, in: RoundedRectangle(cornerRadius: 12))
             }
 
             if let attachmentError {
                 Text(attachmentError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .font(YimaDesign.Typography.compactMetadata)
+                    .foregroundStyle(YimaDesign.Color.recordingText)
             }
         }
     }
@@ -1549,19 +1545,19 @@ struct RecordingDetailScreen: View {
     private func attachmentRow(_ attachment: RecordingAttachment) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "doc")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(YimaDesign.Color.muted)
                 .frame(width: 24)
             Button {
                 Task { previewAttachmentURL = await model.recordingAttachmentURL(attachment) }
             } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(attachment.originalFilename)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
+                        .font(YimaDesign.Typography.metadata.weight(.medium))
+                        .foregroundStyle(YimaDesign.Color.ink)
                         .lineLimit(2)
                     Text("\(ByteCountFormatter.string(fromByteCount: attachment.fileSize, countStyle: .file)) · \(attachment.addedAt.standardTimeString)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.compactMetadata)
+                        .foregroundStyle(YimaDesign.Color.muted)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1578,7 +1574,7 @@ struct RecordingDetailScreen: View {
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .frame(width: 44, height: 44)
+                    .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
             }
             .accessibilityLabel("管理 \(attachment.originalFilename)")
         }
@@ -1590,12 +1586,12 @@ struct RecordingDetailScreen: View {
     private func detailRow(label: String, value: String) -> some View {
         HStack {
             Text(label)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(YimaDesign.Typography.metadata)
+                .foregroundStyle(YimaDesign.Color.muted)
             Spacer()
             Text(value)
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.primary)
+                .font(YimaDesign.Typography.metadata.monospacedDigit())
+                .foregroundStyle(YimaDesign.Color.ink)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -2054,7 +2050,7 @@ struct MeetingParticipantPickerSheet: View {
                 Section("从客户档案添加") {
                     if filteredClients.isEmpty {
                         Text("未找到客户档案")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(YimaDesign.Color.muted)
                     } else {
                         ForEach(filteredClients) { client in
                             let isAdded = existingClientIDs.contains(client.id)
@@ -2066,17 +2062,17 @@ struct MeetingParticipantPickerSheet: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(client.name)
                                             .font(.body.weight(.medium))
-                                            .foregroundStyle(.primary)
+                                            .foregroundStyle(YimaDesign.Color.ink)
                                         if !client.displaySubtitle.isEmpty {
                                             Text(client.displaySubtitle)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                                .font(YimaDesign.Typography.compactMetadata)
+                                                .foregroundStyle(YimaDesign.Color.muted)
                                         }
                                     }
                                     Spacer()
                                     if isAdded {
                                         Image(systemName: "checkmark")
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(YimaDesign.Color.muted)
                                     }
                                 }
                             }
@@ -2136,7 +2132,7 @@ struct SpeakerClientPickerSheet: View {
                 Section("选择已有客户") {
                     if filteredClients.isEmpty {
                         Text("未找到客户档案")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(YimaDesign.Color.muted)
                     } else {
                         ForEach(filteredClients) { client in
                             Button {
@@ -2147,17 +2143,17 @@ struct SpeakerClientPickerSheet: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(client.name)
                                             .font(.body.weight(.medium))
-                                            .foregroundStyle(.primary)
+                                            .foregroundStyle(YimaDesign.Color.ink)
                                         if !client.displaySubtitle.isEmpty {
                                             Text(client.displaySubtitle)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                                .font(YimaDesign.Typography.compactMetadata)
+                                                .foregroundStyle(YimaDesign.Color.muted)
                                         }
                                     }
                                     Spacer()
                                     if client.hasVoiceprint {
                                         Image(systemName: "waveform.badge.checkmark")
-                                            .foregroundStyle(.green)
+                                            .foregroundStyle(YimaDesign.Color.success)
                                     }
                                 }
                             }
@@ -2223,23 +2219,23 @@ struct EditRecordingMetadataSheet: View {
                         Button("清空地点") {
                             locationInput = ""
                         }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.compactMetadata)
+                        .foregroundStyle(YimaDesign.Color.muted)
                     }
                 }
 
                 Section("标签") {
                     TextField("标签（多个标签用逗号分隔）", text: $tagsInput)
                     Text("例如：周会, 客户沟通, 项目评审")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.compactMetadata)
+                        .foregroundStyle(YimaDesign.Color.muted)
                 }
 
                 if let errorMessage {
                     Section {
                         Text(errorMessage)
-                            .font(.caption)
-                            .foregroundStyle(.red)
+                            .font(YimaDesign.Typography.compactMetadata)
+                            .foregroundStyle(YimaDesign.Color.recordingText)
                     }
                 }
             }
@@ -2310,12 +2306,12 @@ struct EditSegmentTextSheet: View {
                 HStack(spacing: 8) {
                     if let speaker = row.speaker, !speaker.isEmpty {
                         Text(speaker)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .font(YimaDesign.Typography.metadata.weight(.semibold))
+                            .foregroundStyle(YimaDesign.Color.ink)
                     }
                     Text("+\(formatOffset(row.offsetMilliseconds))")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.compactMetadata.monospacedDigit())
+                        .foregroundStyle(YimaDesign.Color.muted)
                     Spacer()
                     if row.isManuallyEdited {
                         HStack(spacing: 3) {
@@ -2323,27 +2319,27 @@ struct EditSegmentTextSheet: View {
                             Text("已校对")
                         }
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(YimaDesign.Color.ink)
                     }
                 }
                 .padding(.horizontal, 4)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("逐字稿内容（人工编辑后将永久锁定防覆盖）")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.compactMetadata)
+                        .foregroundStyle(YimaDesign.Color.muted)
 
                     TextEditor(text: $textInput)
-                        .font(.body)
+                        .font(YimaDesign.Typography.body)
                         .padding(8)
-                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                        .background(YimaDesign.Color.grouped, in: RoundedRectangle(cornerRadius: 10))
                         .frame(minHeight: 140)
                 }
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                        .font(YimaDesign.Typography.compactMetadata)
+                        .foregroundStyle(YimaDesign.Color.recordingText)
                 }
 
                 Spacer()

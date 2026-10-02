@@ -78,7 +78,8 @@ def ref(path, kind):
     import os
     key = uid('file:' + str(path))
     o[key] = {'isa':'PBXFileReference', 'path':os.path.relpath(path, PHONE), 'sourceTree':'SOURCE_ROOT', 'lastKnownFileType':kind}
-    if key not in o[p['mainGroup']]['children']: o[p['mainGroup']]['children'].append(key)
+    if not any(key in group.get('children', []) for group in o.values() if group['isa'] == 'PBXGroup'):
+        o[p['mainGroup']]['children'].append(key)
     return key
 
 def add(target, phase_kind, file_id, settings=None):
@@ -96,6 +97,11 @@ for file in sorted((ROOT / 'Integration/Recording').glob('*.swift')):
     add(record,'PBXSourcesBuildPhase',ref(file,'sourcecode.swift'))
 for file in sorted((ROOT / 'Integration/App').glob('*.swift')):
     add(main,'PBXSourcesBuildPhase',ref(file,'sourcecode.swift'))
+design_tokens = ref(ROOT / 'Integration/Shared/YimaDesignTokens.swift', 'sourcecode.swift')
+add(main, 'PBXSourcesBuildPhase', design_tokens)
+# The legacy recording target already includes this shared source.
+if design_tokens not in [o[bid].get('fileRef') for bid in phase(record, 'PBXSourcesBuildPhase')['files']]:
+    add(record, 'PBXSourcesBuildPhase', design_tokens)
 for tid in p['targets']:
     if tid not in [record_id, widget_id]:
         add(o[tid], 'PBXSourcesBuildPhase', ref(ROOT / 'Integration/Shared/AgentBuildIdentity.swift', 'sourcecode.swift'))

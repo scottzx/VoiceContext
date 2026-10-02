@@ -67,3 +67,27 @@ xcrun swiftc -module-cache-path /tmp/yima-swift-module-cache Integration/App/Sys
 修复版设备目标签名编译成功，应用及四扩展签名／设备授权检查通过，已增量安装至同一真机的 `YiJie.speech-note.dev`。命令行启动被锁屏策略拒绝，改由已连接的 iPhone 镜像搜索并打开 `Yima Dev`，没有修改系统权限。启动后直接识别已有日历授权：月／周视图显示绿色日程点，2026-10-02 当天显示 2 项真实全天日程；全部页展示今天与未来日程，筛选面板展示来自 iCloud、Outlook、订阅日历等的来源。返回首页和应用返回前台后，当天 2 项日程仍显示。未创建、编辑或删除系统日程。
 
 本机证据：`build/todo-calendar-access-fix-build.log`（`BUILD SUCCEEDED`）、`build/todo-calendar-access-fix-signing-audit.json`、`build/todo-calendar-access-fix-install.json`、`build/todo-calendar-access-fix-launch.json`（记录锁屏启动拒绝，不能作成功启动证据）、`build/todo-calendar-access-fix-processes.json`。成功启动和数据展示证据为本会话的 iPhone 镜像截图。此次真机验证的是已有授权后的加载恢复；未重置隐私权限来重新触发首次授权弹窗，首次授权、拒绝和撤销的真机组合仍未完整验收。
+
+## 全部事项筛选弹窗（2026-10-02）
+
+用户要求选择来源时弹窗筛选，并可在弹窗内切换日历／待办。将全部页原先内嵌的两组清单移入原生 sheet，顶部用分段控件切换清单，支持中等／全高面板和“完成”关闭。沿用原有两组来源标识、即时保存、权限／空状态和只在待办清单中的“显示已完成待办”；切换分段不重置勾选，不改变全部事项的两类混合展示或首页数据。
+
+设备目标签名编译通过（`build/todo-filter-sheet-build.log`：`BUILD SUCCEEDED`），改动的待办页面无编译警告，应用及四扩展的身份／签名／设备授权检查通过（`build/todo-filter-sheet-signing-audit.json`）。沿用已有来源持久化规则，本次仅调整展示流程，没有新增与实现重复的测试。
+
+已增量安装开发版并通过 iPhone 镜像运行，确认：点击全部事项筛选弹出原生面板；日历／待办分段显示各自来源与账户；切换和“完成”关闭后重开保留勾选及最近查看的分段。取消一个已有日历来源后，今天数量由 1 变为 0，未来数量由 56 变为 14，逾期待办仍为 3；恢复勾选后回到今天 1、未来 56。另一个用于检查保存的日历勾选也已恢复，未修改系统日程或待办。重启后的偏好、全高面板、大字体及未授权组合未在此次交互检查中重新遍历。
+
+安装与进程证据：`build/todo-filter-sheet-install.json`、`build/todo-filter-sheet-processes.json`（开发版 PID 2597）；界面证据为本会话的 iPhone 镜像截图。新增筛选文案的英文／简体中文已确认合入生成词表，`git diff --check` 通过。
+
+## 待办到期／提醒日期同一行（2026-10-02）
+
+用户要求到期日期在左、提醒日期在右，放在同一行。共用 `SystemReminderRow` 将两类日期合并为基线对齐的横向布局；保留到期原时区、日期精度和既有绝对提醒读取规则，仅提醒时仍靠右，均无日期时不生成空行。两列文字允许随长日期／大字体垂直增长，并分别提供到期日期／提醒时间的无障碍文本。
+
+设备目标签名编译通过（`build/todo-row-dates-build.log`：`BUILD SUCCEEDED`），待办页面无编译警告；签名及设备授权审计通过（`build/todo-row-dates-signing-audit.json`），开发版增量安装成功（`build/todo-row-dates-install.json`）。iPhone 镜像已确认：首页及全部事项中，同时有到期与提醒的真实待办显示为同一行，到期靠左、铃铛和提醒日期靠右；仅到期的待办仍靠左显示，长标题自然增长。未编辑、完成或删除系统待办。大字体、仅提醒及均无日期分支经静态复核，本次没有更改字体偏好或创建测试数据来进行这些分支的真机检查。界面证据为本会话的镜像截图。
+
+## 日历标记说明入口（2026-10-02）
+
+用户要求将红色待办／绿色日程说明移到“今天”右侧，通过 info 图标点击查看。移除日历底部常驻图例，在“今天”旁增加 44pt 的 `info.circle` 按钮，使用锚定按钮的原生 popover 显示两类标记及文字说明。标题栏空间不足时允许分为两行，“今天”和说明入口保持相邻；日期网格、月／周切换、翻页手势和日期选择入口沿用原有行为。
+
+设备目标签名编译通过（`build/todo-calendar-legend-build.log`：`BUILD SUCCEEDED`），日历页面无编译警告；应用及四扩展签名／设备授权审计通过（`build/todo-calendar-legend-signing-audit.json`），开发版增量安装成功（`build/todo-calendar-legend-install.json`）。iPhone 镜像已确认：月视图和周视图均显示紧邻“今天”的 info 图标；点击弹出“红色：待办／绿色：日程”小弹窗，点击外部关闭，选中日期和当天事项保持不变；底部图例已移除。检查结束恢复月视图，没有修改系统日程或待办。
+
+新增三条说明文案的英文／简体中文已确认合入生成词表。窄屏／大字体的标题换行和无障碍标签经静态复核，本次未改变设备字体偏好或进行 VoiceOver 操作。界面证据为本会话的镜像截图。

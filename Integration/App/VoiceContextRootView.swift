@@ -30,7 +30,7 @@ struct VoiceContextRootView: View {
                 .tag(Tab.extensions)
         }
         .environmentObject(recordings)
-        .tint(.primary)
+        .tint(YimaDesign.Color.ink)
         .onAppear {
             if UserDefaults.standard.string(forKey: "pendingSettingsReopen") != nil,
                UserDefaults.standard.string(forKey: "settingsPresentationOwner") == "meeting-model-setup" {
@@ -146,8 +146,9 @@ private struct VoiceContextExtensionsView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(Color(uiColor: .systemBackground))
-            .environment(\.defaultMinListRowHeight, 52)
+            .background(YimaDesign.Color.canvas)
+            .font(YimaDesign.Typography.body)
+            .environment(\.defaultMinListRowHeight, YimaDesign.Layout.primaryHeight)
             .navigationTitle("拓展")
             .navigationBarTitleDisplayMode(.inline)
         }

@@ -7,6 +7,8 @@
 
 This file is the project-wide source of truth for visual and interaction design. Screen-specific documents may add implementation detail, but they must not contradict this file. Any departure requires explicit product-owner approval and a dated entry in the decision log below.
 
+Cross-page implementation guide: [Unified interface language and tokens](docs/design/interface-language.md) (2026-10-02) maps this approved direction to shared typography roles, spacing, component contracts, and a staged migration for Chat, Meetings, and Tasks. It includes the current implementation audit and pending work; it does not imply that the code or runtime acceptance is complete.
+
 ## Product Context
 
 - **Name:** 一芥伙伴 (Chinese), Yima (English).
@@ -83,6 +85,7 @@ Use regular, medium/semibold, and bold intentionally. If most text is bold, hier
 | `vc.recordingText` | `#D70015` | `#FF6961` | Small recording/status text where system red lacks light-mode text contrast |
 | `vc.recordingSoft` | `#FFF1F0` | `#3A1513` | Rare recording/error notice background |
 | `vc.warning` | `#FF9F0A` | `#FF9F0A` | Processing, suspected identity, attention |
+| `vc.warningText` | `#8A4B00` | `#FFB340` | Small warning/status text; use the base warning color for indicators |
 | `vc.warningSoft` | `#FFF7E8` | `#332309` | Warning notice background |
 | `vc.success` | `#34C759` | `#30D158` | Confirmed success only |
 | `vc.successSoft` | `#EEF9F0` | `#123019` | Success notice background |
@@ -244,4 +247,5 @@ Do not apply border, fill, radius, and shadow to the same element by default. Ca
 | 2026-09-29 | Use system Reminders as the Tasks source of truth | Explicit product-owner choice; the app and agent manage the same reminders without a parallel task database |
 | 2026-09-29 | Rename the product to 一芥伙伴 / Yima, positioned as a personal assistant on the phone (Personal Agent) | Explicit product-owner decision; retain Bundle IDs, data paths, recording reliability, and the existing visual system |
 | 2026-10-01 | Use red reminder dots and green event dots in the Tasks calendar | Explicit product-owner clarification: show both dots when both types occur; retain monochrome selection and accessible text |
+| 2026-10-02 | Consolidate Chat, Meetings, and Tasks with shared semantic typography, spacing, colors, and 44 pt targets | Explicit product-owner approval of the cross-page token guide; preserve existing font preferences and each content type's structure |
 | 2026-10-02 | Move global settings and terminal/browser navigation from the chat list to Extensions; keep conversation controls in the conversation | Explicit product-owner confirmation; make Chat focus on search, creating, and managing conversations while Extensions provides grouped capabilities and one Settings entry |

@@ -1387,7 +1387,7 @@ struct PastableTextView: UIViewRepresentable {
     func makeUIView(context: Context) -> PastableUITextView {
         let tv = PastableUITextView()
         tv.delegate = context.coordinator
-        tv.font = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(16.5))
+        tv.font = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(YimaDesign.Typography.bodySize))
         tv.backgroundColor = .clear
         if let maxHeightOverride { tv.maxHeight = maxHeightOverride }
         tv.isScrollEnabled = false
@@ -1441,7 +1441,7 @@ struct PastableTextView: UIViewRepresentable {
         // word-order per locale (e.g. zh moves the verb and uses fullwidth brackets).
         let placeholderLabel = UILabel()
         placeholderLabel.text = placeholder
-        placeholderLabel.font = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(16.5))
+        placeholderLabel.font = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(YimaDesign.Typography.bodySize))
         placeholderLabel.textColor = .placeholderText
         placeholderLabel.tag = 999
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -1456,6 +1456,11 @@ struct PastableTextView: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView tv: PastableUITextView, context: Context) -> CGSize? {
+        let inputFont = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(YimaDesign.Typography.bodySize))
+        if tv.font != inputFont {
+            tv.font = inputFont
+            (tv.viewWithTag(999) as? UILabel)?.font = inputFont
+        }
         let width = proposal.width ?? UIScreen.main.bounds.width
         // [T-share-url-input-height] UITextView.sizeThatFits returns the
         // height typeset against the CURRENT textContainer width, not the
@@ -1592,9 +1597,10 @@ struct PastableTextView: UIViewRepresentable {
         }
 
         // Keep font in sync with FontSettings
-        let inputFont = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(16.5))
+        let inputFont = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(YimaDesign.Typography.bodySize))
         if tv.font != inputFont {
             tv.font = inputFont
+            (tv.viewWithTag(999) as? UILabel)?.font = inputFont
             tv.invalidateIntrinsicContentSize()
         }
 

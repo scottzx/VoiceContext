@@ -5897,24 +5897,25 @@ private struct MenuKey: Equatable {
 /// the row structs; the composed icon made a third copy untenable.
 /// Pure function — safe to call from the `groupedSessions` aggregation pass.
 func sessionCategoryIcon(for category: String?) -> (systemName: String, color: Color) {
+    let color = YimaDesign.Color.muted
     switch category {
-    case "code":         return ("terminal.fill", .orange)
-    case "writing":      return ("doc.text.fill", .blue)
-    case "research":     return ("globe.americas.fill", .teal)
-    case "analysis":     return ("chart.pie.fill", .indigo)
-    case "creative":     return ("paintbrush.pointed.fill", .pink)
-    case "chat":         return ("bubble.left.fill", .green)
-    case "math":         return ("number.circle.fill", .purple)
-    case "translation":  return ("character.bubble", .cyan)
-    case "health":       return ("heart.fill", .red)
-    case "finance":      return ("banknote.fill", .mint)
-    case "travel":       return ("map.fill", .orange)
-    case "education":    return ("book.closed.fill", .blue)
-    case "design":       return ("paintpalette.fill", .pink)
-    case "productivity": return ("calendar.badge.checkmark", .yellow)
-    case "support":      return ("gearshape.fill", .brown)
-    case "other":        return ("square.grid.2x2.fill", .gray)
-    default:             return ("bubble.left.fill", .gray)
+    case "code":         return ("terminal.fill", color)
+    case "writing":      return ("doc.text.fill", color)
+    case "research":     return ("globe.americas.fill", color)
+    case "analysis":     return ("chart.pie.fill", color)
+    case "creative":     return ("paintbrush.pointed.fill", color)
+    case "chat":         return ("bubble.left.fill", color)
+    case "math":         return ("number.circle.fill", color)
+    case "translation":  return ("character.bubble", color)
+    case "health":       return ("heart.fill", color)
+    case "finance":      return ("banknote.fill", color)
+    case "travel":       return ("map.fill", color)
+    case "education":    return ("book.closed.fill", color)
+    case "design":       return ("paintpalette.fill", color)
+    case "productivity": return ("calendar.badge.checkmark", color)
+    case "support":      return ("gearshape.fill", color)
+    case "other":        return ("square.grid.2x2.fill", color)
+    default:             return ("bubble.left.fill", color)
     }
 }
 
@@ -5956,15 +5957,13 @@ struct GroupGlyphShape: Shape {
 /// Group icon: the grouped-list glyph on the SAME circular translucent tint
 /// the session rows use, at the same 44pt slot — so a group icon and a
 /// session icon are the same species at the same size. The tint and glyph
-/// color borrow the newest member's category color (gray when empty), which
-/// is all that remains of the member-glyph composition: the shape is
-/// uniform, the color still says what the group holds.
+/// use the shared neutral category color, including for empty groups.
 struct FolderComposedIcon: View {
     let glyphs: [FolderGlyph]
     var diameter: CGFloat = 44
 
     var body: some View {
-        let tint = glyphs.first?.color ?? .gray
+        let tint = glyphs.first?.color ?? YimaDesign.Color.muted
         ZStack {
             // 0.28 vs the session icons' 0.18: a deliberately stronger tint
             // so a group circle reads as a different kind of thing at a
@@ -6474,23 +6473,23 @@ struct SessionEditSheet: View {
     @State private var editCategory: String = ""
     @State private var isRegenerating = false
 
-    private static let categories: [(key: String, label: String, icon: String, color: Color)] = [
-        ("code",         "Code",         "terminal.fill",               .orange),
-        ("writing",      "Writing",      "doc.text.fill",               .blue),
-        ("research",     "Research",     "globe.americas.fill",         .teal),
-        ("analysis",     "Analysis",     "chart.pie.fill",              .indigo),
-        ("creative",     "Creative",     "paintbrush.pointed.fill",     .pink),
-        ("chat",         "Chat",         "bubble.left.fill",            .green),
-        ("math",         "Math",         "number.circle.fill",          .purple),
-        ("translation",  "Translation",  "character.bubble",            .cyan),
-        ("health",       "Health",       "heart.fill",                  .red),
-        ("finance",      "Finance",      "banknote.fill",               .mint),
-        ("travel",       "Travel",       "map.fill",                    .orange),
-        ("education",    "Education",    "book.closed.fill",            .blue),
-        ("design",       "Design",       "paintpalette.fill",           .pink),
-        ("productivity", "Productivity", "calendar.badge.checkmark",    .yellow),
-        ("support",      "Support",      "gearshape.fill",              .brown),
-        ("other",        "Other",        "square.grid.2x2.fill",       .gray),
+    private static let categories: [(key: String, label: String, icon: String)] = [
+        ("code",         "Code",         "terminal.fill"),
+        ("writing",      "Writing",      "doc.text.fill"),
+        ("research",     "Research",     "globe.americas.fill"),
+        ("analysis",     "Analysis",     "chart.pie.fill"),
+        ("creative",     "Creative",     "paintbrush.pointed.fill"),
+        ("chat",         "Chat",         "bubble.left.fill"),
+        ("math",         "Math",         "number.circle.fill"),
+        ("translation",  "Translation",  "character.bubble"),
+        ("health",       "Health",       "heart.fill"),
+        ("finance",      "Finance",      "banknote.fill"),
+        ("travel",       "Travel",       "map.fill"),
+        ("education",    "Education",    "book.closed.fill"),
+        ("design",       "Design",       "paintpalette.fill"),
+        ("productivity", "Productivity", "calendar.badge.checkmark"),
+        ("support",      "Support",      "gearshape.fill"),
+        ("other",        "Other",        "square.grid.2x2.fill"),
     ]
 
     var body: some View {
@@ -6509,15 +6508,15 @@ struct SessionEditSheet: View {
                                 VStack(spacing: 6) {
                                     Image(systemName: cat.icon)
                                         .font(.system(size: 20))
-                                        .foregroundStyle(editCategory == cat.key ? .white : cat.color)
+                                        .foregroundStyle(editCategory == cat.key ? YimaDesign.Color.canvas : YimaDesign.Color.muted)
                                         .frame(width: 44, height: 44)
                                         .background(
                                             Circle()
-                                                .fill(editCategory == cat.key ? cat.color : cat.color.opacity(0.12))
+                                                .fill(editCategory == cat.key ? YimaDesign.Color.ink : YimaDesign.Color.grouped)
                                         )
                                     Text(LocalizedStringKey(cat.label))
                                         .font(.caption2)
-                                        .foregroundStyle(editCategory == cat.key ? cat.color : .secondary)
+                                        .foregroundStyle(editCategory == cat.key ? YimaDesign.Color.ink : YimaDesign.Color.muted)
                                 }
                             }
                             .buttonStyle(.plain)

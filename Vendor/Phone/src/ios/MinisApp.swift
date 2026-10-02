@@ -89,7 +89,6 @@ struct MinisApp: App {
     @AppStorage("appLanguage") private var appLanguage: String = ""
     @StateObject private var recordings = VoiceRecordingWorkspace()
     @StateObject private var shareCoordinator = ShareCoordinator.shared
-    @ObservedObject private var fontSettings = FontSettings.shared
     @ObservedObject private var configConfirmGate = ConfigConfirmationGate.shared
     /// [review S14] Drives the root-level restore sheet for a `.minisbak`
     /// opened from outside the app.
@@ -333,7 +332,7 @@ struct MinisApp: App {
                     appearanceMode == 1 ? .light : appearanceMode == 2 ? .dark : nil
                 )
                 .environment(\.locale, appLanguage.isEmpty ? .current : Locale(identifier: appLanguage))
-                .dynamicTypeSize(fontSettings.appBaseScale.dynamicTypeSize)
+                .appFontScale()
                 .onOpenURL { url in
                     shareLog.info("[Share] onOpenURL: \(url.absoluteString)")
                     guard !SessionLockStore.shared.appIsLocked else {

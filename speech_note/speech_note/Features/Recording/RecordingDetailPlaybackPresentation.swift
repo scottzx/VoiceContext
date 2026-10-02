@@ -91,13 +91,7 @@ enum RecordingDetailPlaybackPresentation {
     }
 
     static func color(for speaker: String, roster: [String]) -> Color {
-        let palette: [Color] = [
-            .blue, .orange, .purple, .teal, .pink, .indigo, .green, .brown
-        ]
-        guard let index = roster.firstIndex(of: speaker) else {
-            return .secondary
-        }
-        return palette[index % palette.count]
+        roster.contains(speaker) ? YimaDesign.Color.ink : YimaDesign.Color.muted
     }
 
     /// Bubble under the playhead. Prefers a containing range; otherwise the last

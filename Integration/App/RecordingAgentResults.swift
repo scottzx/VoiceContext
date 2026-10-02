@@ -18,13 +18,22 @@ struct RecordingAgentResults: View {
                 } else {
                     List(files, id: \.self) { file in
                         Button { preview = GeneratedFile(url: file) } label: {
-                            Label(file.lastPathComponent, systemImage: "doc.text").foregroundStyle(.primary)
+                            Label(file.lastPathComponent, systemImage: "doc.text")
+                                .font(YimaDesign.Typography.itemTitle)
+                                .foregroundStyle(YimaDesign.Color.ink)
+                                .frame(maxWidth: .infinity, minHeight: YimaDesign.Layout.rowMinHeight, alignment: .leading)
                         }
+                        .listRowInsets(EdgeInsets(top: 0, leading: YimaDesign.Layout.listInset, bottom: 0, trailing: YimaDesign.Layout.listInset))
                     }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                     .refreshable { await load() }
                 }
             }
             .navigationTitle("智能体产物")
+            .navigationBarTitleDisplayMode(.inline)
+            .background(YimaDesign.Color.canvas)
+            .tint(YimaDesign.Color.ink)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
             .sheet(item: $preview) { item in GeneratedFilePreview(url: item.url) }
             .task { await load() }

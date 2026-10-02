@@ -39,37 +39,37 @@ struct AssistantBlockView: View {
             )
             .padding(.vertical, 2)
         case .shellTool:
-            ToolCapsuleView(block: block, icon: "terminal", accentColor: .green,
+            ToolCapsuleView(block: block, icon: "terminal", accentColor: ChatColors.secondaryText,
                             commandStartTime: commandStartTime, onStop: onStop, browserPool: browserPool,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .fileReadTool:
-            ToolCapsuleView(block: block, icon: "doc.text", accentColor: .cyan,
+            ToolCapsuleView(block: block, icon: "doc.text", accentColor: ChatColors.secondaryText,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .fileWriteTool:
-            ToolCapsuleView(block: block, icon: "doc.text.fill", accentColor: .blue,
+            ToolCapsuleView(block: block, icon: "doc.text.fill", accentColor: ChatColors.secondaryText,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .fileEditTool:
-            ToolCapsuleView(block: block, icon: "square.and.pencil", accentColor: .orange,
+            ToolCapsuleView(block: block, icon: "square.and.pencil", accentColor: ChatColors.secondaryText,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .browserTool:
-            ToolCapsuleView(block: block, icon: "globe", accentColor: .blue,
+            ToolCapsuleView(block: block, icon: "globe", accentColor: ChatColors.secondaryText,
                             commandStartTime: commandStartTime, onStop: onStop, browserPool: browserPool,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .readImageTool:
-            ToolCapsuleView(block: block, icon: "photo", accentColor: .purple,
+            ToolCapsuleView(block: block, icon: "photo", accentColor: ChatColors.secondaryText,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .memoryTool:
-            ToolCapsuleView(block: block, icon: "brain.head.profile", accentColor: .pink,
+            ToolCapsuleView(block: block, icon: "brain.head.profile", accentColor: ChatColors.secondaryText,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .subagentTool(let action, _):
             let isCloud = (action == "spawn_cloud_subagent" || block.content.contains("target: cloud"))
             let icon = isCloud ? "cloud.fill" : "person.2.badge.gearshape"
-            let tint: Color = isCloud ? .indigo : .teal
+            let tint = ChatColors.secondaryText
 
             VStack(alignment: .leading, spacing: 6) {
                 ToolCapsuleView(block: block, icon: icon, accentColor: tint,
@@ -181,67 +181,6 @@ struct AssistantBlockView: View {
     }
 }
 
-// MARK: - Shimmer Overlay (continuous diagonal shine via offset animation)
-
-/// A diagonal shimmer band that sweeps from top-leading to bottom-trailing.
-/// Uses a single stable gradient with an animated offset rather than rebuilding
-/// gradient stops every frame — avoids a CAGradientLayer colorspace teardown
-/// race during CATransaction flush (EXC_BAD_ACCESS at encode_colorspace).
-struct ShimmerOverlay: View {
-    @Environment(\.colorScheme) private var colorScheme
-    @State private var offsetX: CGFloat = -1.0
-
-    private var peakOpacity: CGFloat {
-        colorScheme == .light ? 0.75 : 0.25
-    }
-
-    private func bell(_ x: CGFloat) -> CGFloat {
-        exp(-4.5 * x * x)
-    }
-
-    private var stableStops: [Gradient.Stop] {
-        let stepCount = 12
-        let bandRadius: CGFloat = 0.40
-        let center: CGFloat = 0.5
-        var stops: [Gradient.Stop] = []
-        stops.append(.init(color: .white.opacity(0), location: 0))
-        for i in 0...stepCount {
-            let frac = CGFloat(i) / CGFloat(stepCount)
-            let pos = center - bandRadius + frac * bandRadius * 2.0
-            let dist = (pos - center) / bandRadius
-            let alpha = bell(dist) * peakOpacity
-            stops.append(.init(color: .white.opacity(Double(alpha)), location: pos))
-        }
-        stops.append(.init(color: .white.opacity(0), location: 1))
-        return stops
-    }
-
-    var body: some View {
-        GeometryReader { geo in
-            let diag = geo.size.width + geo.size.height
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        stops: stableStops,
-                        startPoint: UnitPoint(x: 0, y: 1),
-                        endPoint: UnitPoint(x: 1, y: 0)
-                    )
-                )
-                .frame(width: diag, height: geo.size.height)
-                .offset(x: offsetX * geo.size.width)
-                .onAppear {
-                    withAnimation(
-                        .linear(duration: 2.8)
-                        .repeatForever(autoreverses: false)
-                    ) {
-                        offsetX = 1.0
-                    }
-                }
-        }
-        .clipped()
-    }
-}
-
 // MARK: - Tool Capsule View (unified pill for all tool types)
 
 private struct A2ASessionPreview: Identifiable {
@@ -261,6 +200,7 @@ struct ToolCapsuleView: View {
     var toolSnapshots: [ToolSnapshotItem] = []
     @Binding var detailBlock: AssistantBlock?
     @State private var dotsActive = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// [T-tool-bg-suspended-hint] Drives the background-suspension info alert.
     @State private var showBgHintAlert = false
     @State private var showA2ADestinations = false
@@ -417,17 +357,17 @@ struct ToolCapsuleView: View {
                 // Description text with bouncing dots during streaming
                 HStack(spacing: 0) {
                     Text(displayText)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(YimaDesign.Typography.compactMetadata.weight(.medium))
                         .foregroundStyle(ChatColors.primaryText)
                         .lineLimit(1)
                     if isStreaming {
                         ForEach(0..<3, id: \.self) { i in
                             Text(".")
-                                .font(.system(size: 13, weight: .medium))
+                                .font(YimaDesign.Typography.compactMetadata.weight(.medium))
                                 .foregroundStyle(ChatColors.primaryText)
-                                .offset(y: dotsActive ? -2 : 1)
+                                .offset(y: reduceMotion ? 0 : (dotsActive ? -2 : 1))
                                 .animation(
-                                    .easeInOut(duration: 0.35)
+                                    reduceMotion ? nil : .easeInOut(duration: 0.35)
                                         .repeatForever(autoreverses: true)
                                         .delay(Double(i) * 0.12),
                                     value: dotsActive
@@ -458,33 +398,20 @@ struct ToolCapsuleView: View {
                     Button {
                         onStop?()
                     } label: {
-                        // Visual: 10×10 red square unchanged. Hit area enlarged to
-                        // 24×24 via an expanded contentShape, while the negative
-                        // padding pins the *layout* footprint back to 18×18 so the
-                        // capsule width/height is identical to before.
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(.red)
+                            .fill(YimaDesign.Color.recording)
                             .frame(width: 10, height: 10)
-                            .frame(width: 24, height: 24)
+                            .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
                             .contentShape(Rectangle())
-                            .padding(-3)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(AppLocalized("Stop"))
                 }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
-            .background(Color(UIColor.systemGray6))
+            .padding(.horizontal, YimaDesign.Space.md)
+            .frame(minHeight: YimaDesign.Layout.hitTarget)
+            .background(ChatColors.secondaryBg)
             .clipShape(Capsule())
-            .overlay(
-                Group {
-                    if isActive {
-                        ShimmerOverlay()
-                            .clipShape(Capsule())
-                            .allowsHitTesting(false)
-                    }
-                }
-            )
             .overlay(
                 Capsule()
                     .stroke(ChatColors.toolBorder, lineWidth: 0.5)
@@ -666,10 +593,13 @@ struct ToolCapsuleView: View {
             Button(AppLocalized("OK")) {}
         }
         .onChange(of: isStreaming) { streaming in
-            dotsActive = streaming
+            dotsActive = streaming && !reduceMotion
+        }
+        .onChange(of: reduceMotion) { reduced in
+            dotsActive = isStreaming && !reduced
         }
         .onAppear {
-            if isStreaming {
+            if isStreaming && !reduceMotion {
                 dotsActive = true
             }
         }
@@ -700,16 +630,22 @@ struct ToolCapsuleView: View {
 
     @ViewBuilder
     private var statusOrIcon: some View {
-        Image(systemName: icon)
-            .font(.system(size: 13))
-            .foregroundStyle(iconColor)
+        if isActive {
+            ProgressView()
+                .controlSize(.mini)
+                .tint(ChatColors.secondaryText)
+        } else {
+            Image(systemName: icon)
+                .font(YimaDesign.Typography.compactMetadata)
+                .foregroundStyle(iconColor)
+        }
     }
 
     private var iconColor: Color {
         switch block.toolStatus {
-        case .success: return .green
-        case .failed: return .red
-        case .cancelled: return .yellow
+        case .success: return YimaDesign.Color.success
+        case .failed: return YimaDesign.Color.recording
+        case .cancelled: return ChatColors.secondaryText
         default: return accentColor
         }
     }
@@ -896,28 +832,29 @@ struct ThinkingBlockView: View {
                 Image("ThinkingIcon")
                     .resizable()
                     .frame(width: 14, height: 14)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(ChatColors.secondaryText)
                 Text(AppLocalized("Deep Thinking"))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.blue)
+                    .font(YimaDesign.Typography.compactMetadata.weight(.semibold))
+                    .foregroundStyle(ChatColors.secondaryText)
                 if isStreaming {
                     ProgressView()
                         .controlSize(.mini)
-                        .tint(.blue)
+                        .tint(ChatColors.secondaryText)
                 }
                 if block.content.count > 0 || block.thinkingContentBuffer.count > 0 {
                     let charCount = max(block.content.count, block.thinkingContentBuffer.count)
                     Text(charCount > 1000 ? "\(charCount / 1000)K" : "\(charCount)")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.blue.opacity(0.6))
+                        .font(YimaDesign.Typography.compactMetadata.monospacedDigit())
+                        .foregroundStyle(ChatColors.secondaryText)
                 }
                 Spacer()
                 Image(systemName: isExpanded.wrappedValue ? "chevron.up" : "chevron.down")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.blue.opacity(0.5))
+                    .foregroundStyle(ChatColors.secondaryText)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
+            .frame(minHeight: YimaDesign.Layout.hitTarget)
             .contentShape(Rectangle())
             .onTapGesture {
                 // Mark before flipping so any concurrent stream-end collapse
@@ -979,9 +916,9 @@ struct ThinkingBlockView: View {
                             // moving is useless anyway — enable it only once
                             // streaming finished.
                             let thinkingText = Text(displayContent)
-                                .font(.system(size: 13))
-                                .foregroundStyle(ChatColors.tertiaryText)
-                                .lineSpacing(3)
+                                .font(YimaDesign.Typography.metadata)
+                                .foregroundStyle(ChatColors.secondaryText)
+                                .lineSpacing(YimaDesign.Document.lineSpacing)
                             Group {
                                 if isStreaming {
                                     thinkingText
@@ -1077,11 +1014,11 @@ struct ThinkingBlockView: View {
         .onDisappear {
             ThinkingHitchMonitor.shared.stop(owner: block.id)
         }
-        .background(Color.blue.opacity(0.06))
+        .background(ChatColors.secondaryBg)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.blue.opacity(0.15), lineWidth: 0.5)
+                .stroke(ChatColors.toolBorder, lineWidth: 0.5)
         )
         .task(id: block.id) {
             // One-shot per-block auto-expand. Runs when this cell first hosts

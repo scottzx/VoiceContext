@@ -29,9 +29,9 @@ enum RecordingStatusStyle {
 
     static func color(for state: RecordingState) -> Color {
         switch state {
-        case .recording, .failed: .red
-        case .paused, .interrupted, .processing: .orange
-        case .stopping, .complete: .secondary
+        case .recording, .failed: YimaDesign.Color.recordingText
+        case .paused, .interrupted, .processing: YimaDesign.Color.warningText
+        case .stopping, .complete: YimaDesign.Color.muted
         }
     }
 
@@ -59,10 +59,10 @@ enum RecordingStatusStyle {
 
     static func color(for presentation: RecordingSessionCoordinator.PresentationState) -> Color {
         switch presentation {
-        case .recording: .red
-        case .paused, .interrupted, .processing: .orange
-        case .stopping, .idle: .secondary
-        case .failed: .red
+        case .recording: YimaDesign.Color.recordingText
+        case .paused, .interrupted, .processing: YimaDesign.Color.warningText
+        case .stopping, .idle: YimaDesign.Color.muted
+        case .failed: YimaDesign.Color.recordingText
         }
     }
 
@@ -105,9 +105,9 @@ enum RecordingStatusStyle {
 
     static func captureColor(for capture: RecordingCaptureState) -> Color {
         switch capture {
-        case .recording: .red
-        case .paused, .interrupted: .orange
-        case .preparing, .stopping, .idle: .secondary
+        case .recording: YimaDesign.Color.recordingText
+        case .paused, .interrupted: YimaDesign.Color.warningText
+        case .preparing, .stopping, .idle: YimaDesign.Color.muted
         }
     }
 
@@ -139,9 +139,9 @@ enum RecordingStatusStyle {
 
     static func processingColor(for processing: RecordingProcessingState) -> Color {
         switch processing {
-        case .idle, .complete: .secondary
-        case .queued, .processing, .speakerFinalization, .deferredUntilForeground, .lockedPendingPurchase: .orange
-        case .needsAttention: .red
+        case .idle, .complete: YimaDesign.Color.muted
+        case .queued, .processing, .speakerFinalization, .deferredUntilForeground, .lockedPendingPurchase: YimaDesign.Color.warningText
+        case .needsAttention: YimaDesign.Color.recordingText
         }
     }
 

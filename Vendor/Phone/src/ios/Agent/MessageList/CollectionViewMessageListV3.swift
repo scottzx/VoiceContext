@@ -249,16 +249,16 @@ private struct BridgedAssistantHeaderV3: View {
                 Text(speaker.emoji.isEmpty ? "🤖" : speaker.emoji)
                     .font(.system(size: 18))
                     .frame(width: 22, height: 22)
-                    .background(AgentAccent.color(speaker.accentColor).opacity(0.18))
+                    .background(ChatColors.secondaryBg)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 Text(speaker.name)
-                    .font(.body.weight(.semibold))
+                    .font(YimaDesign.Typography.section)
                     .foregroundStyle(ChatColors.primaryText)
                 if !speaker.title.isEmpty {
                     Text(speaker.title)
                         .font(.caption2)
                         .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(AgentAccent.color(speaker.accentColor).opacity(0.14))
+                        .background(ChatColors.secondaryBg)
                         .clipShape(Capsule())
                         .foregroundStyle(.secondary)
                 }
@@ -269,27 +269,18 @@ private struct BridgedAssistantHeaderV3: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.tertiary)
                 Text(String(localized: "已退出的成员"))
-                    .font(.body.weight(.semibold))
+                    .font(YimaDesign.Typography.section)
                     .foregroundStyle(.secondary)
             } else {
-                // [T-soul-custom-icon] Honours a user-chosen emoji or image;
-                // falls back to the gradient sparkle when unset, so headers for
-                // users who never customized are pixel-identical to before.
-                // 18pt keeps the measured 28pt row height below intact — the
-                // icon is square by construction (SoulIconImage.encode crops),
-                // so an image cannot make this row taller than a glyph does.
-                SoulIconView(
-                    icon: soulMeta.icon,
-                    size: 18,
-                    sparkleGradient: LinearGradient(
-                        colors: [Color(red: 0.72, green: 0.69, blue: 0.59),
-                                 Color(red: 0.6, green: 0.6, blue: 0.55)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                if soulMeta.icon.isEmpty {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(ChatColors.secondaryText)
+                } else {
+                    SoulIconView(icon: soulMeta.icon, size: 18)
+                }
                 Text(soulMeta.name.isEmpty ? "Yima" : soulMeta.name)
-                    .font(.body.weight(.semibold))
+                    .font(YimaDesign.Typography.section)
                     .foregroundStyle(ChatColors.primaryText)
             }
         }
@@ -304,15 +295,7 @@ private struct BridgedAssistantHeaderV3: View {
         // `contentShape` makes the whole icon+name box (including the 6pt gap)
         // hittable rather than only the glyph and text pixels.
         //
-        // On the 44pt HIG target: the row is deliberately NOT grown to 44pt.
-        // The comment above records that this header measures 28pt and that
-        // the cell height is UIKit-self-sized, so enlarging the frame would
-        // shift every assistant message in the transcript — the task explicitly
-        // asks not to disturb layout. Instead the touch target is widened
-        // horizontally (the tappable box spans icon + gap + full name, well
-        // over 44pt across) and the 28pt height is left alone. That is the
-        // trade the surrounding code forces; growing it would need the height
-        // constant re-measured, which is out of scope here.
+        .frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
         .contentShape(Rectangle())
         .onTapGesture { onOpenSoulSettings?() }
         .accessibilityElement(children: .combine)
@@ -322,12 +305,12 @@ private struct BridgedAssistantHeaderV3: View {
         .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
             soulMeta = SoulStore.cachedMetadata
         }
-        .padding(.top, 4)
+        .padding(.top, YimaDesign.Space.xs)
         .padding(.bottom, 0)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxWidth: maxWidth > 0 ? maxWidth : .infinity, alignment: .leading)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, YimaDesign.Layout.listInset)
         .opacity(message.isCompactedHistory ? 0.5 : 1.0)
         .accessibilityIdentifier("assistantHeader")
     }
@@ -380,7 +363,7 @@ private struct BridgedAssistantBlockV3: View {
         )
         .frame(maxWidth: maxWidth > 0 ? maxWidth : nil, alignment: .leading)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, YimaDesign.Layout.listInset)
         .opacity(message.isCompactedHistory ? 0.5 : 1.0)
         .accessibilityIdentifier(blockAccessibilityId)
         // Context menu on zero-size overlay so it doesn't inflate self-sizing
@@ -2811,8 +2794,7 @@ extension CollectionViewMessageListV3 {
 
                     switch item {
                     case .assistantHeader:
-                        // Header is always a fixed "sparkles Minis" label row (measured: 28pt)
-                        layout.setEstimatedHeight(28, at: i)
+                        layout.setEstimatedHeight(Self.assistantHeaderHeight, at: i)
 
                     case .assistantFooter:
                         // Prominent banners (error/resume/typing) measure
@@ -2922,7 +2904,7 @@ extension CollectionViewMessageListV3 {
                                 layout.setEstimatedHeight(est, at: i)
                             }
                         case .thinking:
-                            // Estimator returns 36pt collapsed (matches header-only rendering),
+                            // Estimator follows the minimum 44pt header and wrapper padding,
                             // or header + capped content height when expanded. Hard-coded 88
                             // caused a -48pt correction per cell on first render, producing a
                             // contentSize-shrink jitter chain when scrolling through history.
@@ -2930,14 +2912,13 @@ extension CollectionViewMessageListV3 {
                             layout.setEstimatedHeight(est, at: i)
                         case .readImageTool:
                             // In V3 block cells, readImageTool renders as a
-                            // ToolCapsuleView (36pt), same as other tool types.
-                            layout.setEstimatedHeight(36, at: i)
+                            // ToolCapsuleView, same as other tool types.
+                            layout.setEstimatedHeight(Self.toolRowHeight, at: i)
                         case .info:
                             let infoLines = max(1, block.content.components(separatedBy: "\n").count)
                             layout.setEstimatedHeight(CGFloat(20 + infoLines * 16), at: i)
                         default:
-                            // Tool capsules (execute, browser, etc.) are 36pt
-                            layout.setEstimatedHeight(36, at: i)
+                            layout.setEstimatedHeight(Self.toolRowHeight, at: i)
                         }
 
                     case .wholeMessage(let msgId):
@@ -3385,7 +3366,7 @@ extension CollectionViewMessageListV3 {
         /// coarse estimate). Cached by content|width|fontsize.
         ///
         /// Layout constants mirror AIChatView.userRow:
-        ///   - font: .system(size: scaledMessage(16.5))
+        ///   - font: .system(size: scaledMessage(YimaDesign.Typography.bodySize))
         ///   - bubble: .padding(.horizontal,14) .padding(.vertical,10)  → +20 height, -28 width
         ///   - row:   HStack { Spacer(minLength: 60); VStack(spacing:6){ attachments?; bubble } }
         ///   - cell:  .padding(.horizontal, 16) on the whole row
@@ -3412,7 +3393,7 @@ extension CollectionViewMessageListV3 {
             // over-estimate per row on EVERY image bubble, and a row-count
             // disagreement near width boundaries. `70` appeared nowhere in the
             // rendering code; it was estimator-only drift.
-            let fontSize = FontSettings.shared.scaledMessage(16.5)
+            let fontSize = FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)
             // [T-ios-queued-bubble-withdraw-width] A QUEUED message renders a
             // withdraw button beside the bubble:
             //
@@ -3660,9 +3641,22 @@ extension CollectionViewMessageListV3 {
             }
         }
 
+        private static var assistantHeaderHeight: CGFloat {
+            max(YimaDesign.Layout.hitTarget, UIFont.preferredFont(forTextStyle: .headline).lineHeight) + YimaDesign.Space.xs
+        }
+
+        private static var toolRowHeight: CGFloat {
+            max(YimaDesign.Layout.hitTarget, UIFont.preferredFont(forTextStyle: .caption1).lineHeight)
+        }
+
+        private static var thinkingHeaderHeight: CGFloat {
+            max(YimaDesign.Layout.hitTarget, UIFont.preferredFont(forTextStyle: .caption1).lineHeight + 20)
+        }
+
         static func estimateItemHeight(_ item: MessageListItem, messages: [ChatMessage], width: CGFloat) -> CGFloat {
-            let scale = FontSettings.shared.scaledMessage(16)
-            let lineHeight = scale * 1.4
+            let scale = FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)
+            let lineHeight = UIFont.systemFont(ofSize: scale).lineHeight
+                + YimaDesign.Document.lineSpacing * scale / YimaDesign.Typography.bodySize
             // [T-ios-user-attach-estimate-mismatch] The former `hPad` local died
             // with the `.user` branch's coarse tile arithmetic — the attachment
             // block now comes from UserAttachmentTileMetrics, which derives its
@@ -3713,7 +3707,7 @@ extension CollectionViewMessageListV3 {
                 case .assistant: return 200
                 }
             case .assistantHeader:
-                return 28
+                return Self.assistantHeaderHeight
             case .assistantBlock(let msgId, let blockId):
                 guard let msg = messages.first(where: { $0.id == msgId }),
                       let block = msg.blocks.first(where: { $0.id == blockId }) else { return 44 }
@@ -3739,19 +3733,16 @@ extension CollectionViewMessageListV3 {
                     }
                     return Self.estimateTextBlockHeight(block.content, width: width, scale: scale, lineHeight: lineHeight)
                 case .thinking:
-                    // Header (icon 14pt or label 13pt) + vPad 10·2 + capsule border ≈ 36pt,
-                    // + 4pt block-wrapper vertical padding = 40 (same calibration as tool
-                    // capsules, [T-ios-decel-inv-estimate-calibration]).
-                    // When expanded, content area adds up to 300pt of inner text + 10pt bottom pad.
-                    let headerH: CGFloat = 40
+                    let headerH = Self.thinkingHeaderHeight + 4 // block-wrapper padding
                     guard block.isThinkingExpanded, !block.content.isEmpty else {
                         return headerH
                     }
                     let innerWidth = max(width - 24, 100)         // 12pt horizontal pad each side
-                    let innerLineHeight: CGFloat = 13 * 1.4 + 3   // .lineSpacing(3) on 13pt font
+                    let innerFont = UIFont.preferredFont(forTextStyle: .subheadline)
+                    let innerLineHeight = innerFont.lineHeight + YimaDesign.Document.lineSpacing
                     let lines = block.content.split(separator: "\n", omittingEmptySubsequences: false)
                     var textH: CGFloat = 0
-                    let cpl = max(1, innerWidth / 7)              // ~7pt per CJK/wide glyph at 13pt
+                    let cpl = max(1, innerWidth / (innerFont.pointSize * 0.55))
                     for line in lines {
                         let wrapped = max(1, ceil(CGFloat(line.count) / cpl))
                         textH += wrapped * innerLineHeight
@@ -3759,17 +3750,11 @@ extension CollectionViewMessageListV3 {
                     let contentH = min(textH + 10, 300)            // ScrollView capped at 300pt
                     let total = headerH + contentH
                     return total
-                // [T-ios-decel-inv-estimate-calibration] Tool capsules measure exactly
-                // 36pt: ToolCapsuleView has NO vertical padding (unlike .text/.thinking,
-                // which add .padding(.vertical, 2) → +4). The debug.scrollMetrics ring
-                // proved the split: with 40 here, every real tool capsule corrected
-                // 40→36 (-4) mid-decel; the +4 growths that motivated 40 were actually
-                // collapsed THINKING blocks (handled above with headerH = 40).
-                case .readImageTool: return 36
+                case .readImageTool: return Self.toolRowHeight
                 case .info:
                     let lineCount = max(1, block.content.components(separatedBy: "\n").count)
                     return CGFloat(20 + lineCount * 16)
-                default: return 36  // Tool capsules (execute, browser, etc.): no wrapper pad
+                default: return Self.toolRowHeight
                 }
             case .assistantFooter:
                 return 4

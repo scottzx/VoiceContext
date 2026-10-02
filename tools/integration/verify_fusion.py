@@ -50,6 +50,8 @@ package_ids = {key for key, value in fusion.items() if value.get('isa') == 'XCLo
 assert len(package_ids) == 1, 'Expected one pinned TranscribeKit package'
 for module_name in ['VoiceContextAgent', 'VoiceRecording']:
     module = target(fusion, module_name)
+    design_sources = [fusion[fid].get('path', '') for fid in members(fusion, module, 'PBXSourcesBuildPhase')]
+    assert sum(path.endswith('Integration/Shared/YimaDesignTokens.swift') for path in design_sources) == 1, f'Missing or duplicated shared design source: {module_name}'
     assert any(fusion[pid].get('productName') == 'TranscribeNative' and fusion[pid].get('package') in package_ids
                for pid in module.get('packageProductDependencies', [])), f'Missing shared native package: {module_name}'
     assert not any(fusion[fid].get('path', '').endswith('TranscribeCpp.xcframework')

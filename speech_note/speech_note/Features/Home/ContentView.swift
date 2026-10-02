@@ -822,21 +822,21 @@ struct ContentView: View {
                                 } label: {
                                     HStack(spacing: 6) {
                                         Text(formattedDateHeader(group.date))
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.primary)
+                                            .font(YimaDesign.Typography.metadata.weight(.semibold))
+                                            .foregroundStyle(YimaDesign.Color.ink)
                                         Image(systemName: "chevron.up.chevron.down")
                                             .font(.caption2.weight(.bold))
                                             .foregroundStyle(.secondary)
                                         Spacer()
                                         Text("\(group.recordings.count) 条记录")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .font(YimaDesign.Typography.compactMetadata)
+                                            .foregroundStyle(YimaDesign.Color.muted)
                                     }
                                 }
                                 .buttonStyle(.plain)
                                 .id(group.id)
-                                .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 4, trailing: 20))
-                                .listRowBackground(Color(uiColor: .systemBackground))
+                                .listRowInsets(EdgeInsets(top: YimaDesign.Space.md, leading: YimaDesign.Layout.pageInset, bottom: YimaDesign.Space.xs, trailing: YimaDesign.Layout.pageInset))
+                                .listRowBackground(YimaDesign.Color.canvas)
                             }
                         }
                     }
@@ -854,7 +854,7 @@ struct ContentView: View {
                 }
             }
         }
-        .background(Color(uiColor: .systemBackground))
+        .background(YimaDesign.Color.canvas)
         .safeAreaInset(edge: .bottom) {
             if isMultiSelectMode {
                 VStack(spacing: 0) {
@@ -1031,7 +1031,7 @@ struct ContentView: View {
                 }
             }
             .buttonStyle(.plain)
-            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .listRowInsets(EdgeInsets(top: 0, leading: YimaDesign.Layout.pageInset, bottom: 0, trailing: YimaDesign.Layout.pageInset))
             .listRowSeparator(.visible)
         } else {
             NavigationLink {
@@ -1044,7 +1044,7 @@ struct ContentView: View {
                 )
             }
             .buttonStyle(.plain)
-            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .listRowInsets(EdgeInsets(top: 0, leading: YimaDesign.Layout.pageInset, bottom: 0, trailing: YimaDesign.Layout.pageInset))
             .listRowSeparator(.visible)
             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                 Button(role: .destructive) {
@@ -1061,7 +1061,7 @@ struct ContentView: View {
                 } label: {
                     Label("编辑名称", systemImage: "pencil")
                 }
-                .tint(.blue)
+                .tint(YimaDesign.Color.ink)
             }
             .contextMenu {
                 Button {
@@ -1498,22 +1498,24 @@ private struct CalendarStrip: View {
 }
 
 private struct RecordingRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let recording: Recording
     var folderName: String? = nil
     var audioDuration: Double = 0
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: YimaDesign.Layout.rowContentGap) {
                 Text(recording.title?.isEmpty == false ? recording.title! : defaultTitle)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
+                    .font(YimaDesign.Typography.recordingTitle)
+                    .foregroundStyle(YimaDesign.Color.ink)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 
-                HStack(spacing: 8) {
+                HStack(spacing: YimaDesign.Space.sm) {
                     Text(metadata)
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(YimaDesign.Typography.metadata.monospacedDigit())
+                        .foregroundStyle(YimaDesign.Color.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                     
                     if recording.state != .complete {
                         statusIndicator
@@ -1525,17 +1527,17 @@ private struct RecordingRow: View {
                         Image(systemName: "mappin.and.ellipse")
                             .font(.caption2)
                         Text(location)
-                            .font(.caption)
+                            .font(YimaDesign.Typography.compactMetadata)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(YimaDesign.Color.muted)
                 }
             }
             Spacer(minLength: 4)
         }
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+        .padding(.vertical, YimaDesign.Layout.rowPaddingY)
+        .frame(maxWidth: .infinity, minHeight: YimaDesign.Layout.rowMinHeight, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(recording.title?.isEmpty == false ? recording.title! : defaultTitle)，\(metadata)\(recording.locationName.map { "，地点：\($0)" } ?? "")，\(RecordingStatusStyle.text(for: recording.state))")
     }
@@ -1547,23 +1549,16 @@ private struct RecordingRow: View {
                 .fill(indicatorColor)
                 .frame(width: 6, height: 6)
             Text(statusText)
-                .font(.caption2.weight(.semibold))
+                .font(YimaDesign.Typography.status.weight(.semibold))
                 .foregroundStyle(indicatorColor)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .background(indicatorColor.opacity(0.12), in: Capsule())
+        .background(indicatorColor.opacity(0.08), in: Capsule())
     }
 
     private var indicatorColor: Color {
-        switch recording.state {
-        case .recording, .failed:
-            return .red
-        case .interrupted, .processing, .paused:
-            return .orange
-        case .stopping, .complete:
-            return .secondary
-        }
+        RecordingStatusStyle.color(for: recording.state)
     }
 
     private var statusText: String {

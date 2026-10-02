@@ -12,37 +12,28 @@ struct TaskCalendarView: View {
     let counts: (Date) -> TaskDayCounts
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var datePicker = false
+    @State private var showLegend = false
     private var calendar: Calendar { .current }
     private var days: [Date] { TaskCalendarRules.days(month: month, selected: selected, expanded: expanded) }
 
     var body: some View {
-        VStack(spacing: 4) {
-            HStack {
-                Button {
-                    month = selected
-                    expanded.toggle()
-                } label: {
-                    HStack(spacing: 8) {
-                        Text(month, format: .dateTime.year().month(.twoDigits))
-                            .font(.title2.weight(.bold)).monospacedDigit()
-                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }.frame(minHeight: 44)
+        VStack(spacing: YimaDesign.Space.xs) {
+            ViewThatFits(in: .horizontal) {
+                HStack { monthControl; Spacer(minLength: YimaDesign.Space.xs); todayControls }
+                VStack(alignment: .leading, spacing: YimaDesign.Space.xs) {
+                    monthControl
+                    HStack { Spacer(minLength: 0); todayControls }
                 }
-                .accessibilityLabel(expanded ? "收起为周历" : "展开月历")
-                Spacer(minLength: 4)
-                Button("今天") { selected = Date(); month = selected }
-                    .font(.subheadline.weight(.medium)).frame(minWidth: 44, minHeight: 44)
-            }.padding(.horizontal, 8)
+            }.padding(.horizontal, YimaDesign.Space.sm)
             if typeSize.isAccessibilitySize {
                 Button("选择日期") { datePicker = true }
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .frame(maxWidth: .infinity, minHeight: YimaDesign.Layout.hitTarget)
             }
             HStack(spacing: 0) {
                 // Always Monday first, regardless of the system's firstWeekday preference.
                 ForEach([1, 2, 3, 4, 5, 6, 0], id: \.self) { index in
                     Text(calendar.veryShortStandaloneWeekdaySymbols[index])
-                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 32)
+                        .font(YimaDesign.Typography.compactMetadata).foregroundStyle(YimaDesign.Color.muted).frame(maxWidth: .infinity, minHeight: 32)
                 }
             }.accessibilityHidden(true)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
@@ -50,14 +41,10 @@ struct TaskCalendarView: View {
             }
             .contentShape(Rectangle())
             .background(TaskCalendarSwipeRegion(page: page))
-            HStack(spacing: 16) {
-                legend("待办", color: .red)
-                legend("日程", color: .green)
-            }.padding(.top, 8)
         }
         .buttonStyle(.plain)
-        .padding(8)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .padding(YimaDesign.Space.sm)
+        .background(YimaDesign.Color.grouped, in: RoundedRectangle(cornerRadius: YimaDesign.Radius.panel))
         .accessibilityActions {
             Button(expanded ? "上一月" : "上一周") { page(-1) }
             Button(expanded ? "下一月" : "下一周") { page(1) }
@@ -75,6 +62,38 @@ struct TaskCalendarView: View {
         }
     }
 
+    private var monthControl: some View {
+        Button {
+            month = selected
+            expanded.toggle()
+        } label: {
+            HStack(spacing: YimaDesign.Space.sm) {
+                Text(month, format: .dateTime.year().month(.twoDigits))
+                    .font(YimaDesign.Typography.section).monospacedDigit()
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .font(YimaDesign.Typography.compactMetadata).foregroundStyle(YimaDesign.Color.muted)
+            }.frame(minHeight: YimaDesign.Layout.hitTarget)
+        }
+        .accessibilityLabel(expanded ? "收起为周历" : "展开月历")
+    }
+
+    private var todayControls: some View {
+        HStack(spacing: 0) {
+            Button("今天") { selected = Date(); month = selected }
+                .font(YimaDesign.Typography.metadata.weight(.medium)).frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
+            Button { showLegend = true } label: {
+                Image(systemName: "info.circle").font(YimaDesign.Typography.body).frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+            }
+            .accessibilityLabel("日历标记说明")
+            .popover(isPresented: $showLegend, arrowEdge: .top) {
+                VStack(alignment: .leading, spacing: YimaDesign.Space.md) {
+                    legend("红色：待办", color: YimaDesign.Color.reminderDot)
+                    legend("绿色：日程", color: YimaDesign.Color.eventDot)
+                }.padding(YimaDesign.Layout.pageInset).presentationCompactAdaptation(.popover)
+            }
+        }
+    }
+
     private func page(_ step: Int) {
         let next = TaskCalendarRules.page(month: month, selected: selected, expanded: expanded, step: step)
         month = next.month; selected = next.selected
@@ -85,18 +104,18 @@ struct TaskCalendarView: View {
         let today = calendar.isDateInToday(day)
         let data = counts(day)
         return Button { selected = day; month = day } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: YimaDesign.Space.xs) {
                 Text("\(calendar.component(.day, from: day))")
-                    .font(.body.weight(chosen ? .semibold : .regular)).monospacedDigit()
+                    .font(YimaDesign.Typography.body.weight(chosen ? .semibold : .regular)).monospacedDigit()
                     .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .frame(width: 34, height: 32)
-                    .foregroundStyle(chosen ? Color(uiColor: .systemBackground) : Color.primary)
-                    .background(chosen ? Color.primary : .clear, in: RoundedRectangle(cornerRadius: 10))
-                    .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(today ? Color.primary : .clear, lineWidth: 1) }
+                    .foregroundStyle(chosen ? YimaDesign.Color.canvas : YimaDesign.Color.ink)
+                    .background(chosen ? YimaDesign.Color.ink : .clear, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(today ? YimaDesign.Color.ink : .clear, lineWidth: 1) }
                     .opacity(chosen || calendar.isDate(day, equalTo: month, toGranularity: .month) ? 1 : 0.55)
-                HStack(spacing: 4) {
-                    Circle().fill(.red).frame(width: 4, height: 4).opacity((data.reminders ?? 0) > 0 ? 1 : 0)
-                    Circle().fill(.green).frame(width: 4, height: 4).opacity((data.events ?? 0) > 0 ? 1 : 0)
+                HStack(spacing: YimaDesign.Space.xs) {
+                    Circle().fill(YimaDesign.Color.reminderDot).frame(width: 4, height: 4).opacity((data.reminders ?? 0) > 0 ? 1 : 0)
+                    Circle().fill(YimaDesign.Color.eventDot).frame(width: 4, height: 4).opacity((data.events ?? 0) > 0 ? 1 : 0)
                 }.accessibilityHidden(true)
             }.frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle())
         }
@@ -114,7 +133,7 @@ struct TaskCalendarView: View {
     private func legend(_ title: LocalizedStringKey, color: Color) -> some View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 4, height: 4).accessibilityHidden(true)
-            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(title).font(YimaDesign.Typography.metadata).foregroundStyle(YimaDesign.Color.ink)
         }
     }
 }
