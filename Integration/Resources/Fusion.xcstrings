@@ -2108,6 +2108,142 @@
           }
         }
       }
+    },
+    "助手能力": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Capabilities"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手能力"
+          }
+        }
+      }
+    },
+    "助手设定": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Assistant Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手设定"
+          }
+        }
+      }
+    },
+    "工具连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connections"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工具连接"
+          }
+        }
+      }
+    },
+    "运行环境": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runtime Environment"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行环境"
+          }
+        }
+      }
+    },
+    "系统镜像": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System Image"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统镜像"
+          }
+        }
+      }
+    },
+    "聊天设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊天设置"
+          }
+        }
+      }
+    },
+    "语音回复": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Replies"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音回复"
+          }
+        }
+      }
+    },
+    "适用于支持快速模式的 GPT 模型。启用后可能增加额度消耗或费用，具体以服务商说明为准。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies to GPT models that support Fast Mode. Enabling it may increase quota usage or costs; refer to your provider's terms."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "适用于支持快速模式的 GPT 模型。启用后可能增加额度消耗或费用，具体以服务商说明为准。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -5000,6 +5000,11 @@ private struct ChatTrailingMenu: View, Equatable {
             NavbarEvalStats.logger.info("[NavbarEval] menuEval=\(NavbarEvalStats.menuEval) (toolbarPass=\(NavbarEvalStats.toolbarPass))")
         }()
         #endif
+        #if VOICE_AGENT_FUSION
+        let showModelControls = showEnhancedCacheToggle
+        #else
+        let showModelControls = showEnhancedCacheToggle || showFastModeToggle
+        #endif
         return Menu {
             Button { onNewChat() } label: {
                 Label(AppLocalized("New Chat"), systemImage: "square.and.pencil")
@@ -5064,6 +5069,7 @@ private struct ChatTrailingMenu: View, Equatable {
                 }
             }
 
+            #if !VOICE_AGENT_FUSION
             Toggle(isOn: Binding(
                 get: { speakEnabled },
                 set: { setSpeakEnabled($0) }
@@ -5071,9 +5077,10 @@ private struct ChatTrailingMenu: View, Equatable {
                 Label(AppLocalized("Speak Responses"), systemImage: "speaker.wave.2")
             }
 
+            #endif
             // [T-codex-fast-mode-menu-group] Model-control toggles in their
             // own divider-separated section (mirrors the UIKit buildMenu).
-            if showEnhancedCacheToggle || showFastModeToggle {
+            if showModelControls {
                 Divider()
 
                 if showEnhancedCacheToggle {
@@ -5085,6 +5092,7 @@ private struct ChatTrailingMenu: View, Equatable {
                     }
                 }
 
+                #if !VOICE_AGENT_FUSION
                 if showFastModeToggle {
                     Toggle(isOn: Binding(
                         get: { fastModeEnabled },
@@ -5093,6 +5101,7 @@ private struct ChatTrailingMenu: View, Equatable {
                         Label(AppLocalized("Enable Fast Mode"), systemImage: "bolt.fill")
                     }
                 }
+                #endif
             }
 
             Divider()
@@ -5288,11 +5297,13 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
             sessionGroup.append(UIAction(title: AppLocalized("Memories in Session"),
                                          image: UIImage(systemName: "brain.head.profile")) { _ in coordinator.parent.onMemories() })
         }
+        #if !VOICE_AGENT_FUSION
         sessionGroup.append(UIAction(title: AppLocalized("Speak Responses"),
                                      image: UIImage(systemName: "speaker.wave.2"),
                                      state: key.speakEnabled ? .on : .off) { _ in
             coordinator.parent.setSpeakEnabled(!key.speakEnabled)
         })
+        #endif
         groups.append(UIMenu(options: .displayInline, children: sessionGroup))
 
         // [T-codex-fast-mode-menu-group] Model-control toggles (they shape how
@@ -5309,6 +5320,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
         // [T-codex-fast-mode] Only for Codex OAuth models. Injects
         // service_tier=priority (the wire value codex_cli_rs sends for its
         // Fast mode) into Codex requests while enabled; 2x credit burn.
+        #if !VOICE_AGENT_FUSION
         if key.showFastModeToggle {
             modelControlGroup.append(UIAction(title: AppLocalized("Enable Fast Mode"),
                                               image: UIImage(systemName: "bolt.fill"),
@@ -5316,6 +5328,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
                 coordinator.parent.setFastMode(!key.fastModeEnabled)
             })
         }
+        #endif
         if !modelControlGroup.isEmpty {
             groups.append(UIMenu(options: .displayInline, children: modelControlGroup))
         }

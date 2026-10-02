@@ -11,11 +11,12 @@ struct VoiceContextRootView: View {
     @State private var results: RecordingResultsRequest?
     @State private var modelSetupNeeded = false
     @State private var modelSettings = false
+    @StateObject private var browserPool = BrowserTabPool()
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
         TabView(selection: $selection) {
-            ContentView()
+            ContentView(browserPool: browserPool)
                 .tabItem { Label("聊天", systemImage: "bubble.left.and.bubble.right") }
                 .tag(Tab.chat)
             recordings.meetings(start: $startRecording, stop: $stopRecording)
@@ -24,7 +25,7 @@ struct VoiceContextRootView: View {
             SystemRemindersView()
                 .tabItem { Label("待办事项", systemImage: "checklist") }
                 .tag(Tab.reminders)
-            VoiceContextExtensionsView()
+            VoiceContextExtensionsView(browserPool: browserPool)
                 .tabItem { Label("拓展", systemImage: "square.grid.2x2") }
                 .tag(Tab.extensions)
         }
@@ -58,7 +59,14 @@ struct VoiceContextRootView: View {
         }
         .sheet(item: $results) { request in RecordingAgentResults(recordingID: request.id) }
         .sheet(isPresented: $modelSettings) {
-            SettingsSheet(showTerminal: .constant(false), presentationOwner: "meeting-model-setup")
+            NavigationStack {
+                ModelsAndServicesView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(AppLocalized("Done")) { modelSettings = false }
+                        }
+                    }
+            }
         }
         .confirmationDialog("尚无可用聊天模型", isPresented: $modelSetupNeeded, titleVisibility: .visible) {
             Button("配置模型与服务") { modelSettings = true }
@@ -102,18 +110,35 @@ private struct RecordingResultsRequest: Identifiable { let id: String }
 private struct VoiceContextExtensionsView: View {
     @State private var settings = false
     @State private var terminal = false
-    @StateObject private var browserPool = BrowserTabPool()
+    @State private var browser = false
+    @ObservedObject var browserPool: BrowserTabPool
 
     var body: some View {
         NavigationStack {
             List {
+                Section("助手能力") {
+                    NavigationLink { SkillsManagementView() } label: {
+                        Label(AppLocalized("Skills"), systemImage: "book.closed")
+                    }
+                    NavigationLink { ModelsAndServicesView() } label: { Label("模型与服务", systemImage: "cpu") }
+                    NavigationLink { SoulSettingsView() } label: { Label("助手设定", systemImage: "person.crop.circle") }
+                    NavigationLink { MemoryManagementView() } label: {
+                        Label(AppLocalized("Memory"), systemImage: "brain.head.profile")
+                    }
+                }
+                Section("工具连接") {
+                    NavigationLink { MCPIntegrationsView() } label: {
+                        Label(AppLocalized("MCP Integrations"), systemImage: "square.stack.3d.up")
+                    }
+                    NavigationLink { HardwareBridgeSettingsView() } label: {
+                        Label(AppLocalized("Hardware Devices"), systemImage: "antenna.radiowaves.left.and.right")
+                    }
+                }
                 Section("工具") {
-                    NavigationLink { SkillsManagementView() } label: { Label("Skills", systemImage: "book.closed") }
-                    NavigationLink { ProviderInstancesView() } label: { Label("模型与服务", systemImage: "cpu") }
-                    NavigationLink { BrowserManagementView(pool: browserPool) } label: {
+                    NavigationLink { terminalPage } label: { Label("终端", systemImage: "terminal") }
+                    NavigationLink { browserPage } label: {
                         Label("浏览器", systemImage: "globe")
                     }
-                    Button { terminal = true } label: { Label("终端", systemImage: "terminal") }
                 }
                 Section("我的与设置") {
                     Button { settings = true } label: { Label("设置", systemImage: "gearshape") }
@@ -135,6 +160,74 @@ private struct VoiceContextExtensionsView: View {
         .sheet(isPresented: $settings) {
             SettingsSheet(showTerminal: $terminal, presentationOwner: "extensions")
         }
-        .sheet(isPresented: $terminal) { ISHTerminalView(showCloseButton: true) }
+        .fullScreenCover(isPresented: $terminal) {
+            NavigationStack { ISHTerminalView(showCloseButton: true) }
+        }
+        .sheet(isPresented: $browser) { BrowserSheetView(pool: browserPool) }
+    }
+
+    private var terminalPage: some View {
+        List {
+            Section {
+                Button { terminal = true } label: {
+                    Label(AppLocalized("Open Terminal"), systemImage: "terminal")
+                }
+            }
+            Section("运行环境") {
+                NavigationLink { RootfsManagementView() } label: {
+                    Label("系统镜像", systemImage: "internaldrive")
+                }
+                NavigationLink { EnvironmentVariablesView() } label: {
+                    Label(AppLocalized("Environment Variables"), systemImage: "text.badge.gearshape")
+                }
+            }
+        }
+        .listStyle(.plain)
+        .navigationTitle("终端")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var browserPage: some View {
+        List {
+            Button { browser = true } label: {
+                Label(AppLocalized("Open Browser"), systemImage: "globe")
+            }
+            NavigationLink { BrowserManagementView(pool: browserPool) } label: {
+                Label(AppLocalized("Browser Settings"), systemImage: "gearshape")
+            }
+        }
+        .listStyle(.plain)
+        .navigationTitle("浏览器")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct ModelsAndServicesView: View {
+    @AppStorage(OpenAIProvider.fastModeDefaultsKey) private var fastModeEnabled = false
+
+    var body: some View {
+        List {
+            Section {
+                NavigationLink { ProviderInstancesView() } label: {
+                    Label(AppLocalized("Manage Providers"), systemImage: "key")
+                }
+                NavigationLink { ModelGroupsView() } label: {
+                    Label(AppLocalized("Model Groups"), systemImage: "square.stack")
+                }
+                NavigationLink { UsageStatsView() } label: {
+                    Label(AppLocalized("Token Usage"), systemImage: "chart.line.uptrend.xyaxis")
+                }
+            }
+            Section {
+                Toggle(isOn: $fastModeEnabled) {
+                    Label(AppLocalized("Enable Fast Mode"), systemImage: "bolt")
+                }
+            } footer: {
+                Text("适用于支持快速模式的 GPT 模型。启用后可能增加额度消耗或费用，具体以服务商说明为准。")
+            }
+        }
+        .listStyle(.plain)
+        .navigationTitle("模型与服务")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
