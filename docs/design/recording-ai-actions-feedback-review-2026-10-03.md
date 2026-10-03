@@ -2,6 +2,8 @@
 
 日期：2026-10-03。来源：用户提供的首批使用反馈与讨论。本记录保存反馈、实际代码依据与调整建议；不是新功能批准、竞品测评或实现完成记录。
 
+后续进展：用户要求继续开发并优先 iOS 原生 SDK。FB02/FB06/FB10/FB11 的基础体验已在现有 SwiftUI App 增量实现，见 [原生开发与验证记录](../testing/recording-ai-actions-development-2026-10-03.md#用户反馈后的原生-app-增量)。网页仍是此前原型；下文保留当时的评审判断，新增 AI 整理流程未因此视为冻结。随后已补齐构建依赖，完整签名构建通过并完成开发版真机安装；尚未运行交互验收。
+
 承接 [已有产品基线](recording-ai-actions-existing-product.md)、[当前交互提案](recording-ai-actions-interaction.md) 与 [27 项交付清单](recording-ai-actions-delivery.md)。原 [8 功能 / 35 案例 PRD](../PRD-recording-ai-actions.md) 及 Plane 同步快照保留；新增需求以本记录补充，不直接改写历史验收数量。未同步外部看板、安排人员或发布日期。
 
 ## 1. 反馈小本本

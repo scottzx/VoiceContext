@@ -37,6 +37,45 @@ enum TaskCalendarRules {
     }
 }
 
+/// Only dates with visible items can be offered by the date-jump wheels.
+struct TaskDateIndex {
+    let dates: [Date]
+    let calendar: Calendar
+
+    init(dates: [Date], calendar: Calendar = .current) {
+        self.calendar = calendar
+        self.dates = Array(Set(dates.map { calendar.startOfDay(for: $0) })).sorted()
+    }
+
+    var years: [Int] { Array(Set(dates.map { calendar.component(.year, from: $0) })).sorted(by: >) }
+
+    func months(in year: Int) -> [Int] {
+        Array(Set(dates.filter { calendar.component(.year, from: $0) == year }
+            .map { calendar.component(.month, from: $0) })).sorted(by: >)
+    }
+
+    func days(in year: Int, month: Int) -> [Int] {
+        dates.filter {
+            calendar.component(.year, from: $0) == year && calendar.component(.month, from: $0) == month
+        }.map { calendar.component(.day, from: $0) }.sorted(by: >)
+    }
+
+    func date(year: Int, month: Int, day: Int) -> Date? {
+        dates.first {
+            calendar.component(.year, from: $0) == year &&
+            calendar.component(.month, from: $0) == month && calendar.component(.day, from: $0) == day
+        }
+    }
+
+    func resolving(year: Int, month: Int, day: Int) -> Date? {
+        guard let validYear = years.contains(year) ? year : years.first,
+              let validMonth = months(in: validYear).contains(month) ? month : months(in: validYear).first,
+              let validDay = days(in: validYear, month: validMonth).contains(day) ? day : days(in: validYear, month: validMonth).first
+        else { return nil }
+        return date(year: validYear, month: validMonth, day: validDay)
+    }
+}
+
 /// Separate instances persist calendar and reminder identifiers, never display names.
 struct TaskSourceSelection: Codable, Equatable {
     var known: Set<String> = []
@@ -51,6 +90,10 @@ struct TaskSourceSelection: Codable, Equatable {
 
     mutating func toggle(_ id: String) {
         if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
+    }
+
+    func includesReminder(sourceID: String, completed: Bool, showCompleted: Bool, recentlyCompleted: Bool) -> Bool {
+        selected.contains(sourceID) && (showCompleted || !completed || recentlyCompleted)
     }
 
     var encoded: String { String(data: try! JSONEncoder().encode(self), encoding: .utf8)! }

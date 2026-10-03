@@ -19,6 +19,9 @@ struct RecordingDetailScreen: View {
     @State private var chunks: [AudioChunk] = []
     @State private var didAutoScrollToHit = false
     @State private var lastScrolledActiveSegmentID: UUID?
+    @State private var isFollowingPlayback = true
+    @State private var isScrubbing = false
+    @State private var playbackFollowRequest = 0
     @State private var importedAsset: ImportedAudioAsset?
     @State private var processingRanges: [ProcessingRange] = []
     @State private var progress: RecordingPresentationProgress?
@@ -213,39 +216,7 @@ struct RecordingDetailScreen: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    headerCard
-                    contentTabsPicker
-                    contentSection
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
-            }
-            .background(Color(uiColor: .systemBackground))
-            .onChange(of: transcript?.revision) { _, _ in
-                scrollToSearchHit(using: proxy)
-            }
-            .onChange(of: contentTab) { _, _ in
-                saveMemoImmediatelyIfNeeded()
-            }
-            .onChange(of: memoText) { _, newValue in
-                scheduleMemoSave(newValue)
-            }
-            .onChange(of: isMemoFocused) { _, isFocused in
-                if !isFocused {
-                    saveMemoImmediatelyIfNeeded()
-                }
-            }
-            .onAppear {
-                scrollToSearchHit(using: proxy)
-            }
-            .onChange(of: timelinePlayer.currentTime) { _, _ in
-                scrollToActiveSegment(using: proxy)
-            }
-            .onChange(of: timelinePlayer.isPlaying) { _, playing in
-                if playing { scrollToActiveSegment(using: proxy) }
-            }
+            readingScroll(using: proxy)
             .navigationTitle(currentRecording.isMeeting ? "会议详情" : "录音详情")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -258,7 +229,9 @@ struct RecordingDetailScreen: View {
                     ExportDocumentsDestination(model: model, recordingID: recordingID)
                 }
             }
-            .sheet(isPresented: $isMetadataEditSheetPresented) {
+            .sheet(isPresented: $isMetadataEditSheetPresented, onDismiss: {
+                Task { await loadDetail() }
+            }) {
                 EditRecordingMetadataSheet(
                     model: model,
                     recordingID: recordingID,
@@ -404,6 +377,63 @@ struct RecordingDetailScreen: View {
         }
     }
 
+    private func readingScroll(using proxy: ScrollViewProxy) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                headerCard
+                contentTabsPicker
+                contentSection
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+        }
+        .background(Color(uiColor: .systemBackground))
+        .onScrollPhaseChange { _, phase in
+            if contentTab == .transcript && phase == .interacting {
+                isFollowingPlayback = false
+            }
+        }
+        .onChange(of: transcript?.revision) { _, _ in
+            lastScrolledActiveSegmentID = nil
+            scrollToSearchHit(using: proxy)
+        }
+        .onChange(of: contentTab) { _, _ in
+            saveMemoImmediatelyIfNeeded()
+            lastScrolledActiveSegmentID = nil
+        }
+        .onChange(of: selectedSpeakerFilter) { _, _ in
+            lastScrolledActiveSegmentID = nil
+        }
+        .onChange(of: memoText) { _, newValue in
+            scheduleMemoSave(newValue)
+        }
+        .onChange(of: isMemoFocused) { _, isFocused in
+            if !isFocused {
+                saveMemoImmediatelyIfNeeded()
+            }
+        }
+        .onAppear {
+            scrollToSearchHit(using: proxy)
+        }
+        .onChange(of: timelinePlayer.currentTime) { _, _ in
+            if timelinePlayer.isPlaying { scrollToActiveSegment(using: proxy) }
+        }
+        .onChange(of: timelinePlayer.seekRevision) { _, _ in
+            isFollowingPlayback = true
+            scrollToActiveSegment(using: proxy, force: true)
+        }
+        .onChange(of: playbackFollowRequest) { _, _ in
+            selectedSpeakerFilter = nil
+            isFollowingPlayback = true
+            DispatchQueue.main.async {
+                scrollToActiveSegment(using: proxy, force: true)
+            }
+        }
+        .onChange(of: timelinePlayer.isPlaying) { _, playing in
+            if playing { scrollToActiveSegment(using: proxy) }
+        }
+    }
+
     private func handlePeriodicRefresh() async {
         while !Task.isCancelled {
             await loadDetail()
@@ -430,10 +460,19 @@ struct RecordingDetailScreen: View {
 
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(displayTitle)
-                .font(.title2.weight(.bold))
-                .foregroundStyle(.primary)
-                .accessibilityIdentifier("detail-title")
+            Button {
+                isMetadataEditSheetPresented = true
+            } label: {
+                Text(displayTitle)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(displayTitle)
+            .accessibilityHint("编辑录音标题、地点与标签")
+            .accessibilityIdentifier("detail-title")
 
             // Meta tags row: 时间、时长、文件夹、状态
             HStack(spacing: 8) {
@@ -754,13 +793,26 @@ struct RecordingDetailScreen: View {
     private var playbackDockContent: some View {
         VStack(spacing: 8) {
             if hasPlayableAudio {
+                if contentTab == .transcript && (!isFollowingPlayback || selectedSpeakerFilter != nil) {
+                    Button {
+                        playbackFollowRequest += 1
+                    } label: {
+                        Label("跟随播放位置", systemImage: "play.circle")
+                            .font(.subheadline)
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
+                    .accessibilityHint("显示全部发言并定位当前句")
+                }
                 HStack(spacing: 12) {
                     Slider(
                         value: Binding(
                             get: { timelinePlayer.currentTime },
                             set: { timelinePlayer.seek(to: $0) }
                         ),
-                        in: 0...max(timelinePlayer.duration, 0.01)
+                        in: 0...max(timelinePlayer.duration, 0.01),
+                        onEditingChanged: { isScrubbing = $0 }
                     )
                     .tint(.red)
                     .accessibilityLabel("音频时间轴")
@@ -1989,15 +2041,21 @@ struct RecordingDetailScreen: View {
         }
     }
 
-    private func scrollToActiveSegment(using proxy: ScrollViewProxy) {
-        guard timelinePlayer.isPlaying else { return }
+    private func scrollToActiveSegment(using proxy: ScrollViewProxy, force: Bool = false) {
+        guard isFollowingPlayback else { return }
         guard contentTab == .transcript else { return }
         guard let transcript else { return }
         let bubbles = transcriptSentenceBubbles(for: transcript)
-        guard let target = RecordingDetailPlaybackPresentation.currentBubbleID(at: timelinePlayer.currentTime, bubbles: bubbles) else { return }
-        guard lastScrolledActiveSegmentID != target else { return }
+        guard let target = RecordingDetailPlaybackPresentation.currentBubbleID(at: timelinePlayer.currentTime, bubbles: bubbles) else {
+            lastScrolledActiveSegmentID = nil
+            return
+        }
+        if let selectedSpeakerFilter, bubbles.first(where: { $0.id == target })?.speaker != selectedSpeakerFilter {
+            return
+        }
+        guard force || lastScrolledActiveSegmentID != target else { return }
         lastScrolledActiveSegmentID = target
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+        withAnimation(reduceMotion || isScrubbing ? nil : .easeInOut(duration: 0.2)) {
             proxy.scrollTo(target, anchor: .center)
         }
     }

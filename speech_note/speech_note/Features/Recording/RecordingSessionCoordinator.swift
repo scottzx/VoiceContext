@@ -149,14 +149,13 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         userPausedCapture = false
         captureState = .preparing
         presentationState = .recording
-        try await repository.createRecording(recording, at: startedAt)
-
         let directory = rootURL
             .appendingPathComponent("Recordings", isDirectory: true)
             .appendingPathComponent(recording.id.uuidString.lowercased(), isDirectory: true)
             .appendingPathComponent("audio", isDirectory: true)
-        installCaptureCallbacks()
         do {
+            try await repository.createRecording(recording, at: startedAt)
+            installCaptureCallbacks()
             try await capture.start(
                 in: directory,
                 segmentDuration: AACSegmentRecorder.defaultSegmentDuration
@@ -188,6 +187,7 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
 
         let existingChunks = try await repository.chunks(recordingID: recordingID)
         let initialSampleOffset = existingChunks.map(\.endSample).max() ?? 0
+        guard activeRecordingID == nil else { throw CoordinatorError.sessionAlreadyActive }
 
         activeRecordingID = recordingID
         stateMachine = RecordingStateMachine(state: .recording)
@@ -202,14 +202,13 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         presentationState = .recording
 
         let resumedAt = now()
-        try await repository.changeState(recordingID: recordingID, to: .recording, endedAt: nil, at: resumedAt)
-
         let directory = rootURL
             .appendingPathComponent("Recordings", isDirectory: true)
             .appendingPathComponent(recordingID.uuidString.lowercased(), isDirectory: true)
             .appendingPathComponent("audio", isDirectory: true)
-        installCaptureCallbacks()
         do {
+            try await repository.changeState(recordingID: recordingID, to: .recording, endedAt: nil, at: resumedAt)
+            installCaptureCallbacks()
             try await capture.start(
                 in: directory,
                 segmentDuration: AACSegmentRecorder.defaultSegmentDuration,

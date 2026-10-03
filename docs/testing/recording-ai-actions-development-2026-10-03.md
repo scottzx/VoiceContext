@@ -2,6 +2,50 @@
 
 日期：2026-10-03。工作树：`voice_type`。本记录区分代码修复、网页交互演示、主机回归与 iOS 验收；不将它们合并为完整闭环已完成。
 
+## 用户反馈后的原生 App 增量
+
+用户明确要求继续代码开发、优先 iOS 原生 SDK 与效果。本批承接 [反馈记录](../design/recording-ai-actions-feedback-review-2026-10-03.md) FB02/FB06/FB10/FB11，沿用 DESIGN.md 已批准的原生风格，直接改现有 SwiftUI 页面。网页原型未变化；没有重新创建录音器、播放器或元信息服务。新增 AI 结果类型、直接发起整理、持久确认等流程未在这批实现或冻结。
+
+| 反馈 / 可靠性落点 | 本批代码行为 | 边界 |
+|---|---|---|
+| FB02 点击标题改名 | 详情标题改为 plain Button，44 pt 目标，打开现有系统 Sheet/Form；关闭后立即重读详情 | 保存/取消/空标题沿用已有元信息服务；列表仍用同一 model，未另建重命名数据源 |
+| FB11 一键开录 | 底部红键、顶部麦克风与 Widget 链接直接用上次类型；首次默认个人记录 | 原生次级 confirmationDialog 只设置下次类型，不自动开录；音频/视频导入仍独立选类型，不改录音偏好 |
+| FB10 地点不挡开录 | 移除开录前的 App 地点询问；原有设置 Toggle、系统授权与开录后异步取地点保留 | 不自动打开定位、不改用户已有开关；首次必要麦克风授权仍需系统处理 |
+| FB06 回听与文字 | seek 事件按播放器实际位置定位，支持暂停和重复定位同句；手动滚动暂停跟随，底部入口可恢复并显示全部发言 | 不切换详情 Tab、不自动清用户说话人过滤；无对应区间不高亮前句；旧零长度锚点不补造结束覆盖 |
+| 原生启动失败提示 | Home 用系统 Alert 显示启动失败，麦克风拒绝时提供系统设置入口 | 不把失败当录音成功，不为重复启动另造失败消息 |
+| 重复 / 失败启动保护 | model.start/append 共用权限等待至 refresh 的 MainActor 门闩；coordinator 持久化失败进入原有 cleanup，追录读取后重查活动会话 | 防重复权限等待、失败后状态锁死和追录越过 await 接管另一录音；不代表完整后台/崩溃恢复验证 |
+
+新增控件使用 SwiftUI Button、Form、Sheet、Alert、confirmationDialog、Slider、AppStorage 与 iOS 18 onScrollPhaseChange；播放器仍使用 AVAudioPlayer，地点仍使用 CLLocationManager，保留原有原生 haptic。只对新增标题/跟随控件使用中性色、44 pt 和 Reduce Motion。此前说话人紫色 palette、句卡片着色等 DESIGN 差异仍存在，未顺带做整页样式迁移。
+
+执行证据：
+
+- `python3 speech_note/HostTests/verify_recording_entry_playback.py`：6 组通过。生产 model/coordinator 方法原样提取编译，权限、录音、仓库与 Live Activity 使用主机 fake；播放 helper 直接编译生产文件。覆盖重复 start/append、权限拒绝后重试、失败释放、持久化失败、追录等待竞争、精确边界/文字缺口/旧锚点。无真实权限、麦克风、文件持久化或 iOS UI 运行。
+- iPhoneOS 26.5 SDK、`arm64-apple-ios18.0` 类型检查：生产播放 helper、生产 scrollToActiveSegment 方法及临时原生控件 API probe 通过。probe 只核对新增 SwiftUI API 可用性与类型，不等于两个完整页面编译。
+- 5 个修改的生产 Swift 文件语法检查、融合输入/身份检查及 `git diff --check` 通过；独立智能体只读复核，并据其意见修正类型选择、旧锚点覆盖、失败提示与状态释放。
+- 首次完整开发版构建尝试使用现有工程、`generic/platform=iOS`、禁签名；因工作树缺少 SherpaOnnx.xcframework、OnnxRuntime.xcframework、Rclone.xcframework 失败。该次未得到完整 App 编译/产物通过证据；后续补齐与部署见下一节。
+
+基础体验开发阶段未安装或运行真机，也没有使用模拟器。后续已安装开发版，真机上的布局、权限弹窗、滚动、VoiceOver、地点与实际录音仍待验证；不将构建/安装或主机/SDK 检查计作 UX01–UX03 的交互验收通过。
+
+## 构建依赖补齐与真机部署
+
+2026-10-03，用户明确要求解决缺失框架并部署到已连接的 iPhone。完成以下工作：
+
+- 从同一产品仓库主目录的原生缓存恢复 SherpaOnnx.xcframework、OnnxRuntime.xcframework、Rclone.xcframework 到本工作树；使用 APFS 克隆复制，不修改主目录。补齐关联原生库、头文件与资源，848 个文件与 native-cache-manifest.json 的固定摘要一致。
+- 补齐缺失模型，4 个模型均通过 ModelManifest.json 的 SHA-256 校验。所有缓存和大模型仍在忽略目录，没有加入版本控制。
+- 真实完整编译暴露 RecordingDetailView 的 SwiftUI 长表达式类型检查超时；把原滚动内容与观察回调原样提取为 readingScroll(using:)，保留同一 ScrollViewReader 与状态，未改变导航/Sheet/播放器行为。此后完整开发版构建成功，6 组主机回归仍通过。
+- 使用现有工程、VoiceContextAgentDev / Debug-Dev、generic/platform=iOS 和自动开发签名；没有重生成工程、使用模拟器或更改版本号。完整签名构建 BUILD SUCCEEDED；codesign 深度严格校验、主 App 与 4 个扩展的 iPhone 设备覆盖、开发身份/权限和融合产物装配审计通过。
+- 对 scottxz（iPhone 15 Pro）的 YiJie.speech-note.dev 增量安装成功。安装后回读名称 Yima Dev、版本 1.0 (7) 与新的安装 URL，并与安装回执一致；正式 YiJie.speech-note 的安装 URL、名称、版本及返回元信息与安装前完全一致。未卸载、清除或迁移应用数据。
+
+设备最初无法建立隧道，随后连接恢复并提供 DDI 服务；本次 CoreDevice 报告传输为 localNetwork，不将其记作已验证 USB 传输。没有调用应用启动或测试命令，安装成功不代表运行、录音、系统提醒事项、定位或无障碍验收通过。
+
+本机忽略证据目录为 build/recording-ai-actions-device/，包含 build.log（首次完整编译的类型检查超时）、build-retry.log（成功）、host-regression.log、source-audit.json、assembly-audit.json、signing-audit.json、device.json、install.json/log、两种身份的安装前后应用信息与 deployment.json。签名 App 位于 /tmp/yima-native-feedback-build/Build/Products/Debug-Dev-iphoneos/VoiceContextAgent.app。
+
+## 二级页面隐藏主导航
+
+按用户 2026-10-03 的要求，主 Tab 只显示在聊天、会议、待办事项、拓展四个一级页。会议列表与搜索结果改为原生值导航，保留搜索词和句子定位；会议与拓展用 NavigationStack 的路径控制 tabBar 显隐，待办“全部”沿用其原生导航绑定。更深工具页沿用所在栈的隐藏状态；聊天已有同样的路径控制，保持现有实现。设置、终端等仍使用原生 Sheet，录音详情播放器不受此次显隐控制影响。
+
+完整 VoiceContextAgentDev / Debug-Dev 的 iPhoneOS 签名构建通过，codesign 严格校验与融合产物审计通过。23:46 增量安装 Yima Dev 1.0 (7) 到同一 iPhone 成功，回读安装 URL 与回执一致，正式版安装元信息前后相同；未启动 App 或清除数据。新增 U05 手工用例覆盖一级返回、取消侧滑、深层工具页、Sheet 关闭及搜索定位；这些真机交互尚未执行。本机证据见 build/recording-ai-actions-device/tab-navigation-build.log、tab-navigation-assembly.json 与 tab-navigation-deployment.json。
+
 ## 本轮范围
 
 沿用 [PRD](../PRD-recording-ai-actions.md) 与 [27 项交付清单](../design/recording-ai-actions-delivery.md)。主仓库中的 PRD、清单、Plane ID 快照与界面语言文档已复制到本工作树；PRD 字节与 Plane 同步快照 sha256 一致。主仓库的其他未提交代码没有移入或修改。

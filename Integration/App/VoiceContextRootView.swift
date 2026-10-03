@@ -22,7 +22,7 @@ struct VoiceContextRootView: View {
                 .tabItem { Label("会议", systemImage: "waveform") }
                 .tag(Tab.meetings)
             SystemRemindersView()
-                .tabItem { Label("待办事项", systemImage: "checklist") }
+                .tabItem { Label("提醒", systemImage: "checklist") }
                 .tag(Tab.reminders)
             VoiceContextExtensionsView()
                 .tabItem { Label("拓展", systemImage: "square.grid.2x2") }
@@ -100,17 +100,19 @@ struct VoiceContextRootView: View {
 private struct RecordingResultsRequest: Identifiable { let id: String }
 
 private struct VoiceContextExtensionsView: View {
+    private enum Destination: Hashable { case skills, providers, browser }
+    @State private var navigationPath: [Destination] = []
     @State private var settings = false
     @State private var terminal = false
     @StateObject private var browserPool = BrowserTabPool()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             List {
                 Section("工具") {
-                    NavigationLink { SkillsManagementView() } label: { Label("Skills", systemImage: "book.closed") }
-                    NavigationLink { ProviderInstancesView() } label: { Label("模型与服务", systemImage: "cpu") }
-                    NavigationLink { BrowserManagementView(pool: browserPool) } label: {
+                    NavigationLink(value: Destination.skills) { Label("Skills", systemImage: "book.closed") }
+                    NavigationLink(value: Destination.providers) { Label("模型与服务", systemImage: "cpu") }
+                    NavigationLink(value: Destination.browser) {
                         Label("浏览器", systemImage: "globe")
                     }
                     Button { terminal = true } label: { Label("终端", systemImage: "terminal") }
@@ -125,7 +127,15 @@ private struct VoiceContextExtensionsView: View {
             .environment(\.defaultMinListRowHeight, 52)
             .navigationTitle("拓展")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: Destination.self) { destination in
+                switch destination {
+                case .skills: SkillsManagementView()
+                case .providers: ProviderInstancesView()
+                case .browser: BrowserManagementView(pool: browserPool)
+                }
+            }
         }
+        .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
         .onAppear {
             if UserDefaults.standard.string(forKey: "pendingSettingsReopen") != nil,
                UserDefaults.standard.string(forKey: "settingsPresentationOwner") == "extensions" {

@@ -124,6 +124,7 @@ final class RecordingCoreModel {
     }
 
     private(set) var presentation: RecordingSessionCoordinator.PresentationState = .idle
+    private(set) var isStartingRecording = false
     private(set) var activeRecordingID: UUID?
     /// Capture-session progress for the live recording chrome. Independent of
     /// any older Recording that may still be processing in the background.
@@ -595,6 +596,9 @@ final class RecordingCoreModel {
     }
 
     func start(title: String? = nil, isMeeting: Bool = false) async {
+        guard !isStartingRecording, !showsSessionChrome else { return }
+        isStartingRecording = true
+        defer { isStartingRecording = false }
         notice = nil
         // Refuse capture without an explicit start; still request permission only
         // after that click. Denied permission must not create a failed Recording.
@@ -631,6 +635,9 @@ final class RecordingCoreModel {
     }
 
     func append(recordingID: UUID) async {
+        guard !isStartingRecording, !showsSessionChrome else { return }
+        isStartingRecording = true
+        defer { isStartingRecording = false }
         notice = nil
         let permission = await MicrophoneAccess.requestPermissionIfNeeded()
         guard permission == .granted else {

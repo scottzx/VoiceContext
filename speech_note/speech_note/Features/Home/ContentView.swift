@@ -19,6 +19,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var playbackRate: Float = 1
     @Published private(set) var playbackError: String?
+    @Published private(set) var seekRevision = 0
 
     private struct Item {
         let url: URL
@@ -201,6 +202,7 @@ final class RecordingAudioTimelinePlayer: NSObject, ObservableObject, AVAudioPla
         }
 
         if wasPlaying { play() }
+        seekRevision += 1
     }
 
     func setRate(_ rate: Float) {
@@ -322,12 +324,20 @@ private enum ProcessingModeTarget {
 /// journal/SQLite repository; this view never creates a parallel UI state
 /// machine for capture.
 struct ContentView: View {
+    private struct RecordingDestination: Hashable {
+        var recordingID: UUID
+        var highlightQuery: String? = nil
+        var scrollToSegmentID: UUID? = nil
+    }
+
     private static var didPrepareRecordingDetailFixtureRoot = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openURL) private var openURL
     @ObservedObject private var languageCenter = AppLanguageCenter.shared
     @State private var model: RecordingCoreModel
     @State private var modelError: String?
+    @State private var navigationPath: [RecordingDestination] = []
     @State private var filterCriteria = RecordingFilterCriteria()
     @State private var isFilterSheetPresented = false
     @State private var isTranscriptionCenterPresented = false
@@ -344,9 +354,10 @@ struct ContentView: View {
     @State private var selectedPhotoVideoItem: PhotosPickerItem?
     @State private var processingModeTarget: ProcessingModeTarget?
     @State private var isProcessingModeDialogPresented = false
-    @State private var pendingRecordingIsMeeting: Bool?
+    @AppStorage("recording.lastIsMeeting") private var lastRecordingIsMeeting = false
     @State private var isSettingsPresented = false
     @State private var isRecordingScreenPresented = false
+    @State private var recordingStartError: String?
     @State private var isScreenshotDetailPresented = false
     @State private var isMultiSelectMode = false
     @State private var selectedRecordingIDs: Set<UUID> = []
@@ -357,7 +368,6 @@ struct ContentView: View {
     @State private var isDateJumpSheetPresented = false
     @State private var jumpTargetDate: Date? = nil
     @State private var currentFocusedDate: Date? = nil
-    @State private var isFirstTimeLocationPromptPresented = false
     /// Set by the home-screen Record Widget deep link (`voicecontext://start-recording`).
     @Binding private var openStartRecording: Bool
     /// Set by the lock-screen Live Activity stop button deep link (`voicecontext://stop-recording`).
@@ -454,8 +464,7 @@ struct ContentView: View {
             isRecordingScreenPresented = true
             return
         }
-        processingModeTarget = .recording
-        isProcessingModeDialogPresented = true
+        requestStartRecording(isMeeting: lastRecordingIsMeeting)
     }
 
     /// Live Activity / lock-screen deep-link entry to safely stop recording.
@@ -468,26 +477,28 @@ struct ContentView: View {
     }
 
     private func requestStartRecording(isMeeting: Bool = false) {
-        if !LocationAccess.hasPromptedLocationRecording {
-            pendingRecordingIsMeeting = isMeeting
-            isFirstTimeLocationPromptPresented = true
-        } else {
-            triggerStartRecording(isMeeting: isMeeting)
-        }
-    }
-
-    private func triggerStartRecording(isMeeting: Bool = false) {
+        lastRecordingIsMeeting = isMeeting
         Task {
             await model.start(title: "", isMeeting: isMeeting)
             if model.captureIsActive {
                 isRecordingScreenPresented = true
+            } else if let notice = model.notice {
+                recordingStartError = notice
             }
         }
     }
 
     private var workspace: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             recordsScreen
+                .navigationDestination(for: RecordingDestination.self) { destination in
+                    RecordingDetailScreen(
+                        model: model,
+                        recordingID: destination.recordingID,
+                        highlightQuery: destination.highlightQuery,
+                        scrollToSegmentID: destination.scrollToSegmentID
+                    )
+                }
                 .navigationTitle(Text(LocalizedStringKey(folderNavigationTitle)))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -545,8 +556,7 @@ struct ContentView: View {
                             if micHeld {
                                 isRecordingScreenPresented = true
                             } else {
-                                processingModeTarget = .recording
-                                isProcessingModeDialogPresented = true
+                                requestStartRecording(isMeeting: lastRecordingIsMeeting)
                             }
                         } label: {
                             Image(systemName: micHeld ? "waveform.circle.fill" : "mic.circle.fill")
@@ -555,6 +565,7 @@ struct ContentView: View {
                                 .symbolEffect(.pulse, isActive: !reduceMotion && micHeld)
                         }
                         .accessibilityLabel(micHeld ? "录音进行中，轻点查看" : "开始录音")
+                        .disabled(model.isStartingRecording)
                     }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
@@ -570,6 +581,7 @@ struct ContentView: View {
                     }
                 }
         }
+        .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
         .sheet(isPresented: $isFilterSheetPresented) {
             RecordingFilterSheet(model: model, criteria: $filterCriteria)
         }
@@ -606,26 +618,16 @@ struct ContentView: View {
         } message: {
             Text("多人会议会在转写后继续提取声纹；个人记录会跳过这一步。")
         }
-        .alert("记录录音地点", isPresented: $isFirstTimeLocationPromptPresented) {
-            Button("允许并记录") {
-                LocationAccess.hasPromptedLocationRecording = true
-                LocationAccess.isAutoRecordLocationEnabled = true
-                Task {
-                    _ = await LocationAccess.requestPermissionIfNeeded()
-                    let isMeeting = pendingRecordingIsMeeting ?? false
-                    pendingRecordingIsMeeting = nil
-                    triggerStartRecording(isMeeting: isMeeting)
-                }
+        .alert("无法开始录音", isPresented: Binding(
+            get: { recordingStartError != nil },
+            set: { if !$0 { recordingStartError = nil } }
+        )) {
+            if MicrophoneAccess.isDenied {
+                Button("前往系统设置") { openURL(MicrophoneAccess.settingsURL) }
             }
-            Button("暂不需要", role: .cancel) {
-                LocationAccess.hasPromptedLocationRecording = true
-                LocationAccess.isAutoRecordLocationEnabled = false
-                let isMeeting = pendingRecordingIsMeeting ?? false
-                pendingRecordingIsMeeting = nil
-                triggerStartRecording(isMeeting: isMeeting)
-            }
+            Button("好", role: .cancel) { recordingStartError = nil }
         } message: {
-            Text("是否允许 VoiceContext 在录音时自动记录当前发生的地理位置与地址？你也可以稍后在「设置」中随时更改。")
+            Text(recordingStartError ?? "")
         }
         .alert("新建文件夹", isPresented: $isNewFolderAlertPresented) {
             TextField("文件夹名称", text: $newFolderNameInput)
@@ -1034,9 +1036,7 @@ struct ContentView: View {
             .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
             .listRowSeparator(.visible)
         } else {
-            NavigationLink {
-                RecordingDetailScreen(model: model, recordingID: recording.id)
-            } label: {
+            NavigationLink(value: RecordingDestination(recordingID: recording.id)) {
                 RecordingRow(
                     recording: recording,
                     folderName: model.folderName(for: recording.id),
@@ -1132,14 +1132,11 @@ struct ContentView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 4)
                 ForEach(filteredSearchHits) { hit in
-                    NavigationLink {
-                        RecordingDetailScreen(
-                            model: model,
+                    NavigationLink(value: RecordingDestination(
                             recordingID: hit.recordingID,
                             highlightQuery: trimmedSearchQuery,
                             scrollToSegmentID: hit.firstMatchingSegmentID
-                        )
-                    } label: {
+                    )) {
                         TranscriptSearchResultRow(hit: hit)
                     }
                     .buttonStyle(.plain)
@@ -1157,8 +1154,7 @@ struct ContentView: View {
                 if micHeld {
                     isRecordingScreenPresented = true
                 } else {
-                    processingModeTarget = .recording
-                    isProcessingModeDialogPresented = true
+                    requestStartRecording(isMeeting: lastRecordingIsMeeting)
                 }
             } label: {
                 ZStack {
@@ -1176,10 +1172,27 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .sensoryFeedback(.impact(weight: .medium), trigger: micHeld)
             .accessibilityLabel(micHeld ? "录音进行中，轻点查看" : "开始录音")
+            .disabled(model.isStartingRecording)
 
-            Text(micHeld ? "录音中 · 轻点查看" : "开始录音")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.primary)
+            if micHeld || model.isStartingRecording {
+                Text(model.isStartingRecording ? "正在开始录音…" : "录音中 · 轻点查看")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
+            } else {
+                Button {
+                    processingModeTarget = .recording
+                    isProcessingModeDialogPresented = true
+                } label: {
+                    Label(lastRecordingIsMeeting ? "多人会议" : "个人记录", systemImage: "chevron.down")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("选择录音类型")
+                .accessibilityValue(lastRecordingIsMeeting ? "多人会议" : "个人记录")
+                .accessibilityHint("下次录音使用所选类型")
+            }
         }
         .padding(.top, 8)
         .padding(.bottom, 10)
@@ -1193,7 +1206,7 @@ struct ContentView: View {
         processingModeTarget = nil
         switch target {
         case .recording:
-            requestStartRecording(isMeeting: isMeeting)
+            lastRecordingIsMeeting = isMeeting
         case let .importedFile(url):
             Task { _ = await model.importAudio(from: url, isMeeting: isMeeting) }
         case .pickedVideo:

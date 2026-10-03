@@ -127,7 +127,10 @@ struct SystemRemindersView: View {
     @State private var eventDetail: TaskCalendarEvent?
     @State private var showAll = false
     @State private var filtersOpen = false
+    @State private var homeFiltersOpen = false
     @State private var sourceNotice = false
+    @State private var dateJump: TaskDateJumpRequest?
+    @State private var jumpTargetDate: Date?
     @AppStorage("yima.reminders.showCompleted") private var showCompleted = false
     @AppStorage("yima.tasks.reminderSources") private var reminderSources = ""
     @AppStorage("yima.tasks.eventSources") private var eventSources = ""
@@ -147,11 +150,19 @@ struct SystemRemindersView: View {
         calendarModel.loadedOverview == overviewInterval && calendarModel.loadedFuture == futureInterval
     }
     private var canAdd: Bool { reminderReady && !model.writable.isEmpty }
-    private var activeReminders: [EKReminder] {
-        model.reminders.filter { !$0.isCompleted || model.recentlyCompleted.contains($0.calendarItemIdentifier) }
+    private var visibleReminders: [EKReminder] {
+        let sources = TaskSourceSelection(encoded: reminderSources)
+        return model.reminders.filter {
+            sources.includesReminder(sourceID: $0.calendar.calendarIdentifier, completed: $0.isCompleted,
+                showCompleted: showCompleted, recentlyCompleted: model.recentlyCompleted.contains($0.calendarItemIdentifier))
+        }
+    }
+    private var visibleOverviewEvents: [TaskCalendarEvent] {
+        let sources = TaskSourceSelection(encoded: eventSources).selected
+        return calendarModel.events.filter { sources.contains($0.sourceID) }
     }
     private var dayReminders: [EKReminder] {
-        activeReminders.filter {
+        visibleReminders.filter {
             guard let due = ReminderDateEditing.date(from: $0.dueDateComponents) else { return false }
             return calendar.isDate(due, inSameDayAs: selected)
         }.sorted {
@@ -161,17 +172,30 @@ struct SystemRemindersView: View {
         }
     }
     private var dayEvents: [TaskCalendarEvent] {
-        calendarModel.events.filter { TaskCalendarRules.intersects(start: $0.start, end: $0.end, day: selected) }
+        visibleOverviewEvents.filter { TaskCalendarRules.intersects(start: $0.start, end: $0.end, day: selected) }
     }
     private var overdueCount: Int {
-        activeReminders.filter { !$0.isCompleted && TaskCalendarRules.group(due: ReminderDateEditing.date(from: $0.dueDateComponents), today: today) == .overdue }.count
+        visibleReminders.filter { !$0.isCompleted && TaskCalendarRules.group(due: ReminderDateEditing.date(from: $0.dueDateComponents), today: today) == .overdue }.count
     }
 
     var body: some View {
         NavigationStack {
             home
-                .navigationTitle("待办事项").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("提醒").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { homeFiltersOpen = true } label: { Image(systemName: "line.3.horizontal.decrease") }
+                            .accessibilityLabel("筛选提醒")
+                    }
+                }
                 .navigationDestination(isPresented: $showAll) { allItems }
+                .sheet(isPresented: $homeFiltersOpen) {
+                    NavigationStack {
+                        List { sourceFilters }
+                            .navigationTitle("筛选提醒").navigationBarTitleDisplayMode(.inline)
+                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { homeFiltersOpen = false } } }
+                    }
+                }
                 .sheet(item: $editor) { item in
                     ReminderEditor(model: model, existing: item.reminder, preferredCalendarID: nil, suggestedDate: item.suggestedDate)
                 }
@@ -188,6 +212,7 @@ struct SystemRemindersView: View {
                     Button("好", role: .cancel) { model.error = nil }
                 } message: { Text(model.error ?? "") }
         }
+        .toolbar(showAll ? .hidden : .visible, for: .tabBar)
         .task { await model.refresh(); reconcileSources() }
         .task(id: overviewInterval) { await refreshCalendar() }
         .onChange(of: phase) { _, value in if value == .active { Task { await refresh() } } }
@@ -206,6 +231,9 @@ struct SystemRemindersView: View {
                 HStack { dayHeading; Spacer(minLength: 8); sectionActions }
                 VStack(alignment: .leading, spacing: 8) { dayHeading; HStack { Spacer(); sectionActions } }
             }.listRowInsets(EdgeInsets(top: 24, leading: 20, bottom: 12, trailing: 20)).listRowSeparator(.hidden)
+            if !hasSelectedSources && (reminderReady || calendarReady) {
+                quietText("尚未选择列表，请在筛选中勾选要展示的日历或待办列表。")
+            }
             groupHeading("待办", count: reminderReady ? dayReminders.count : nil)
             reminderStatus
             if reminderReady {
@@ -253,12 +281,12 @@ struct SystemRemindersView: View {
     }
 
     private func counts(_ day: Date) -> TaskDayCounts {
-        let reminders = reminderReady ? model.reminders.filter {
+        let reminders = reminderReady ? visibleReminders.filter {
             guard !$0.isCompleted, let due = ReminderDateEditing.date(from: $0.dueDateComponents) else { return false }
             return calendar.isDate(due, inSameDayAs: day)
         }.count : nil
         let covered = calendarModel.loadedOverview.map { $0.start <= day && day < $0.end } ?? false
-        let events = calendarReady && covered ? calendarModel.events.filter {
+        let events = calendarReady && covered ? visibleOverviewEvents.filter {
             TaskCalendarRules.intersects(start: $0.start, end: $0.end, day: day)
         }.count : nil
         return TaskDayCounts(reminders: reminders, events: events)
@@ -271,7 +299,7 @@ struct SystemRemindersView: View {
 
     private func eventRow(_ event: TaskCalendarEvent) -> some View {
         TaskEventRow(event: event) { eventDetail = event }
-            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .padding(.vertical, 8).listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
     }
 
     private func groupHeading(_ title: LocalizedStringKey, count: Int?) -> some View {
@@ -318,72 +346,110 @@ struct SystemRemindersView: View {
     }
 
     private var allItems: some View {
-        let grouped = Dictionary(grouping: allEntries, by: \.group)
-        return List {
-            if filtersOpen {
-                Section("日历列表") {
-                    calendarStatus
-                    if calendarReady && calendarModel.sources.isEmpty { quietText("没有可读取的日历列表。") }
-                    ForEach(calendarModel.sources) { source in
-                        sourceToggle(id: source.id, title: source.title, account: source.account, isCalendar: true)
+        let entries = allEntries
+        let dated = Dictionary(grouping: entries.filter { $0.date != nil }, by: { calendar.startOfDay(for: $0.date!) })
+        let dateIndex = TaskDateIndex(dates: Array(dated.keys), calendar: calendar)
+        let unscheduled = entries.filter { $0.date == nil }
+        return ScrollViewReader { proxy in
+            List {
+                if filtersOpen {
+                    sourceFilters
+                } else { reminderStatus; calendarStatus }
+                if sourceNotice {
+                    VStack(alignment: .leading) {
+                        Text("部分来源列表已不可用，已移除失效选择。其他筛选保持不变。").font(.subheadline).foregroundStyle(.secondary)
+                        Button("知道了") { sourceNotice = false }.frame(minHeight: 44)
+                    }.buttonStyle(.plain).listRowSeparator(.hidden)
+                }
+                if !hasSelectedSources && (reminderReady || calendarReady) {
+                    quietText("尚未选择列表，请在筛选中勾选要展示的日历或待办列表。")
+                } else if hasSelectedSources {
+                    ForEach(dateIndex.dates, id: \.self) { date in
+                        Section {
+                            ForEach(dated[date] ?? []) { entry in
+                                if let reminder = entry.reminder { reminderRow(reminder) }
+                                if let event = entry.event { eventRow(event) }
+                            }
+                        } header: {
+                            Button { dateJump = TaskDateJumpRequest(id: date) } label: {
+                                HStack(spacing: 6) {
+                                    Text(date, format: .dateTime.year().month().day().weekday())
+                                        .font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                                    Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text("\(dated[date]?.count ?? 0) 项").font(.caption).foregroundStyle(.secondary)
+                                }.frame(minHeight: 44).contentShape(Rectangle())
+                            }.buttonStyle(.plain).accessibilityHint("选择已有事项的日期并跳转")
+                                .id(date)
+                        }
+                    }
+                    if !unscheduled.isEmpty {
+                        Section {
+                            ForEach(unscheduled) { entry in
+                                if let reminder = entry.reminder { reminderRow(reminder) }
+                            }
+                        } header: { groupHeading("未安排", count: unscheduled.count) }
+                    }
+                    if entries.isEmpty && (reminderReady || calendarReady) {
+                        quietText("当前已读取的所选列表没有事项。")
+                    }
+                    if calendarReady && !TaskSourceSelection(encoded: eventSources).selected.isEmpty {
+                        Section {
+                            if let interval = calendarModel.loadedFuture {
+                                Text("日程已读取至 \(interval.end, format: .dateTime.year().month().day())")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Button("加载更多日程") {
+                                futureEnd = calendar.date(byAdding: .year, value: 1, to: futureEnd)!
+                                Task { await refreshCalendar() }
+                            }.frame(minHeight: 44).disabled(calendarModel.loading)
+                        }
                     }
                 }
-                Section("待办列表") {
-                    reminderStatus
-                    if reminderReady && model.calendars.isEmpty { quietText("没有可读取的待办列表。") }
-                    ForEach(model.calendars, id: \.calendarIdentifier) { source in
-                        sourceToggle(id: source.calendarIdentifier, title: source.title, account: source.source.title, isCalendar: false)
-                    }
-                    Toggle("显示已完成待办", isOn: $showCompleted).tint(.primary)
-                }
-            } else { reminderStatus; calendarStatus }
-            if sourceNotice {
-                VStack(alignment: .leading) {
-                    Text("部分来源列表已不可用，已移除失效选择。其他筛选保持不变。").font(.subheadline).foregroundStyle(.secondary)
-                    Button("知道了") { sourceNotice = false }.frame(minHeight: 44)
-                }.buttonStyle(.plain).listRowSeparator(.hidden)
             }
-            if !hasSelectedSources && (reminderReady || calendarReady) {
-                quietText("尚未选择列表，请在筛选中勾选要展示的日历或待办列表。")
-            } else if hasSelectedSources {
-                ForEach(TaskCalendarRules.Group.allCases, id: \.self) { group in
-                    Section {
-                        let entries = grouped[group] ?? []
-                        if entries.isEmpty { quietText("当前已读取列表在此分组没有事项。") }
-                        ForEach(entries) { entry in
-                            if let reminder = entry.reminder { reminderRow(reminder) }
-                            if let event = entry.event { eventRow(event) }
-                        }
-                    } header: { groupHeading(groupTitle(group), count: grouped[group]?.count ?? 0) }
+            .listStyle(.plain).scrollContentBackground(.hidden)
+            .background(Color(uiColor: .systemBackground))
+            .navigationTitle("全部事项").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { filtersOpen.toggle() } label: { Image(systemName: "line.3.horizontal.decrease") }
+                        .accessibilityLabel("筛选全部事项").accessibilityValue(filtersOpen ? "已展开" : "已收起")
                 }
-                if calendarReady && !TaskSourceSelection(encoded: eventSources).selected.isEmpty {
-                    Section {
-                        if let interval = calendarModel.loadedFuture {
-                            Text("日程已读取至 \(interval.end, format: .dateTime.year().month().day())")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Button("加载更多日程") {
-                            futureEnd = calendar.date(byAdding: .year, value: 1, to: futureEnd)!
-                            Task { await refreshCalendar() }
-                        }.frame(minHeight: 44).disabled(calendarModel.loading)
-                    }
-                }
+            }
+            .refreshable { await refresh() }
+            .sheet(item: $dateJump, onDismiss: {
+                guard let target = jumpTargetDate else { return }
+                jumpTargetDate = nil
+                guard dateIndex.dates.contains(target) else { return }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { proxy.scrollTo(target, anchor: .top) }
+            }) { request in
+                TaskDateJumpSheet(dates: dateIndex.dates, initialDate: request.id) { jumpTargetDate = $0 }
             }
         }
-        .listStyle(.plain).scrollContentBackground(.hidden)
-        .background(Color(uiColor: .systemBackground))
-        .navigationTitle("全部事项").navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { filtersOpen.toggle() } label: { Image(systemName: "line.3.horizontal.decrease") }
-                    .accessibilityLabel("筛选全部事项").accessibilityValue(filtersOpen ? "已展开" : "已收起")
-            }
-        }
-        .refreshable { await refresh() }
     }
 
     private var hasSelectedSources: Bool {
         !TaskSourceSelection(encoded: reminderSources).selected.isEmpty || !TaskSourceSelection(encoded: eventSources).selected.isEmpty
+    }
+
+    private var sourceFilters: some View {
+        Group {
+            Section("日历列表") {
+                calendarStatus
+                if calendarReady && calendarModel.sources.isEmpty { quietText("没有可读取的日历列表。") }
+                ForEach(calendarModel.sources) { source in
+                    sourceToggle(id: source.id, title: source.title, account: source.account, isCalendar: true)
+                }
+            }
+            Section("待办列表") {
+                reminderStatus
+                if reminderReady && model.calendars.isEmpty { quietText("没有可读取的待办列表。") }
+                ForEach(model.calendars, id: \.calendarIdentifier) { source in
+                    sourceToggle(id: source.calendarIdentifier, title: source.title, account: source.source.title, isCalendar: false)
+                }
+                Toggle("显示已完成待办", isOn: $showCompleted).tint(.primary)
+            }
+        }
     }
 
     private func sourceToggle(id: String, title: String, account: String, isCalendar: Bool) -> some View {
@@ -406,31 +472,26 @@ struct SystemRemindersView: View {
         let id: String
         let date: Date?
         let time: Date
-        let group: TaskCalendarRules.Group
         var reminder: EKReminder?
         var event: TaskCalendarEvent?
     }
 
     private var allEntries: [Entry] {
-        let reminderIDs = TaskSourceSelection(encoded: reminderSources).selected
         let eventIDs = TaskSourceSelection(encoded: eventSources).selected
         var entries: [Entry] = []
         if reminderReady {
-            entries += model.reminders.filter {
-                reminderIDs.contains($0.calendar.calendarIdentifier) &&
-                (showCompleted || !$0.isCompleted || model.recentlyCompleted.contains($0.calendarItemIdentifier))
-            }.map {
+            entries += visibleReminders.map {
                 let due = ReminderDateEditing.date(from: $0.dueDateComponents)
                 return Entry(id: "reminder:" + $0.calendarItemIdentifier, date: due,
                     time: $0.dueDateComponents?.hour == nil ? .distantFuture : due ?? .distantFuture,
-                    group: TaskCalendarRules.group(due: due, today: today), reminder: $0)
+                    reminder: $0)
             }
         }
         if calendarReady {
             entries += calendarModel.futureEvents.filter { eventIDs.contains($0.sourceID) }.map {
                 let date = max($0.start, calendar.startOfDay(for: today))
                 return Entry(id: "event:" + $0.id, date: date, time: $0.allDay ? .distantFuture : date,
-                             group: TaskCalendarRules.group(due: date, today: today), event: $0)
+                             event: $0)
             }
         }
         return entries.sorted {
@@ -441,15 +502,11 @@ struct SystemRemindersView: View {
         }
     }
 
-    private func groupTitle(_ group: TaskCalendarRules.Group) -> LocalizedStringKey {
-        switch group { case .overdue: "逾期"; case .today: "今天"; case .future: "未来"; case .unscheduled: "未安排" }
-    }
-
     private func reconcileSources() {
         if reminderReady {
             var value = TaskSourceSelection(encoded: reminderSources)
             let ids = Set(model.calendars.map(\.calendarIdentifier))
-            // Migrate the existing management filter once; the overview always shows all sources.
+            // Keep the existing persisted filter when sharing it with the overview.
             if reminderSources.isEmpty, let old = UserDefaults.standard.string(forKey: "yima.reminders.calendarID"), ids.contains(old) {
                 value.known = ids; value.selected = [old]
             }
@@ -502,26 +559,114 @@ private struct TaskSourcePermission: View {
     }
 }
 
+private struct TaskDateJumpRequest: Identifiable { let id: Date }
+
+private struct TaskDateJumpSheet: View {
+    let dates: [Date]
+    let initialDate: Date
+    let onSelect: (Date) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var selectedDate: Date?
+    private var index: TaskDateIndex { TaskDateIndex(dates: dates) }
+    private var selection: Date? {
+        let candidate = selectedDate ?? initialDate
+        return index.dates.contains(candidate) ? candidate : index.dates.first
+    }
+    private var year: Int { selection.map { index.calendar.component(.year, from: $0) } ?? 0 }
+    private var month: Int { selection.map { index.calendar.component(.month, from: $0) } ?? 0 }
+    private var day: Int { selection.map { index.calendar.component(.day, from: $0) } ?? 0 }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                if index.dates.isEmpty {
+                    ContentUnavailableView("暂无可用事项日期", systemImage: "calendar.badge.exclamationmark")
+                } else {
+                    Text("选择已有待办或日程的年月日快速定位")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    HStack(spacing: 0) {
+                        Picker("年", selection: Binding(get: { year }, set: {
+                            selectedDate = index.resolving(year: $0, month: month, day: day)
+                        })) {
+                            ForEach(index.years, id: \.self) { Text("\(String($0))年").tag($0) }
+                        }.pickerStyle(.wheel).frame(maxWidth: .infinity).clipped()
+                        Picker("月", selection: Binding(get: { month }, set: {
+                            selectedDate = index.resolving(year: year, month: $0, day: day)
+                        })) {
+                            ForEach(index.months(in: year), id: \.self) { Text("\($0)月").tag($0) }
+                        }.pickerStyle(.wheel).frame(maxWidth: .infinity).clipped()
+                        Picker("日", selection: Binding(get: { day }, set: {
+                            selectedDate = index.resolving(year: year, month: month, day: $0)
+                        })) {
+                            ForEach(index.days(in: year, month: month), id: \.self) { Text("\($0)日").tag($0) }
+                        }.pickerStyle(.wheel).frame(maxWidth: .infinity).clipped()
+                    }.frame(height: 160)
+                }
+                Spacer(minLength: 0)
+            }.padding(16)
+                .navigationTitle("快速跳转日期").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("跳转") {
+                            if let selection { onSelect(selection) }
+                            dismiss()
+                        }.disabled(selection == nil)
+                    }
+                }
+        }
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.height(340), .large])
+        .presentationDragIndicator(.visible)
+    }
+}
+
+private struct TaskItemContent<Details: View>: View {
+    let title: String
+    let source: String
+    let completed: Bool
+    let details: Details
+
+    init(title: String, source: String, completed: Bool = false, @ViewBuilder details: () -> Details) {
+        self.title = title; self.source = source; self.completed = completed; self.details = details()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.body.weight(.medium)).strikethrough(completed).foregroundStyle(.primary)
+            Text(source).font(.caption).foregroundStyle(.secondary)
+            details.font(.caption).foregroundStyle(.secondary)
+        }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    }
+}
+
 private struct TaskEventRow: View {
     let event: TaskCalendarEvent
     let open: () -> Void
     var body: some View {
         Button(action: open) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    if event.allDay { Text("全天") }
-                    else {
-                        Text(event.start, format: .dateTime.hour().minute())
-                        Text(event.end, format: .dateTime.hour().minute()).font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Image(systemName: "calendar").frame(width: 44, height: 44).accessibilityHidden(true)
+                TaskItemContent(title: event.title.isEmpty ? AppLocalized("未命名日程") : event.title, source: event.source) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(event.start, format: .dateTime.year().month().day())
+                        Spacer(minLength: 8)
+                        if event.allDay {
+                            Text("全天")
+                        } else {
+                            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                                Text(event.start, format: .dateTime.hour().minute())
+                                Text(verbatim: "–")
+                                Text(event.end, format: Calendar.current.isDate(event.start, inSameDayAs: event.end)
+                                    ? .dateTime.hour().minute() : .dateTime.year().month().day().hour().minute())
+                            }.monospacedDigit().multilineTextAlignment(.trailing)
+                        }
+                    }.accessibilityElement(children: .combine)
+                    if let location = event.location, !location.isEmpty {
+                        Text(location)
                     }
-                }.font(.subheadline).monospacedDigit()
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(event.title.isEmpty ? AppLocalized("未命名日程") : event.title).font(.body.weight(.medium))
-                    Text(event.source).font(.caption).foregroundStyle(.secondary)
-                    Text(event.start, format: .dateTime.month().day()).font(.caption).foregroundStyle(.secondary)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
-            }.foregroundStyle(.primary).frame(minHeight: 56).padding(.vertical, 8).contentShape(Rectangle())
+                }
+            }.foregroundStyle(.primary).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityHint("查看日程详情")
     }
 }
@@ -567,11 +712,7 @@ private struct SystemReminderRow: View {
             .disabled(!writable || busy)
             .accessibilityLabel(action)
             Button { edit(item) } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.title ?? AppLocalized("未命名待办"))
-                        .font(.body.weight(.medium))
-                        .strikethrough(item.isCompleted).foregroundStyle(.primary)
-                    Text(item.calendar.title).font(.caption).foregroundStyle(.secondary)
+                TaskItemContent(title: item.title ?? AppLocalized("未命名待办"), source: item.calendar.title, completed: item.isCompleted) {
                     if item.isCompleted { Text("已完成").font(.caption).foregroundStyle(.secondary) }
                     if !writable { Text("只读列表").font(.caption).foregroundStyle(.secondary) }
                     if let components = item.dueDateComponents, let due = ReminderDateEditing.date(from: components) {
@@ -585,7 +726,6 @@ private struct SystemReminderRow: View {
                     }
                     if busy { Text("正在更新…").font(.caption).foregroundStyle(.secondary) }
                 }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             }
             .buttonStyle(.plain)
             .disabled(busy)
