@@ -32,8 +32,14 @@ struct RecordingAgentResults: View {
     }
 
     private func load() async {
+        guard let id = UUID(uuidString: recordingID),
+              id.uuidString.caseInsensitiveCompare(recordingID) == .orderedSame else {
+            files = []
+            error = "录音来源标识无效，无法读取产物。"
+            return
+        }
         let root = AIChatViewModel.minisSharedPersistentDir.resolvingSymlinksInPath()
-            .appendingPathComponent("VoiceContext/Generated/\(recordingID)")
+            .appendingPathComponent("VoiceContext/Generated/\(id.uuidString)")
         let result = await Task.detached(priority: .utility) { () -> Result<[URL], Error> in
             do {
                 guard root.resolvingSymlinksInPath() == root.standardizedFileURL else {

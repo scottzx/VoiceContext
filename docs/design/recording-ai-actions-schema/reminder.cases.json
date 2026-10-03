@@ -1,0 +1,4051 @@
+[
+  {
+    "name": "due-unset",
+    "definition": "due",
+    "value": null,
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "due-date-only-has-no-time",
+    "definition": "due",
+    "value": {
+      "date": "2026-10-09",
+      "time": null,
+      "timezone": "Asia/Shanghai"
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "due-unique-local-time",
+    "definition": "due",
+    "value": {
+      "date": "2026-10-09",
+      "time": "09:30",
+      "timezone": "Asia/Shanghai"
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "due-invalid-gregorian-rollover",
+    "definition": "due",
+    "value": {
+      "date": "2026-02-30",
+      "time": null,
+      "timezone": "Asia/Shanghai"
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "due-valid-leap-day",
+    "definition": "due",
+    "value": {
+      "date": "2028-02-29",
+      "time": null,
+      "timezone": "Asia/Shanghai"
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "due-time-24-is-invalid-shape",
+    "definition": "due",
+    "value": {
+      "date": "2026-10-09",
+      "time": "24:00",
+      "timezone": "Asia/Shanghai"
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "due-null-time-must-not-be-omitted",
+    "definition": "due",
+    "value": {
+      "date": "2026-10-09",
+      "timezone": "Asia/Shanghai"
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "due-unknown-iana-zone",
+    "definition": "due",
+    "value": {
+      "date": "2026-10-09",
+      "time": null,
+      "timezone": "Mars/Olympus"
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "due-dst-gap-rejected",
+    "definition": "due",
+    "value": {
+      "date": "2026-03-08",
+      "time": "02:30",
+      "timezone": "America/New_York"
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "due-dst-fold-rejected-without-offset-field",
+    "definition": "due",
+    "value": {
+      "date": "2026-11-01",
+      "time": "01:30",
+      "timezone": "America/New_York"
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "alarm-unset",
+    "definition": "alarm",
+    "value": null,
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "alarm-absolute-fold-first-instant",
+    "definition": "alarm",
+    "value": {
+      "at": "2026-11-01T01:30:00-04:00",
+      "timezone": "America/New_York"
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "alarm-absolute-fold-second-instant",
+    "definition": "alarm",
+    "value": {
+      "at": "2026-11-01T01:30:00-05:00",
+      "timezone": "America/New_York"
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "alarm-offset-zone-mismatch",
+    "definition": "alarm",
+    "value": {
+      "at": "2026-11-01T01:30:00-03:00",
+      "timezone": "America/New_York"
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "alarm-requires-explicit-offset",
+    "definition": "alarm",
+    "value": {
+      "at": "2026-10-09T09:30:00",
+      "timezone": "Asia/Shanghai"
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "payload-due-without-alarm",
+    "definition": "payload",
+    "value": {
+      "operation": "create",
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listDisplay": {
+        "name": "工作",
+        "account": "工作账号"
+      },
+      "due": {
+        "date": "2026-10-09",
+        "time": null,
+        "timezone": "Asia/Shanghai"
+      },
+      "alarm": null,
+      "notes": null,
+      "priority": 0,
+      "sourceMarker": {
+        "carrier": "url"
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "payload-alarm-without-due",
+    "definition": "payload",
+    "value": {
+      "operation": "create",
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listDisplay": {
+        "name": "工作",
+        "account": "工作账号"
+      },
+      "due": null,
+      "alarm": {
+        "at": "2026-10-09T09:30:00+08:00",
+        "timezone": "Asia/Shanghai"
+      },
+      "notes": null,
+      "priority": 0,
+      "sourceMarker": {
+        "carrier": "url"
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "payload-notes-null-must-not-be-omitted",
+    "definition": "payload",
+    "value": {
+      "operation": "create",
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listDisplay": {
+        "name": "工作",
+        "account": "工作账号"
+      },
+      "due": {
+        "date": "2026-10-09",
+        "time": null,
+        "timezone": "Asia/Shanghai"
+      },
+      "alarm": null,
+      "priority": 0,
+      "sourceMarker": {
+        "carrier": "url"
+      }
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "payload-empty-list-id",
+    "definition": "payload",
+    "value": {
+      "operation": "create",
+      "title": "发送预算草案",
+      "listID": "",
+      "listDisplay": {
+        "name": "工作",
+        "account": "工作账号"
+      },
+      "due": {
+        "date": "2026-10-09",
+        "time": null,
+        "timezone": "Asia/Shanghai"
+      },
+      "alarm": null,
+      "notes": null,
+      "priority": 0,
+      "sourceMarker": {
+        "carrier": "url"
+      }
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "payload-explicit-list-missing-no-fallback",
+    "definition": "payload",
+    "value": {
+      "operation": "create",
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listDisplay": {
+        "name": "工作",
+        "account": "工作账号"
+      },
+      "due": {
+        "date": "2026-10-09",
+        "time": null,
+        "timezone": "Asia/Shanghai"
+      },
+      "alarm": null,
+      "notes": null,
+      "priority": 0,
+      "sourceMarker": {
+        "carrier": "url"
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "listMissing",
+    "context": {
+      "targetList": {
+        "id": "list-work",
+        "exists": false,
+        "writable": true
+      }
+    }
+  },
+  {
+    "name": "payload-explicit-list-read-only",
+    "definition": "payload",
+    "value": {
+      "operation": "create",
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listDisplay": {
+        "name": "工作",
+        "account": "工作账号"
+      },
+      "due": {
+        "date": "2026-10-09",
+        "time": null,
+        "timezone": "Asia/Shanghai"
+      },
+      "alarm": null,
+      "notes": null,
+      "priority": 0,
+      "sourceMarker": {
+        "carrier": "url"
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "listReadOnly",
+    "context": {
+      "targetList": {
+        "id": "list-work",
+        "exists": true,
+        "writable": false
+      }
+    }
+  },
+  {
+    "name": "payload-system-access-denied",
+    "definition": "payload",
+    "value": {
+      "operation": "create",
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listDisplay": {
+        "name": "工作",
+        "account": "工作账号"
+      },
+      "due": {
+        "date": "2026-10-09",
+        "time": null,
+        "timezone": "Asia/Shanghai"
+      },
+      "alarm": null,
+      "notes": null,
+      "priority": 0,
+      "sourceMarker": {
+        "carrier": "url"
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "permissionDenied",
+    "context": {
+      "fullAccess": false
+    }
+  },
+  {
+    "name": "payload-tool-policy-denied",
+    "definition": "payload",
+    "value": {
+      "operation": "create",
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listDisplay": {
+        "name": "工作",
+        "account": "工作账号"
+      },
+      "due": {
+        "date": "2026-10-09",
+        "time": null,
+        "timezone": "Asia/Shanghai"
+      },
+      "alarm": null,
+      "notes": null,
+      "priority": 0,
+      "sourceMarker": {
+        "carrier": "url"
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "toolPolicyDenied",
+    "context": {
+      "toolAllowed": false
+    }
+  },
+  {
+    "name": "payload-must-already-match-trimmed-confirmation",
+    "definition": "payload",
+    "value": {
+      "operation": "create",
+      "title": " 发送预算草案 ",
+      "listID": "list-work",
+      "listDisplay": {
+        "name": "工作",
+        "account": "工作账号"
+      },
+      "due": {
+        "date": "2026-10-09",
+        "time": null,
+        "timezone": "Asia/Shanghai"
+      },
+      "alarm": null,
+      "notes": null,
+      "priority": 0,
+      "sourceMarker": {
+        "carrier": "url"
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "payload-new-complex-schedule-refused",
+    "definition": "payload",
+    "value": {
+      "operation": "create",
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listDisplay": {
+        "name": "工作",
+        "account": "工作账号"
+      },
+      "due": {
+        "date": "2026-10-09",
+        "time": null,
+        "timezone": "Asia/Shanghai"
+      },
+      "alarm": null,
+      "notes": null,
+      "priority": 0,
+      "sourceMarker": {
+        "carrier": "url"
+      },
+      "recurrence": {
+        "frequency": "weekly"
+      }
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "payload-build-scheme-is-not-user-configuration",
+    "definition": "payload",
+    "value": {
+      "operation": "create",
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listDisplay": {
+        "name": "工作",
+        "account": "工作账号"
+      },
+      "due": {
+        "date": "2026-10-09",
+        "time": null,
+        "timezone": "Asia/Shanghai"
+      },
+      "alarm": null,
+      "notes": null,
+      "priority": 0,
+      "sourceMarker": {
+        "carrier": "url",
+        "scheme": "voicecontext-dev"
+      }
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "confirmation-bound-five-field-hash",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "expectedSource": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "sourceSegmentIDs": [
+        "02d14bba-6c3b-4758-9607-29983068098d"
+      ]
+    }
+  },
+  {
+    "name": "confirmation-old-uppercase-uuid-remains-readable",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822EAF46-818E-4F0E-BB20-0AB36A8CFE5C",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "confirmation-source-is-strict-three-fields",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "confirmation-confirmed-requires-confirmed-time",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": null,
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "confirmation-hash-conflict",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "payloadConflict"
+  },
+  {
+    "name": "confirmation-exact-utf8-newline-hash",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": "原文中的中文\n第二行",
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "aab616fa9d4e8aae182753dbaff5026e7c9f3ce135595be330c0863ae1ac81bd",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "goldenCanonicalUTF8": "{\"actionID\":\"5bbf7e64-e67a-4d6f-ab64-408061357142\",\"artifactID\":\"d4d22575-d19e-4a9f-871e-35b1b36c7a19\",\"citations\":[{\"endSample\":144000,\"segmentIDs\":[\"02d14bba-6c3b-4758-9607-29983068098d\"],\"source\":{\"recordingID\":\"9ee27674-9f92-49f7-b0e0-d1917760e62a\",\"revision\":3,\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"},\"startSample\":96000}],\"payload\":{\"alarm\":null,\"due\":{\"date\":\"2026-10-09\",\"time\":null,\"timezone\":\"Asia/Shanghai\"},\"listDisplay\":{\"account\":\"工作账号\",\"name\":\"工作\"},\"listID\":\"list-work\",\"notes\":\"原文中的中文\\n第二行\",\"operation\":\"create\",\"priority\":0,\"sourceMarker\":{\"carrier\":\"url\"},\"title\":\"发送预算草案\"},\"source\":{\"recordingID\":\"9ee27674-9f92-49f7-b0e0-d1917760e62a\",\"revision\":3,\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}}"
+    }
+  },
+  {
+    "name": "confirmation-citation-source-mismatch",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 2,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "3542bff674c4e834b1b574af5298ea970db49e6f8c307eee6dabbce18458b88c",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "sourceUnavailable"
+  },
+  {
+    "name": "confirmation-citation-range-reversed",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 95000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "7a6d1bf8172ff03d1454104b04ac8b53daa94e801c887c1ed8f7ca1220678b1c",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "confirmation-citation-uuid-alias-duplicate",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d",
+            "02D14BBA-6C3B-4758-9607-29983068098D"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "2be15378fb0ee4ec02deb712a8efb784a818f2d04f78746cb43121f2ddf7b06f",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "confirmation-segment-must-exist-in-bound-source",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "sourceUnavailable",
+    "context": {
+      "sourceSegmentIDs": []
+    }
+  },
+  {
+    "name": "confirmation-same-action-new-id-cannot-bypass-binding",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "identityConflict",
+    "context": {
+      "existingActionBinding": "7ddfdcc0-e4e9-43a4-a0b2-a684f583fe31"
+    }
+  },
+  {
+    "name": "confirmation-null-and-empty-notes-have-different-hash",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": "",
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "f8f625d27d7ff3b0e238a2b60d4ae5c75a56bef6708cc35f9a0a1e9de84af94c",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "payloadConflict",
+    "context": {
+      "existingPayloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df"
+    }
+  },
+  {
+    "name": "confirmation-saving-with-persisted-exclusive-intent",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "saving",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 2,
+      "attemptStartedAt": "2026-10-03T10:00:01.500+08:00",
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "intentPersisted": true,
+      "exclusiveReservation": true
+    }
+  },
+  {
+    "name": "confirmation-saving-without-persisted-intent",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "saving",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 2,
+      "attemptStartedAt": "2026-10-03T10:00:01.500+08:00",
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "journalUnavailable",
+    "context": {
+      "intentPersisted": false,
+      "exclusiveReservation": true
+    }
+  },
+  {
+    "name": "confirmation-saving-without-exclusive-reservation",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "saving",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 2,
+      "attemptStartedAt": "2026-10-03T10:00:01.500+08:00",
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "journalUnavailable",
+    "context": {
+      "intentPersisted": true,
+      "exclusiveReservation": false
+    }
+  },
+  {
+    "name": "confirmation-saving-requires-attempt-time",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "saving",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 2,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "confirmation-prepared-does-not-authorize-create",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "prepared",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": null,
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload",
+    "context": {
+      "attemptCreate": true,
+      "trustedConfirmation": false
+    }
+  },
+  {
+    "name": "confirmation-source-deletion-revokes-unstarted-create",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "confirmed",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "sourceUnavailable",
+    "context": {
+      "sourceDeleted": true
+    }
+  },
+  {
+    "name": "confirmation-successful-save-readback",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "saved",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 3,
+      "attemptStartedAt": "2026-10-03T10:00:01.500+08:00",
+      "reminderID": "reminder-system-1",
+      "receipt": {
+        "reminderID": "reminder-system-1",
+        "externalIdentifier": null,
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listName": "工作",
+        "account": "工作账号",
+        "accountID": "account-work",
+        "due": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "start": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "alarms": [],
+        "hasTimedAlarm": false,
+        "recurrenceRules": [],
+        "notes": null,
+        "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "priority": 0,
+        "isCompleted": false,
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "requestID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+        "observedAt": "2026-10-03T10:00:02+08:00",
+        "verification": "matchesConfirmedPayload",
+        "differences": []
+      },
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "saveSucceeded": true,
+      "readbackSucceeded": true,
+      "expectedMarkerURL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c"
+    }
+  },
+  {
+    "name": "confirmation-saved-requires-real-receipt",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "saved",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 3,
+      "attemptStartedAt": "2026-10-03T10:00:01.500+08:00",
+      "reminderID": "reminder-system-1",
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "confirmation-receipt-id-must-match-mapping",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "saved",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 3,
+      "attemptStartedAt": "2026-10-03T10:00:01.500+08:00",
+      "reminderID": "reminder-system-1",
+      "receipt": {
+        "reminderID": "different-system-id",
+        "externalIdentifier": null,
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listName": "工作",
+        "account": "工作账号",
+        "accountID": "account-work",
+        "due": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "start": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "alarms": [],
+        "hasTimedAlarm": false,
+        "recurrenceRules": [],
+        "notes": null,
+        "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "priority": 0,
+        "isCompleted": false,
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "requestID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+        "observedAt": "2026-10-03T10:00:02+08:00",
+        "verification": "matchesConfirmedPayload",
+        "differences": []
+      },
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "identityConflict"
+  },
+  {
+    "name": "confirmation-readback-failure-is-unknown",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "needsReconciliation",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 2,
+      "attemptStartedAt": "2026-10-03T10:00:01.500+08:00",
+      "reminderID": null,
+      "receipt": null,
+      "error": {
+        "code": "needsReconciliation",
+        "phase": "reconciliation",
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "systemReminderID": null,
+        "retryDisposition": "queryOnly",
+        "sdkDomain": null,
+        "sdkCode": null
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "readbackSucceeded": false,
+      "attemptCreate": false
+    }
+  },
+  {
+    "name": "confirmation-unknown-zero-matches-query-only",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "needsReconciliation",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 2,
+      "attemptStartedAt": "2026-10-03T10:00:01.500+08:00",
+      "reminderID": null,
+      "receipt": null,
+      "error": {
+        "code": "needsReconciliation",
+        "phase": "reconciliation",
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "systemReminderID": null,
+        "retryDisposition": "queryOnly",
+        "sdkDomain": null,
+        "sdkCode": null
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "query": {
+        "complete": true,
+        "matchedIDs": []
+      },
+      "attemptCreate": false
+    }
+  },
+  {
+    "name": "confirmation-unknown-zero-matches-forbids-recreate",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "needsReconciliation",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 2,
+      "attemptStartedAt": "2026-10-03T10:00:01.500+08:00",
+      "reminderID": null,
+      "receipt": null,
+      "error": {
+        "code": "needsReconciliation",
+        "phase": "reconciliation",
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "systemReminderID": null,
+        "retryDisposition": "queryOnly",
+        "sdkDomain": null,
+        "sdkCode": null
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "needsReconciliation",
+    "context": {
+      "query": {
+        "complete": true,
+        "matchedIDs": []
+      },
+      "attemptCreate": true
+    }
+  },
+  {
+    "name": "confirmation-unknown-partial-query-forbids-recreate",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "needsReconciliation",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 2,
+      "attemptStartedAt": "2026-10-03T10:00:01.500+08:00",
+      "reminderID": null,
+      "receipt": null,
+      "error": {
+        "code": "needsReconciliation",
+        "phase": "reconciliation",
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "systemReminderID": null,
+        "retryDisposition": "queryOnly",
+        "sdkDomain": null,
+        "sdkCode": null
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "needsReconciliation",
+    "context": {
+      "query": {
+        "complete": false,
+        "matchedIDs": []
+      },
+      "attemptCreate": true
+    }
+  },
+  {
+    "name": "confirmation-saved-retry-must-not-create",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "saved",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 3,
+      "attemptStartedAt": "2026-10-03T10:00:01.500+08:00",
+      "reminderID": "reminder-system-1",
+      "receipt": {
+        "reminderID": "reminder-system-1",
+        "externalIdentifier": null,
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listName": "工作",
+        "account": "工作账号",
+        "accountID": "account-work",
+        "due": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "start": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "alarms": [],
+        "hasTimedAlarm": false,
+        "recurrenceRules": [],
+        "notes": null,
+        "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "priority": 0,
+        "isCompleted": false,
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "requestID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+        "observedAt": "2026-10-03T10:00:02+08:00",
+        "verification": "matchesConfirmedPayload",
+        "differences": []
+      },
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "needsReconciliation",
+    "context": {
+      "attemptCreate": true
+    }
+  },
+  {
+    "name": "confirmation-failed-before-save-can-be-retained",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "failedBeforeSave",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": {
+        "code": "listReadOnly",
+        "phase": "reconciliation",
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "systemReminderID": null,
+        "retryDisposition": "safeBeforeSave",
+        "sdkDomain": null,
+        "sdkCode": null
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "confirmation-attempted-save-cannot-be-pre-save-failure",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "failedBeforeSave",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": "2026-10-03T10:00:01+08:00",
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": {
+        "code": "listReadOnly",
+        "phase": "reconciliation",
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "systemReminderID": null,
+        "retryDisposition": "safeBeforeSave",
+        "sdkDomain": null,
+        "sdkCode": null
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "needsReconciliation",
+    "context": {
+      "saveAttempted": true
+    }
+  },
+  {
+    "name": "confirmation-saving-cannot-be-cancelled-as-zero-write",
+    "definition": "confirmation",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "artifactID": "d4d22575-d19e-4a9f-871e-35b1b36c7a19",
+      "source": {
+        "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+        "revision": 3,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "9ee27674-9f92-49f7-b0e0-d1917760e62a",
+            "revision": 3,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "segmentIDs": [
+            "02d14bba-6c3b-4758-9607-29983068098d"
+          ],
+          "startSample": 96000,
+          "endSample": 144000
+        }
+      ],
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "payloadHash": "4accab0ed2310860ad0c4ccb4883afa8f9e9afb1e40629876cf95b13992ba4df",
+      "state": "cancelled",
+      "createdAt": "2026-10-03T10:00:00+08:00",
+      "confirmedAt": null,
+      "version": 1,
+      "attemptStartedAt": null,
+      "reminderID": null,
+      "receipt": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "needsReconciliation",
+    "context": {
+      "priorState": "saving"
+    }
+  },
+  {
+    "name": "receipt-date-only-no-alarm",
+    "definition": "receipt",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "alarms": [],
+      "hasTimedAlarm": false,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false,
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "requestID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "observedAt": "2026-10-03T10:00:02+08:00",
+      "verification": "matchesConfirmedPayload",
+      "differences": []
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "confirmedPayload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      },
+      "actualReminder": {
+        "reminderID": "reminder-system-1",
+        "externalIdentifier": null,
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listName": "工作",
+        "account": "工作账号",
+        "accountID": "account-work",
+        "due": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "start": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "alarms": [],
+        "hasTimedAlarm": false,
+        "recurrenceRules": [],
+        "notes": null,
+        "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "priority": 0,
+        "isCompleted": false
+      },
+      "readbackSucceeded": true
+    }
+  },
+  {
+    "name": "receipt-request-id-is-confirmation-alias",
+    "definition": "receipt",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "alarms": [],
+      "hasTimedAlarm": false,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false,
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "requestID": "aeb59ef1-5bb6-4f62-bfa8-c5904e1d88fd",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "observedAt": "2026-10-03T10:00:02+08:00",
+      "verification": "matchesConfirmedPayload",
+      "differences": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "receipt-due-alone-is-not-timed-alarm",
+    "definition": "receipt",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "alarms": [],
+      "hasTimedAlarm": true,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false,
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "requestID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "observedAt": "2026-10-03T10:00:02+08:00",
+      "verification": "matchesConfirmedPayload",
+      "differences": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "receipt-difference-status-needs-reported-difference",
+    "definition": "receipt",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "alarms": [],
+      "hasTimedAlarm": false,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false,
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "requestID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "observedAt": "2026-10-03T10:00:02+08:00",
+      "verification": "savedWithDifferences",
+      "differences": []
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "receipt-existing-floating-and-subseconds-retained",
+    "definition": "receipt",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": 9,
+          "minute": 30,
+          "second": 2,
+          "nanosecond": 123456789,
+          "calendar": "gregorian"
+        },
+        "hasTime": true,
+        "timezone": {
+          "kind": "floating",
+          "identifier": null,
+          "offsetSeconds": null
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "alarms": [],
+      "hasTimedAlarm": false,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false,
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "requestID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "observedAt": "2026-10-03T10:00:02+08:00",
+      "verification": "savedWithDifferences",
+      "differences": [
+        "实际 due 为 floating 且保留系统秒/亚秒"
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "confirmedPayload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      }
+    }
+  },
+  {
+    "name": "receipt-existing-fixed-offset-retained",
+    "definition": "receipt",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "offset",
+          "identifier": "GMT+0530",
+          "offsetSeconds": 19800
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "alarms": [],
+      "hasTimedAlarm": false,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false,
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "requestID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "observedAt": "2026-10-03T10:00:02+08:00",
+      "verification": "savedWithDifferences",
+      "differences": [
+        "实际 due 使用固定 offset"
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "confirmedPayload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      }
+    }
+  },
+  {
+    "name": "receipt-readback-failure-cannot-claim-actual",
+    "definition": "receipt",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "alarms": [],
+      "hasTimedAlarm": false,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false,
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "requestID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "observedAt": "2026-10-03T10:00:02+08:00",
+      "verification": "matchesConfirmedPayload",
+      "differences": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "needsReconciliation",
+    "context": {
+      "readbackSucceeded": false
+    }
+  },
+  {
+    "name": "actual-relative-zero-is-a-timed-alarm",
+    "definition": "actualReminder",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "alarms": [
+        {
+          "absoluteDate": null,
+          "relativeOffsetSeconds": 0,
+          "structuredLocation": null,
+          "proximity": "none"
+        }
+      ],
+      "hasTimedAlarm": true,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "actual-location-only-is-not-timed",
+    "definition": "actualReminder",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "alarms": [
+        {
+          "absoluteDate": null,
+          "relativeOffsetSeconds": 0,
+          "structuredLocation": {
+            "name": "办公室",
+            "latitude": 31.2,
+            "longitude": 121.5,
+            "radiusMeters": 100
+          },
+          "proximity": "enter"
+        }
+      ],
+      "hasTimedAlarm": false,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "actual-location-is-not-absolute-time-notification",
+    "definition": "actualReminder",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "alarms": [
+        {
+          "absoluteDate": null,
+          "relativeOffsetSeconds": 0,
+          "structuredLocation": {
+            "name": "办公室",
+            "latitude": 31.2,
+            "longitude": 121.5,
+            "radiusMeters": 100
+          },
+          "proximity": "enter"
+        }
+      ],
+      "hasTimedAlarm": true,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "actual-time-flag-must-follow-components",
+    "definition": "actualReminder",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": true,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2026,
+          "month": 10,
+          "day": 9,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "gregorian"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Shanghai",
+          "offsetSeconds": 28800
+        }
+      },
+      "alarms": [],
+      "hasTimedAlarm": false,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidPayload"
+  },
+  {
+    "name": "external-completed-is-actual-field-not-read-state",
+    "definition": "externalObservation",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "observedAt": "2026-10-03T10:00:03+08:00",
+      "observedState": "available",
+      "sourceState": "available",
+      "reminder": {
+        "reminderID": "reminder-system-1",
+        "externalIdentifier": null,
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listName": "工作",
+        "account": "工作账号",
+        "accountID": "account-work",
+        "due": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "start": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "alarms": [],
+        "hasTimedAlarm": false,
+        "recurrenceRules": [],
+        "notes": null,
+        "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "priority": 0,
+        "isCompleted": true
+      },
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "actualReminder": {
+        "reminderID": "reminder-system-1",
+        "externalIdentifier": null,
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listName": "工作",
+        "account": "工作账号",
+        "accountID": "account-work",
+        "due": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "start": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "alarms": [],
+        "hasTimedAlarm": false,
+        "recurrenceRules": [],
+        "notes": null,
+        "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "priority": 0,
+        "isCompleted": true
+      }
+    }
+  },
+  {
+    "name": "external-moved-list-is-read-from-system",
+    "definition": "externalObservation",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "observedAt": "2026-10-03T10:00:03+08:00",
+      "observedState": "available",
+      "sourceState": "available",
+      "reminder": {
+        "reminderID": "reminder-system-1",
+        "externalIdentifier": null,
+        "title": "发送预算草案",
+        "listID": "list-moved",
+        "listName": "个人",
+        "account": "工作账号",
+        "accountID": "account-work",
+        "due": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "start": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "alarms": [],
+        "hasTimedAlarm": false,
+        "recurrenceRules": [],
+        "notes": null,
+        "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "priority": 0,
+        "isCompleted": false
+      },
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "actualReminder": {
+        "reminderID": "reminder-system-1",
+        "externalIdentifier": null,
+        "title": "发送预算草案",
+        "listID": "list-moved",
+        "listName": "个人",
+        "account": "工作账号",
+        "accountID": "account-work",
+        "due": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "start": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "alarms": [],
+        "hasTimedAlarm": false,
+        "recurrenceRules": [],
+        "notes": null,
+        "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "priority": 0,
+        "isCompleted": false
+      }
+    }
+  },
+  {
+    "name": "external-permission-denied-is-not-deleted",
+    "definition": "externalObservation",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "observedAt": "2026-10-03T10:00:03+08:00",
+      "observedState": "permissionDenied",
+      "sourceState": "available",
+      "reminder": null,
+      "error": {
+        "code": "permissionDenied",
+        "phase": "reconciliation",
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "systemReminderID": null,
+        "retryDisposition": "queryOnly",
+        "sdkDomain": null,
+        "sdkCode": null
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "external-nil-fetch-is-unreadable",
+    "definition": "externalObservation",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "observedAt": "2026-10-03T10:00:03+08:00",
+      "observedState": "unreadable",
+      "sourceState": "available",
+      "reminder": null,
+      "error": {
+        "code": "readUnavailable",
+        "phase": "reconciliation",
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "systemReminderID": null,
+        "retryDisposition": "queryOnly",
+        "sdkDomain": null,
+        "sdkCode": null
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "query": {
+        "complete": false,
+        "returnedNil": true
+      }
+    }
+  },
+  {
+    "name": "external-id-nil-and-zero-markers-stays-unresolved",
+    "definition": "externalObservation",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "observedAt": "2026-10-03T10:00:03+08:00",
+      "observedState": "identityUnresolved",
+      "sourceState": "available",
+      "reminder": null,
+      "error": {
+        "code": "identityConflict",
+        "phase": "reconciliation",
+        "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "systemReminderID": null,
+        "retryDisposition": "queryOnly",
+        "sdkDomain": null,
+        "sdkCode": null
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "lookupReturnedNil": true,
+      "query": {
+        "complete": true,
+        "matchedIDs": []
+      }
+    }
+  },
+  {
+    "name": "external-zero-matches-does-not-prove-deletion",
+    "definition": "externalObservation",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "observedAt": "2026-10-03T10:00:03+08:00",
+      "observedState": "deleted",
+      "sourceState": "available",
+      "reminder": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "identityConflict",
+    "context": {
+      "lookupReturnedNil": true,
+      "query": {
+        "complete": true,
+        "matchedIDs": []
+      },
+      "deletionEvidenceVerified": false
+    }
+  },
+  {
+    "name": "external-confirmed-delete-retains-identity",
+    "definition": "externalObservation",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "observedAt": "2026-10-03T10:00:03+08:00",
+      "observedState": "deleted",
+      "sourceState": "available",
+      "reminder": null,
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "deletionEvidenceVerified": true
+    }
+  },
+  {
+    "name": "external-source-deleted-system-reminder-retained",
+    "definition": "externalObservation",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "observedAt": "2026-10-03T10:00:03+08:00",
+      "observedState": "available",
+      "sourceState": "deleted",
+      "reminder": {
+        "reminderID": "reminder-system-1",
+        "externalIdentifier": null,
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listName": "工作",
+        "account": "工作账号",
+        "accountID": "account-work",
+        "due": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "start": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "alarms": [],
+        "hasTimedAlarm": false,
+        "recurrenceRules": [],
+        "notes": null,
+        "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "priority": 0,
+        "isCompleted": false
+      },
+      "error": null
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "external-completed-is-not-an-enum-value",
+    "definition": "externalObservation",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "observedAt": "2026-10-03T10:00:03+08:00",
+      "observedState": "completed",
+      "sourceState": "available",
+      "reminder": {
+        "reminderID": "reminder-system-1",
+        "externalIdentifier": null,
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listName": "工作",
+        "account": "工作账号",
+        "accountID": "account-work",
+        "due": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "start": {
+          "components": {
+            "year": 2026,
+            "month": 10,
+            "day": 9,
+            "hour": null,
+            "minute": null,
+            "second": null,
+            "nanosecond": null,
+            "calendar": "gregorian"
+          },
+          "hasTime": false,
+          "timezone": {
+            "kind": "iana",
+            "identifier": "Asia/Shanghai",
+            "offsetSeconds": 28800
+          }
+        },
+        "alarms": [],
+        "hasTimedAlarm": false,
+        "recurrenceRules": [],
+        "notes": null,
+        "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+        "priority": 0,
+        "isCompleted": false
+      },
+      "error": null
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "minimal-source-cleanup-retains-no-payload",
+    "definition": "minimalIdentity",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "reminderID": "reminder-system-1",
+      "state": "saved",
+      "sourceDeleted": true
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "minimal-source-cleanup-never-authorizes-recreate",
+    "definition": "minimalIdentity",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "reminderID": "reminder-system-1",
+      "state": "saved",
+      "sourceDeleted": true
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "sourceUnavailable",
+    "context": {
+      "attemptCreate": true
+    }
+  },
+  {
+    "name": "minimal-identity-must-not-retain-confirmation-body",
+    "definition": "minimalIdentity",
+    "value": {
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "reminderID": "reminder-system-1",
+      "state": "saved",
+      "sourceDeleted": true,
+      "payload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      }
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  },
+  {
+    "name": "actual-non-gregorian-calendar-preserved-without-gregorian-parse",
+    "definition": "actualReminder",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2567,
+          "month": 2,
+          "day": 29,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "buddhist"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Bangkok",
+          "offsetSeconds": 25200
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2567,
+          "month": 2,
+          "day": 29,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "buddhist"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Bangkok",
+          "offsetSeconds": 25200
+        }
+      },
+      "alarms": [],
+      "hasTimedAlarm": false,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "receipt-non-gregorian-actual-does-not-match-new-gregorian-due",
+    "definition": "receipt",
+    "value": {
+      "reminderID": "reminder-system-1",
+      "externalIdentifier": null,
+      "title": "发送预算草案",
+      "listID": "list-work",
+      "listName": "工作",
+      "account": "工作账号",
+      "accountID": "account-work",
+      "due": {
+        "components": {
+          "year": 2567,
+          "month": 2,
+          "day": 29,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "buddhist"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Bangkok",
+          "offsetSeconds": 25200
+        }
+      },
+      "start": {
+        "components": {
+          "year": 2567,
+          "month": 2,
+          "day": 29,
+          "hour": null,
+          "minute": null,
+          "second": null,
+          "nanosecond": null,
+          "calendar": "buddhist"
+        },
+        "hasTime": false,
+        "timezone": {
+          "kind": "iana",
+          "identifier": "Asia/Bangkok",
+          "offsetSeconds": 25200
+        }
+      },
+      "alarms": [],
+      "hasTimedAlarm": false,
+      "recurrenceRules": [],
+      "notes": null,
+      "URL": "voicecontext://recording/9ee27674-9f92-49f7-b0e0-d1917760e62a?confirmation=822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "priority": 0,
+      "isCompleted": false,
+      "confirmationID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "requestID": "822eaf46-818e-4f0e-bb20-0ab36a8cfe5c",
+      "actionID": "5bbf7e64-e67a-4d6f-ab64-408061357142",
+      "observedAt": "2026-10-03T10:00:02+08:00",
+      "verification": "savedWithDifferences",
+      "differences": [
+        "Actual calendar is buddhist; preserve raw components without Gregorian reconstruction."
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "confirmedPayload": {
+        "operation": "create",
+        "title": "发送预算草案",
+        "listID": "list-work",
+        "listDisplay": {
+          "name": "工作",
+          "account": "工作账号"
+        },
+        "due": {
+          "date": "2026-10-09",
+          "time": null,
+          "timezone": "Asia/Shanghai"
+        },
+        "alarm": null,
+        "notes": null,
+        "priority": 0,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      }
+    }
+  },
+  {
+    "name": "actual-alarm-both-time-fields-null-is-invalid-shape",
+    "definition": "actualAlarm",
+    "value": {
+      "absoluteDate": null,
+      "relativeOffsetSeconds": null,
+      "structuredLocation": null,
+      "proximity": "none"
+    },
+    "schemaValid": false,
+    "semanticValid": false
+  }
+]

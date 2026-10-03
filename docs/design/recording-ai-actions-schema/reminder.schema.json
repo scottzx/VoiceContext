@@ -1,0 +1,1357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voicecontext.invalid/recording-ai-actions/reminder.schema.json",
+  "title": "Reminder contract proposal — unapproved and unfrozen",
+  "$comment": "C00 review material only. No production implementation, approval, EventKit execution or notification evidence. See reminder-notes.md for semantic checks and migration boundaries.",
+  "$ref": "#/$defs/confirmation",
+  "$defs": {
+    "due": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "date",
+            "time",
+            "timezone"
+          ],
+          "properties": {
+            "date": {
+              "type": "string",
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$",
+              "description": "Strict Gregorian validity and DST gap/fold checks are semantic; no rollover."
+            },
+            "time": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timezone": {
+              "type": "string",
+              "minLength": 1,
+              "description": "New confirmation IANA zone identifier; availability is semantic."
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "alarm": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "at",
+            "timezone"
+          ],
+          "properties": {
+            "at": {
+              "$ref": "common.schema.json#/$defs/dateTime"
+            },
+            "timezone": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false,
+          "description": "One absolute instant only. RFC3339 offset must agree with IANA zone at that instant; a repeated wall-clock minute alone is not grounds for rejection."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "listDisplay": {
+      "type": "object",
+      "required": [
+        "name",
+        "account"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "account": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "operation",
+        "title",
+        "listID",
+        "listDisplay",
+        "due",
+        "alarm",
+        "notes",
+        "priority",
+        "sourceMarker"
+      ],
+      "properties": {
+        "operation": {
+          "const": "create"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Trim before user confirmation; execution must not mutate the confirmed bytes."
+        },
+        "listID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "listDisplay": {
+          "$ref": "#/$defs/listDisplay"
+        },
+        "due": {
+          "$ref": "#/$defs/due"
+        },
+        "alarm": {
+          "$ref": "#/$defs/alarm"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "sourceMarker": {
+          "type": "object",
+          "required": [
+            "carrier"
+          ],
+          "properties": {
+            "carrier": {
+              "const": "url"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Only the proposed URL carrier is encoded here. Scheme is derived from build identity, not configurable. Alternate carriers remain unapproved."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Confirmed create payload proposal. Existing complex reminders use preserve-or-refuse patches, not this create type."
+    },
+    "error": {
+      "type": "object",
+      "required": [
+        "code",
+        "phase",
+        "confirmationID",
+        "systemReminderID",
+        "retryDisposition",
+        "sdkDomain",
+        "sdkCode"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalidPayload",
+            "payloadConflict",
+            "sourceUnavailable",
+            "listMissing",
+            "listAmbiguous",
+            "listReadOnly",
+            "permissionDenied",
+            "toolPolicyDenied",
+            "unsupportedSchedule",
+            "journalUnavailable",
+            "readUnavailable",
+            "needsReconciliation",
+            "identityConflict"
+          ]
+        },
+        "phase": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirmationID": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "systemReminderID": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retryDisposition": {
+          "enum": [
+            "safeBeforeSave",
+            "queryOnly",
+            "newConfirmationRequired",
+            "none"
+          ]
+        },
+        "sdkDomain": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sdkCode": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "Error wire shape proposal. SDK values are actual domain/code, not credentials or reminder content."
+    },
+    "components": {
+      "type": "object",
+      "required": [
+        "year",
+        "month",
+        "day",
+        "hour",
+        "minute",
+        "second",
+        "nanosecond",
+        "calendar"
+      ],
+      "properties": {
+        "year": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "month": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "day": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 31
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hour": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 23
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "minute": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 59
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "second": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 59
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nanosecond": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999999999
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "calendar": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "Actual EventKit DateComponents; unset components are null, including seconds and nanoseconds. Raw Gregorian validity is semantic."
+    },
+    "actualTimezone": {
+      "type": "object",
+      "required": [
+        "kind",
+        "identifier",
+        "offsetSeconds"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "iana",
+            "offset",
+            "floating"
+          ]
+        },
+        "identifier": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offsetSeconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "floating"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identifier": {
+                "type": "null"
+              },
+              "offsetSeconds": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "iana",
+                  "offset"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identifier": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ],
+      "description": "Read actual zone. DateComponents.timeZone=nil is floating; never fill from device/calendar zone. Offset may be null if raw components cannot identify an instant."
+    },
+    "actualDate": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "components",
+            "hasTime",
+            "timezone"
+          ],
+          "properties": {
+            "components": {
+              "$ref": "#/$defs/components"
+            },
+            "hasTime": {
+              "type": "boolean"
+            },
+            "timezone": {
+              "$ref": "#/$defs/actualTimezone"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "hasTime": {
+                    "const": false
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "components": {
+                    "properties": {
+                      "hour": {
+                        "type": "null"
+                      },
+                      "minute": {
+                        "type": "null"
+                      },
+                      "second": {
+                        "type": "null"
+                      },
+                      "nanosecond": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "structuredLocation": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "name",
+            "latitude",
+            "longitude",
+            "radiusMeters"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "latitude": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": -90,
+                  "maximum": 90
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "longitude": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": -180,
+                  "maximum": 180
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "radiusMeters": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "description": "Actual geofence metadata. Latitude/longitude may both be null when SDK location has no coordinate; their pair consistency is semantic."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "actualAlarm": {
+      "type": "object",
+      "required": [
+        "absoluteDate",
+        "relativeOffsetSeconds",
+        "structuredLocation",
+        "proximity"
+      ],
+      "properties": {
+        "absoluteDate": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/dateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "relativeOffsetSeconds": {
+          "type": "number"
+        },
+        "structuredLocation": {
+          "$ref": "#/$defs/structuredLocation"
+        },
+        "proximity": {
+          "enum": [
+            "none",
+            "enter",
+            "leave"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "Retain all raw fields. structuredLocation chooses location classification; otherwise absoluteDate non-null is absolute and null is relative. Do not drop relative offset zero."
+    },
+    "recurrenceRule": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Unfrozen actual recurrence wire representation. Shape alone is insufficient; preserve original EventKit rule objects. This schema does not close complex recurrence interoperability."
+    },
+    "actualReminder": {
+      "type": "object",
+      "required": [
+        "reminderID",
+        "externalIdentifier",
+        "title",
+        "listID",
+        "listName",
+        "account",
+        "accountID",
+        "due",
+        "start",
+        "alarms",
+        "hasTimedAlarm",
+        "recurrenceRules",
+        "notes",
+        "URL",
+        "priority",
+        "isCompleted"
+      ],
+      "properties": {
+        "reminderID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "externalIdentifier": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "listID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "listName": {
+          "type": "string"
+        },
+        "account": {
+          "type": "string"
+        },
+        "accountID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "due": {
+          "$ref": "#/$defs/actualDate"
+        },
+        "start": {
+          "$ref": "#/$defs/actualDate"
+        },
+        "alarms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/actualAlarm"
+          }
+        },
+        "hasTimedAlarm": {
+          "type": "boolean"
+        },
+        "recurrenceRules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recurrenceRule"
+          }
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "URL": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uri"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "isCompleted": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Actual observed system object; isCompleted is EventKit truth at observation time, not a second task database."
+    },
+    "receipt": {
+      "type": "object",
+      "required": [
+        "reminderID",
+        "externalIdentifier",
+        "title",
+        "listID",
+        "listName",
+        "account",
+        "accountID",
+        "due",
+        "start",
+        "alarms",
+        "hasTimedAlarm",
+        "recurrenceRules",
+        "notes",
+        "URL",
+        "priority",
+        "isCompleted",
+        "confirmationID",
+        "requestID",
+        "actionID",
+        "observedAt",
+        "verification",
+        "differences"
+      ],
+      "properties": {
+        "reminderID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "externalIdentifier": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "listID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "listName": {
+          "type": "string"
+        },
+        "account": {
+          "type": "string"
+        },
+        "accountID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "due": {
+          "$ref": "#/$defs/actualDate"
+        },
+        "start": {
+          "$ref": "#/$defs/actualDate"
+        },
+        "alarms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/actualAlarm"
+          }
+        },
+        "hasTimedAlarm": {
+          "type": "boolean"
+        },
+        "recurrenceRules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recurrenceRule"
+          }
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "URL": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uri"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "isCompleted": {
+          "type": "boolean"
+        },
+        "confirmationID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "requestID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "actionID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "observedAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "verification": {
+          "enum": [
+            "matchesConfirmedPayload",
+            "savedWithDifferences"
+          ]
+        },
+        "differences": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verification": {
+                "const": "matchesConfirmedPayload"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "differences": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verification": {
+                "const": "savedWithDifferences"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "differences": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ],
+      "description": "Save-after-readback receipt proposal; requestID=confirmationID and actual consistency are semantic. Differences are text pending wire review. isCompleted is only an observed snapshot."
+    },
+    "confirmation": {
+      "type": "object",
+      "required": [
+        "confirmationID",
+        "actionID",
+        "artifactID",
+        "source",
+        "citations",
+        "payload",
+        "payloadHash",
+        "state",
+        "createdAt",
+        "confirmedAt",
+        "version",
+        "attemptStartedAt",
+        "reminderID",
+        "receipt",
+        "error"
+      ],
+      "properties": {
+        "confirmationID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "actionID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "artifactID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "source": {
+          "$ref": "common.schema.json#/$defs/source"
+        },
+        "citations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "common.schema.json#/$defs/citation"
+          }
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        },
+        "payloadHash": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "state": {
+          "enum": [
+            "prepared",
+            "confirmed",
+            "failedBeforeSave",
+            "saving",
+            "saved",
+            "savedWithDifferences",
+            "needsReconciliation",
+            "cancelled"
+          ]
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "confirmedAt": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/dateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "attemptStartedAt": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/dateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reminderID": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receipt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/receipt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "prepared"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "confirmedAt": {
+                "type": "null"
+              },
+              "attemptStartedAt": {
+                "type": "null"
+              },
+              "reminderID": {
+                "type": "null"
+              },
+              "receipt": {
+                "type": "null"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "confirmed",
+                  "failedBeforeSave"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "confirmedAt": {
+                "$ref": "common.schema.json#/$defs/dateTime"
+              },
+              "attemptStartedAt": {
+                "type": "null"
+              },
+              "reminderID": {
+                "type": "null"
+              },
+              "receipt": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "saving",
+                  "saved",
+                  "savedWithDifferences",
+                  "needsReconciliation"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "confirmedAt": {
+                "$ref": "common.schema.json#/$defs/dateTime"
+              },
+              "attemptStartedAt": {
+                "$ref": "common.schema.json#/$defs/dateTime"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "saving"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "receipt": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "saved"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reminderID": {
+                "type": "string",
+                "minLength": 1
+              },
+              "receipt": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/receipt"
+                  },
+                  {
+                    "properties": {
+                      "verification": {
+                        "const": "matchesConfirmedPayload"
+                      }
+                    }
+                  }
+                ]
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "savedWithDifferences"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reminderID": {
+                "type": "string",
+                "minLength": 1
+              },
+              "receipt": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/receipt"
+                  },
+                  {
+                    "properties": {
+                      "verification": {
+                        "const": "savedWithDifferences"
+                      }
+                    }
+                  }
+                ]
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "failedBeforeSave",
+                  "needsReconciliation"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/error"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "cancelled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "attemptStartedAt": {
+                "type": "null"
+              },
+              "reminderID": {
+                "type": "null"
+              },
+              "receipt": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "description": "Full-content operation proposal. Trusted confirmation, immutable canonical hash, source binding, CAS/lock, and permitted transitions require semantic and service checks. This is not a production journal format."
+    },
+    "externalObservation": {
+      "type": "object",
+      "required": [
+        "reminderID",
+        "observedAt",
+        "observedState",
+        "sourceState",
+        "reminder",
+        "error"
+      ],
+      "properties": {
+        "reminderID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observedAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "observedState": {
+          "enum": [
+            "available",
+            "permissionDenied",
+            "unreadable",
+            "identityUnresolved",
+            "deleted"
+          ]
+        },
+        "sourceState": {
+          "enum": [
+            "available",
+            "updated",
+            "deleted",
+            "unresolvable",
+            null
+          ]
+        },
+        "reminder": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/actualReminder"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "observedState": {
+                "const": "available"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reminder": {
+                "$ref": "#/$defs/actualReminder"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "observedState": {
+                "enum": [
+                  "permissionDenied",
+                  "unreadable",
+                  "identityUnresolved",
+                  "deleted"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reminder": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "observedState": {
+                "enum": [
+                  "permissionDenied",
+                  "unreadable",
+                  "identityUnresolved"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/error"
+              }
+            }
+          }
+        }
+      ],
+      "description": "Current external read outcome. deleted requires evidence; ID nil/refresh failure/zero matches alone are identityUnresolved, not deleted. No read outcome authorizes create."
+    },
+    "minimalIdentity": {
+      "type": "object",
+      "required": [
+        "confirmationID",
+        "actionID",
+        "state",
+        "sourceDeleted"
+      ],
+      "properties": {
+        "confirmationID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "actionID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "reminderID": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "prepared",
+            "confirmed",
+            "failedBeforeSave",
+            "saving",
+            "saved",
+            "savedWithDifferences",
+            "needsReconciliation",
+            "cancelled"
+          ]
+        },
+        "sourceDeleted": {
+          "const": true
+        }
+      },
+      "additionalProperties": false,
+      "description": "Separate source-cleanup identity proposal, not a full confirmation. No payload, citations, original text or source snapshot. It never regains creation authority; saving/unknown permits query only."
+    }
+  }
+}

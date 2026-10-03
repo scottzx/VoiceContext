@@ -125,6 +125,9 @@ actor CompletionReconciler {
         )
         var healed = jobs
         for job in failed {
+            // A user retry preflight explicitly found an unavailable source.
+            // Keep that attempt visible instead of claiming the retry completed.
+            guard job.terminationReason != "retranscriptionAudioUnavailable" else { continue }
             guard let chunkID = job.chunkID, let chunk = chunks[chunkID] else { continue }
             let url = repository.rootURL.appendingPathComponent(chunk.relativePath)
             guard !PCM16KMonoLoader.isReadable(url) else { continue }
@@ -151,13 +154,13 @@ actor CompletionReconciler {
                 at: date
             )
         }
-        if let document = try await transcriptStore.document(recordingID: recording.id) {
-            if document.state != RecordingState.complete.rawValue {
-                try await transcriptStore.write(document.updatingState(.complete))
+        let chunks = try await repository.chunks(recordingID: recording.id)
+        try await transcriptStore.update(recordingID: recording.id) { document in
+            if let document {
+                return document.state == RecordingState.complete.rawValue
+                    ? document : document.updatingState(.complete)
             }
-        } else {
-            let chunks = try await repository.chunks(recordingID: recording.id)
-            let empty = TranscriptDocumentV1(
+            return TranscriptDocumentV1(
                 recording: recording,
                 chunks: chunks,
                 segmentDrafts: [],
@@ -165,7 +168,6 @@ actor CompletionReconciler {
                 state: .complete,
                 speakers: []
             )
-            try await transcriptStore.write(empty)
         }
         _ = try await repository.clearContinuationMarkersForCompletedRecording(
             recordingID: recording.id,

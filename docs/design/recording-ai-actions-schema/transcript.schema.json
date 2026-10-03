@@ -1,0 +1,1891 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voicecontext.invalid/recording-ai-actions/transcript.schema.json",
+  "title": "C00 draft transcript companion, retry candidates and deletion contracts",
+  "$comment": "Review proposal only; not a production decoder, frozen contract, ASR evidence, concurrency or IO guarantee. Cross-field and external facts require reference semantic and actual service validation.",
+  "$defs": {
+    "sampleBounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startSample",
+        "endSample"
+      ],
+      "properties": {
+        "startSample": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "endSample": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "processingScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "range",
+        "processingRangeID"
+      ],
+      "properties": {
+        "range": {
+          "$ref": "common.schema.json#/$defs/sourceRange"
+        },
+        "processingRangeID": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "range": {
+                "properties": {
+                  "sourceKind": {
+                    "const": "imported_asset"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "processingRangeID": {
+                "$ref": "common.schema.json#/$defs/uuid"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "processingRangeID": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "legacyAnchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "segmentID",
+        "sourceKind",
+        "sourceID",
+        "sample"
+      ],
+      "properties": {
+        "segmentID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "sourceKind": {
+          "enum": [
+            "audio_chunk",
+            "imported_asset"
+          ]
+        },
+        "sourceID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "sample": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "range"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "range": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/sourceRange"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "captureGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gapID",
+        "reason",
+        "startSample",
+        "endSample",
+        "unrecoverable"
+      ],
+      "properties": {
+        "gapID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "reason": {
+          "enum": [
+            "userPause",
+            "systemInterruption",
+            "routeChange",
+            "writeFailure",
+            "recoveredAfterTermination"
+          ]
+        },
+        "startSample": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "endSample": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9223372036854775807
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unrecoverable": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "const": "userPause"
+              }
+            },
+            "required": [
+              "reason"
+            ]
+          },
+          "then": {
+            "properties": {
+              "unrecoverable": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    "rangeEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decode",
+        "vad",
+        "asr"
+      ],
+      "properties": {
+        "decode": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "decodedRanges"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "complete",
+                "partial",
+                "failed",
+                "notRun",
+                "unknown"
+              ]
+            },
+            "decodedRanges": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/sampleBounds"
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            }
+          }
+        },
+        "vad": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "speechRanges",
+            "detectorVersion"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "noSpeech",
+                "speech",
+                "failed",
+                "notRun",
+                "unknown"
+              ]
+            },
+            "speechRanges": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/sampleBounds"
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            },
+            "detectorVersion": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "asr": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "processedSpeechRanges"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "text",
+                "empty",
+                "failed",
+                "notRun",
+                "unknown"
+              ]
+            },
+            "processedSpeechRanges": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/sampleBounds"
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "observedRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "range",
+        "outcome",
+        "jobID",
+        "attemptID",
+        "segmentIDs",
+        "evidence"
+      ],
+      "properties": {
+        "range": {
+          "$ref": "common.schema.json#/$defs/sourceRange"
+        },
+        "outcome": {
+          "enum": [
+            "pending",
+            "transcribed",
+            "silence",
+            "voicedEmpty",
+            "unreadable",
+            "missing",
+            "failed",
+            "interrupted"
+          ]
+        },
+        "jobID": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attemptID": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "segmentIDs": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/uuid"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "evidence": {
+          "$ref": "#/$defs/rangeEvidence"
+        },
+        "stage": {
+          "enum": [
+            "decode",
+            "vad",
+            "utterance",
+            "asr"
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "required": [
+              "stage",
+              "reasonCode"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "transcribed"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "properties": {
+              "segmentIDs": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/$defs/uuid"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "enum": [
+                  "voicedEmpty",
+                  "unreadable",
+                  "missing",
+                  "interrupted"
+                ]
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "required": [
+              "reasonCode"
+            ]
+          }
+        }
+      ]
+    },
+    "completeness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "domainFinalized",
+        "sampleRate",
+        "rangeConvention",
+        "processingState",
+        "contentState",
+        "expectedRanges",
+        "observedRanges",
+        "captureGaps",
+        "legacyAnchors",
+        "warnings"
+      ],
+      "properties": {
+        "scope": {
+          "enum": [
+            "recording",
+            "selection"
+          ]
+        },
+        "domainFinalized": {
+          "type": "boolean"
+        },
+        "sampleRate": {
+          "const": 16000
+        },
+        "rangeConvention": {
+          "const": "halfOpen"
+        },
+        "processingState": {
+          "enum": [
+            "capturing",
+            "processing",
+            "terminal"
+          ]
+        },
+        "contentState": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown"
+          ]
+        },
+        "expectedRanges": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/sourceRange"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "observedRanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/observedRange"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "captureGaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/captureGap"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "legacyAnchors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/legacyAnchor"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/warning"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "selectedSegmentIDs": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/uuid"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "recordingContentState": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "contentState": {
+                "const": "complete"
+              }
+            },
+            "required": [
+              "contentState"
+            ]
+          },
+          "then": {
+            "properties": {
+              "domainFinalized": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "selection"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "required": [
+              "selectedSegmentIDs",
+              "recordingContentState"
+            ]
+          },
+          "else": {
+            "properties": {
+              "selectedSegmentIDs": false,
+              "recordingContentState": false
+            }
+          }
+        }
+      ]
+    },
+    "audioAvailabilityRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "range",
+        "status",
+        "reasonCode"
+      ],
+      "properties": {
+        "range": {
+          "$ref": "common.schema.json#/$defs/sourceRange"
+        },
+        "status": {
+          "enum": [
+            "available",
+            "expired",
+            "missing",
+            "unreadable",
+            "unknown"
+          ]
+        },
+        "reasonCode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "audioAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkedAt",
+        "sources"
+      ],
+      "properties": {
+        "checkedAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/audioAvailabilityRow"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      }
+    },
+    "transcriptEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "objectKind",
+        "evidenceID",
+        "source",
+        "createdAt",
+        "completeness",
+        "audioAvailability"
+      ],
+      "properties": {
+        "schema": {
+          "const": "voice-context/recording-ai@1"
+        },
+        "objectKind": {
+          "const": "transcriptEvidence"
+        },
+        "evidenceID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "source": {
+          "$ref": "common.schema.json#/$defs/source"
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "completeness": {
+          "$ref": "#/$defs/completeness"
+        },
+        "audioAvailability": {
+          "$ref": "#/$defs/audioAvailability"
+        }
+      }
+    },
+    "preflightResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "status",
+        "reasonCode",
+        "declaredSampleCount",
+        "actualSampleCount",
+        "decodeRange",
+        "decodedSampleCount",
+        "fileIdentity",
+        "sourceStartSample"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/processingScope"
+        },
+        "status": {
+          "enum": [
+            "readable",
+            "unavailable"
+          ]
+        },
+        "reasonCode": {
+          "anyOf": [
+            {
+              "enum": [
+                "expired",
+                "missing",
+                "truncated",
+                "decodeFailed",
+                "sourceNotClosed",
+                "unknown"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "declaredSampleCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "actualSampleCount": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9223372036854775807
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decodeRange": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sampleBounds"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decodedSampleCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "fileIdentity": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/opaqueID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceStartSample": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "readable"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasonCode": {
+                "type": "null"
+              },
+              "actualSampleCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854775807
+              },
+              "decodeRange": {
+                "$ref": "#/$defs/sampleBounds"
+              },
+              "fileIdentity": {
+                "$ref": "common.schema.json#/$defs/opaqueID"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "unavailable"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasonCode": {
+                "enum": [
+                  "expired",
+                  "missing",
+                  "truncated",
+                  "decodeFailed",
+                  "sourceNotClosed",
+                  "unknown"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "properties": {
+                  "range": {
+                    "properties": {
+                      "sourceKind": {
+                        "const": "imported_asset"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "sourceStartSample": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "preflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "objectKind",
+        "planID",
+        "baseSource",
+        "checkedAt",
+        "sampleRate",
+        "rangeConvention",
+        "requestedScopes",
+        "results"
+      ],
+      "properties": {
+        "schema": {
+          "const": "voice-context/recording-ai@1"
+        },
+        "objectKind": {
+          "const": "transcriptionPreflight"
+        },
+        "planID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "baseSource": {
+          "$ref": "common.schema.json#/$defs/source"
+        },
+        "checkedAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "sampleRate": {
+          "const": 16000
+        },
+        "rangeConvention": {
+          "const": "halfOpen"
+        },
+        "requestedScopes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/processingScope"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/preflightResult"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "candidateDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "draftID",
+        "origin",
+        "text",
+        "sourceRanges",
+        "mapping"
+      ],
+      "properties": {
+        "draftID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "origin": {
+          "const": "asr"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "sourceRanges": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/sourceRange"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "mapping": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "existingSegmentIDs"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "stable",
+                "needsReview"
+              ]
+            },
+            "existingSegmentIDs": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/uuid"
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage",
+        "reasonCode"
+      ],
+      "properties": {
+        "stage": {
+          "enum": [
+            "decode",
+            "vad",
+            "utterance",
+            "asr"
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "objectKind",
+        "candidateID",
+        "attemptID",
+        "planID",
+        "baseSource",
+        "requestedScopes",
+        "actuallyProcessedScopes",
+        "evidenceID",
+        "drafts",
+        "status",
+        "createdAt",
+        "failure"
+      ],
+      "properties": {
+        "schema": {
+          "const": "voice-context/recording-ai@1"
+        },
+        "objectKind": {
+          "const": "transcriptionCandidate"
+        },
+        "candidateID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "attemptID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "planID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "baseSource": {
+          "$ref": "common.schema.json#/$defs/source"
+        },
+        "requestedScopes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/processingScope"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "actuallyProcessedScopes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/processingScope"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "evidenceID": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "drafts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/candidateDraft"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "status": {
+          "enum": [
+            "running",
+            "ready",
+            "failed",
+            "cancelled",
+            "interrupted",
+            "adopted",
+            "discarded"
+          ]
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/failure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "ready",
+                  "adopted"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "drafts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/candidateDraft"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "evidenceID": {
+                "$ref": "common.schema.json#/$defs/uuid"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "failure": {
+                "$ref": "#/$defs/failure"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "adoptionChoice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "range",
+        "existingSegmentIDs",
+        "draftIDs",
+        "decision"
+      ],
+      "properties": {
+        "range": {
+          "$ref": "common.schema.json#/$defs/sourceRange"
+        },
+        "existingSegmentIDs": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/uuid"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "draftIDs": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/uuid"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "decision": {
+          "enum": [
+            "keepCurrent",
+            "acceptCandidate"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "acceptCandidate"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "properties": {
+              "draftIDs": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/$defs/uuid"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              }
+            }
+          }
+        }
+      ]
+    },
+    "adoption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "objectKind",
+        "adoptionID",
+        "candidateID",
+        "candidateSha256",
+        "expectedCurrentSource",
+        "mode",
+        "choices",
+        "explicitReplaceConfirmed",
+        "previousVersionID",
+        "status",
+        "createdAt",
+        "resultSource"
+      ],
+      "properties": {
+        "schema": {
+          "const": "voice-context/recording-ai@1"
+        },
+        "objectKind": {
+          "const": "transcriptAdoption"
+        },
+        "adoptionID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "candidateID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "candidateSha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "expectedCurrentSource": {
+          "$ref": "common.schema.json#/$defs/source"
+        },
+        "mode": {
+          "enum": [
+            "preserveCalibrated",
+            "replaceAll"
+          ]
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/adoptionChoice"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "explicitReplaceConfirmed": {
+          "type": "boolean"
+        },
+        "previousVersionID": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "prepared",
+            "committed",
+            "conflicted",
+            "cancelled"
+          ]
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "resultSource": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/source"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "replaceAll"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "explicitReplaceConfirmed": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "committed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "resultSource": {
+                "$ref": "common.schema.json#/$defs/source"
+              },
+              "previousVersionID": {
+                "$ref": "common.schema.json#/$defs/uuid"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "managedRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\x00\\r\\n]+$"
+    },
+    "history": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "objectKind",
+        "versionID",
+        "source",
+        "canonicalPath",
+        "createdAt",
+        "reason",
+        "parentSource"
+      ],
+      "properties": {
+        "schema": {
+          "const": "voice-context/recording-ai@1"
+        },
+        "objectKind": {
+          "const": "transcriptVersion"
+        },
+        "versionID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "source": {
+          "$ref": "common.schema.json#/$defs/source"
+        },
+        "canonicalPath": {
+          "$ref": "#/$defs/managedRelativePath"
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "reason": {
+          "enum": [
+            "beforeRetranscription",
+            "beforeReplacement",
+            "requestInput",
+            "manualCheckpoint",
+            "restore"
+          ]
+        },
+        "parentSource": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/source"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "deletionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw",
+        "derived",
+        "systemItems"
+      ],
+      "properties": {
+        "raw": {
+          "const": "delete"
+        },
+        "derived": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "keptTypes"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "delete",
+                "keepSelected"
+              ]
+            },
+            "keptTypes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "minutes",
+                  "mindmap"
+                ]
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "mode": {
+                    "const": "delete"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "keptTypes": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "mode": {
+                    "const": "keepSelected"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "keptTypes": {
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "systemItems": {
+          "const": "keep"
+        }
+      }
+    },
+    "deletionObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "objectID",
+        "kind",
+        "dataClass",
+        "locator",
+        "artifactType",
+        "containsRawArchive",
+        "state",
+        "attempts",
+        "lastErrorCode",
+        "updatedAt",
+        "retryAt"
+      ],
+      "properties": {
+        "objectID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "kind": {
+          "enum": [
+            "audio",
+            "canonicalTranscript",
+            "transcriptVersion",
+            "transcriptionCandidate",
+            "inputSnapshot",
+            "requestMetadata",
+            "publicMeeting",
+            "publicTranscript",
+            "agentSource",
+            "iCloudMirror",
+            "dailyEntry",
+            "searchIndex",
+            "cache",
+            "artifact",
+            "systemItem"
+          ]
+        },
+        "dataClass": {
+          "enum": [
+            "raw",
+            "derived",
+            "index",
+            "system"
+          ]
+        },
+        "locator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/managedRelativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifactType": {
+          "anyOf": [
+            {
+              "enum": [
+                "minutes",
+                "mindmap",
+                "actions",
+                "export"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "containsRawArchive": {
+          "type": "boolean"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "deleted",
+            "rebuilt",
+            "kept",
+            "failed"
+          ]
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "lastErrorCode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "retryAt": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/dateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "audio",
+                  "canonicalTranscript",
+                  "transcriptVersion",
+                  "transcriptionCandidate",
+                  "inputSnapshot",
+                  "requestMetadata",
+                  "publicMeeting",
+                  "publicTranscript",
+                  "agentSource",
+                  "iCloudMirror"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "dataClass": {
+                "const": "raw"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "dailyEntry",
+                  "searchIndex",
+                  "cache"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "dataClass": {
+                "const": "index"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "systemItem"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "dataClass": {
+                "const": "system"
+              },
+              "state": {
+                "const": "kept"
+              },
+              "containsRawArchive": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "artifact"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "dataClass": {
+                "enum": [
+                  "raw",
+                  "derived"
+                ]
+              },
+              "artifactType": {
+                "enum": [
+                  "minutes",
+                  "mindmap",
+                  "actions",
+                  "export"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "dailyEntry"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "pending",
+                  "rebuilt",
+                  "failed"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "dataClass": {
+                "enum": [
+                  "raw",
+                  "index"
+                ]
+              }
+            },
+            "required": [
+              "dataClass"
+            ]
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "not": {
+                  "const": "kept"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "containsRawArchive": {
+                "const": true
+              }
+            },
+            "required": [
+              "containsRawArchive"
+            ]
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "not": {
+                  "const": "kept"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "lastErrorCode": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "deletion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "objectKind",
+        "recordingID",
+        "deletionID",
+        "startedAt",
+        "sourceRevoked",
+        "policy",
+        "state",
+        "objects"
+      ],
+      "properties": {
+        "schema": {
+          "const": "voice-context/recording-ai@1"
+        },
+        "objectKind": {
+          "const": "deletion"
+        },
+        "recordingID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "deletionID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "startedAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "sourceRevoked": {
+          "const": true
+        },
+        "policy": {
+          "$ref": "#/$defs/deletionPolicy"
+        },
+        "state": {
+          "enum": [
+            "deleting",
+            "completed"
+          ]
+        },
+        "objects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deletionObject"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "completed"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "objects": {
+                "items": {
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "deleted",
+                        "rebuilt",
+                        "kept"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/transcriptEvidence"
+    },
+    {
+      "$ref": "#/$defs/preflight"
+    },
+    {
+      "$ref": "#/$defs/candidate"
+    },
+    {
+      "$ref": "#/$defs/adoption"
+    },
+    {
+      "$ref": "#/$defs/history"
+    },
+    {
+      "$ref": "#/$defs/deletion"
+    }
+  ]
+}

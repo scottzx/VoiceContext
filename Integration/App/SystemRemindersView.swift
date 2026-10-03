@@ -13,16 +13,19 @@ final class SystemRemindersModel: ObservableObject {
     @Published private(set) var recentlyCompleted: Set<String> = []
     @Published var error: String?
     private var generation = 0
+    private var requestingAccess = false
     var authorized: Bool { authorization == .fullAccess }
     var writable: [EKCalendar] { calendars.filter(\.allowsContentModifications) }
 
     func requestAccess() async {
-        guard !loading else { return }
+        guard !loading, !requestingAccess else { return }
+        requestingAccess = true
         loading = true
         do {
             _ = try await store.requestFullAccessToReminders()
-            await refresh()
-        } catch { self.error = error.localizedDescription; await refresh() }
+        } catch { self.error = error.localizedDescription }
+        requestingAccess = false
+        await refresh()
     }
 
     func refresh() async {
@@ -30,7 +33,7 @@ final class SystemRemindersModel: ObservableObject {
         let current = generation
         authorization = EKEventStore.authorizationStatus(for: .reminder)
         guard authorized else {
-            reminders = []; calendars = []; loading = false; readError = nil
+            reminders = []; calendars = []; loading = requestingAccess; readError = nil
             return
         }
         loading = true

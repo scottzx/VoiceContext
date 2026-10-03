@@ -1,0 +1,305 @@
+[
+  {
+    "name": "explicit-null",
+    "value": {
+      "actionID": "11111111-1111-4111-8111-111111111111",
+      "artifactID": "22222222-2222-4222-8222-222222222222",
+      "source": {
+        "recordingID": "33333333-3333-4333-8333-333333333333",
+        "revision": 12,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "33333333-3333-4333-8333-333333333333",
+            "revision": 12,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "segmentIDs": [
+            "44444444-4444-4444-8444-444444444444"
+          ]
+        }
+      ],
+      "payload": {
+        "title": "安排复核",
+        "notes": null,
+        "listID": "Actual-Case-Sensitive-List-ID",
+        "due": null,
+        "alarm": null,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      }
+    },
+    "canonicalUTF8": "{\"actionID\":\"11111111-1111-4111-8111-111111111111\",\"artifactID\":\"22222222-2222-4222-8222-222222222222\",\"citations\":[{\"segmentIDs\":[\"44444444-4444-4444-8444-444444444444\"],\"source\":{\"recordingID\":\"33333333-3333-4333-8333-333333333333\",\"revision\":12,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}],\"payload\":{\"alarm\":null,\"due\":null,\"listID\":\"Actual-Case-Sensitive-List-ID\",\"notes\":null,\"sourceMarker\":{\"carrier\":\"url\"},\"title\":\"安排复核\"},\"source\":{\"recordingID\":\"33333333-3333-4333-8333-333333333333\",\"revision\":12,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+    "sha256": "8e4d7de38ac11295fc36f288b64912929678ffde2c0cb04006bed8b6563b958f"
+  },
+  {
+    "name": "exact-unicode",
+    "value": {
+      "actionID": "11111111-1111-4111-8111-111111111111",
+      "artifactID": "22222222-2222-4222-8222-222222222222",
+      "source": {
+        "recordingID": "33333333-3333-4333-8333-333333333333",
+        "revision": 12,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "33333333-3333-4333-8333-333333333333",
+            "revision": 12,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "segmentIDs": [
+            "44444444-4444-4444-8444-444444444444"
+          ]
+        }
+      ],
+      "payload": {
+        "title": "核对 🧭",
+        "notes": "é 与 é 保持原字节",
+        "listID": "Actual-Case-Sensitive-List-ID",
+        "due": null,
+        "alarm": null,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      }
+    },
+    "canonicalUTF8": "{\"actionID\":\"11111111-1111-4111-8111-111111111111\",\"artifactID\":\"22222222-2222-4222-8222-222222222222\",\"citations\":[{\"segmentIDs\":[\"44444444-4444-4444-8444-444444444444\"],\"source\":{\"recordingID\":\"33333333-3333-4333-8333-333333333333\",\"revision\":12,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}],\"payload\":{\"alarm\":null,\"due\":null,\"listID\":\"Actual-Case-Sensitive-List-ID\",\"notes\":\"é 与 é 保持原字节\",\"sourceMarker\":{\"carrier\":\"url\"},\"title\":\"核对 🧭\"},\"source\":{\"recordingID\":\"33333333-3333-4333-8333-333333333333\",\"revision\":12,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+    "sha256": "e1ca56465b10e3087265c04b875a9c7246a6911732a721ec6b131b9f1094d859"
+  },
+  {
+    "name": "json-required-escapes",
+    "value": {
+      "actionID": "11111111-1111-4111-8111-111111111111",
+      "artifactID": "22222222-2222-4222-8222-222222222222",
+      "source": {
+        "recordingID": "33333333-3333-4333-8333-333333333333",
+        "revision": 12,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "33333333-3333-4333-8333-333333333333",
+            "revision": 12,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "segmentIDs": [
+            "44444444-4444-4444-8444-444444444444"
+          ]
+        }
+      ],
+      "payload": {
+        "title": "安排复核",
+        "notes": "https://example.invalid/a/b\n\"确认\"\t\\\u0000",
+        "listID": "Actual-Case-Sensitive-List-ID",
+        "due": null,
+        "alarm": null,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      }
+    },
+    "canonicalUTF8": "{\"actionID\":\"11111111-1111-4111-8111-111111111111\",\"artifactID\":\"22222222-2222-4222-8222-222222222222\",\"citations\":[{\"segmentIDs\":[\"44444444-4444-4444-8444-444444444444\"],\"source\":{\"recordingID\":\"33333333-3333-4333-8333-333333333333\",\"revision\":12,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}],\"payload\":{\"alarm\":null,\"due\":null,\"listID\":\"Actual-Case-Sensitive-List-ID\",\"notes\":\"https://example.invalid/a/b\\n\\\"确认\\\"\\t\\\\\\u0000\",\"sourceMarker\":{\"carrier\":\"url\"},\"title\":\"安排复核\"},\"source\":{\"recordingID\":\"33333333-3333-4333-8333-333333333333\",\"revision\":12,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+    "sha256": "e54b58ca49181ce690ed588f2565e2cd51dc47b949a6d549bfcd303c382b8a99"
+  },
+  {
+    "name": "integer-and-array-order",
+    "value": {
+      "actionID": "11111111-1111-4111-8111-111111111111",
+      "artifactID": "22222222-2222-4222-8222-222222222222",
+      "source": {
+        "recordingID": "33333333-3333-4333-8333-333333333333",
+        "revision": 9223372036854775807,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "citations": [
+        {
+          "source": {
+            "recordingID": "33333333-3333-4333-8333-333333333333",
+            "revision": 12,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "segmentIDs": [
+            "44444444-4444-4444-8444-444444444444"
+          ]
+        },
+        {
+          "source": {
+            "recordingID": "33333333-3333-4333-8333-333333333333",
+            "revision": 9223372036854775807,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "segmentIDs": [
+            "55555555-5555-4555-8555-555555555555"
+          ]
+        }
+      ],
+      "payload": {
+        "title": "安排复核",
+        "notes": null,
+        "listID": "Actual-Case-Sensitive-List-ID",
+        "due": null,
+        "alarm": null,
+        "sourceMarker": {
+          "carrier": "url"
+        }
+      }
+    },
+    "canonicalUTF8": "{\"actionID\":\"11111111-1111-4111-8111-111111111111\",\"artifactID\":\"22222222-2222-4222-8222-222222222222\",\"citations\":[{\"segmentIDs\":[\"44444444-4444-4444-8444-444444444444\"],\"source\":{\"recordingID\":\"33333333-3333-4333-8333-333333333333\",\"revision\":12,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}},{\"segmentIDs\":[\"55555555-5555-4555-8555-555555555555\"],\"source\":{\"recordingID\":\"33333333-3333-4333-8333-333333333333\",\"revision\":9223372036854775807,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}],\"payload\":{\"alarm\":null,\"due\":null,\"listID\":\"Actual-Case-Sensitive-List-ID\",\"notes\":null,\"sourceMarker\":{\"carrier\":\"url\"},\"title\":\"安排复核\"},\"source\":{\"recordingID\":\"33333333-3333-4333-8333-333333333333\",\"revision\":9223372036854775807,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+    "sha256": "992b250d53f807da8301b2b18653e610ba18d8fc416b743efa3fc2a30d323902"
+  },
+  {
+    "name": "scalar-key-order-not-utf16-or-locale",
+    "value": {
+      "😀": 2,
+      "": 1,
+      "é": "NFC",
+      "é": "NFD",
+      "Z": 0,
+      "a": true
+    },
+    "canonicalUTF8": "{\"Z\":0,\"a\":true,\"é\":\"NFD\",\"é\":\"NFC\",\"\":1,\"😀\":2}",
+    "sha256": "7f217867460ca4df472dd9f8576cbb4a77dfffba8e3caf1b81239424b87ad3d3"
+  },
+  {
+    "name": "nfc-exact-value",
+    "value": {
+      "text": "é"
+    },
+    "canonicalUTF8": "{\"text\":\"é\"}",
+    "sha256": "42d3cbf59fdccced04e5dff14433fb52d34d58e385e9770ffd896ff517d63b92"
+  },
+  {
+    "name": "nfd-exact-value",
+    "value": {
+      "text": "é"
+    },
+    "canonicalUTF8": "{\"text\":\"é\"}",
+    "sha256": "9b53287cd41955684903378d2b1b4a3ddea9d80d67dcd026319a7c5a9a8a8b42"
+  },
+  {
+    "name": "bool-versus-one",
+    "value": {
+      "boolean": true,
+      "integer": 1
+    },
+    "canonicalUTF8": "{\"boolean\":true,\"integer\":1}",
+    "sha256": "0f65c946979115f925b6e9f26a6545f7f6aab86bb81bd30d39aefa5ea96e2305"
+  },
+  {
+    "name": "explicit-null-field",
+    "value": {
+      "a": null
+    },
+    "canonicalUTF8": "{\"a\":null}",
+    "sha256": "d091f9c83c091f79652fe8786375b3fe4ce0861a56f5bfbafedbe431877ff0e8"
+  },
+  {
+    "name": "omitted-null-field",
+    "value": {},
+    "canonicalUTF8": "{}",
+    "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  {
+    "name": "array-forward",
+    "value": [
+      1,
+      false,
+      null,
+      "尾"
+    ],
+    "canonicalUTF8": "[1,false,null,\"尾\"]",
+    "sha256": "74022da8e14e1d80cedde594996f201c0b65a3f0e933aebc5bb800fc63885ec0"
+  },
+  {
+    "name": "array-reverse",
+    "value": [
+      "尾",
+      null,
+      false,
+      1
+    ],
+    "canonicalUTF8": "[\"尾\",null,false,1]",
+    "sha256": "42d31d2ebbcf225c0f0f716faabbc1b3fe5b16c2b7a5a3fd61ef1c24323b1fa9"
+  },
+  {
+    "name": "int64-min-max-and-above-double-exact",
+    "value": [
+      -9223372036854775808,
+      9223372036854775807,
+      9007199254740993
+    ],
+    "canonicalUTF8": "[-9223372036854775808,9223372036854775807,9007199254740993]",
+    "sha256": "599765c8d940b54a73b09253d0647b0ef0a93fb38fcc3040d298487a8a13b506"
+  },
+  {
+    "name": "all-c0-short-and-lowercase-escapes",
+    "value": {
+      "text": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t\n\u000b\f\r\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f"
+    },
+    "canonicalUTF8": "{\"text\":\"\\u0000\\u0001\\u0002\\u0003\\u0004\\u0005\\u0006\\u0007\\b\\t\\n\\u000b\\f\\r\\u000e\\u000f\\u0010\\u0011\\u0012\\u0013\\u0014\\u0015\\u0016\\u0017\\u0018\\u0019\\u001a\\u001b\\u001c\\u001d\\u001e\\u001f\"}",
+    "sha256": "243e5755a8622f007927b1835641f94ced42b81eb173de6b3c66c6e1567eb70a"
+  },
+  {
+    "name": "line-separators-and-slash",
+    "value": {
+      "text": "/  🧭"
+    },
+    "canonicalUTF8": "{\"text\":\"/  🧭\"}",
+    "sha256": "5f2ed4477fd0ea2b714e29b36f9a989a8e188891dd3773b2645d9f72e420c5d7"
+  },
+  {
+    "name": "fractional-number",
+    "value": 1.5,
+    "errorCode": "unsupportedCanonicalType"
+  },
+  {
+    "name": "integral-float",
+    "value": 1.0,
+    "errorCode": "unsupportedCanonicalType"
+  },
+  {
+    "name": "int64-upper-overflow",
+    "value": 9223372036854775808,
+    "errorCode": "integerOutsideInt64"
+  },
+  {
+    "name": "int64-lower-overflow",
+    "value": -9223372036854775809,
+    "errorCode": "integerOutsideInt64"
+  },
+  {
+    "name": "lone-high-surrogate",
+    "valueUTF16": [
+      55296
+    ],
+    "errorCode": "invalidUnicode"
+  },
+  {
+    "name": "lone-low-surrogate",
+    "valueUTF16": [
+      56320
+    ],
+    "errorCode": "invalidUnicode"
+  },
+  {
+    "name": "nan-number",
+    "valueNumber": "nan",
+    "errorCode": "unsupportedCanonicalType"
+  },
+  {
+    "name": "positive-infinity",
+    "valueNumber": "positiveInfinity",
+    "errorCode": "unsupportedCanonicalType"
+  },
+  {
+    "name": "negative-infinity",
+    "valueNumber": "negativeInfinity",
+    "errorCode": "unsupportedCanonicalType"
+  }
+]

@@ -4378,6 +4378,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>06225E73CA3E73A7A5A24CEF</string>
 				<string>62236324E7462917E9990755</string>
 				<string>28567AAFE75900F1D57A2135</string>
+				<string>60DBBEC13F584AF4AFB11F9F</string>
 			</array>
 		</dict>
 		<key>BKP000215</key>
@@ -17120,6 +17121,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>2A45E1AB97FE5823722A53E3</string>
 				<string>9B8D79BE197770B81554AC43</string>
 				<string>1A204D3FD4BF8596AAFC7F56</string>
+				<string>DA86E2938284C92084D55AF1</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
@@ -20442,6 +20444,24 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>Launch Screen.storyboard</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>60DBBEC13F584AF4AFB11F9F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../speech_note/speech_note/Features/Transcription/TranscriptionRetryPreflight.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>DA86E2938284C92084D55AF1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>60DBBEC13F584AF4AFB11F9F</string>
 		</dict>
 	</dict>
 	<key>rootObject</key>

@@ -1,0 +1,4320 @@
+[
+  {
+    "name": "verified_no_speech_full_domain",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "legacy_complete_and_empty_gaps_remain_unknown",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "unknown",
+      "expectedRanges": [],
+      "observedRanges": [],
+      "captureGaps": [],
+      "legacyAnchors": [
+        {
+          "segmentID": "00000003-0000-4000-8000-000000000003",
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "sample": 0
+        }
+      ],
+      "warnings": [
+        {
+          "code": "legacyEvidenceMissing",
+          "range": null
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "legacy_point_is_not_coverage",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [],
+      "observedRanges": [],
+      "captureGaps": [],
+      "legacyAnchors": [
+        {
+          "segmentID": "00000003-0000-4000-8000-000000000003",
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "sample": 0
+        }
+      ],
+      "warnings": [
+        {
+          "code": "legacyEvidenceMissing",
+          "range": null
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "contentStateMismatch"
+  },
+  {
+    "name": "open_domain_is_unknown",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": false,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "capturing",
+      "contentState": "unknown",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "open_domain_cannot_be_complete",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": false,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "capturing",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "empty_result_without_vad_is_not_silence",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "unknown",
+              "speechRanges": [],
+              "detectorVersion": null
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "silenceEvidenceMissing"
+  },
+  {
+    "name": "padded_decode_does_not_prove_silence",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 80000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "decodeCoverageIncomplete"
+  },
+  {
+    "name": "voiced_empty_is_known_partial",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "partial",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "voicedEmpty",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "speech",
+              "speechRanges": [
+                {
+                  "startSample": 32000,
+                  "endSample": 128000
+                }
+              ],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "empty",
+              "processedSpeechRanges": [
+                {
+                  "startSample": 32000,
+                  "endSample": 128000
+                }
+              ]
+            }
+          },
+          "reasonCode": "asrReturnedEmpty"
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "voiced_empty_cannot_be_complete",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "voicedEmpty",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "speech",
+              "speechRanges": [
+                {
+                  "startSample": 32000,
+                  "endSample": 128000
+                }
+              ],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "empty",
+              "processedSpeechRanges": [
+                {
+                  "startSample": 32000,
+                  "endSample": 128000
+                }
+              ]
+            }
+          },
+          "reasonCode": "asrReturnedEmpty"
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "contentStateMismatch"
+  },
+  {
+    "name": "unexecuted_asr_is_not_voiced_empty",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "partial",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "voicedEmpty",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "speech",
+              "speechRanges": [
+                {
+                  "startSample": 32000,
+                  "endSample": 128000
+                }
+              ],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": [
+                {
+                  "startSample": 32000,
+                  "endSample": 128000
+                }
+              ]
+            }
+          },
+          "reasonCode": "asrReturnedEmpty"
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "voicedEmptyEvidenceMissing"
+  },
+  {
+    "name": "asr_failure_has_real_stage",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "partial",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "failed",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "speech",
+              "speechRanges": [
+                {
+                  "startSample": 32000,
+                  "endSample": 128000
+                }
+              ],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "failed",
+              "processedSpeechRanges": []
+            }
+          },
+          "stage": "asr",
+          "reasonCode": "runtimeFailed"
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "failed_requires_stage",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "partial",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "failed",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "speech",
+              "speechRanges": [
+                {
+                  "startSample": 32000,
+                  "endSample": 128000
+                }
+              ],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "failed",
+              "processedSpeechRanges": []
+            }
+          },
+          "reasonCode": "runtimeFailed"
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "failed_stage_must_match_evidence",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "partial",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "failed",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "speech",
+              "speechRanges": [
+                {
+                  "startSample": 32000,
+                  "endSample": 128000
+                }
+              ],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "failed",
+              "processedSpeechRanges": []
+            }
+          },
+          "stage": "vad",
+          "reasonCode": "runtimeFailed"
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "failureStageMismatch"
+  },
+  {
+    "name": "terminal_with_missing_range_is_partial",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "partial",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 320000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        },
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 160000,
+            "endSample": 320000
+          },
+          "outcome": "missing",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "notRun",
+              "decodedRanges": []
+            },
+            "vad": {
+              "status": "notRun",
+              "speechRanges": [],
+              "detectorVersion": null
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          },
+          "reasonCode": "sourceMissing"
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "terminal_jobs_do_not_hide_missing_range",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 320000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        },
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 160000,
+            "endSample": 320000
+          },
+          "outcome": "missing",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "notRun",
+              "decodedRanges": []
+            },
+            "vad": {
+              "status": "notRun",
+              "speechRanges": [],
+              "detectorVersion": null
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          },
+          "reasonCode": "sourceMissing"
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "contentStateMismatch"
+  },
+  {
+    "name": "adjacent_ranges_form_full_union",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 80000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 80000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        },
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 80000,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 80000,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "other_source_cannot_fill_coverage",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 80000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 80000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        },
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "0000001e-0000-4000-8000-00000000001e",
+            "startSample": 80000,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 80000,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "observationOutsideDomain"
+  },
+  {
+    "name": "all_voiced_ranges_must_be_processed",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "transcribed",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [
+            "00000003-0000-4000-8000-000000000003"
+          ],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "speech",
+              "speechRanges": [
+                {
+                  "startSample": 16000,
+                  "endSample": 64000
+                },
+                {
+                  "startSample": 96000,
+                  "endSample": 128000
+                }
+              ],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "text",
+              "processedSpeechRanges": [
+                {
+                  "startSample": 16000,
+                  "endSample": 64000
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "speechCoverageIncomplete"
+  },
+  {
+    "name": "selection_complete_does_not_upgrade_recording",
+    "definition": "completeness",
+    "value": {
+      "scope": "selection",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": [],
+      "selectedSegmentIDs": [
+        "00000003-0000-4000-8000-000000000003"
+      ],
+      "recordingContentState": "partial"
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "recordingContentState": "partial"
+    }
+  },
+  {
+    "name": "selection_cannot_relabel_external_recording",
+    "definition": "completeness",
+    "value": {
+      "scope": "selection",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": [],
+      "selectedSegmentIDs": [
+        "00000003-0000-4000-8000-000000000003"
+      ],
+      "recordingContentState": "complete"
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "recordingCompletenessChanged",
+    "context": {
+      "recordingContentState": "partial"
+    }
+  },
+  {
+    "name": "legacy_no_range_evidence_is_unknown",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "unknown",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "half_open_bounds_are_not_schema_proof",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "unknown",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 10,
+          "endSample": 5
+        }
+      ],
+      "observedRanges": [],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "invalidRange"
+  },
+  {
+    "name": "clock_is_fixed_16khz",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 48000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 160000
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "expired_audio_preserves_proven_transcript",
+    "definition": "transcriptEvidence",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptEvidence",
+      "evidenceID": "00000007-0000-4000-8000-000000000007",
+      "source": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "completeness": {
+        "scope": "recording",
+        "domainFinalized": true,
+        "sampleRate": 16000,
+        "rangeConvention": "halfOpen",
+        "processingState": "terminal",
+        "contentState": "complete",
+        "expectedRanges": [
+          {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          }
+        ],
+        "observedRanges": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "outcome": "silence",
+            "jobID": "00000004-0000-4000-8000-000000000004",
+            "attemptID": "00000005-0000-4000-8000-000000000005",
+            "segmentIDs": [],
+            "evidence": {
+              "decode": {
+                "status": "complete",
+                "decodedRanges": [
+                  {
+                    "startSample": 0,
+                    "endSample": 160000
+                  }
+                ]
+              },
+              "vad": {
+                "status": "noSpeech",
+                "speechRanges": [],
+                "detectorVersion": "fixture-vad-1"
+              },
+              "asr": {
+                "status": "notRun",
+                "processedSpeechRanges": []
+              }
+            }
+          }
+        ],
+        "captureGaps": [],
+        "legacyAnchors": [],
+        "warnings": []
+      },
+      "audioAvailability": {
+        "checkedAt": "2026-10-03T09:00:00+08:00",
+        "sources": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "status": "expired",
+            "reasonCode": "retentionExpired"
+          }
+        ]
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "evidence_cannot_attach_to_another_source",
+    "definition": "transcriptEvidence",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptEvidence",
+      "evidenceID": "00000007-0000-4000-8000-000000000007",
+      "source": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "completeness": {
+        "scope": "recording",
+        "domainFinalized": true,
+        "sampleRate": 16000,
+        "rangeConvention": "halfOpen",
+        "processingState": "terminal",
+        "contentState": "complete",
+        "expectedRanges": [
+          {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          }
+        ],
+        "observedRanges": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "outcome": "silence",
+            "jobID": "00000004-0000-4000-8000-000000000004",
+            "attemptID": "00000005-0000-4000-8000-000000000005",
+            "segmentIDs": [],
+            "evidence": {
+              "decode": {
+                "status": "complete",
+                "decodedRanges": [
+                  {
+                    "startSample": 0,
+                    "endSample": 160000
+                  }
+                ]
+              },
+              "vad": {
+                "status": "noSpeech",
+                "speechRanges": [],
+                "detectorVersion": "fixture-vad-1"
+              },
+              "asr": {
+                "status": "notRun",
+                "processedSpeechRanges": []
+              }
+            }
+          }
+        ],
+        "captureGaps": [],
+        "legacyAnchors": [],
+        "warnings": []
+      },
+      "audioAvailability": {
+        "checkedAt": "2026-10-03T09:00:00+08:00",
+        "sources": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "status": "expired",
+            "reasonCode": "retentionExpired"
+          }
+        ]
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "evidenceSourceMismatch",
+    "context": {
+      "source": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 4,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "name": "preflight_decodes_declared_range",
+    "definition": "preflight",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptionPreflight",
+      "planID": "00000006-0000-4000-8000-000000000006",
+      "baseSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "checkedAt": "2026-10-03T09:00:00+08:00",
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "requestedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "results": [
+        {
+          "scope": {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          },
+          "status": "readable",
+          "reasonCode": null,
+          "declaredSampleCount": 160000,
+          "actualSampleCount": 160000,
+          "decodeRange": {
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "decodedSampleCount": 160000,
+          "fileIdentity": "fixture-file-v1",
+          "sourceStartSample": 0
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "60_seconds_claim_with_10_seconds_actual_is_not_readable",
+    "definition": "preflight",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptionPreflight",
+      "planID": "00000006-0000-4000-8000-000000000006",
+      "baseSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "checkedAt": "2026-10-03T09:00:00+08:00",
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "requestedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 960000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "results": [
+        {
+          "scope": {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 960000
+            },
+            "processingRangeID": null
+          },
+          "status": "readable",
+          "reasonCode": null,
+          "declaredSampleCount": 960000,
+          "actualSampleCount": 160000,
+          "decodeRange": {
+            "startSample": 0,
+            "endSample": 960000
+          },
+          "decodedSampleCount": 960000,
+          "fileIdentity": "fixture-file-v1",
+          "sourceStartSample": 0
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "readableRangeNotCovered"
+  },
+  {
+    "name": "truncated_range_is_unavailable_without_clearing_text",
+    "definition": "preflight",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptionPreflight",
+      "planID": "00000006-0000-4000-8000-000000000006",
+      "baseSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "checkedAt": "2026-10-03T09:00:00+08:00",
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "requestedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 960000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "results": [
+        {
+          "scope": {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 960000
+            },
+            "processingRangeID": null
+          },
+          "status": "unavailable",
+          "reasonCode": "truncated",
+          "declaredSampleCount": 960000,
+          "actualSampleCount": 160000,
+          "decodeRange": {
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "decodedSampleCount": 160000,
+          "fileIdentity": "fixture-file-v1",
+          "sourceStartSample": 0
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "preflight_accounts_for_every_source",
+    "definition": "preflight",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptionPreflight",
+      "planID": "00000006-0000-4000-8000-000000000006",
+      "baseSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "checkedAt": "2026-10-03T09:00:00+08:00",
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "requestedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        },
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "0000001f-0000-4000-8000-00000000001f",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "results": [
+        {
+          "scope": {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          },
+          "status": "readable",
+          "reasonCode": null,
+          "declaredSampleCount": 160000,
+          "actualSampleCount": 160000,
+          "decodeRange": {
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "decodedSampleCount": 160000,
+          "fileIdentity": "fixture-file-v1",
+          "sourceStartSample": 0
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "preflightInventoryIncomplete"
+  },
+  {
+    "name": "ready_candidate_can_cover_only_successful_scope",
+    "definition": "candidate",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptionCandidate",
+      "candidateID": "00000009-0000-4000-8000-000000000009",
+      "attemptID": "00000005-0000-4000-8000-000000000005",
+      "planID": "00000006-0000-4000-8000-000000000006",
+      "baseSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "requestedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        },
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "0000001f-0000-4000-8000-00000000001f",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "actuallyProcessedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "evidenceID": "00000007-0000-4000-8000-000000000007",
+      "drafts": [
+        {
+          "draftID": "00000008-0000-4000-8000-000000000008",
+          "origin": "asr",
+          "text": "新的识别候选",
+          "sourceRanges": [
+            {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            }
+          ],
+          "mapping": {
+            "status": "stable",
+            "existingSegmentIDs": [
+              "00000003-0000-4000-8000-000000000003"
+            ]
+          }
+        }
+      ],
+      "status": "ready",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "failure": null
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "candidate_cannot_erase_outside_retry_scope",
+    "definition": "candidate",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptionCandidate",
+      "candidateID": "00000009-0000-4000-8000-000000000009",
+      "attemptID": "00000005-0000-4000-8000-000000000005",
+      "planID": "00000006-0000-4000-8000-000000000006",
+      "baseSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "requestedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        },
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "0000001f-0000-4000-8000-00000000001f",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "actuallyProcessedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "evidenceID": "00000007-0000-4000-8000-000000000007",
+      "drafts": [
+        {
+          "draftID": "00000008-0000-4000-8000-000000000008",
+          "origin": "asr",
+          "text": "新的识别候选",
+          "sourceRanges": [
+            {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 320000
+            }
+          ],
+          "mapping": {
+            "status": "stable",
+            "existingSegmentIDs": [
+              "00000003-0000-4000-8000-000000000003"
+            ]
+          }
+        }
+      ],
+      "status": "ready",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "failure": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "draftOutsideProcessedScope"
+  },
+  {
+    "name": "candidate_draft_ids_are_unique",
+    "definition": "candidate",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptionCandidate",
+      "candidateID": "00000009-0000-4000-8000-000000000009",
+      "attemptID": "00000005-0000-4000-8000-000000000005",
+      "planID": "00000006-0000-4000-8000-000000000006",
+      "baseSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "requestedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        },
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "0000001f-0000-4000-8000-00000000001f",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "actuallyProcessedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "evidenceID": "00000007-0000-4000-8000-000000000007",
+      "drafts": [
+        {
+          "draftID": "00000008-0000-4000-8000-000000000008",
+          "origin": "asr",
+          "text": "新的识别候选",
+          "sourceRanges": [
+            {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            }
+          ],
+          "mapping": {
+            "status": "stable",
+            "existingSegmentIDs": [
+              "00000003-0000-4000-8000-000000000003"
+            ]
+          }
+        },
+        {
+          "draftID": "00000008-0000-4000-8000-000000000008",
+          "origin": "asr",
+          "text": "另一句但同 ID",
+          "sourceRanges": [
+            {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            }
+          ],
+          "mapping": {
+            "status": "stable",
+            "existingSegmentIDs": [
+              "00000003-0000-4000-8000-000000000003"
+            ]
+          }
+        }
+      ],
+      "status": "ready",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "failure": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "duplicateDraftID"
+  },
+  {
+    "name": "source_is_only_recording_revision_hash",
+    "definition": "candidate",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptionCandidate",
+      "candidateID": "00000009-0000-4000-8000-000000000009",
+      "attemptID": "00000005-0000-4000-8000-000000000005",
+      "planID": "00000006-0000-4000-8000-000000000006",
+      "baseSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "audioAvailable": false
+      },
+      "requestedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        },
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "0000001f-0000-4000-8000-00000000001f",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "actuallyProcessedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "evidenceID": "00000007-0000-4000-8000-000000000007",
+      "drafts": [
+        {
+          "draftID": "00000008-0000-4000-8000-000000000008",
+          "origin": "asr",
+          "text": "新的识别候选",
+          "sourceRanges": [
+            {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            }
+          ],
+          "mapping": {
+            "status": "stable",
+            "existingSegmentIDs": [
+              "00000003-0000-4000-8000-000000000003"
+            ]
+          }
+        }
+      ],
+      "status": "ready",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "failure": null
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "adoption_uses_seen_source_and_candidate",
+    "definition": "adoption",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptAdoption",
+      "adoptionID": "0000000c-0000-4000-8000-00000000000c",
+      "candidateID": "00000009-0000-4000-8000-000000000009",
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedCurrentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "mode": "preserveCalibrated",
+      "choices": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "existingSegmentIDs": [
+            "00000003-0000-4000-8000-000000000003"
+          ],
+          "draftIDs": [
+            "00000008-0000-4000-8000-000000000008"
+          ],
+          "decision": "acceptCandidate"
+        }
+      ],
+      "explicitReplaceConfirmed": false,
+      "previousVersionID": null,
+      "status": "prepared",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "resultSource": null
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "currentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "candidate": {
+        "schema": "voice-context/recording-ai@1",
+        "objectKind": "transcriptionCandidate",
+        "candidateID": "00000009-0000-4000-8000-000000000009",
+        "attemptID": "00000005-0000-4000-8000-000000000005",
+        "planID": "00000006-0000-4000-8000-000000000006",
+        "baseSource": {
+          "recordingID": "00000001-0000-4000-8000-000000000001",
+          "revision": 3,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "requestedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          },
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "0000001f-0000-4000-8000-00000000001f",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "actuallyProcessedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "evidenceID": "00000007-0000-4000-8000-000000000007",
+        "drafts": [
+          {
+            "draftID": "00000008-0000-4000-8000-000000000008",
+            "origin": "asr",
+            "text": "新的识别候选",
+            "sourceRanges": [
+              {
+                "sourceKind": "audio_chunk",
+                "sourceID": "00000002-0000-4000-8000-000000000002",
+                "startSample": 0,
+                "endSample": 160000
+              }
+            ],
+            "mapping": {
+              "status": "stable",
+              "existingSegmentIDs": [
+                "00000003-0000-4000-8000-000000000003"
+              ]
+            }
+          }
+        ],
+        "status": "ready",
+        "createdAt": "2026-10-03T09:00:00+08:00",
+        "failure": null
+      },
+      "manuallyEditedSegmentIDs": []
+    }
+  },
+  {
+    "name": "late_adoption_conflicts_with_new_user_version",
+    "definition": "adoption",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptAdoption",
+      "adoptionID": "0000000c-0000-4000-8000-00000000000c",
+      "candidateID": "00000009-0000-4000-8000-000000000009",
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedCurrentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "mode": "preserveCalibrated",
+      "choices": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "existingSegmentIDs": [
+            "00000003-0000-4000-8000-000000000003"
+          ],
+          "draftIDs": [
+            "00000008-0000-4000-8000-000000000008"
+          ],
+          "decision": "acceptCandidate"
+        }
+      ],
+      "explicitReplaceConfirmed": false,
+      "previousVersionID": null,
+      "status": "prepared",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "resultSource": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "sourceChanged",
+    "context": {
+      "currentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 4,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "candidate": {
+        "schema": "voice-context/recording-ai@1",
+        "objectKind": "transcriptionCandidate",
+        "candidateID": "00000009-0000-4000-8000-000000000009",
+        "attemptID": "00000005-0000-4000-8000-000000000005",
+        "planID": "00000006-0000-4000-8000-000000000006",
+        "baseSource": {
+          "recordingID": "00000001-0000-4000-8000-000000000001",
+          "revision": 4,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "requestedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          },
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "0000001f-0000-4000-8000-00000000001f",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "actuallyProcessedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "evidenceID": "00000007-0000-4000-8000-000000000007",
+        "drafts": [
+          {
+            "draftID": "00000008-0000-4000-8000-000000000008",
+            "origin": "asr",
+            "text": "新的识别候选",
+            "sourceRanges": [
+              {
+                "sourceKind": "audio_chunk",
+                "sourceID": "00000002-0000-4000-8000-000000000002",
+                "startSample": 0,
+                "endSample": 160000
+              }
+            ],
+            "mapping": {
+              "status": "stable",
+              "existingSegmentIDs": [
+                "00000003-0000-4000-8000-000000000003"
+              ]
+            }
+          }
+        ],
+        "status": "ready",
+        "createdAt": "2026-10-03T09:00:00+08:00",
+        "failure": null
+      },
+      "manuallyEditedSegmentIDs": []
+    }
+  },
+  {
+    "name": "default_adoption_keeps_calibrated_segment",
+    "definition": "adoption",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptAdoption",
+      "adoptionID": "0000000c-0000-4000-8000-00000000000c",
+      "candidateID": "00000009-0000-4000-8000-000000000009",
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedCurrentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "mode": "preserveCalibrated",
+      "choices": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "existingSegmentIDs": [
+            "00000003-0000-4000-8000-000000000003"
+          ],
+          "draftIDs": [
+            "00000008-0000-4000-8000-000000000008"
+          ],
+          "decision": "acceptCandidate"
+        }
+      ],
+      "explicitReplaceConfirmed": false,
+      "previousVersionID": null,
+      "status": "prepared",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "resultSource": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "calibratedSegmentReplacement",
+    "context": {
+      "currentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "candidate": {
+        "schema": "voice-context/recording-ai@1",
+        "objectKind": "transcriptionCandidate",
+        "candidateID": "00000009-0000-4000-8000-000000000009",
+        "attemptID": "00000005-0000-4000-8000-000000000005",
+        "planID": "00000006-0000-4000-8000-000000000006",
+        "baseSource": {
+          "recordingID": "00000001-0000-4000-8000-000000000001",
+          "revision": 3,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "requestedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          },
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "0000001f-0000-4000-8000-00000000001f",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "actuallyProcessedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "evidenceID": "00000007-0000-4000-8000-000000000007",
+        "drafts": [
+          {
+            "draftID": "00000008-0000-4000-8000-000000000008",
+            "origin": "asr",
+            "text": "新的识别候选",
+            "sourceRanges": [
+              {
+                "sourceKind": "audio_chunk",
+                "sourceID": "00000002-0000-4000-8000-000000000002",
+                "startSample": 0,
+                "endSample": 160000
+              }
+            ],
+            "mapping": {
+              "status": "stable",
+              "existingSegmentIDs": [
+                "00000003-0000-4000-8000-000000000003"
+              ]
+            }
+          }
+        ],
+        "status": "ready",
+        "createdAt": "2026-10-03T09:00:00+08:00",
+        "failure": null
+      },
+      "manuallyEditedSegmentIDs": [
+        "00000003-0000-4000-8000-000000000003"
+      ]
+    }
+  },
+  {
+    "name": "unstable_mapping_needs_explicit_review",
+    "definition": "adoption",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptAdoption",
+      "adoptionID": "0000000c-0000-4000-8000-00000000000c",
+      "candidateID": "00000009-0000-4000-8000-000000000009",
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedCurrentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "mode": "preserveCalibrated",
+      "choices": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "existingSegmentIDs": [
+            "00000003-0000-4000-8000-000000000003"
+          ],
+          "draftIDs": [
+            "00000008-0000-4000-8000-000000000008"
+          ],
+          "decision": "acceptCandidate"
+        }
+      ],
+      "explicitReplaceConfirmed": false,
+      "previousVersionID": null,
+      "status": "prepared",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "resultSource": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "mappingNeedsReview",
+    "context": {
+      "currentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "candidate": {
+        "schema": "voice-context/recording-ai@1",
+        "objectKind": "transcriptionCandidate",
+        "candidateID": "00000009-0000-4000-8000-000000000009",
+        "attemptID": "00000005-0000-4000-8000-000000000005",
+        "planID": "00000006-0000-4000-8000-000000000006",
+        "baseSource": {
+          "recordingID": "00000001-0000-4000-8000-000000000001",
+          "revision": 3,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "requestedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          },
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "0000001f-0000-4000-8000-00000000001f",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "actuallyProcessedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "evidenceID": "00000007-0000-4000-8000-000000000007",
+        "drafts": [
+          {
+            "draftID": "00000008-0000-4000-8000-000000000008",
+            "origin": "asr",
+            "text": "新的识别候选",
+            "sourceRanges": [
+              {
+                "sourceKind": "audio_chunk",
+                "sourceID": "00000002-0000-4000-8000-000000000002",
+                "startSample": 0,
+                "endSample": 160000
+              }
+            ],
+            "mapping": {
+              "status": "needsReview",
+              "existingSegmentIDs": [
+                "00000003-0000-4000-8000-000000000003"
+              ]
+            }
+          }
+        ],
+        "status": "ready",
+        "createdAt": "2026-10-03T09:00:00+08:00",
+        "failure": null
+      },
+      "manuallyEditedSegmentIDs": []
+    }
+  },
+  {
+    "name": "explicit_replacement_keeps_previous_version",
+    "definition": "adoption",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptAdoption",
+      "adoptionID": "0000000c-0000-4000-8000-00000000000c",
+      "candidateID": "00000009-0000-4000-8000-000000000009",
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedCurrentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "mode": "replaceAll",
+      "choices": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "existingSegmentIDs": [
+            "00000003-0000-4000-8000-000000000003"
+          ],
+          "draftIDs": [
+            "00000008-0000-4000-8000-000000000008"
+          ],
+          "decision": "acceptCandidate"
+        }
+      ],
+      "explicitReplaceConfirmed": true,
+      "previousVersionID": "0000000a-0000-4000-8000-00000000000a",
+      "status": "committed",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "resultSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 4,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "currentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "candidate": {
+        "schema": "voice-context/recording-ai@1",
+        "objectKind": "transcriptionCandidate",
+        "candidateID": "00000009-0000-4000-8000-000000000009",
+        "attemptID": "00000005-0000-4000-8000-000000000005",
+        "planID": "00000006-0000-4000-8000-000000000006",
+        "baseSource": {
+          "recordingID": "00000001-0000-4000-8000-000000000001",
+          "revision": 3,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "requestedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          },
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "0000001f-0000-4000-8000-00000000001f",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "actuallyProcessedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "evidenceID": "00000007-0000-4000-8000-000000000007",
+        "drafts": [
+          {
+            "draftID": "00000008-0000-4000-8000-000000000008",
+            "origin": "asr",
+            "text": "新的识别候选",
+            "sourceRanges": [
+              {
+                "sourceKind": "audio_chunk",
+                "sourceID": "00000002-0000-4000-8000-000000000002",
+                "startSample": 0,
+                "endSample": 160000
+              }
+            ],
+            "mapping": {
+              "status": "stable",
+              "existingSegmentIDs": [
+                "00000003-0000-4000-8000-000000000003"
+              ]
+            }
+          }
+        ],
+        "status": "ready",
+        "createdAt": "2026-10-03T09:00:00+08:00",
+        "failure": null
+      },
+      "manuallyEditedSegmentIDs": []
+    }
+  },
+  {
+    "name": "committed_replacement_requires_recovery_version",
+    "definition": "adoption",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptAdoption",
+      "adoptionID": "0000000c-0000-4000-8000-00000000000c",
+      "candidateID": "00000009-0000-4000-8000-000000000009",
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedCurrentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "mode": "replaceAll",
+      "choices": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "existingSegmentIDs": [
+            "00000003-0000-4000-8000-000000000003"
+          ],
+          "draftIDs": [
+            "00000008-0000-4000-8000-000000000008"
+          ],
+          "decision": "acceptCandidate"
+        }
+      ],
+      "explicitReplaceConfirmed": true,
+      "previousVersionID": null,
+      "status": "committed",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "resultSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 4,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "adoption_does_not_roll_back_revision",
+    "definition": "adoption",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptAdoption",
+      "adoptionID": "0000000c-0000-4000-8000-00000000000c",
+      "candidateID": "00000009-0000-4000-8000-000000000009",
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedCurrentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "mode": "replaceAll",
+      "choices": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "existingSegmentIDs": [
+            "00000003-0000-4000-8000-000000000003"
+          ],
+          "draftIDs": [
+            "00000008-0000-4000-8000-000000000008"
+          ],
+          "decision": "acceptCandidate"
+        }
+      ],
+      "explicitReplaceConfirmed": true,
+      "previousVersionID": "0000000a-0000-4000-8000-00000000000a",
+      "status": "committed",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "resultSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "revisionNotAdvanced",
+    "context": {
+      "currentSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "candidate": {
+        "schema": "voice-context/recording-ai@1",
+        "objectKind": "transcriptionCandidate",
+        "candidateID": "00000009-0000-4000-8000-000000000009",
+        "attemptID": "00000005-0000-4000-8000-000000000005",
+        "planID": "00000006-0000-4000-8000-000000000006",
+        "baseSource": {
+          "recordingID": "00000001-0000-4000-8000-000000000001",
+          "revision": 3,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "requestedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          },
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "0000001f-0000-4000-8000-00000000001f",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "actuallyProcessedScopes": [
+          {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 0,
+              "endSample": 160000
+            },
+            "processingRangeID": null
+          }
+        ],
+        "evidenceID": "00000007-0000-4000-8000-000000000007",
+        "drafts": [
+          {
+            "draftID": "00000008-0000-4000-8000-000000000008",
+            "origin": "asr",
+            "text": "新的识别候选",
+            "sourceRanges": [
+              {
+                "sourceKind": "audio_chunk",
+                "sourceID": "00000002-0000-4000-8000-000000000002",
+                "startSample": 0,
+                "endSample": 160000
+              }
+            ],
+            "mapping": {
+              "status": "stable",
+              "existingSegmentIDs": [
+                "00000003-0000-4000-8000-000000000003"
+              ]
+            }
+          }
+        ],
+        "status": "ready",
+        "createdAt": "2026-10-03T09:00:00+08:00",
+        "failure": null
+      },
+      "manuallyEditedSegmentIDs": []
+    }
+  },
+  {
+    "name": "history_hash_is_original_utf8_bytes",
+    "definition": "history",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptVersion",
+      "versionID": "0000000a-0000-4000-8000-00000000000a",
+      "source": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "0e263ec46ceb41a97ec8a8ceb4276445c99d705b026c9648f142157208cde0a8"
+      },
+      "canonicalPath": "Versions/00000001-0000-4000-8000-000000000001/0000000a-0000-4000-8000-00000000000a.json",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "reason": "beforeRetranscription",
+      "parentSource": null
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "canonicalBytesUTF8": "{\"schema\":\"voice-context/transcript@1\",\"recording_id\":\"00000001-0000-4000-8000-000000000001\",\"revision\":3}\n"
+    }
+  },
+  {
+    "name": "equivalent_reencoding_is_not_original_hash",
+    "definition": "history",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptVersion",
+      "versionID": "0000000a-0000-4000-8000-00000000000a",
+      "source": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "canonicalPath": "Versions/00000001-0000-4000-8000-000000000001/0000000a-0000-4000-8000-00000000000a.json",
+      "createdAt": "2026-10-03T09:00:00+08:00",
+      "reason": "beforeRetranscription",
+      "parentSource": null
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "sourceBytesMismatch",
+    "context": {
+      "canonicalBytesUTF8": "{\"schema\":\"voice-context/transcript@1\",\"recording_id\":\"00000001-0000-4000-8000-000000000001\",\"revision\":3}\n"
+    }
+  },
+  {
+    "name": "raw_deleted_system_kept_selected_summary_kept",
+    "definition": "deletion",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "deletion",
+      "recordingID": "00000001-0000-4000-8000-000000000001",
+      "deletionID": "00000028-0000-4000-8000-000000000028",
+      "startedAt": "2026-10-03T09:00:00+08:00",
+      "sourceRevoked": true,
+      "policy": {
+        "raw": "delete",
+        "derived": {
+          "mode": "keepSelected",
+          "keptTypes": [
+            "minutes"
+          ]
+        },
+        "systemItems": "keep"
+      },
+      "state": "completed",
+      "objects": [
+        {
+          "objectID": "00000029-0000-4000-8000-000000000029",
+          "kind": "canonicalTranscript",
+          "dataClass": "raw",
+          "locator": "Objects/00000029-0000-4000-8000-000000000029",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002a-0000-4000-8000-00000000002a",
+          "kind": "inputSnapshot",
+          "dataClass": "raw",
+          "locator": "Objects/0000002a-0000-4000-8000-00000000002a",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002b-0000-4000-8000-00000000002b",
+          "kind": "systemItem",
+          "dataClass": "system",
+          "locator": null,
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002c-0000-4000-8000-00000000002c",
+          "kind": "dailyEntry",
+          "dataClass": "index",
+          "locator": "Objects/0000002c-0000-4000-8000-00000000002c",
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "rebuilt",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002d-0000-4000-8000-00000000002d",
+          "kind": "artifact",
+          "dataClass": "derived",
+          "locator": "Objects/0000002d-0000-4000-8000-00000000002d",
+          "artifactType": "minutes",
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": true,
+    "context": {
+      "requiredObjectIDs": [
+        "00000029-0000-4000-8000-000000000029",
+        "0000002a-0000-4000-8000-00000000002a",
+        "0000002b-0000-4000-8000-00000000002b",
+        "0000002c-0000-4000-8000-00000000002c",
+        "0000002d-0000-4000-8000-00000000002d"
+      ],
+      "activeProducerIDs": []
+    }
+  },
+  {
+    "name": "raw_policy_cannot_keep",
+    "definition": "deletion",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "deletion",
+      "recordingID": "00000001-0000-4000-8000-000000000001",
+      "deletionID": "00000028-0000-4000-8000-000000000028",
+      "startedAt": "2026-10-03T09:00:00+08:00",
+      "sourceRevoked": true,
+      "policy": {
+        "raw": "keep",
+        "derived": {
+          "mode": "keepSelected",
+          "keptTypes": [
+            "minutes"
+          ]
+        },
+        "systemItems": "keep"
+      },
+      "state": "completed",
+      "objects": [
+        {
+          "objectID": "00000029-0000-4000-8000-000000000029",
+          "kind": "canonicalTranscript",
+          "dataClass": "raw",
+          "locator": "Objects/00000029-0000-4000-8000-000000000029",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002a-0000-4000-8000-00000000002a",
+          "kind": "inputSnapshot",
+          "dataClass": "raw",
+          "locator": "Objects/0000002a-0000-4000-8000-00000000002a",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002b-0000-4000-8000-00000000002b",
+          "kind": "systemItem",
+          "dataClass": "system",
+          "locator": null,
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002c-0000-4000-8000-00000000002c",
+          "kind": "dailyEntry",
+          "dataClass": "index",
+          "locator": "Objects/0000002c-0000-4000-8000-00000000002c",
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "rebuilt",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002d-0000-4000-8000-00000000002d",
+          "kind": "artifact",
+          "dataClass": "derived",
+          "locator": "Objects/0000002d-0000-4000-8000-00000000002d",
+          "artifactType": "minutes",
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        }
+      ]
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "system_policy_cannot_delete",
+    "definition": "deletion",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "deletion",
+      "recordingID": "00000001-0000-4000-8000-000000000001",
+      "deletionID": "00000028-0000-4000-8000-000000000028",
+      "startedAt": "2026-10-03T09:00:00+08:00",
+      "sourceRevoked": true,
+      "policy": {
+        "raw": "delete",
+        "derived": {
+          "mode": "keepSelected",
+          "keptTypes": [
+            "minutes"
+          ]
+        },
+        "systemItems": "delete"
+      },
+      "state": "completed",
+      "objects": [
+        {
+          "objectID": "00000029-0000-4000-8000-000000000029",
+          "kind": "canonicalTranscript",
+          "dataClass": "raw",
+          "locator": "Objects/00000029-0000-4000-8000-000000000029",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002a-0000-4000-8000-00000000002a",
+          "kind": "inputSnapshot",
+          "dataClass": "raw",
+          "locator": "Objects/0000002a-0000-4000-8000-00000000002a",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002b-0000-4000-8000-00000000002b",
+          "kind": "systemItem",
+          "dataClass": "system",
+          "locator": null,
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002c-0000-4000-8000-00000000002c",
+          "kind": "dailyEntry",
+          "dataClass": "index",
+          "locator": "Objects/0000002c-0000-4000-8000-00000000002c",
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "rebuilt",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002d-0000-4000-8000-00000000002d",
+          "kind": "artifact",
+          "dataClass": "derived",
+          "locator": "Objects/0000002d-0000-4000-8000-00000000002d",
+          "artifactType": "minutes",
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        }
+      ]
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "retained_summary_does_not_keep_input_snapshot",
+    "definition": "deletion",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "deletion",
+      "recordingID": "00000001-0000-4000-8000-000000000001",
+      "deletionID": "00000028-0000-4000-8000-000000000028",
+      "startedAt": "2026-10-03T09:00:00+08:00",
+      "sourceRevoked": true,
+      "policy": {
+        "raw": "delete",
+        "derived": {
+          "mode": "keepSelected",
+          "keptTypes": [
+            "minutes"
+          ]
+        },
+        "systemItems": "keep"
+      },
+      "state": "completed",
+      "objects": [
+        {
+          "objectID": "00000029-0000-4000-8000-000000000029",
+          "kind": "canonicalTranscript",
+          "dataClass": "raw",
+          "locator": "Objects/00000029-0000-4000-8000-000000000029",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002a-0000-4000-8000-00000000002a",
+          "kind": "inputSnapshot",
+          "dataClass": "raw",
+          "locator": "Objects/0000002a-0000-4000-8000-00000000002a",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002b-0000-4000-8000-00000000002b",
+          "kind": "systemItem",
+          "dataClass": "system",
+          "locator": null,
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002c-0000-4000-8000-00000000002c",
+          "kind": "dailyEntry",
+          "dataClass": "index",
+          "locator": "Objects/0000002c-0000-4000-8000-00000000002c",
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "rebuilt",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002d-0000-4000-8000-00000000002d",
+          "kind": "artifact",
+          "dataClass": "derived",
+          "locator": "Objects/0000002d-0000-4000-8000-00000000002d",
+          "artifactType": "minutes",
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        }
+      ]
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "retained_artifact_must_not_attach_full_raw",
+    "definition": "deletion",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "deletion",
+      "recordingID": "00000001-0000-4000-8000-000000000001",
+      "deletionID": "00000028-0000-4000-8000-000000000028",
+      "startedAt": "2026-10-03T09:00:00+08:00",
+      "sourceRevoked": true,
+      "policy": {
+        "raw": "delete",
+        "derived": {
+          "mode": "keepSelected",
+          "keptTypes": [
+            "minutes"
+          ]
+        },
+        "systemItems": "keep"
+      },
+      "state": "completed",
+      "objects": [
+        {
+          "objectID": "00000029-0000-4000-8000-000000000029",
+          "kind": "canonicalTranscript",
+          "dataClass": "raw",
+          "locator": "Objects/00000029-0000-4000-8000-000000000029",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002a-0000-4000-8000-00000000002a",
+          "kind": "inputSnapshot",
+          "dataClass": "raw",
+          "locator": "Objects/0000002a-0000-4000-8000-00000000002a",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002b-0000-4000-8000-00000000002b",
+          "kind": "systemItem",
+          "dataClass": "system",
+          "locator": null,
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002c-0000-4000-8000-00000000002c",
+          "kind": "dailyEntry",
+          "dataClass": "index",
+          "locator": "Objects/0000002c-0000-4000-8000-00000000002c",
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "rebuilt",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002d-0000-4000-8000-00000000002d",
+          "kind": "artifact",
+          "dataClass": "derived",
+          "locator": "Objects/0000002d-0000-4000-8000-00000000002d",
+          "artifactType": "minutes",
+          "containsRawArchive": true,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        }
+      ]
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "unselected_summary_cannot_be_kept",
+    "definition": "deletion",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "deletion",
+      "recordingID": "00000001-0000-4000-8000-000000000001",
+      "deletionID": "00000028-0000-4000-8000-000000000028",
+      "startedAt": "2026-10-03T09:00:00+08:00",
+      "sourceRevoked": true,
+      "policy": {
+        "raw": "delete",
+        "derived": {
+          "mode": "delete",
+          "keptTypes": []
+        },
+        "systemItems": "keep"
+      },
+      "state": "completed",
+      "objects": [
+        {
+          "objectID": "00000029-0000-4000-8000-000000000029",
+          "kind": "canonicalTranscript",
+          "dataClass": "raw",
+          "locator": "Objects/00000029-0000-4000-8000-000000000029",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002a-0000-4000-8000-00000000002a",
+          "kind": "inputSnapshot",
+          "dataClass": "raw",
+          "locator": "Objects/0000002a-0000-4000-8000-00000000002a",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002b-0000-4000-8000-00000000002b",
+          "kind": "systemItem",
+          "dataClass": "system",
+          "locator": null,
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002c-0000-4000-8000-00000000002c",
+          "kind": "dailyEntry",
+          "dataClass": "index",
+          "locator": "Objects/0000002c-0000-4000-8000-00000000002c",
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "rebuilt",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002d-0000-4000-8000-00000000002d",
+          "kind": "artifact",
+          "dataClass": "derived",
+          "locator": "Objects/0000002d-0000-4000-8000-00000000002d",
+          "artifactType": "minutes",
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "derivedRetentionNotSelected"
+  },
+  {
+    "name": "per_object_failure_stays_deleting",
+    "definition": "deletion",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "deletion",
+      "recordingID": "00000001-0000-4000-8000-000000000001",
+      "deletionID": "00000028-0000-4000-8000-000000000028",
+      "startedAt": "2026-10-03T09:00:00+08:00",
+      "sourceRevoked": true,
+      "policy": {
+        "raw": "delete",
+        "derived": {
+          "mode": "keepSelected",
+          "keptTypes": [
+            "minutes"
+          ]
+        },
+        "systemItems": "keep"
+      },
+      "state": "deleting",
+      "objects": [
+        {
+          "objectID": "00000029-0000-4000-8000-000000000029",
+          "kind": "canonicalTranscript",
+          "dataClass": "raw",
+          "locator": "Objects/00000029-0000-4000-8000-000000000029",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002a-0000-4000-8000-00000000002a",
+          "kind": "inputSnapshot",
+          "dataClass": "raw",
+          "locator": "Objects/0000002a-0000-4000-8000-00000000002a",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "failed",
+          "attempts": 1,
+          "lastErrorCode": "permissionDenied",
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002b-0000-4000-8000-00000000002b",
+          "kind": "systemItem",
+          "dataClass": "system",
+          "locator": null,
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002c-0000-4000-8000-00000000002c",
+          "kind": "dailyEntry",
+          "dataClass": "index",
+          "locator": "Objects/0000002c-0000-4000-8000-00000000002c",
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "rebuilt",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002d-0000-4000-8000-00000000002d",
+          "kind": "artifact",
+          "dataClass": "derived",
+          "locator": "Objects/0000002d-0000-4000-8000-00000000002d",
+          "artifactType": "minutes",
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "partial_delete_is_not_completed",
+    "definition": "deletion",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "deletion",
+      "recordingID": "00000001-0000-4000-8000-000000000001",
+      "deletionID": "00000028-0000-4000-8000-000000000028",
+      "startedAt": "2026-10-03T09:00:00+08:00",
+      "sourceRevoked": true,
+      "policy": {
+        "raw": "delete",
+        "derived": {
+          "mode": "keepSelected",
+          "keptTypes": [
+            "minutes"
+          ]
+        },
+        "systemItems": "keep"
+      },
+      "state": "completed",
+      "objects": [
+        {
+          "objectID": "00000029-0000-4000-8000-000000000029",
+          "kind": "canonicalTranscript",
+          "dataClass": "raw",
+          "locator": "Objects/00000029-0000-4000-8000-000000000029",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002a-0000-4000-8000-00000000002a",
+          "kind": "inputSnapshot",
+          "dataClass": "raw",
+          "locator": "Objects/0000002a-0000-4000-8000-00000000002a",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "failed",
+          "attempts": 1,
+          "lastErrorCode": "permissionDenied",
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002b-0000-4000-8000-00000000002b",
+          "kind": "systemItem",
+          "dataClass": "system",
+          "locator": null,
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002c-0000-4000-8000-00000000002c",
+          "kind": "dailyEntry",
+          "dataClass": "index",
+          "locator": "Objects/0000002c-0000-4000-8000-00000000002c",
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "rebuilt",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002d-0000-4000-8000-00000000002d",
+          "kind": "artifact",
+          "dataClass": "derived",
+          "locator": "Objects/0000002d-0000-4000-8000-00000000002d",
+          "artifactType": "minutes",
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        }
+      ]
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "completed_requires_all_external_inventory",
+    "definition": "deletion",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "deletion",
+      "recordingID": "00000001-0000-4000-8000-000000000001",
+      "deletionID": "00000028-0000-4000-8000-000000000028",
+      "startedAt": "2026-10-03T09:00:00+08:00",
+      "sourceRevoked": true,
+      "policy": {
+        "raw": "delete",
+        "derived": {
+          "mode": "keepSelected",
+          "keptTypes": [
+            "minutes"
+          ]
+        },
+        "systemItems": "keep"
+      },
+      "state": "completed",
+      "objects": [
+        {
+          "objectID": "00000029-0000-4000-8000-000000000029",
+          "kind": "canonicalTranscript",
+          "dataClass": "raw",
+          "locator": "Objects/00000029-0000-4000-8000-000000000029",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002a-0000-4000-8000-00000000002a",
+          "kind": "inputSnapshot",
+          "dataClass": "raw",
+          "locator": "Objects/0000002a-0000-4000-8000-00000000002a",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002b-0000-4000-8000-00000000002b",
+          "kind": "systemItem",
+          "dataClass": "system",
+          "locator": null,
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002c-0000-4000-8000-00000000002c",
+          "kind": "dailyEntry",
+          "dataClass": "index",
+          "locator": "Objects/0000002c-0000-4000-8000-00000000002c",
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "rebuilt",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002d-0000-4000-8000-00000000002d",
+          "kind": "artifact",
+          "dataClass": "derived",
+          "locator": "Objects/0000002d-0000-4000-8000-00000000002d",
+          "artifactType": "minutes",
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "deletionInventoryIncomplete",
+    "context": {
+      "requiredObjectIDs": [
+        "0000002e-0000-4000-8000-00000000002e"
+      ]
+    }
+  },
+  {
+    "name": "completed_requires_stopped_external_producers",
+    "definition": "deletion",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "deletion",
+      "recordingID": "00000001-0000-4000-8000-000000000001",
+      "deletionID": "00000028-0000-4000-8000-000000000028",
+      "startedAt": "2026-10-03T09:00:00+08:00",
+      "sourceRevoked": true,
+      "policy": {
+        "raw": "delete",
+        "derived": {
+          "mode": "keepSelected",
+          "keptTypes": [
+            "minutes"
+          ]
+        },
+        "systemItems": "keep"
+      },
+      "state": "completed",
+      "objects": [
+        {
+          "objectID": "00000029-0000-4000-8000-000000000029",
+          "kind": "canonicalTranscript",
+          "dataClass": "raw",
+          "locator": "Objects/00000029-0000-4000-8000-000000000029",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002a-0000-4000-8000-00000000002a",
+          "kind": "inputSnapshot",
+          "dataClass": "raw",
+          "locator": "Objects/0000002a-0000-4000-8000-00000000002a",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002b-0000-4000-8000-00000000002b",
+          "kind": "systemItem",
+          "dataClass": "system",
+          "locator": null,
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002c-0000-4000-8000-00000000002c",
+          "kind": "dailyEntry",
+          "dataClass": "index",
+          "locator": "Objects/0000002c-0000-4000-8000-00000000002c",
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "rebuilt",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002d-0000-4000-8000-00000000002d",
+          "kind": "artifact",
+          "dataClass": "derived",
+          "locator": "Objects/0000002d-0000-4000-8000-00000000002d",
+          "artifactType": "minutes",
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "deletionProducersActive",
+    "context": {
+      "activeProducerIDs": [
+        "00000005-0000-4000-8000-000000000005"
+      ]
+    }
+  },
+  {
+    "name": "imported_window_uses_asset_coordinates",
+    "definition": "preflight",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptionPreflight",
+      "planID": "00000006-0000-4000-8000-000000000006",
+      "baseSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "checkedAt": "2026-10-03T09:00:00+08:00",
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "requestedScopes": [
+        {
+          "range": {
+            "sourceKind": "imported_asset",
+            "sourceID": "00000032-0000-4000-8000-000000000032",
+            "startSample": 160000,
+            "endSample": 320000
+          },
+          "processingRangeID": "00000033-0000-4000-8000-000000000033"
+        }
+      ],
+      "results": [
+        {
+          "scope": {
+            "range": {
+              "sourceKind": "imported_asset",
+              "sourceID": "00000032-0000-4000-8000-000000000032",
+              "startSample": 160000,
+              "endSample": 320000
+            },
+            "processingRangeID": "00000033-0000-4000-8000-000000000033"
+          },
+          "status": "readable",
+          "reasonCode": null,
+          "declaredSampleCount": 160000,
+          "actualSampleCount": 320000,
+          "decodeRange": {
+            "startSample": 160000,
+            "endSample": 320000
+          },
+          "decodedSampleCount": 160000,
+          "fileIdentity": "fixture-file-v1",
+          "sourceStartSample": 0
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "imported_processing_scope_needs_range_id",
+    "definition": "preflight",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptionPreflight",
+      "planID": "00000006-0000-4000-8000-000000000006",
+      "baseSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "checkedAt": "2026-10-03T09:00:00+08:00",
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "requestedScopes": [
+        {
+          "range": {
+            "sourceKind": "imported_asset",
+            "sourceID": "00000032-0000-4000-8000-000000000032",
+            "startSample": 160000,
+            "endSample": 320000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "results": [
+        {
+          "scope": {
+            "range": {
+              "sourceKind": "imported_asset",
+              "sourceID": "00000032-0000-4000-8000-000000000032",
+              "startSample": 160000,
+              "endSample": 320000
+            },
+            "processingRangeID": null
+          },
+          "status": "readable",
+          "reasonCode": null,
+          "declaredSampleCount": 160000,
+          "actualSampleCount": 320000,
+          "decodeRange": {
+            "startSample": 160000,
+            "endSample": 320000
+          },
+          "decodedSampleCount": 160000,
+          "fileIdentity": "fixture-file-v1",
+          "sourceStartSample": 0
+        }
+      ]
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "chunk_subrange_uses_relative_decode_offset",
+    "definition": "preflight",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "transcriptionPreflight",
+      "planID": "00000006-0000-4000-8000-000000000006",
+      "baseSource": {
+        "recordingID": "00000001-0000-4000-8000-000000000001",
+        "revision": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "checkedAt": "2026-10-03T09:00:00+08:00",
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "requestedScopes": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 176000,
+            "endSample": 336000
+          },
+          "processingRangeID": null
+        }
+      ],
+      "results": [
+        {
+          "scope": {
+            "range": {
+              "sourceKind": "audio_chunk",
+              "sourceID": "00000002-0000-4000-8000-000000000002",
+              "startSample": 176000,
+              "endSample": 336000
+            },
+            "processingRangeID": null
+          },
+          "status": "readable",
+          "reasonCode": null,
+          "declaredSampleCount": 160000,
+          "actualSampleCount": 176000,
+          "decodeRange": {
+            "startSample": 16000,
+            "endSample": 176000
+          },
+          "decodedSampleCount": 160000,
+          "fileIdentity": "fixture-file-v1",
+          "sourceStartSample": 160000
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": true
+  },
+  {
+    "name": "samples_fit_existing_int64",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 9223372036854775808
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "new_range_is_not_legacy_zero_anchor",
+    "definition": "completeness",
+    "value": {
+      "scope": "recording",
+      "domainFinalized": true,
+      "sampleRate": 16000,
+      "rangeConvention": "halfOpen",
+      "processingState": "terminal",
+      "contentState": "complete",
+      "expectedRanges": [
+        {
+          "sourceKind": "audio_chunk",
+          "sourceID": "00000002-0000-4000-8000-000000000002",
+          "startSample": 0,
+          "endSample": 0
+        }
+      ],
+      "observedRanges": [
+        {
+          "range": {
+            "sourceKind": "audio_chunk",
+            "sourceID": "00000002-0000-4000-8000-000000000002",
+            "startSample": 0,
+            "endSample": 160000
+          },
+          "outcome": "silence",
+          "jobID": "00000004-0000-4000-8000-000000000004",
+          "attemptID": "00000005-0000-4000-8000-000000000005",
+          "segmentIDs": [],
+          "evidence": {
+            "decode": {
+              "status": "complete",
+              "decodedRanges": [
+                {
+                  "startSample": 0,
+                  "endSample": 160000
+                }
+              ]
+            },
+            "vad": {
+              "status": "noSpeech",
+              "speechRanges": [],
+              "detectorVersion": "fixture-vad-1"
+            },
+            "asr": {
+              "status": "notRun",
+              "processedSpeechRanges": []
+            }
+          }
+        }
+      ],
+      "captureGaps": [],
+      "legacyAnchors": [],
+      "warnings": []
+    },
+    "schemaValid": false,
+    "semanticValid": false,
+    "errorCode": "schemaInvalid"
+  },
+  {
+    "name": "external_archive_inventory_overrides_safe_claim",
+    "definition": "deletion",
+    "value": {
+      "schema": "voice-context/recording-ai@1",
+      "objectKind": "deletion",
+      "recordingID": "00000001-0000-4000-8000-000000000001",
+      "deletionID": "00000028-0000-4000-8000-000000000028",
+      "startedAt": "2026-10-03T09:00:00+08:00",
+      "sourceRevoked": true,
+      "policy": {
+        "raw": "delete",
+        "derived": {
+          "mode": "keepSelected",
+          "keptTypes": [
+            "minutes"
+          ]
+        },
+        "systemItems": "keep"
+      },
+      "state": "completed",
+      "objects": [
+        {
+          "objectID": "00000029-0000-4000-8000-000000000029",
+          "kind": "canonicalTranscript",
+          "dataClass": "raw",
+          "locator": "Objects/00000029-0000-4000-8000-000000000029",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002a-0000-4000-8000-00000000002a",
+          "kind": "inputSnapshot",
+          "dataClass": "raw",
+          "locator": "Objects/0000002a-0000-4000-8000-00000000002a",
+          "artifactType": null,
+          "containsRawArchive": true,
+          "state": "deleted",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002b-0000-4000-8000-00000000002b",
+          "kind": "systemItem",
+          "dataClass": "system",
+          "locator": null,
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002c-0000-4000-8000-00000000002c",
+          "kind": "dailyEntry",
+          "dataClass": "index",
+          "locator": "Objects/0000002c-0000-4000-8000-00000000002c",
+          "artifactType": null,
+          "containsRawArchive": false,
+          "state": "rebuilt",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        },
+        {
+          "objectID": "0000002d-0000-4000-8000-00000000002d",
+          "kind": "artifact",
+          "dataClass": "derived",
+          "locator": "Objects/0000002d-0000-4000-8000-00000000002d",
+          "artifactType": "minutes",
+          "containsRawArchive": false,
+          "state": "kept",
+          "attempts": 1,
+          "lastErrorCode": null,
+          "updatedAt": "2026-10-03T09:00:00+08:00",
+          "retryAt": null
+        }
+      ]
+    },
+    "schemaValid": true,
+    "semanticValid": false,
+    "errorCode": "rawArchiveRetained",
+    "context": {
+      "rawArchiveObjectIDs": [
+        "0000002d-0000-4000-8000-00000000002d"
+      ]
+    }
+  }
+]

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>一芥伙伴 · 录音整理交互评审</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="workspace">
+    <div id="phone" class="phone" data-theme="light">
+      <header id="navigation"></header>
+      <main id="screen" tabindex="-1"></main>
+      <div id="dock"></div>
+      <nav id="app-tabs" class="tabs" aria-label="应用标签页"></nav>
+    </div>
+    <aside aria-label="原型评审控件">
+      <h1>录音整理与行动闭环</h1>
+      <p>新流程待评审。承接主目录已有前端：会议 → 详情更多 → 交给智能体 → 原聊天草稿 → 原产物 Sheet → 行动确认。</p>
+      <p id="screen-basis"></p>
+      <p>虚构数据，仅在浏览器内演示。下列控件用于切换评审场景，不属于产品界面。</p>
+      <label for="scenario">评审场景</label>
+      <select id="scenario">
+        <option value="normal">已校对 · 完整文稿</option>
+        <option value="processing">处理中 · 临时整理</option>
+        <option value="partial">部分可用 · 含缺失的纪要</option>
+        <option value="unknown">旧文稿 · 完整性未记录</option>
+        <option value="silence">正常静音 · 无文字</option>
+        <option value="emptyASR">有声但识别为空</option>
+        <option value="audioExpired">音频已过期 · 保留文字</option>
+        <option value="noModel">未配置模型</option>
+        <option value="noText">文字尚未就绪</option>
+        <option value="offline">离线 · 本地文字可读</option>
+        <option value="sourceUpdated">原文更新 · 草稿和结果保留旧版</option>
+        <option value="interrupted">AI 已中断 · 无新提交</option>
+        <option value="invalidResult">结果格式 / 来源校验失败</option>
+        <option value="permission">提醒事项权限撤销</option>
+        <option value="readonly">所选系统列表只读</option>
+        <option value="invalidDate">提醒日期无效</option>
+        <option value="savedDifferences">已创建 · 系统设置有差异</option>
+        <option value="externalChanged">系统事项被外部修改 / 完成</option>
+        <option value="externalDeleted">系统事项被外部删除</option>
+        <option value="sourceDeleted">来源已删除 · 保留结果</option>
+        <option value="cleanupFailed">受管文稿副本清理失败</option>
+        <option value="invalidTree">P1 · 导图结构无效</option>
+      </select>
+      <div class="review-buttons"><button id="theme">切换深色</button><button id="large" aria-pressed="false">大字预览</button></div>
+      <button id="finish">演示：提交整理结果</button>
+      <button id="reset">重置虚构数据</button>
+      <p id="review-status" class="metadata" aria-live="polite">当前：完整文稿，未向任何服务发送。</p>
+      <ol>
+        <li>打开录音详情，点右上「更多操作 → 交给智能体」，核对版本、范围与模型。</li>
+        <li>准备草稿后，点发送才进入处理中；用「演示：提交整理结果」模拟结果提交。</li>
+        <li>打开行动建议，勾选三项并核对。确认后的三种回执可分别处理。</li>
+        <li>更多菜单尝试重转写；回会议列表从录音行菜单删除。来源过期 / 部分失败可用场景切换。</li>
+      </ol>
+      <a href="../recording-ai-actions-interaction.md">完整评审提案与待决策</a>
+      <p><a href="../recording-ai-actions-existing-product.md">已有页面与最小新增依据</a></p>
+    </aside>
+  </div>
+  <dialog id="sheet" aria-labelledby="sheet-title"><div id="sheet-body"></div></dialog>
+  <div id="announcement" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+  <script src="app.js"></script>
+</body>
+</html>

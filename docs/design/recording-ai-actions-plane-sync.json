@@ -1,0 +1,1218 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-02",
+  "workspace": "yijie",
+  "project": {
+    "id": "b6458d01-ae80-4836-b0d8-d791fefd9775",
+    "identifier": "TINGJI",
+    "name": "听记"
+  },
+  "route": {
+    "node": "scott-pc-1",
+    "serviceId": "plane-pm"
+  },
+  "source": {
+    "prd": "docs/PRD-recording-ai-actions.md",
+    "prdSha256": "71ebea46c179a79a78dd2654165d14b434427d1c96172bff08b7e88b1b1aa8e7",
+    "delivery": "docs/design/recording-ai-actions-delivery.md"
+  },
+  "overview": {
+    "id": "a9532895-8e2c-470f-a2d4-d423c316ea86",
+    "number": 23,
+    "name": "PRD：录音 → AI 整理 → 行动事项闭环（2026-10-02）",
+    "external_id": "overview-20261002",
+    "created": true,
+    "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/a9532895-8e2c-470f-a2d4-d423c316ea86/"
+  },
+  "counts": {
+    "features": 8,
+    "tasks": 27,
+    "interactionDesign": 6,
+    "codeDevelopment": 14,
+    "testAcceptance": 7,
+    "newWorkitems": 33,
+    "reusedWorkitems": 3,
+    "newCategoryLabels": 3
+  },
+  "limitations": {
+    "pages": "当前部署不支持 Pages API；完整 PRD 保存在总览 description_html。",
+    "nativeDependencies": "list_definitions / list 返回 404；依赖按稳定编号和实际 Plane 编号记录正文，未创建原生关系。"
+  },
+  "verification": {
+    "verified": true,
+    "checkedWorkitems": 36,
+    "fullPrdAcceptanceCases": 35,
+    "failures": [],
+    "projectHistoryPreserved": true,
+    "totalProjectWorkitems": 55,
+    "categoryLabelsVerified": 3
+  },
+  "categoryLabels": {
+    "交互设计": "4a6d265e-4824-4e35-9003-485ea5b13851",
+    "代码开发": "1deeb96f-42b0-492b-9cb8-4b434a94cc0e",
+    "测试验收": "d24614af-b20f-4f59-9cc6-11bdf3ed46dd"
+  },
+  "items": [
+    {
+      "key": "F01",
+      "id": "236fdd12-c8e3-4374-a41a-7b80a0580a9d",
+      "number": 24,
+      "name": "[F01] 重转写保护与文稿完整性",
+      "created": true,
+      "external_id": "feature-F01",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/236fdd12-c8e3-4374-a41a-7b80a0580a9d/",
+      "category": "功能需求",
+      "priority": "P0",
+      "phase": null,
+      "features": [
+        "F01"
+      ],
+      "dependencies": [],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "a9532895-8e2c-470f-a2d4-d423c316ea86",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "F02",
+      "id": "5a69e1a3-c893-4f66-848c-edbdd6616a24",
+      "number": 25,
+      "name": "[F02] 固定来源版本、统一产物协议与 Skill 兼容",
+      "created": true,
+      "external_id": "feature-F02",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/5a69e1a3-c893-4f66-848c-edbdd6616a24/",
+      "category": "功能需求",
+      "priority": "P0",
+      "phase": null,
+      "features": [
+        "F02"
+      ],
+      "dependencies": [],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "a9532895-8e2c-470f-a2d4-d423c316ea86",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "F03",
+      "id": "41c11aa9-b011-4b4b-bee7-470e8a1ef5f1",
+      "number": 11,
+      "name": "提供对白整理与自动会议纪要两种输出",
+      "created": false,
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/41c11aa9-b011-4b4b-bee7-470e8a1ef5f1/",
+      "category": "功能需求",
+      "priority": "P0",
+      "phase": null,
+      "features": [
+        "F03"
+      ],
+      "dependencies": [],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "b39d715a-99e9-4eb2-b8fa-dae2ac063513",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "F04",
+      "id": "a335113a-849f-474e-a51d-f15d890c312c",
+      "number": 26,
+      "name": "[F04] 思维导图树与节点来源",
+      "created": true,
+      "external_id": "feature-F04",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/a335113a-849f-474e-a51d-f15d890c312c/",
+      "category": "功能需求",
+      "priority": "P1",
+      "phase": null,
+      "features": [
+        "F04"
+      ],
+      "dependencies": [],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "a9532895-8e2c-470f-a2d4-d423c316ea86",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "F05",
+      "id": "5893d0ae-2cf9-4f84-922c-bb26c1ccf941",
+      "number": 27,
+      "name": "[F05] 行动建议的具体确认",
+      "created": true,
+      "external_id": "feature-F05",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/5893d0ae-2cf9-4f84-922c-bb26c1ccf941/",
+      "category": "功能需求",
+      "priority": "P0",
+      "phase": null,
+      "features": [
+        "F05"
+      ],
+      "dependencies": [],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "a9532895-8e2c-470f-a2d4-d423c316ea86",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "F06",
+      "id": "64e8a139-bf07-486f-a211-6f4f3ad10d19",
+      "number": 28,
+      "name": "[F06] 录音与系统事项的来源关联及幂等",
+      "created": true,
+      "external_id": "feature-F06",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/64e8a139-bf07-486f-a211-6f4f3ad10d19/",
+      "category": "功能需求",
+      "priority": "P0",
+      "phase": null,
+      "features": [
+        "F06"
+      ],
+      "dependencies": [],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "a9532895-8e2c-470f-a2d4-d423c316ea86",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "F07",
+      "id": "c766f277-fd10-4f49-aeb7-496cd1c06dd0",
+      "number": 29,
+      "name": "[F07] UI 与提醒工具的统一契约",
+      "created": true,
+      "external_id": "feature-F07",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/c766f277-fd10-4f49-aeb7-496cd1c06dd0/",
+      "category": "功能需求",
+      "priority": "P0",
+      "phase": null,
+      "features": [
+        "F07"
+      ],
+      "dependencies": [],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "a9532895-8e2c-470f-a2d4-d423c316ea86",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "F08",
+      "id": "33b4636b-8aa1-4d98-8600-821508a49627",
+      "number": 30,
+      "name": "[F08] 音频保留、删除一致性与输入隐私",
+      "created": true,
+      "external_id": "feature-F08",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/33b4636b-8aa1-4d98-8600-821508a49627/",
+      "category": "功能需求",
+      "priority": "P0",
+      "phase": null,
+      "features": [
+        "F08"
+      ],
+      "dependencies": [],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "a9532895-8e2c-470f-a2d4-d423c316ea86",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "D01",
+      "id": "92c14ab1-2589-4496-8670-ef77aaf40677",
+      "number": 31,
+      "name": "[D01] 文稿校对保护与完整性状态交互",
+      "created": true,
+      "external_id": "task-D01",
+      "category": "交互设计",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/92c14ab1-2589-4496-8670-ef77aaf40677/",
+      "priority": "P0",
+      "phase": "S0",
+      "features": [
+        "F01",
+        "F02"
+      ],
+      "dependencies": [],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "236fdd12-c8e3-4374-a41a-7b80a0580a9d",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "D02",
+      "id": "a1dcbc35-c614-4c3c-89b1-22da9c1d77cd",
+      "number": 32,
+      "name": "[D02] 会议整理入口与产物生命周期交互",
+      "created": true,
+      "external_id": "task-D02",
+      "category": "交互设计",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/a1dcbc35-c614-4c3c-89b1-22da9c1d77cd/",
+      "priority": "P0",
+      "phase": "S0",
+      "features": [
+        "F03",
+        "F02"
+      ],
+      "dependencies": [
+        {
+          "key": "D01",
+          "id": "92c14ab1-2589-4496-8670-ef77aaf40677",
+          "identifier": "TINGJI-31"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "41c11aa9-b011-4b4b-bee7-470e8a1ef5f1",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "D03",
+      "id": "82587bb2-cf85-43c3-9243-ec88dcd896f4",
+      "number": 37,
+      "name": "[D03] 思维导图折叠树与文字阅读交互",
+      "created": true,
+      "external_id": "task-D03",
+      "category": "交互设计",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/82587bb2-cf85-43c3-9243-ec88dcd896f4/",
+      "priority": "P1",
+      "phase": "S3",
+      "features": [
+        "F04"
+      ],
+      "dependencies": [
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "a335113a-849f-474e-a51d-f15d890c312c",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "D04",
+      "id": "ef047657-4bea-4eae-ba9e-718d2735f429",
+      "number": 33,
+      "name": "[D04] 行动项确认与会议待办关联交互",
+      "created": true,
+      "external_id": "task-D04",
+      "category": "交互设计",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/ef047657-4bea-4eae-ba9e-718d2735f429/",
+      "priority": "P0",
+      "phase": "S0",
+      "features": [
+        "F05",
+        "F06"
+      ],
+      "dependencies": [
+        {
+          "key": "D02",
+          "id": "a1dcbc35-c614-4c3c-89b1-22da9c1d77cd",
+          "identifier": "TINGJI-32"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "5893d0ae-2cf9-4f84-922c-bb26c1ccf941",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "D05",
+      "id": "98cc2975-6ca8-45a2-817e-0bafb03c391c",
+      "number": 34,
+      "name": "[D05] 提醒写入目标与时间契约交互",
+      "created": true,
+      "external_id": "task-D05",
+      "category": "交互设计",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/98cc2975-6ca8-45a2-817e-0bafb03c391c/",
+      "priority": "P0",
+      "phase": "S0",
+      "features": [
+        "F07"
+      ],
+      "dependencies": [
+        {
+          "key": "D04",
+          "id": "ef047657-4bea-4eae-ba9e-718d2735f429",
+          "identifier": "TINGJI-33"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "c766f277-fd10-4f49-aeb7-496cd1c06dd0",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "D06",
+      "id": "4087b698-72e7-43b4-b3bf-180ad3ce5a7e",
+      "number": 35,
+      "name": "[D06] 保留删除与模型发送范围交互",
+      "created": true,
+      "external_id": "task-D06",
+      "category": "交互设计",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/4087b698-72e7-43b4-b3bf-180ad3ce5a7e/",
+      "priority": "P0",
+      "phase": "S0",
+      "features": [
+        "F08"
+      ],
+      "dependencies": [],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "33b4636b-8aa1-4d98-8600-821508a49627",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C00",
+      "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+      "number": 36,
+      "name": "[C00] 冻结会议输入、产物、引用、行动项与 Reminder 数据契约",
+      "created": true,
+      "external_id": "task-C00",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/ddf94670-2224-4153-8644-02de3153fe1b/",
+      "priority": "P0",
+      "phase": "S0",
+      "features": [
+        "F02",
+        "F01",
+        "F03",
+        "F04",
+        "F05",
+        "F06",
+        "F07",
+        "F08"
+      ],
+      "dependencies": [
+        {
+          "key": "D01",
+          "id": "92c14ab1-2589-4496-8670-ef77aaf40677",
+          "identifier": "TINGJI-31"
+        },
+        {
+          "key": "D02",
+          "id": "a1dcbc35-c614-4c3c-89b1-22da9c1d77cd",
+          "identifier": "TINGJI-32"
+        },
+        {
+          "key": "D04",
+          "id": "ef047657-4bea-4eae-ba9e-718d2735f429",
+          "identifier": "TINGJI-33"
+        },
+        {
+          "key": "D05",
+          "id": "98cc2975-6ca8-45a2-817e-0bafb03c391c",
+          "identifier": "TINGJI-34"
+        },
+        {
+          "key": "D06",
+          "id": "4087b698-72e7-43b4-b3bf-180ad3ce5a7e",
+          "identifier": "TINGJI-35"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "5a69e1a3-c893-4f66-848c-edbdd6616a24",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C01",
+      "id": "f3aec09f-90c9-42e5-a642-4df55e996831",
+      "number": 38,
+      "name": "[C01] 人工校对保护与重转写音频预检",
+      "created": true,
+      "external_id": "task-C01",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/f3aec09f-90c9-42e5-a642-4df55e996831/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F01"
+      ],
+      "dependencies": [
+        {
+          "key": "D01",
+          "id": "92c14ab1-2589-4496-8670-ef77aaf40677",
+          "identifier": "TINGJI-31"
+        },
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "236fdd12-c8e3-4374-a41a-7b80a0580a9d",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C02",
+      "id": "c5a7fc38-adb4-4ef1-87ae-937a83839ed7",
+      "number": 39,
+      "name": "[C02] 文稿完整性与空识别状态快照",
+      "created": true,
+      "external_id": "task-C02",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/c5a7fc38-adb4-4ef1-87ae-937a83839ed7/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F01"
+      ],
+      "dependencies": [
+        {
+          "key": "D01",
+          "id": "92c14ab1-2589-4496-8670-ef77aaf40677",
+          "identifier": "TINGJI-31"
+        },
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "236fdd12-c8e3-4374-a41a-7b80a0580a9d",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C03",
+      "id": "140c53a9-ac43-448c-a554-ed3fad5e3374",
+      "number": 40,
+      "name": "[C03] 固定输入版本与产物生命周期兼容",
+      "created": true,
+      "external_id": "task-C03",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/140c53a9-ac43-448c-a554-ed3fad5e3374/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F02"
+      ],
+      "dependencies": [
+        {
+          "key": "D01",
+          "id": "92c14ab1-2589-4496-8670-ef77aaf40677",
+          "identifier": "TINGJI-31"
+        },
+        {
+          "key": "D02",
+          "id": "a1dcbc35-c614-4c3c-89b1-22da9c1d77cd",
+          "identifier": "TINGJI-32"
+        },
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "5a69e1a3-c893-4f66-848c-edbdd6616a24",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C04",
+      "id": "f50c4415-d400-4f73-ba09-847c539742d2",
+      "number": 41,
+      "name": "[C04] 统一整理 Skill 与模板调用路径",
+      "created": true,
+      "external_id": "task-C04",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/f50c4415-d400-4f73-ba09-847c539742d2/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F02"
+      ],
+      "dependencies": [
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        },
+        {
+          "key": "C03",
+          "id": "140c53a9-ac43-448c-a554-ed3fad5e3374",
+          "identifier": "TINGJI-40"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "5a69e1a3-c893-4f66-848c-edbdd6616a24",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C05",
+      "id": "8835b4d8-172b-4832-8987-2fcab264ddc1",
+      "number": 42,
+      "name": "[C05] 纪要语义与长文覆盖处理",
+      "created": true,
+      "external_id": "task-C05",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/8835b4d8-172b-4832-8987-2fcab264ddc1/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F03"
+      ],
+      "dependencies": [
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        },
+        {
+          "key": "C02",
+          "id": "c5a7fc38-adb4-4ef1-87ae-937a83839ed7",
+          "identifier": "TINGJI-39"
+        },
+        {
+          "key": "C03",
+          "id": "140c53a9-ac43-448c-a554-ed3fad5e3374",
+          "identifier": "TINGJI-40"
+        },
+        {
+          "key": "C04",
+          "id": "f50c4415-d400-4f73-ba09-847c539742d2",
+          "identifier": "TINGJI-41"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "41c11aa9-b011-4b4b-bee7-470e8a1ef5f1",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C06",
+      "id": "cd176f92-fef8-4027-8cd4-0d5fa341a94f",
+      "number": 43,
+      "name": "[C06] 会议整理入口与纪要结果页面接入",
+      "created": true,
+      "external_id": "task-C06",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/cd176f92-fef8-4027-8cd4-0d5fa341a94f/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F03"
+      ],
+      "dependencies": [
+        {
+          "key": "D02",
+          "id": "a1dcbc35-c614-4c3c-89b1-22da9c1d77cd",
+          "identifier": "TINGJI-32"
+        },
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        },
+        {
+          "key": "C03",
+          "id": "140c53a9-ac43-448c-a554-ed3fad5e3374",
+          "identifier": "TINGJI-40"
+        },
+        {
+          "key": "C04",
+          "id": "f50c4415-d400-4f73-ba09-847c539742d2",
+          "identifier": "TINGJI-41"
+        },
+        {
+          "key": "C05",
+          "id": "8835b4d8-172b-4832-8987-2fcab264ddc1",
+          "identifier": "TINGJI-42"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "41c11aa9-b011-4b4b-bee7-470e8a1ef5f1",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C07",
+      "id": "041ddca3-21f5-43a8-bead-30879c8d5d42",
+      "number": 44,
+      "name": "[C07] 结构化导图生成与校验",
+      "created": true,
+      "external_id": "task-C07",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/041ddca3-21f5-43a8-bead-30879c8d5d42/",
+      "priority": "P1",
+      "phase": "S3",
+      "features": [
+        "F04"
+      ],
+      "dependencies": [
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        },
+        {
+          "key": "C03",
+          "id": "140c53a9-ac43-448c-a554-ed3fad5e3374",
+          "identifier": "TINGJI-40"
+        },
+        {
+          "key": "C04",
+          "id": "f50c4415-d400-4f73-ba09-847c539742d2",
+          "identifier": "TINGJI-41"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "a335113a-849f-474e-a51d-f15d890c312c",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C08",
+      "id": "3aca72ea-9544-4b86-9227-09febedc2657",
+      "number": 45,
+      "name": "[C08] 导图折叠树阅读与来源跳转",
+      "created": true,
+      "external_id": "task-C08",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/3aca72ea-9544-4b86-9227-09febedc2657/",
+      "priority": "P1",
+      "phase": "S3",
+      "features": [
+        "F04"
+      ],
+      "dependencies": [
+        {
+          "key": "D03",
+          "id": "82587bb2-cf85-43c3-9243-ec88dcd896f4",
+          "identifier": "TINGJI-37"
+        },
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        },
+        {
+          "key": "C07",
+          "id": "041ddca3-21f5-43a8-bead-30879c8d5d42",
+          "identifier": "TINGJI-44"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "a335113a-849f-474e-a51d-f15d890c312c",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C09",
+      "id": "0cd6aa1a-abd2-4e77-8148-49d704d78fb7",
+      "number": 46,
+      "name": "[C09] 行动建议结构化与逐项确认",
+      "created": true,
+      "external_id": "task-C09",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/0cd6aa1a-abd2-4e77-8148-49d704d78fb7/",
+      "priority": "P0",
+      "phase": "S2",
+      "features": [
+        "F05"
+      ],
+      "dependencies": [
+        {
+          "key": "D04",
+          "id": "ef047657-4bea-4eae-ba9e-718d2735f429",
+          "identifier": "TINGJI-33"
+        },
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        },
+        {
+          "key": "C03",
+          "id": "140c53a9-ac43-448c-a554-ed3fad5e3374",
+          "identifier": "TINGJI-40"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "5893d0ae-2cf9-4f84-922c-bb26c1ccf941",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C10",
+      "id": "f00d6cd3-59e3-48d3-b3ab-9cc3123411c0",
+      "number": 48,
+      "name": "[C10] 会议 Reminder 双向关联与幂等恢复",
+      "created": true,
+      "external_id": "task-C10",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/f00d6cd3-59e3-48d3-b3ab-9cc3123411c0/",
+      "priority": "P0",
+      "phase": "S2",
+      "features": [
+        "F06"
+      ],
+      "dependencies": [
+        {
+          "key": "D04",
+          "id": "ef047657-4bea-4eae-ba9e-718d2735f429",
+          "identifier": "TINGJI-33"
+        },
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        },
+        {
+          "key": "C09",
+          "id": "0cd6aa1a-abd2-4e77-8148-49d704d78fb7",
+          "identifier": "TINGJI-46"
+        },
+        {
+          "key": "C11",
+          "id": "aae1f769-03b5-429b-a693-e2ef3aeb64e9",
+          "identifier": "TINGJI-47"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "64e8a139-bf07-486f-a211-6f4f3ad10d19",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C11",
+      "id": "aae1f769-03b5-429b-a693-e2ef3aeb64e9",
+      "number": 47,
+      "name": "[C11] Reminder 工具与 UI 契约统一",
+      "created": true,
+      "external_id": "task-C11",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/aae1f769-03b5-429b-a693-e2ef3aeb64e9/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F07"
+      ],
+      "dependencies": [
+        {
+          "key": "D05",
+          "id": "98cc2975-6ca8-45a2-817e-0bafb03c391c",
+          "identifier": "TINGJI-34"
+        },
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "c766f277-fd10-4f49-aeb7-496cd1c06dd0",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C12",
+      "id": "66f75fce-9500-40bd-8cdd-6ec2966b9213",
+      "number": 49,
+      "name": "[C12] 受管资料残留清理与迟到回调防复活",
+      "created": true,
+      "external_id": "task-C12",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/66f75fce-9500-40bd-8cdd-6ec2966b9213/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F08",
+        "F02",
+        "F01"
+      ],
+      "dependencies": [
+        {
+          "key": "D06",
+          "id": "4087b698-72e7-43b4-b3bf-180ad3ce5a7e",
+          "identifier": "TINGJI-35"
+        },
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        },
+        {
+          "key": "C01",
+          "id": "f3aec09f-90c9-42e5-a642-4df55e996831",
+          "identifier": "TINGJI-38"
+        },
+        {
+          "key": "C03",
+          "id": "140c53a9-ac43-448c-a554-ed3fad5e3374",
+          "identifier": "TINGJI-40"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "33b4636b-8aa1-4d98-8600-821508a49627",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "C13",
+      "id": "8d706aae-0979-44c1-91ed-3ac9f8fc8e23",
+      "number": 50,
+      "name": "[C13] 来源删除与新行动关联集成",
+      "created": true,
+      "external_id": "task-C13",
+      "category": "代码开发",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/8d706aae-0979-44c1-91ed-3ac9f8fc8e23/",
+      "priority": "P0",
+      "phase": "S2",
+      "features": [
+        "F08",
+        "F06",
+        "F05"
+      ],
+      "dependencies": [
+        {
+          "key": "C00",
+          "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+          "identifier": "TINGJI-36"
+        },
+        {
+          "key": "C10",
+          "id": "f00d6cd3-59e3-48d3-b3ab-9cc3123411c0",
+          "identifier": "TINGJI-48"
+        },
+        {
+          "key": "C12",
+          "id": "66f75fce-9500-40bd-8cdd-6ec2966b9213",
+          "identifier": "TINGJI-49"
+        },
+        {
+          "key": "D06",
+          "id": "4087b698-72e7-43b4-b3bf-180ad3ce5a7e",
+          "identifier": "TINGJI-35"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "33b4636b-8aa1-4d98-8600-821508a49627",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "T01",
+      "id": "76ab8e0e-2466-49b3-b315-4d3f09ee29b2",
+      "number": 51,
+      "name": "[T01] 校对保护与音频完整性非运行回归",
+      "created": true,
+      "external_id": "task-T01",
+      "category": "测试验收",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/76ab8e0e-2466-49b3-b315-4d3f09ee29b2/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F01"
+      ],
+      "dependencies": [
+        {
+          "key": "C01",
+          "id": "f3aec09f-90c9-42e5-a642-4df55e996831",
+          "identifier": "TINGJI-38"
+        },
+        {
+          "key": "C02",
+          "id": "c5a7fc38-adb4-4ef1-87ae-937a83839ed7",
+          "identifier": "TINGJI-39"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "236fdd12-c8e3-4374-a41a-7b80a0580a9d",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "T02",
+      "id": "7241445b-8a9e-408c-9479-5b0d0c47c488",
+      "number": 52,
+      "name": "[T02] 版本兼容与受管资料删除非运行回归",
+      "created": true,
+      "external_id": "task-T02",
+      "category": "测试验收",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/7241445b-8a9e-408c-9479-5b0d0c47c488/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F02",
+        "F08",
+        "F01"
+      ],
+      "dependencies": [
+        {
+          "key": "C03",
+          "id": "140c53a9-ac43-448c-a554-ed3fad5e3374",
+          "identifier": "TINGJI-40"
+        },
+        {
+          "key": "C04",
+          "id": "f50c4415-d400-4f73-ba09-847c539742d2",
+          "identifier": "TINGJI-41"
+        },
+        {
+          "key": "C12",
+          "id": "66f75fce-9500-40bd-8cdd-6ec2966b9213",
+          "identifier": "TINGJI-49"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "5a69e1a3-c893-4f66-848c-edbdd6616a24",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "T03",
+      "id": "16f10a95-ce2f-4de8-828d-0abf9ce5f9a1",
+      "number": 53,
+      "name": "[T03] 纪要长文语义与导图结构验收样本",
+      "created": true,
+      "external_id": "task-T03",
+      "category": "测试验收",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/16f10a95-ce2f-4de8-828d-0abf9ce5f9a1/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F03",
+        "F04"
+      ],
+      "dependencies": [
+        {
+          "key": "C05",
+          "id": "8835b4d8-172b-4832-8987-2fcab264ddc1",
+          "identifier": "TINGJI-42"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "41c11aa9-b011-4b4b-bee7-470e8a1ef5f1",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "T04",
+      "id": "506a8d57-7fbb-4190-a9f9-498722e62757",
+      "number": 54,
+      "name": "[T04] 行动确认幂等与外部状态非运行回归",
+      "created": true,
+      "external_id": "task-T04",
+      "category": "测试验收",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/506a8d57-7fbb-4190-a9f9-498722e62757/",
+      "priority": "P0",
+      "phase": "S2",
+      "features": [
+        "F06",
+        "F05",
+        "F08"
+      ],
+      "dependencies": [
+        {
+          "key": "C09",
+          "id": "0cd6aa1a-abd2-4e77-8148-49d704d78fb7",
+          "identifier": "TINGJI-46"
+        },
+        {
+          "key": "C10",
+          "id": "f00d6cd3-59e3-48d3-b3ab-9cc3123411c0",
+          "identifier": "TINGJI-48"
+        },
+        {
+          "key": "C11",
+          "id": "aae1f769-03b5-429b-a693-e2ef3aeb64e9",
+          "identifier": "TINGJI-47"
+        },
+        {
+          "key": "C13",
+          "id": "8d706aae-0979-44c1-91ed-3ac9f8fc8e23",
+          "identifier": "TINGJI-50"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "64e8a139-bf07-486f-a211-6f4f3ad10d19",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "T05",
+      "id": "f7b19597-7a9e-47c9-896e-dbc40f4ae834",
+      "number": 55,
+      "name": "[T05] Reminder 参数回执与权限非运行回归",
+      "created": true,
+      "external_id": "task-T05",
+      "category": "测试验收",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/f7b19597-7a9e-47c9-896e-dbc40f4ae834/",
+      "priority": "P0",
+      "phase": "S1",
+      "features": [
+        "F07"
+      ],
+      "dependencies": [
+        {
+          "key": "C11",
+          "id": "aae1f769-03b5-429b-a693-e2ef3aeb64e9",
+          "identifier": "TINGJI-47"
+        }
+      ],
+      "state": "50b27972-f444-44b9-baf2-36bd9e71fda7",
+      "parent": "c766f277-fd10-4f49-aeb7-496cd1c06dd0",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "T06",
+      "id": "6d80bb3e-c0f2-4e2f-9d5c-440092b723a0",
+      "number": 22,
+      "name": "验收录音交给智能体与提醒事项、来源产物闭环",
+      "created": false,
+      "external_id": "recording-agent-reminders-acceptance-20261001",
+      "category": "测试验收",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/6d80bb3e-c0f2-4e2f-9d5c-440092b723a0/",
+      "priority": "P0",
+      "phase": "S2",
+      "features": [
+        "F03",
+        "F01",
+        "F05",
+        "F06",
+        "F07",
+        "F04"
+      ],
+      "dependencies": [
+        {
+          "key": "C06",
+          "id": "cd176f92-fef8-4027-8cd4-0d5fa341a94f",
+          "identifier": "TINGJI-43"
+        },
+        {
+          "key": "C10",
+          "id": "f00d6cd3-59e3-48d3-b3ab-9cc3123411c0",
+          "identifier": "TINGJI-48"
+        },
+        {
+          "key": "T01",
+          "id": "76ab8e0e-2466-49b3-b315-4d3f09ee29b2",
+          "identifier": "TINGJI-51"
+        },
+        {
+          "key": "T02",
+          "id": "7241445b-8a9e-408c-9479-5b0d0c47c488",
+          "identifier": "TINGJI-52"
+        },
+        {
+          "key": "T03",
+          "id": "16f10a95-ce2f-4de8-828d-0abf9ce5f9a1",
+          "identifier": "TINGJI-53"
+        },
+        {
+          "key": "T04",
+          "id": "506a8d57-7fbb-4190-a9f9-498722e62757",
+          "identifier": "TINGJI-54"
+        },
+        {
+          "key": "T05",
+          "id": "f7b19597-7a9e-47c9-896e-dbc40f4ae834",
+          "identifier": "TINGJI-55"
+        }
+      ],
+      "state": "7632919c-74b9-47fb-88f4-b2a25a78edbd",
+      "parent": "936ecac2-3317-4eb5-be68-9e44e2fb917d",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    },
+    {
+      "key": "T07",
+      "id": "0b8a44fa-294c-4b1b-a4e3-a939a0a2b88a",
+      "number": 21,
+      "name": "验收统一设置与系统提醒事项最小迭代",
+      "created": false,
+      "external_id": "settings-reminders-acceptance-20261001",
+      "category": "测试验收",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/0b8a44fa-294c-4b1b-a4e3-a939a0a2b88a/",
+      "priority": "P0",
+      "phase": "S2",
+      "features": [
+        "F07",
+        "F02",
+        "F08",
+        "F04"
+      ],
+      "dependencies": [
+        {
+          "key": "C06",
+          "id": "cd176f92-fef8-4027-8cd4-0d5fa341a94f",
+          "identifier": "TINGJI-43"
+        },
+        {
+          "key": "C10",
+          "id": "f00d6cd3-59e3-48d3-b3ab-9cc3123411c0",
+          "identifier": "TINGJI-48"
+        },
+        {
+          "key": "C11",
+          "id": "aae1f769-03b5-429b-a693-e2ef3aeb64e9",
+          "identifier": "TINGJI-47"
+        },
+        {
+          "key": "C12",
+          "id": "66f75fce-9500-40bd-8cdd-6ec2966b9213",
+          "identifier": "TINGJI-49"
+        },
+        {
+          "key": "C13",
+          "id": "8d706aae-0979-44c1-91ed-3ac9f8fc8e23",
+          "identifier": "TINGJI-50"
+        },
+        {
+          "key": "T02",
+          "id": "7241445b-8a9e-408c-9479-5b0d0c47c488",
+          "identifier": "TINGJI-52"
+        },
+        {
+          "key": "T05",
+          "id": "f7b19597-7a9e-47c9-896e-dbc40f4ae834",
+          "identifier": "TINGJI-55"
+        }
+      ],
+      "state": "7632919c-74b9-47fb-88f4-b2a25a78edbd",
+      "parent": "936ecac2-3317-4eb5-be68-9e44e2fb917d",
+      "assignees": [],
+      "startDate": null,
+      "targetDate": null
+    }
+  ]
+}
