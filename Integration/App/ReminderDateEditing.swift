@@ -5,7 +5,7 @@ import Foundation
 enum ReminderDateEditing {
     static func date(from components: DateComponents?) -> Date? {
         guard let components else { return nil }
-        var calendar = components.calendar ?? Calendar.current
+        var calendar = components.calendar ?? Calendar(identifier: .gregorian)
         calendar.timeZone = components.timeZone ?? calendar.timeZone
         return calendar.date(from: components)
     }
@@ -13,11 +13,13 @@ enum ReminderDateEditing {
     static func components(existing: DateComponents?, date: Date, hasTime: Bool,
                            dateChanged: Bool, timeChanged: Bool) -> DateComponents {
         var result = existing ?? DateComponents()
-        var calendar = result.calendar ?? Calendar.current
+        var calendar = result.calendar ?? Calendar(identifier: .gregorian)
         calendar.timeZone = result.timeZone ?? calendar.timeZone
         if existing == nil {
             result.calendar = calendar
             result.timeZone = calendar.timeZone
+        } else if (dateChanged || timeChanged) && result.calendar == nil {
+            result.calendar = calendar
         }
         if existing == nil || dateChanged {
             let day = calendar.dateComponents([.year, .month, .day], from: date)

@@ -2,7 +2,7 @@ import Foundation
 
 extension TranscriptDocumentV1.Segment {
     /// Text-only correction. Timing, samples, and source_ranges stay untouched.
-    func withText(_ text: String, isManuallyEdited: Bool = true, editedAt: Date? = Date()) -> TranscriptDocumentV1.Segment {
+    nonisolated func withText(_ text: String, isManuallyEdited: Bool = true, editedAt: Date? = Date()) -> TranscriptDocumentV1.Segment {
         TranscriptDocumentV1.Segment(
             id: id,
             sequence: sequence,
@@ -23,7 +23,7 @@ extension TranscriptDocumentV1 {
     /// Labels that can be assigned to an individual sentence. System fallback
     /// labels describe attribution state rather than a person, so never offer
     /// them as an assignment target.
-    var editableSpeakerLabels: [String] {
+    nonisolated var editableSpeakerLabels: [String] {
         let candidates = speakers + speakerTurns.compactMap { turn in
             turn.attribution == .single ? turn.speaker : nil
         }
@@ -48,7 +48,7 @@ extension TranscriptDocumentV1 {
     /// Reassigns one single-speaker or unknown sentence without relabeling the
     /// rest of its surrounding turn. The existing turn is split around the
     /// sentence so neighbouring sentences retain their original attribution.
-    func applyingSpeakerAssignment(
+    nonisolated func applyingSpeakerAssignment(
         segmentID: UUID,
         speaker: String
     ) -> TranscriptDocumentV1 {
@@ -109,7 +109,7 @@ extension TranscriptDocumentV1 {
     /// Always bumps revision exactly once. Never changes `state`, so an
     /// incomplete Recording cannot be mislabeled complete by saving edits.
     /// Does not alter sample windows or source_ranges (no waveform cutting).
-    func applyingUserEdits(
+    nonisolated func applyingUserEdits(
         title: String?,
         tags: [String],
         segmentTexts: [UUID: String],
@@ -143,7 +143,7 @@ extension TranscriptDocumentV1 {
 
     /// Rewrites roster / turn labels using temporaryLabel → displayName.
     /// Source ranges and segment text are preserved. Revision advances once.
-    func applyingSpeakerLabelMapping(_ mapping: [String: String]) -> TranscriptDocumentV1 {
+    nonisolated func applyingSpeakerLabelMapping(_ mapping: [String: String]) -> TranscriptDocumentV1 {
         guard !mapping.isEmpty else { return self }
         let normalized = mapping.reduce(into: [String: String]()) { result, item in
             let key = item.key.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -209,14 +209,14 @@ extension TranscriptDocumentV1 {
         return mapping
     }
 
-    private static func isEditableSpeakerLabel(_ label: String) -> Bool {
+    private nonisolated static func isEditableSpeakerLabel(_ label: String) -> Bool {
         !label.isEmpty &&
             label != "说话人不确定" &&
             label != "多人对话" &&
             label != "多人会话"
     }
 
-    private static func normalizedTags(_ tags: [String]) -> [String] {
+    private nonisolated static func normalizedTags(_ tags: [String]) -> [String] {
         var seen = Set<String>()
         var ordered: [String] = []
         for tag in tags {

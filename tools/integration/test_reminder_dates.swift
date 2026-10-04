@@ -29,12 +29,20 @@ struct ReminderDateTests {
         let newDay = ReminderDateEditing.components(existing: nil, date: edited,
             hasTime: false, dateChanged: true, timeChanged: false)
         precondition(newDay.hour == nil && ReminderDateEditing.date(from: newDay) != nil)
+        precondition(newDay.calendar?.identifier == .gregorian, "New EventKit due dates require Gregorian components")
         let newTime = ReminderDateEditing.components(existing: nil, date: edited,
             hasTime: true, dateChanged: true, timeChanged: true)
         precondition(newTime.hour != nil && newTime.minute != nil)
         var toolDate = DateComponents()
         toolDate.year = 2026; toolDate.month = 10; toolDate.day = 1
         precondition(ReminderDateEditing.date(from: toolDate) != nil, "CLI date components without a calendar must display")
+        let toolEdited = ReminderDateEditing.components(existing: toolDate, date: edited,
+            hasTime: false, dateChanged: true, timeChanged: false)
+        precondition(toolEdited.calendar?.identifier == .gregorian, "Edited calendar-less dates need an explicit Gregorian calendar")
+        precondition(toolEdited.timeZone == nil, "An edited floating due date must stay floating")
+        let toolUntouched = ReminderDateEditing.components(existing: toolDate, date: edited,
+            hasTime: false, dateChanged: false, timeChanged: false)
+        precondition(toolUntouched == toolDate, "Untouched calendar-less components stay identical")
         precondition(ReminderDateEditing.date(from: nil) == nil)
         print("Reminder date regressions passed (untouched/date/time/all-day/new/time-zone/CLI dates)")
     }

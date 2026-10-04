@@ -1,0 +1,435 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voicecontext.invalid/recording-ai-actions/request.schema.json",
+  "title": "C00 draft selected input and existing-chat execution binding",
+  "$defs": {
+    "recordingContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "startedAt",
+        "timezone"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "meeting",
+            "recording",
+            null
+          ]
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/dateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timezone": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      }
+    },
+    "inputSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sequence",
+        "text",
+        "speakerLabel",
+        "sourceRanges"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "speakerLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceRanges": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/sourceRange"
+          }
+        }
+      }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "body"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/opaqueID"
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/opaqueID"
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "objectKind",
+        "requestID",
+        "source",
+        "recordingContext",
+        "selectedSegmentIDs",
+        "segments",
+        "completeness",
+        "metadata",
+        "template",
+        "selectionMode"
+      ],
+      "properties": {
+        "schema": {
+          "const": "voice-context/recording-input@1"
+        },
+        "objectKind": {
+          "const": "recordingInput"
+        },
+        "requestID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "source": {
+          "$ref": "common.schema.json#/$defs/source"
+        },
+        "recordingContext": {
+          "$ref": "#/$defs/recordingContext"
+        },
+        "selectedSegmentIDs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/uuid"
+          }
+        },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/inputSegment"
+          }
+        },
+        "completeness": {
+          "allOf": [
+            {
+              "$ref": "transcript.schema.json#/$defs/completeness"
+            },
+            {
+              "properties": {
+                "scope": {
+                  "const": "selection"
+                }
+              }
+            }
+          ]
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "type": "string"
+            }
+          }
+        },
+        "template": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/template"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selectionMode": {
+          "enum": [
+            "all",
+            "segments"
+          ]
+        }
+      }
+    },
+    "runAssociation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runID",
+        "requestID",
+        "inputSha256",
+        "sessionID",
+        "triggerMessageID",
+        "startedAt",
+        "endedAt",
+        "state"
+      ],
+      "properties": {
+        "runID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "requestID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "inputSha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "sessionID": {
+          "$ref": "common.schema.json#/$defs/opaqueID"
+        },
+        "triggerMessageID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "startedAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/dateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "running",
+            "finished",
+            "failed",
+            "cancelled",
+            "interrupted"
+          ]
+        }
+      }
+    },
+    "typeOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "artifactIDs",
+        "errorCode"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "validating",
+            "committed",
+            "failed",
+            "cancelled",
+            "interrupted"
+          ]
+        },
+        "artifactIDs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/uuid"
+          }
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "objectKind",
+        "requestID",
+        "source",
+        "recordingContext",
+        "inputPath",
+        "inputSha256",
+        "selectedSegmentIDs",
+        "resultTypes",
+        "typeOutcomes",
+        "completeness",
+        "state",
+        "runAssociations",
+        "createdAt",
+        "updatedAt",
+        "modelBindingID",
+        "selectionMode"
+      ],
+      "properties": {
+        "schema": {
+          "const": "voice-context/recording-ai@1"
+        },
+        "objectKind": {
+          "const": "request"
+        },
+        "requestID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "source": {
+          "$ref": "common.schema.json#/$defs/source"
+        },
+        "recordingContext": {
+          "$ref": "#/$defs/recordingContext"
+        },
+        "inputPath": {
+          "type": "string",
+          "pattern": "^VoiceContext/Requests/[0-9a-fA-F-]{36}/input\\.json$"
+        },
+        "inputSha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "selectedSegmentIDs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/uuid"
+          }
+        },
+        "resultTypes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "minutes",
+              "mindmap",
+              "actions",
+              "export"
+            ]
+          }
+        },
+        "typeOutcomes": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "minutes": {
+              "$ref": "#/$defs/typeOutcome"
+            },
+            "mindmap": {
+              "$ref": "#/$defs/typeOutcome"
+            },
+            "actions": {
+              "$ref": "#/$defs/typeOutcome"
+            },
+            "export": {
+              "$ref": "#/$defs/typeOutcome"
+            }
+          }
+        },
+        "completeness": {
+          "allOf": [
+            {
+              "$ref": "transcript.schema.json#/$defs/completeness"
+            },
+            {
+              "properties": {
+                "scope": {
+                  "const": "selection"
+                }
+              }
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "prepared",
+            "running",
+            "validating",
+            "committed",
+            "partiallyCommitted",
+            "failed",
+            "cancelled",
+            "interrupted"
+          ]
+        },
+        "runAssociations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/runAssociation"
+          }
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "updatedAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "modelBindingID": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/opaqueID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordingEvidenceRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "evidenceID",
+            "sha256"
+          ],
+          "properties": {
+            "evidenceID": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "sha256": {
+              "$ref": "common.schema.json#/$defs/sha256"
+            }
+          }
+        },
+        "selectionMode": {
+          "enum": [
+            "all",
+            "segments"
+          ]
+        }
+      }
+    }
+  }
+}

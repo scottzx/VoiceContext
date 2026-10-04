@@ -94,18 +94,13 @@ enum RecordingDetailPlaybackPresentation {
         roster.contains(speaker) ? YimaDesign.Color.ink : YimaDesign.Color.muted
     }
 
-    /// Bubble under the playhead. Prefers a containing range; otherwise the last
-    /// bubble that has already started (covers gaps / exact end boundaries).
+    /// Only highlight speech containing the playhead; gaps and untranscribed
+    /// audio must not point at a previous sentence.
     static func currentBubbleID(at time: TimeInterval, bubbles: [SentenceBubble]) -> UUID? {
-        guard !bubbles.isEmpty else { return nil }
-        let t = max(0, time)
-        if let containing = bubbles.first(where: { bubble in
-            let end = max(bubble.endTime, bubble.startTime + 0.01)
-            return t >= bubble.startTime && t < end
-        }) {
-            return containing.id
-        }
-        return bubbles.last(where: { $0.startTime <= t })?.id
+        guard time.isFinite, time >= 0 else { return nil }
+        return bubbles.first(where: { bubble in
+            time >= bubble.startTime && time < bubble.endTime
+        })?.id
     }
 
     /// Row under the playhead. Prefers a containing range; otherwise the last
@@ -152,28 +147,9 @@ enum RecordingDetailPlaybackPresentation {
         return groups
     }
 
-    /// Ensure each bubble has a usable end bound for playhead matching.
+    /// Sort speech ranges without inventing coverage for legacy point anchors.
     static func normalizingBubbleEndTimes(_ bubbles: [SentenceBubble]) -> [SentenceBubble] {
-        guard !bubbles.isEmpty else { return [] }
-        let sorted = bubbles.sorted { $0.offsetMilliseconds < $1.offsetMilliseconds }
-        return sorted.enumerated().map { index, bubble in
-            var end = bubble.endMilliseconds
-            if end <= bubble.offsetMilliseconds {
-                if index + 1 < sorted.count {
-                    end = sorted[index + 1].offsetMilliseconds
-                } else {
-                    end = bubble.offsetMilliseconds + 1_000
-                }
-            }
-            return SentenceBubble(
-                id: bubble.id,
-                offsetMilliseconds: bubble.offsetMilliseconds,
-                endMilliseconds: end,
-                speaker: bubble.speaker,
-                text: bubble.text,
-                isManuallyEdited: bubble.isManuallyEdited
-            )
-        }
+        bubbles.sorted { $0.offsetMilliseconds < $1.offsetMilliseconds }
     }
 
     /// Ensure each row has a usable end bound for playhead matching.

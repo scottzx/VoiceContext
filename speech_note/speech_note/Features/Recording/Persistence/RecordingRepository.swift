@@ -493,21 +493,70 @@ actor RecordingRepository {
         return finalization
     }
 
-    /// Full retranscription is a new stage attempt, so all ASR progress must
-    /// become pending before any source is allowed to execute again.
+    /// Full retranscription is a new stage attempt. Only sources proven readable
+    /// become pending; unavailable sources retain an explicit failed attempt.
     func resetTranscriptionForRetranscription(
         recordingID: UUID,
+        readableChunkIDs: Set<UUID>? = nil,
+        readableRangeIDs: Set<UUID>? = nil,
         at date: Date
     ) throws {
         for var job in try index.jobs(recordingID: recordingID) where
             job.kind == .transcription
         {
-            job.state = .pending
-            job.lastError = nil
+            if job.chunkID == nil, job.processingRangeID == nil,
+               readableChunkIDs != nil || readableRangeIDs != nil {
+                // Source-scoped jobs replace the legacy whole-recording work
+                // item. Retiring that queue item does not assert audio completeness.
+                job.state = .completed
+                job.lastError = nil
+                job.executionToken = nil
+                job.startedAt = nil
+                job.terminationReason = "supersededBySourceRetry"
+                job.updatedAt = date
+                try upsertJob(job, at: date)
+                continue
+            }
+            let readable = job.chunkID.map { readableChunkIDs?.contains($0) ?? true }
+                ?? job.processingRangeID.map { readableRangeIDs?.contains($0) ?? true }
+                ?? (readableChunkIDs == nil && readableRangeIDs == nil)
+            job.state = readable ? .pending : .failed
+            job.lastError = readable ? nil : "音频不可读，已有文字已保留。"
             job.executionToken = nil
             job.startedAt = nil
-            job.terminationReason = "userRetranscription"
+            job.terminationReason = readable ? "userRetranscription" : "retranscriptionAudioUnavailable"
             job.updatedAt = date
+            try upsertJob(job, at: date)
+        }
+        // Register the entire scope before draining. Otherwise the first source
+        // may finish before a later readable source has a durable queue row.
+        let jobs = try index.jobs(recordingID: recordingID)
+        var missingSources: [(chunkID: UUID?, rangeID: UUID?, readable: Bool)] = []
+        if let readableChunkIDs {
+            for chunk in try index.chunks(recordingID: recordingID) where
+                chunk.state != .writing && !jobs.contains(where: { $0.kind == .transcription && $0.chunkID == chunk.id }) {
+                missingSources.append((chunk.id, nil, readableChunkIDs.contains(chunk.id)))
+            }
+        }
+        if let readableRangeIDs {
+            for range in try index.processingRanges(recordingID: recordingID) where
+                !jobs.contains(where: { $0.kind == .transcription && $0.processingRangeID == range.id }) {
+                missingSources.append((nil, range.id, readableRangeIDs.contains(range.id)))
+            }
+        }
+        for source in missingSources {
+            var job = RecordingJob(
+                recordingID: recordingID,
+                chunkID: source.chunkID,
+                processingRangeID: source.rangeID,
+                kind: .transcription,
+                state: source.readable ? .pending : .failed,
+                attemptCount: 0,
+                lastError: source.readable ? nil : "音频不可读，已有文字已保留。",
+                createdAt: date,
+                updatedAt: date
+            )
+            job.terminationReason = source.readable ? "userRetranscription" : "retranscriptionAudioUnavailable"
             try upsertJob(job, at: date)
         }
     }

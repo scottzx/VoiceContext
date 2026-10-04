@@ -189,7 +189,7 @@ info['CFBundleDisplayName']='一芥伙伴'
 info['CFBundleName']='Yima'
 info['NSMicrophoneUsageDescription']='一芥伙伴使用麦克风录制你主动开始的会议或日常语音，并在你选择语音输入时转为聊天文字。'
 info['NSRemindersFullAccessUsageDescription']='在待办事项中展示和管理你的系统提醒事项，并让你授权的智能体任务使用同一份待办。'
-info['NSCalendarsFullAccessUsageDescription']='在待办事项中只读展示你的系统日历日程和日期标记，并支持你授权的智能体日历任务。'
+info['NSCalendarsFullAccessUsageDescription']='在提醒中展示你的系统日历日程和日期标记，供你使用系统界面查看和编辑日程，并支持你授权的智能体日历任务。'
 for key, value in info.items():
     if key.endswith('UsageDescription') and isinstance(value, str):
         info[key] = value.replace('一伴', '一芥伙伴').replace('听记', '一芥伙伴')
@@ -322,9 +322,9 @@ for tid in p['targets']:
             entries['NSCalendarsFullAccessUsageDescription'] = {'extractionState': 'manual', 'localizations': {
                 lang: {'stringUnit': {'state': 'translated', 'value': text}}
                 for lang, text in [
-                    ('en', 'View your system calendar events and date markers in Tasks, and support calendar tasks you authorize the agent to perform.'),
+                    ('en', 'Show your system calendar events and date markers in Reminders, let you view and edit events using the system interface, and support calendar tasks you authorize the agent to perform.'),
                     ('zh-Hans', info['NSCalendarsFullAccessUsageDescription']),
-                    ('zh-Hant', '在待辦事項中唯讀顯示你的系統行事曆行程和日期標記，並支援你授權的智慧體行事曆任務。')]}}
+                    ('zh-Hant', '在提醒中顯示你的系統行事曆行程和日期標記，供你使用系統介面查看和編輯行程，並支援你授權的智慧體行事曆任務。')]}}
         (folder / 'InfoPlist.xcstrings').write_text(json.dumps(
             {'sourceLanguage': 'en', 'strings': entries, 'version': '1.0'}, ensure_ascii=False, indent=2) + '\n')
         bs['YIMA_BRANDING_DIR'] = '$(SRCROOT)/../../../../Integration/Resources/Branding/' + target['name'] + '/' + config['name']

@@ -1,0 +1,129 @@
+{
+  "purpose": "read-only existing product baseline for interaction and C00 review; not approval or runtime proof",
+  "date": "2026-10-03",
+  "repositories": [
+    {
+      "context": "current_worktree",
+      "path": "/Users/scott/.codex/worktrees/887f/voice_type",
+      "head": "a1a6fbfd44fca39bdb885d6f3f57aa707b445ae2",
+      "files": [
+        {
+          "path": "DESIGN.md",
+          "sha256": "6ae7d7049fe97a50bf2e7a962f4ad4d0792ef00812f42b564ae72695c9c06e2e",
+          "git_status": "clean"
+        },
+        {
+          "path": "docs/design/interface-language.md",
+          "sha256": "e038a9ac86f4e52712c5878b1fae7865b8262bd5d4be371e97128f7e08d0ce22",
+          "git_status": "?? docs/design/interface-language.md"
+        },
+        {
+          "path": "Integration/App/VoiceContextRootView.swift",
+          "sha256": "b6e24a3f605c6c8417e07d234ac90b3a6c7173f6d32217aec2744c114d76b4e7",
+          "git_status": "clean"
+        },
+        {
+          "path": "Integration/App/RecordingAgentResults.swift",
+          "sha256": "2206dd1562e923b3628605cc3d17444af3803a5dc08505de78fbe3a0f1b458fe",
+          "git_status": "M Integration/App/RecordingAgentResults.swift"
+        },
+        {
+          "path": "Integration/App/SystemRemindersView.swift",
+          "sha256": "68e7bdda0e289727767c847437c7cb84b0a25b8fdcf1a00e418caf1566880122",
+          "git_status": "M Integration/App/SystemRemindersView.swift"
+        },
+        {
+          "path": "Integration/App/MeetingWorkspaceBridge.swift",
+          "sha256": "1bba33d859dd0ecd9f482bc722d77ec2ce35db78d73477b58a8668d6bbf40d9a",
+          "git_status": "clean"
+        },
+        {
+          "path": "Integration/Shared/YimaDesignTokens.swift",
+          "exists": false
+        },
+        {
+          "path": "speech_note/speech_note/Features/Recording/RecordingDetailView.swift",
+          "sha256": "ce4c71ce33708c84b39e24e07d759024510921b3ebd20d7560e4c125a838291a",
+          "git_status": "clean"
+        },
+        {
+          "path": "speech_note/speech_note/Features/Documents/TranscriptDocumentV1.swift",
+          "sha256": "7da6a364bb76fa60a21b6a5d1f0f10b90e2c7893c469865b3f50f5e32ccf358f",
+          "git_status": "M speech_note/speech_note/Features/Documents/TranscriptDocumentV1.swift"
+        },
+        {
+          "path": "Vendor/Phone/src/ios/Views/ContentView.swift",
+          "sha256": "dfd103761aaa8fed8584de32f8f8982fb4db1110cbd9fd05d2d94ba1b4bc3c70",
+          "git_status": "clean"
+        },
+        {
+          "path": "Vendor/Phone/src/ios/Views/Chat/AIChatView.swift",
+          "sha256": "2b5ed7935cbc162e665c3d9c14a4d259c8fef3245c832f68af7b643c35fb80eb",
+          "git_status": "clean"
+        }
+      ]
+    },
+    {
+      "context": "product_primary",
+      "path": "/Users/scott/Documents/01-开发项目/AI应用/voice_type",
+      "head": "070e196b0c53c85d2954197decc689bb7a3ff50b",
+      "files": [
+        {
+          "path": "DESIGN.md",
+          "sha256": "8e8b1b798dc141f9576ba07d6e600e2f3408e7555d21268611f4681b3079f1ca",
+          "git_status": "M DESIGN.md"
+        },
+        {
+          "path": "docs/design/interface-language.md",
+          "sha256": "ee8cbd89d7df48cc96352d60743690d811b9ade85187a71aa43556835a333d74",
+          "git_status": "?? docs/design/interface-language.md"
+        },
+        {
+          "path": "Integration/App/VoiceContextRootView.swift",
+          "sha256": "ce250eb1bad3fd42876f552fe739ceeac92dbc0ef8e4dbe4a89cca88c3dd6491",
+          "git_status": "M Integration/App/VoiceContextRootView.swift"
+        },
+        {
+          "path": "Integration/App/RecordingAgentResults.swift",
+          "sha256": "0105986b44efdc918c83fb17a2c0b6cd73623428f3d8c79d4d090c3a67d43b91",
+          "git_status": "M Integration/App/RecordingAgentResults.swift"
+        },
+        {
+          "path": "Integration/App/SystemRemindersView.swift",
+          "sha256": "748e45218a0374ff3b8b419dd95e7d875399f497e050dce045945831090f9534",
+          "git_status": "M Integration/App/SystemRemindersView.swift"
+        },
+        {
+          "path": "Integration/App/MeetingWorkspaceBridge.swift",
+          "sha256": "1bba33d859dd0ecd9f482bc722d77ec2ce35db78d73477b58a8668d6bbf40d9a",
+          "git_status": "clean"
+        },
+        {
+          "path": "Integration/Shared/YimaDesignTokens.swift",
+          "sha256": "c65a4925a0438fcee76f5ea4055aeed15904e4e67f6381a84f0f8eb8e96f2e8a",
+          "git_status": "?? Integration/Shared/YimaDesignTokens.swift"
+        },
+        {
+          "path": "speech_note/speech_note/Features/Recording/RecordingDetailView.swift",
+          "sha256": "8c57066b229decc4c1d4015a9a50dc22a454bfe9d5face86ac4b5220ff78cdaf",
+          "git_status": "M speech_note/speech_note/Features/Recording/RecordingDetailView.swift"
+        },
+        {
+          "path": "speech_note/speech_note/Features/Documents/TranscriptDocumentV1.swift",
+          "sha256": "2d623e3e7d43734bcbc227bb824690254158f46fbab7a782b7c76636f6497a36",
+          "git_status": "clean"
+        },
+        {
+          "path": "Vendor/Phone/src/ios/Views/ContentView.swift",
+          "sha256": "3401e56f89bb48e498f54a9de4abf1cf7f80127f3dd674148c1256941ae129a0",
+          "git_status": "M Vendor/Phone/src/ios/Views/ContentView.swift"
+        },
+        {
+          "path": "Vendor/Phone/src/ios/Views/Chat/AIChatView.swift",
+          "sha256": "93fa1ab5e4415634b9509a48c218305ace1361e1018944c76ed0d94965081a71",
+          "git_status": "M Vendor/Phone/src/ios/Views/Chat/AIChatView.swift"
+        }
+      ]
+    }
+  ]
+}

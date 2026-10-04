@@ -709,10 +709,10 @@ actor SpeakerFinalizationCoordinator {
         let completed = try await completedDocument(
             recordingID: job.recordingID,
             recluster: recluster,
+            allowCreatingEmptyDocument: document == nil,
             repository: repository,
             transcriptStore: transcriptStore
         )
-        try await transcriptStore.write(completed)
         let transcriptCommitMilliseconds = elapsedMilliseconds(since: commitStartedAt)
 
         let publishStartedAt = Date()
@@ -762,38 +762,51 @@ actor SpeakerFinalizationCoordinator {
     private static func completedDocument(
         recordingID: UUID,
         recluster: OfflineSpeakerReclustering.Result,
+        allowCreatingEmptyDocument: Bool,
         repository: RecordingRepository,
         transcriptStore: TranscriptDocumentStore
     ) async throws -> TranscriptDocumentV1 {
-        if let document = try await transcriptStore.document(recordingID: recordingID) {
-            return document.updatingState(.complete).applyingOfflineRecluster(
-                speakers: recluster.speakers,
-                speakerTurns: recluster.turns
-            )
-        }
-
         guard let recording = try await repository.recording(id: recordingID) else {
-            throw SenseVoiceInferenceService.InferenceError.runtime("找不到待最终化的录音")
+            throw FinalizationError.invalidated
         }
-        if let asset = try await repository.importedAudioAsset(recordingID: recordingID) {
-            return TranscriptDocumentV1(
-                recording: recording,
-                audioAvailableOnThisDevice: asset.audioRemovedAt == nil,
-                segmentDrafts: [],
-                language: "",
-                state: .complete,
-                speakers: recluster.speakers
-            )
+        var empty: TranscriptDocumentV1?
+        if allowCreatingEmptyDocument {
+            if let asset = try await repository.importedAudioAsset(recordingID: recordingID) {
+                empty = TranscriptDocumentV1(
+                    recording: recording,
+                    audioAvailableOnThisDevice: asset.audioRemovedAt == nil,
+                    segmentDrafts: [],
+                    language: "",
+                    state: .complete,
+                    speakers: recluster.speakers
+                )
+            } else {
+                let chunks = try await repository.chunks(recordingID: recordingID)
+                empty = TranscriptDocumentV1(
+                    recording: recording,
+                    chunks: chunks,
+                    segmentDrafts: [],
+                    language: "",
+                    state: .complete,
+                    speakers: recluster.speakers
+                )
+            }
         }
-        let chunks = try await repository.chunks(recordingID: recordingID)
-        return TranscriptDocumentV1(
-            recording: recording,
-            chunks: chunks,
-            segmentDrafts: [],
-            language: "",
-            state: .complete,
-            speakers: recluster.speakers
-        )
+        guard try await repository.recording(id: recordingID) != nil else {
+            throw FinalizationError.invalidated
+        }
+        let fallback = empty
+        guard let completed = try await transcriptStore.update(recordingID: recordingID, transform: { latest in
+            if let latest {
+                return latest.updatingState(.complete).applyingOfflineRecluster(
+                    speakers: recluster.speakers,
+                    speakerTurns: recluster.turns
+                )
+            }
+            guard let fallback else { throw FinalizationError.invalidated }
+            return fallback
+        }) else { throw FinalizationError.invalidated }
+        return completed
     }
 
     private static func speakerEmbeddingModelURL() throws -> URL {

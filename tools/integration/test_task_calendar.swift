@@ -39,6 +39,26 @@ struct TaskCalendarTests {
         precondition(TaskCalendarRules.intersects(start: dstStart, end: dstEnd, day: dstStart, calendar: dst))
         precondition(!TaskCalendarRules.intersects(start: dstStart, end: dstEnd, day: dstEnd, calendar: dst))
 
+        let leapDay = date("2024-02-29T02:00:00Z")
+        let marchDay = date("2024-03-30T02:00:00Z")
+        let nextYear = date("2025-02-28T02:00:00Z")
+        let dateIndex = TaskDateIndex(dates: [leapDay, leapDay.addingTimeInterval(3600), marchDay, nextYear], calendar: calendar)
+        precondition(dateIndex.dates.count == 3, "Items on the same local day share one date option")
+        precondition(dateIndex.years == [2025, 2024])
+        precondition(dateIndex.months(in: 2024) == [3, 2])
+        precondition(dateIndex.days(in: 2024, month: 2) == [29], "Empty dates must not be selectable")
+        precondition(dateIndex.date(year: 2024, month: 2, day: 28) == nil)
+        precondition(dateIndex.resolving(year: 2025, month: 2, day: 29) == calendar.startOfDay(for: nextYear), "Changing year must replace an unavailable leap day")
+        precondition(dateIndex.resolving(year: 2024, month: 3, day: 29) == calendar.startOfDay(for: marchDay))
+        let filteredDates = TaskDateIndex(dates: [leapDay], calendar: calendar)
+        precondition(filteredDates.resolving(year: 2025, month: 3, day: 30) == calendar.startOfDay(for: leapDay), "Removed source/completed dates cannot leave an invalid selection")
+        let emptyDates = TaskDateIndex(dates: [], calendar: calendar)
+        precondition(emptyDates.years.isEmpty && emptyDates.resolving(year: 2024, month: 2, day: 29) == nil)
+        let midnightDates = TaskDateIndex(dates: [crossStart, crossEnd], calendar: calendar)
+        precondition(midnightDates.dates.count == 2, "Local midnight separates dates even within one UTC day")
+        let dstDates = TaskDateIndex(dates: [dstStart, dstEnd.addingTimeInterval(-1)], calendar: dst)
+        precondition(dstDates.dates == [dstStart], "A short DST day still has one date option")
+
         var selection = TaskSourceSelection()
         precondition(!selection.reconcile(["calendar-A", "calendar-B"]))
         precondition(selection.selected == ["calendar-A", "calendar-B"])
@@ -54,6 +74,37 @@ struct TaskCalendarTests {
         var reminders = TaskSourceSelection()
         reminders.reconcile(["calendar-B"])
         precondition(reminders.selected == ["calendar-B"] && !restored.selected.contains("calendar-B"), "Entity-specific preferences must remain independent")
-        print("Task calendar regressions passed: local grouping, Monday grids, month/week paging, midnight, all-day, cross-day, DST, source persistence/removal/independence")
+        precondition(reminders.includesReminder(sourceID: "calendar-B", completed: false, showCompleted: false, recentlyCompleted: false))
+        precondition(!reminders.includesReminder(sourceID: "calendar-B", completed: true, showCompleted: false, recentlyCompleted: false))
+        precondition(reminders.includesReminder(sourceID: "calendar-B", completed: true, showCompleted: true, recentlyCompleted: false))
+        precondition(reminders.includesReminder(sourceID: "calendar-B", completed: true, showCompleted: false, recentlyCompleted: true), "Completion feedback remains visible in both pages")
+        precondition(!reminders.includesReminder(sourceID: "hidden", completed: false, showCompleted: true, recentlyCompleted: true), "An unchecked source stays hidden even with completion feedback")
+
+        let suite = "Yima.FilterRegression." + UUID().uuidString
+        let preferences = UserDefaults(suiteName: suite)!
+        defer { preferences.removePersistentDomain(forName: suite) }
+        preferences.set(reminders.encoded, forKey: "yima.tasks.reminderSources")
+        preferences.set(restored.encoded, forKey: "yima.tasks.eventSources")
+        preferences.set(true, forKey: "yima.reminders.showCompleted")
+        let reopened = UserDefaults(suiteName: suite)!
+        let reopenedReminders = TaskSourceSelection(encoded: reopened.string(forKey: "yima.tasks.reminderSources")!)
+        let reopenedEvents = TaskSourceSelection(encoded: reopened.string(forKey: "yima.tasks.eventSources")!)
+        precondition(reopenedReminders == reminders && reopenedEvents == restored)
+        precondition(reopened.bool(forKey: "yima.reminders.showCompleted"))
+        var emptySelection = reopenedReminders
+        emptySelection.toggle("calendar-B")
+        preferences.set(emptySelection.encoded, forKey: "yima.tasks.reminderSources")
+        precondition(TaskSourceSelection(encoded: reopened.string(forKey: "yima.tasks.reminderSources")!).selected.isEmpty,
+                     "Persisting no sources must not reset to all sources")
+        var nativeSelection = TaskSourceSelection()
+        nativeSelection.reconcile(["A"])
+        nativeSelection.applySelection([], available: ["A", "new-source"])
+        precondition(nativeSelection.selected.isEmpty)
+        precondition(!nativeSelection.reconcile(["A", "new-source"]) && nativeSelection.selected.isEmpty,
+                     "Done with no sources must stay empty, including newly seen lists")
+        nativeSelection.applySelection(["A", "removed"], available: ["A", "new-source"])
+        precondition(nativeSelection.selected == ["A"], "Cannot save sources removed while the chooser was open")
+        precondition(TaskSourceSelection(encoded: nativeSelection.encoded) == nativeSelection)
+        print("Task calendar regressions passed: local grouping, grids/paging, event boundaries, populated-date wheels, leap-year/filter reconciliation, DST, source persistence/removal/independence")
     }
 }

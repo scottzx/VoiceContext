@@ -1,0 +1,657 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voicecontext.invalid/recording-ai-actions/artifact.schema.json",
+  "title": "C00 artifact proposal — not approved, frozen or implemented",
+  "$comment": "Publication shape only. Passing schema cannot prove source/input/run/read/file evidence or approve EventKit writes. Keep legacy files in a separate unknown-metadata QuickLook path. See artifact-notes.md.",
+  "$ref": "#/$defs/artifact",
+  "$defs": {
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relativePath",
+        "mediaType",
+        "sha256"
+      ],
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\\/$)[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "mediaType": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$"
+        },
+        "sha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "$comment": "Committed typed artifacts semantically require at least one application/json file exactly matching data. Markdown/Mermaid previews require independently observed managed-renderer output; content hashes alone do not validate their facts. See artifact-notes.md. This renderer/representation contract is a review proposal.",
+      "items": {
+        "$ref": "#/$defs/file"
+      },
+      "minItems": 1
+    },
+    "unresolvedRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "range",
+        "outcome",
+        "reasonCode"
+      ],
+      "properties": {
+        "range": {
+          "$ref": "common.schema.json#/$defs/sourceRange"
+        },
+        "outcome": {
+          "enum": [
+            "pending",
+            "voicedEmpty",
+            "unreadable",
+            "missing",
+            "failed",
+            "interrupted"
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selectedSegmentIDs",
+        "readSegmentIDs",
+        "missingSegmentIDs",
+        "unresolvedRanges"
+      ],
+      "properties": {
+        "selectedSegmentIDs": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/uuid"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "readSegmentIDs": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/uuid"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "missingSegmentIDs": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/uuid"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "unresolvedRanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unresolvedRange"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actionID",
+        "artifactID",
+        "source",
+        "title",
+        "citations",
+        "status"
+      ],
+      "properties": {
+        "actionID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "artifactID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "source": {
+          "$ref": "common.schema.json#/$defs/source"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/citation"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "status": {
+          "const": "candidate"
+        },
+        "ownerFact": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "ownerUncertainty": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "due": {
+          "$ref": "reminder.schema.json#/$defs/due"
+        },
+        "alarm": {
+          "$ref": "reminder.schema.json#/$defs/alarm"
+        },
+        "listID": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/opaqueID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "citations"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/citation"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "minutes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summaryClass",
+        "reason",
+        "title",
+        "summary",
+        "discussion",
+        "decisions",
+        "actions",
+        "unresolved"
+      ],
+      "properties": {
+        "summaryClass": {
+          "enum": [
+            "formal",
+            "withMissingContent",
+            "preliminary",
+            "completenessUnknown"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "summary": {
+          "$ref": "#/$defs/entry"
+        },
+        "discussion": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/entry"
+          },
+          "minItems": 0
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/entry"
+          },
+          "minItems": 0
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/action"
+          },
+          "minItems": 0
+        },
+        "unresolved": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/entry"
+          },
+          "minItems": 0
+        }
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actions"
+      ],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/action"
+          },
+          "minItems": 0
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeID",
+        "parentNodeID",
+        "type",
+        "title",
+        "citations"
+      ],
+      "properties": {
+        "nodeID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "parentNodeID": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": {
+          "enum": [
+            "topic",
+            "discussion",
+            "decision",
+            "action",
+            "unresolved"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 8000
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/citation"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "actionID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "action"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "actionID"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "actionID"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "mindmap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rootNodeID",
+        "nodes",
+        "actions"
+      ],
+      "properties": {
+        "rootNodeID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          },
+          "minItems": 1,
+          "maxItems": 1000
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/action"
+          },
+          "minItems": 0
+        }
+      },
+      "$comment": "P1 review proposal only: one root, unique node IDs, single parent, reachability, no cycles and at most 12 levels including root are semantic. 1000 nodes and 8000 body characters are not approved product limits."
+    },
+    "exportMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "elementID",
+        "citations"
+      ],
+      "properties": {
+        "elementID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/citation"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "exportEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeID",
+        "parentNodeID"
+      ],
+      "properties": {
+        "nodeID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "parentNodeID": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "export": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "originatingArtifactID",
+        "originatingType",
+        "provenance",
+        "hierarchy"
+      ],
+      "properties": {
+        "format": {
+          "enum": [
+            "markdown",
+            "mermaid"
+          ]
+        },
+        "originatingArtifactID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "originatingType": {
+          "enum": [
+            "minutes",
+            "mindmap",
+            "actions"
+          ]
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exportMapping"
+          },
+          "minItems": 0
+        },
+        "hierarchy": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exportEdge"
+          },
+          "minItems": 0
+        }
+      },
+      "$comment": "P1 export formats and metadata header are unapproved proposals; source and hierarchy retention requires independent originatingArtifact context and actual exported bytes."
+    },
+    "artifactBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "objectKind",
+        "artifactID",
+        "requestID",
+        "runID",
+        "sessionID",
+        "triggerMessageID",
+        "inputSha256",
+        "source",
+        "type",
+        "status",
+        "files",
+        "coverage",
+        "citations",
+        "createdAt",
+        "data"
+      ],
+      "properties": {
+        "schema": {
+          "const": "voice-context/recording-ai@1"
+        },
+        "objectKind": {
+          "const": "artifact"
+        },
+        "artifactID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "requestID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "runID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "sessionID": {
+          "$ref": "common.schema.json#/$defs/opaqueID"
+        },
+        "triggerMessageID": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "inputSha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "source": {
+          "$ref": "common.schema.json#/$defs/source"
+        },
+        "type": {
+          "enum": [
+            "minutes",
+            "mindmap",
+            "actions",
+            "export"
+          ]
+        },
+        "status": {
+          "const": "committed"
+        },
+        "files": {
+          "$ref": "#/$defs/files"
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/citation"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "createdAt": {
+          "$ref": "common.schema.json#/$defs/dateTime"
+        },
+        "data": {},
+        "template": {
+          "anyOf": [
+            {
+              "$ref": "request.schema.json#/$defs/template"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "minItems": 0
+        }
+      }
+    },
+    "artifact": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactBase"
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "type": {
+                  "const": "minutes"
+                },
+                "data": {
+                  "$ref": "#/$defs/minutes"
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ]
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "mindmap"
+                },
+                "data": {
+                  "$ref": "#/$defs/mindmap"
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ]
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "actions"
+                },
+                "data": {
+                  "$ref": "#/$defs/actions"
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ]
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "export"
+                },
+                "data": {
+                  "$ref": "#/$defs/export"
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

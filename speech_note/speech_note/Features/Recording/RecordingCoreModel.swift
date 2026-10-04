@@ -124,6 +124,7 @@ final class RecordingCoreModel {
     }
 
     private(set) var presentation: RecordingSessionCoordinator.PresentationState = .idle
+    private(set) var isStartingRecording = false
     private(set) var activeRecordingID: UUID?
     /// Capture-session progress for the live recording chrome. Independent of
     /// any older Recording that may still be processing in the background.
@@ -268,21 +269,35 @@ final class RecordingCoreModel {
                             result.temporarySpeakers
                         )
                     }
-                    let existingParticipants = try await transcriptStore
-                        .document(recordingID: recordingID)?.participants ?? []
-                    let document = TranscriptDocumentV1(
+                    let candidate = TranscriptDocumentV1(
                         recording: recording,
                         chunks: chunks,
                         segmentTexts: transcriptionResults,
                         language: detectedLanguage,
-                        speakers: temporarySpeakers,
-                        participants: existingParticipants
+                        state: .processing,
+                        speakers: temporarySpeakers
                     )
-                    try document.requireContent()
+                    try candidate.requireContent()
                     guard try await repository.validateExecutionLease(lease) else {
                         throw JobExecutionLeaseError.invalidated
                     }
-                    try await transcriptStore.write(document)
+                    let drafts = candidate.segments.map {
+                        TranscriptDocumentV1.SegmentDraft(
+                            text: $0.text,
+                            startSample: $0.startSample,
+                            endSample: $0.endSample,
+                            sourceRanges: $0.sourceRanges
+                        )
+                    }
+                    let document = try await transcriptStore.update(recordingID: recordingID) { latest in
+                        latest?.appending(
+                            recording: recording,
+                            chunks: chunks,
+                            drafts: drafts,
+                            replacingSourceIDs: chunks.map(\.id),
+                            speakers: candidate.speakers
+                        ) ?? candidate
+                    } ?? candidate
                     try? await Self.publishPublicDocuments(
                         document: document,
                         repository: repository,
@@ -404,25 +419,26 @@ final class RecordingCoreModel {
                         batchID: chunk.id
                     )
 
-                    let document = try await transcriptStore.document(recordingID: recordingID)
-                    let updated = document?.appending(
-                        recording: recording,
-                        chunks: chunks,
-                        drafts: drafts,
-                        replacingSourceIDs: [chunk.id],
-                        speakers: result.temporarySpeakers
-                    ) ?? TranscriptDocumentV1(
-                        recording: recording,
-                        chunks: chunks,
-                        segmentDrafts: drafts,
-                        language: result.detectedLanguage,
-                        state: .processing,
-                        speakers: result.temporarySpeakers
-                    )
                     guard try await repository.validateExecutionLease(lease) else {
                         throw JobExecutionLeaseError.invalidated
                     }
-                    try await transcriptStore.write(updated)
+                    let completedDrafts = drafts
+                    try await transcriptStore.update(recordingID: recordingID) { latest in
+                        latest?.appending(
+                            recording: recording,
+                            chunks: chunks,
+                            drafts: completedDrafts,
+                            replacingSourceIDs: [chunk.id],
+                            speakers: result.temporarySpeakers
+                        ) ?? TranscriptDocumentV1(
+                            recording: recording,
+                            chunks: chunks,
+                            segmentDrafts: completedDrafts,
+                            language: result.detectedLanguage,
+                            state: .processing,
+                            speakers: result.temporarySpeakers
+                        )
+                    }
                     let commitMilliseconds = Date().timeIntervalSince(commitStartedAt) * 1_000
                     try TranscriptionStageMetricsStore.save(
                         TranscriptionStageMetrics(
@@ -580,6 +596,9 @@ final class RecordingCoreModel {
     }
 
     func start(title: String? = nil, isMeeting: Bool = false) async {
+        guard !isStartingRecording, !showsSessionChrome else { return }
+        isStartingRecording = true
+        defer { isStartingRecording = false }
         notice = nil
         // Refuse capture without an explicit start; still request permission only
         // after that click. Denied permission must not create a failed Recording.
@@ -616,6 +635,9 @@ final class RecordingCoreModel {
     }
 
     func append(recordingID: UUID) async {
+        guard !isStartingRecording, !showsSessionChrome else { return }
+        isStartingRecording = true
+        defer { isStartingRecording = false }
         notice = nil
         let permission = await MicrophoneAccess.requestPermissionIfNeeded()
         guard permission == .granted else {
@@ -736,51 +758,52 @@ final class RecordingCoreModel {
     func retryTranscription(recordingID: UUID) async {
         do {
             _ = try? await repository.reconcileChunksFromDisk(recordingID: recordingID)
+            let importedAsset = try await repository.importedAudioAsset(recordingID: recordingID)
+            let ranges = try await repository.processingRanges(recordingID: recordingID)
+            let chunks = try await repository.chunks(recordingID: recordingID)
+            let rootURL = repository.rootURL
+            let plan = await Task.detached(priority: .utility) {
+                TranscriptionRetryPreflight.evaluate(
+                    chunks: chunks,
+                    ranges: ranges,
+                    asset: importedAsset,
+                    rootURL: rootURL
+                )
+            }.value
+            guard plan.hasReadableAudio else {
+                notice = "没有可重转写的音频，音频已过期或无法读取；已有文字已保留。"
+                await refresh()
+                return
+            }
             await transcriptionScheduler.prepareForRetranscription(recordingID: recordingID)
             try await coordinator.retryProcessing(recordingID: recordingID)
             try await prepareSpeakerFinalizationForRetranscription(
                 recordingID: recordingID,
                 resetTranscription: true,
-                clearTranscript: true
+                readableChunkIDs: Set(plan.chunks.map(\.id)),
+                readableRangeIDs: Set(plan.ranges.map(\.id))
             )
-            let importedAsset = try? await repository.importedAudioAsset(recordingID: recordingID)
             if importedAsset != nil {
-                let ranges = (try? await repository.processingRanges(recordingID: recordingID)) ?? []
                 let date = Date()
-                for var range in ranges {
+                for var range in plan.ranges {
                     range.state = .pending
                     range.requiresContinuation = false
                     range.updatedAt = date
                     _ = try? await repository.upsertProcessingRange(range, at: date)
                 }
-                for range in ranges {
-                    try await transcriptionScheduler.enqueue(
-                        recordingID: recordingID,
-                        processingRangeID: range.id,
-                        onOutcome: { [weak self] outcome in
-                            await self?.applyTranscriptionOutcome(outcome)
-                        }
-                    )
-                }
             } else {
-                let chunks = (try? await repository.chunks(recordingID: recordingID)) ?? []
                 let date = Date()
-                for chunk in chunks {
+                for chunk in plan.chunks {
                     _ = try? await repository.setChunkContinuation(id: chunk.id, requiresContinuation: false, at: date)
                 }
-                for chunk in chunks where chunk.state == .closed {
-                    try await transcriptionScheduler.enqueue(
-                        recordingID: recordingID,
-                        chunkID: chunk.id,
-                        onOutcome: { [weak self] outcome in
-                            await self?.applyTranscriptionOutcome(outcome)
-                        }
-                    )
-                }
             }
-            await transcriptionScheduler.requestDrain()
+            try await transcriptionScheduler.resumePreparedRetranscription(recordingID: recordingID) { [weak self] outcome in
+                await self?.applyTranscriptionOutcome(outcome)
+            }
             await backgroundTranscriptionContinuation.beginUserInitiatedTask()
-            notice = "已重新开始转写录音分片。"
+            notice = plan.unavailableSourceCount == 0
+                ? "已重新开始转写录音分片，已有校对文字将保留。"
+                : "已重试 \(plan.chunks.count + plan.ranges.count) 个可读范围；\(plan.unavailableSourceCount) 个范围音频不可用，已有文字已保留。"
         } catch {
             await transcriptionScheduler.requestDrain()
             notice = "重试失败：\(error.localizedDescription)"
@@ -941,7 +964,8 @@ final class RecordingCoreModel {
     private func prepareSpeakerFinalizationForRetranscription(
         recordingID: UUID,
         resetTranscription: Bool = false,
-        clearTranscript: Bool = false
+        readableChunkIDs: Set<UUID>? = nil,
+        readableRangeIDs: Set<UUID>? = nil
     ) async throws {
         pendingSpeakerFinalizationIDs.remove(recordingID)
         await speakerFinalizationCoordinator.invalidate(recordingID: recordingID)
@@ -952,6 +976,8 @@ final class RecordingCoreModel {
         if resetTranscription {
             try await repository.resetTranscriptionForRetranscription(
                 recordingID: recordingID,
+                readableChunkIDs: readableChunkIDs,
+                readableRangeIDs: readableRangeIDs,
                 at: Date()
             )
         }
@@ -968,10 +994,8 @@ final class RecordingCoreModel {
             rootURL: repository.rootURL,
             recordingID: recordingID
         )
-        if let document = try await transcriptStore.document(recordingID: recordingID) {
-            try await transcriptStore.write(document.preparingForRetranscription(
-                clearSegments: clearTranscript
-            ))
+        try await transcriptStore.update(recordingID: recordingID) {
+            $0?.preparingForRetranscription()
         }
     }
 
@@ -1963,15 +1987,13 @@ final class RecordingCoreModel {
         tags: [String],
         segmentTexts: [UUID: String]
     ) async throws -> TranscriptDocumentV1 {
-        guard let document = try await transcriptStore.document(recordingID: recordingID) else {
+        guard let edited = try await transcriptStore.update(recordingID: recordingID, transform: { document in
+            guard let document else { return nil }
+            try document.requireEditableSegments(Set(segmentTexts.keys))
+            return document.applyingUserEdits(title: title, tags: tags, segmentTexts: segmentTexts)
+        }) else {
             throw PublicDocumentPublisher.PublishError.unresolvedRelativePath("Transcripts/" + recordingID.uuidString)
         }
-        let edited = document.applyingUserEdits(
-            title: title,
-            tags: tags,
-            segmentTexts: segmentTexts
-        )
-        try await transcriptStore.write(edited)
         try? await repository.setRecordingTitle(
             recordingID: recordingID,
             title: edited.title,
@@ -2007,13 +2029,14 @@ final class RecordingCoreModel {
                 at: Date()
             )
         }
-        if let document = try? await transcriptStore.document(recordingID: recordingID) {
-            let updated = document.applyingUserEdits(
+        if let updated = try await transcriptStore.update(recordingID: recordingID, transform: { document in
+            guard let document else { return nil }
+            return document.applyingUserEdits(
                 title: finalTitle,
                 tags: tags.isEmpty ? document.tags : tags,
                 segmentTexts: [:]
             )
-            try await transcriptStore.write(updated)
+        }) {
             _ = try? await publishPublicDocuments(for: updated)
         }
         await refresh()
@@ -2137,15 +2160,17 @@ final class RecordingCoreModel {
         segmentID: UUID,
         text: String
     ) async throws -> TranscriptDocumentV1 {
-        guard let document = try await transcriptStore.document(recordingID: recordingID) else {
+        guard let edited = try await transcriptStore.update(recordingID: recordingID, transform: { document in
+            guard let document else { return nil }
+            try document.requireEditableSegments([segmentID])
+            return document.applyingUserEdits(
+                title: document.title,
+                tags: document.tags,
+                segmentTexts: [segmentID: text]
+            )
+        }) else {
             throw PublicDocumentPublisher.PublishError.unresolvedRelativePath("Transcripts/" + recordingID.uuidString)
         }
-        let edited = document.applyingUserEdits(
-            title: document.title,
-            tags: document.tags,
-            segmentTexts: [segmentID: text]
-        )
-        try await transcriptStore.write(edited)
         do {
             try await publishPublicDocuments(for: edited)
         } catch {
@@ -2161,13 +2186,13 @@ final class RecordingCoreModel {
         segmentID: UUID,
         speaker: String
     ) async throws -> TranscriptDocumentV1 {
-        guard let document = try await transcriptStore.document(recordingID: recordingID) else {
+        guard let edited = try await transcriptStore.update(recordingID: recordingID, transform: { document in
+            guard let document else { return nil }
+            try document.requireEditableSegments([segmentID])
+            return document.applyingSpeakerAssignment(segmentID: segmentID, speaker: speaker)
+        }) else {
             throw PublicDocumentPublisher.PublishError.unresolvedRelativePath("Transcripts/" + recordingID.uuidString)
         }
-        let edited = document.applyingSpeakerAssignment(segmentID: segmentID, speaker: speaker)
-        guard edited != document else { return document }
-
-        try await transcriptStore.write(edited)
         do {
             try await publishPublicDocuments(for: edited)
         } catch {
@@ -2220,16 +2245,17 @@ final class RecordingCoreModel {
         guard try await repository.recording(id: recordingID)?.isMeeting == true else {
             throw MeetingParticipantError.notMeeting
         }
-        guard let document = try await transcriptStore.document(recordingID: recordingID) else {
+        guard let document = try await transcriptStore.update(recordingID: recordingID, transform: {
+            $0?.addingParticipant(participant)
+        }) else {
             throw MeetingParticipantError.transcriptUnavailable
         }
-        return try await saveMeetingParticipantDocument(document.addingParticipant(participant))
+        return try await saveMeetingParticipantDocument(document)
     }
 
     private func saveMeetingParticipantDocument(
         _ document: TranscriptDocumentV1
     ) async throws -> TranscriptDocumentV1 {
-        try await transcriptStore.write(document)
         do {
             try await publishPublicDocuments(for: document)
         } catch {
@@ -2360,20 +2386,15 @@ final class RecordingCoreModel {
             recordingID: recordingID
         )
 
-        var updatedDocument: TranscriptDocumentV1?
-        if let document = try await transcriptStore.document(recordingID: recordingID) {
-            let mapping = TranscriptDocumentV1.speakerDisplayMapping(from: bindings)
-            if !mapping.isEmpty {
-                let edited = document.applyingSpeakerLabelMapping(mapping)
-                try await transcriptStore.write(edited)
-                do {
-                    try await publishPublicDocuments(for: edited)
-                } catch {
-                    notice = "说话人已更新，公开目录同步稍后可重试：" + error.localizedDescription
-                }
-                updatedDocument = edited
-            } else {
-                updatedDocument = document
+        let mapping = TranscriptDocumentV1.speakerDisplayMapping(from: bindings)
+        let updatedDocument = try await transcriptStore.update(recordingID: recordingID) {
+            $0?.applyingSpeakerLabelMapping(mapping)
+        }
+        if let updatedDocument, !mapping.isEmpty {
+            do {
+                try await publishPublicDocuments(for: updatedDocument)
+            } catch {
+                notice = "说话人已更新，公开目录同步稍后可重试：" + error.localizedDescription
             }
         }
         await refresh()
@@ -2966,24 +2987,26 @@ final class RecordingCoreModel {
                 batchID: range.id
             )
 
-            let document = try await transcriptStore.document(recordingID: recording.id)
-            let updated = document?.appendingImported(
-                recording: recording,
-                audioAvailableOnThisDevice: audioAvailable,
-                drafts: drafts,
-                speakers: result.temporarySpeakers
-            ) ?? TranscriptDocumentV1(
-                recording: recording,
-                audioAvailableOnThisDevice: audioAvailable,
-                segmentDrafts: drafts,
-                language: result.detectedLanguage,
-                state: .processing,
-                speakers: result.temporarySpeakers
-            )
             guard try await repository.validateExecutionLease(lease) else {
                 throw JobExecutionLeaseError.invalidated
             }
-            try await transcriptStore.write(updated)
+            let completedDrafts = drafts
+            try await transcriptStore.update(recordingID: recording.id) { latest in
+                latest?.appendingImported(
+                    recording: recording,
+                    audioAvailableOnThisDevice: audioAvailable,
+                    drafts: completedDrafts,
+                    replacingSampleRange: decodeStart..<decodeEnd,
+                    speakers: result.temporarySpeakers
+                ) ?? TranscriptDocumentV1(
+                    recording: recording,
+                    audioAvailableOnThisDevice: audioAvailable,
+                    segmentDrafts: completedDrafts,
+                    language: result.detectedLanguage,
+                    state: .processing,
+                    speakers: result.temporarySpeakers
+                )
+            }
             let commitMilliseconds = Date().timeIntervalSince(commitStartedAt) * 1_000
             try TranscriptionStageMetricsStore.save(
                 TranscriptionStageMetrics(

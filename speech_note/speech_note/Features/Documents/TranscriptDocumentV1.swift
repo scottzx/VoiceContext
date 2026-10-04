@@ -36,11 +36,14 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
 
     enum DocumentError: LocalizedError, Equatable {
         case emptyTranscript
+        case sourceUpdated
 
         var errorDescription: String? {
             switch self {
             case .emptyTranscript:
                 "未识别到可保存的文本，录音保留，可重新处理。"
+            case .sourceUpdated:
+                "文稿已更新，请重新核对要修改的段落；本次修改尚未保存。"
             }
         }
     }
@@ -673,21 +676,12 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         replacingSourceIDs: [UUID] = [],
         speakers: [String] = []
     ) -> TranscriptDocumentV1 {
-        let previousDrafts = Self.retainedDrafts(
-            existing: segments,
-            draft: draft,
-            replacingSourceIDs: replacingSourceIDs
-        )
-        return TranscriptDocumentV1(
+        appending(
             recording: recording,
             chunks: chunks,
-            segmentDrafts: previousDrafts + [draft],
-            timezone: timezone,
-            language: language,
-            state: .processing,
-            revision: revision + 1,
-            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers),
-            participants: participants
+            drafts: [draft],
+            replacingSourceIDs: replacingSourceIDs,
+            speakers: speakers
         )
     }
 
@@ -698,50 +692,15 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         replacingSourceIDs: [UUID] = [],
         speakers: [String] = []
     ) -> TranscriptDocumentV1 {
-        guard !drafts.isEmpty else { return self }
-        let replacedSources = Set(replacingSourceIDs)
-        var retained = segments.compactMap { segment -> SegmentDraft? in
-            if segment.isManuallyEdited {
-                return SegmentDraft(
-                    text: segment.text,
-                    startSample: segment.startSample,
-                    endSample: segment.endSample,
-                    sourceRanges: segment.sourceRanges,
-                    speechSpanIDs: segment.speechSpanIDs,
-                    isManuallyEdited: true,
-                    editedAt: segment.editedAt
-                )
-            }
-            if !replacedSources.isEmpty {
-                let matchesReplacedSource = segment.sourceRanges.contains { replacedSources.contains($0.sourceID) }
-                if matchesReplacedSource { return nil }
-            }
-            let isOverlapped = drafts.contains { d in
-                let maxStart = max(segment.startSample, d.startSample)
-                let minEnd = min(segment.endSample, d.endSample)
-                return maxStart < minEnd
-            }
-            if isOverlapped { return nil }
-            return SegmentDraft(
-                text: segment.text,
-                startSample: segment.startSample,
-                endSample: segment.endSample,
-                sourceRanges: segment.sourceRanges,
-                speechSpanIDs: segment.speechSpanIDs,
-                isManuallyEdited: false
-            )
-        }
-        return TranscriptDocumentV1(
-            recording: recording,
-            chunks: chunks,
-            segmentDrafts: retained + drafts,
-            timezone: timezone,
-            language: language,
-            state: .processing,
-            revision: revision + 1,
-            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers),
-            participants: participants
+        var copy = merging(drafts: drafts, replacingSourceIDs: replacingSourceIDs)
+        guard copy != self else { return self }
+        copy.audio = Audio(
+            localOnly: true,
+            availableOnThisDevice: chunks.contains { $0.state == .closed && $0.audioRemovedAt == nil },
+            retention: recording.retention.isPinned ? "keep" : "seven_days"
         )
+        copy.speakers = TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers)
+        return copy
     }
 
     /// Import path: one private asset, many logical ranges. Replacement uses
@@ -751,23 +710,15 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         recording: Recording,
         audioAvailableOnThisDevice: Bool,
         draft: SegmentDraft,
+        replacingSampleRange: Range<Int64>? = nil,
         speakers: [String] = []
     ) -> TranscriptDocumentV1 {
-        let previousDrafts = Self.retainedDrafts(
-            existing: segments,
-            draft: draft,
-            replacingSourceIDs: []
-        )
-        return TranscriptDocumentV1(
+        appendingImported(
             recording: recording,
             audioAvailableOnThisDevice: audioAvailableOnThisDevice,
-            segmentDrafts: previousDrafts + [draft],
-            timezone: timezone,
-            language: language,
-            state: .processing,
-            revision: revision + 1,
-            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers),
-            participants: participants
+            drafts: [draft],
+            replacingSampleRange: replacingSampleRange,
+            speakers: speakers
         )
     }
 
@@ -775,85 +726,107 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
         recording: Recording,
         audioAvailableOnThisDevice: Bool,
         drafts: [SegmentDraft],
+        replacingSampleRange: Range<Int64>? = nil,
         speakers: [String] = []
     ) -> TranscriptDocumentV1 {
-        guard !drafts.isEmpty else { return self }
-        var retained = segments.compactMap { segment -> SegmentDraft? in
-            if segment.isManuallyEdited {
-                return SegmentDraft(
-                    text: segment.text,
-                    startSample: segment.startSample,
-                    endSample: segment.endSample,
-                    sourceRanges: segment.sourceRanges,
-                    speechSpanIDs: segment.speechSpanIDs,
-                    isManuallyEdited: true,
-                    editedAt: segment.editedAt
-                )
-            }
-            let isOverlapped = drafts.contains { d in
-                let maxStart = max(segment.startSample, d.startSample)
-                let minEnd = min(segment.endSample, d.endSample)
-                return maxStart < minEnd
-            }
-            if isOverlapped { return nil }
-            return SegmentDraft(
-                text: segment.text,
-                startSample: segment.startSample,
-                endSample: segment.endSample,
-                sourceRanges: segment.sourceRanges,
-                speechSpanIDs: segment.speechSpanIDs,
-                isManuallyEdited: false
-            )
-        }
-        return TranscriptDocumentV1(
-            recording: recording,
-            audioAvailableOnThisDevice: audioAvailableOnThisDevice,
-            segmentDrafts: retained + drafts,
-            timezone: timezone,
-            language: language,
-            state: .processing,
-            revision: revision + 1,
-            speakers: TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers),
-            participants: participants
+        let start = drafts.map(\.startSample).min()
+        let end = drafts.map(\.endSample).max()
+        let inferredRange = start.flatMap { start in end.map { start..<max(start, $0) } }
+        var copy = merging(drafts: drafts, replacingSourceIDs: [],
+                           replacingSampleRange: replacingSampleRange ?? inferredRange)
+        guard copy != self else { return self }
+        copy.audio = Audio(
+            localOnly: true,
+            availableOnThisDevice: audioAvailableOnThisDevice,
+            retention: recording.retention.isPinned ? "keep" : "seven_days"
         )
+        copy.speakers = TemporarySpeakerLabeling.mergeRosters(self.speakers, speakers)
+        return copy
     }
 
-    private static func retainedDrafts(
-        existing: [Segment],
-        draft: SegmentDraft,
-        replacingSourceIDs: [UUID]
-    ) -> [SegmentDraft] {
+    private func merging(
+        drafts: [SegmentDraft],
+        replacingSourceIDs: [UUID],
+        replacingSampleRange: Range<Int64>? = nil
+    ) -> TranscriptDocumentV1 {
         let replacedSources = Set(replacingSourceIDs)
-        return existing.compactMap { segment -> SegmentDraft? in
-            if segment.isManuallyEdited {
-                // User manually edited / confirmed this segment: NEVER overwrite with auto ASR
-                return SegmentDraft(
-                    text: segment.text,
-                    startSample: segment.startSample,
-                    endSample: segment.endSample,
-                    sourceRanges: segment.sourceRanges,
-                    speechSpanIDs: segment.speechSpanIDs,
-                    isManuallyEdited: true,
-                    editedAt: segment.editedAt
-                )
-            }
-            let overlapsIdentity =
-                segment.startSample == draft.startSample && segment.endSample == draft.endSample
-            let overlapsSource = segment.sourceRanges.contains { existingRange in
+        func overlaps(_ segment: Segment, _ draft: SegmentDraft) -> Bool {
+            segment.sourceRanges.contains { existingRange in
                 draft.sourceRanges.contains { draftRange in
-                    guard existingRange.sourceKind == draftRange.sourceKind,
-                          existingRange.sourceID == draftRange.sourceID
-                    else { return false }
-                    if existingRange.sourceKind == .importedAsset {
-                        return existingRange.startSample < draftRange.endSample
+                    existingRange.sourceKind == draftRange.sourceKind
+                        && existingRange.sourceID == draftRange.sourceID
+                        && (existingRange.startSample < draftRange.endSample
                             && draftRange.startSample < existingRange.endSample
-                    }
-                    return replacedSources.contains(existingRange.sourceID)
-                        || true
+                            || existingRange.startSample == draftRange.startSample
+                                && existingRange.endSample == draftRange.endSample
+                            || existingRange.startSample == existingRange.endSample
+                                && draftRange.startSample <= existingRange.startSample
+                                && existingRange.startSample < draftRange.endSample)
                 }
             }
-            if overlapsIdentity || overlapsSource { return nil }
-            return SegmentDraft(
+        }
+        // Cross-source text cannot be safely split for a narrower retry. Keep
+        // it intact, just like an edited sentence, until explicit adoption exists.
+        let protected = segments.filter { segment in
+            segment.isManuallyEdited || (!replacedSources.isEmpty
+                && segment.sourceRanges.contains { !replacedSources.contains($0.sourceID) })
+                || (replacingSampleRange.map { range in
+                    segment.startSample < range.lowerBound || segment.endSample > range.upperBound
+                } ?? false)
+        }
+        let accepted = drafts.filter { draft in
+            !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !draft.sourceRanges.isEmpty
+                && !protected.contains { segment in
+                    max(segment.startSample, draft.startSample) < min(segment.endSample, draft.endSample)
+                        || segment.startSample == draft.startSample && segment.endSample == draft.endSample
+                        || segment.startSample == segment.endSample && draft.sourceRanges.contains { range in
+                            segment.references(sourceID: range.sourceID)
+                                && range.startSample <= segment.startSample && segment.startSample < range.endSample
+                        }
+                }
+        }
+        guard !accepted.isEmpty else { return self }
+        let retained = segments.filter { segment in
+            if protected.contains(where: { $0.id == segment.id }) { return true }
+            return !accepted.contains { overlaps(segment, $0) }
+        }
+        var seenIDs = Set(retained.map(\.id))
+        let generated = Self.makeSegments(
+            recordingID: recordingID,
+            recordingStartedAt: startedAt,
+            drafts: accepted
+        ).map { generated in
+            guard let previous = segments.first(where: {
+                $0.startSample == generated.startSample && $0.endSample == generated.endSample
+                    && $0.sourceRanges == generated.sourceRanges
+            }) else { return generated }
+            return Segment(
+                id: previous.id,
+                sequence: generated.sequence,
+                startedAt: generated.startedAt,
+                offsetMilliseconds: generated.offsetMilliseconds,
+                text: generated.text,
+                startSample: generated.startSample,
+                endSample: generated.endSample,
+                sourceRanges: generated.sourceRanges,
+                speechSpanIDs: generated.speechSpanIDs,
+                isManuallyEdited: generated.isManuallyEdited,
+                editedAt: generated.editedAt
+            )
+        }.filter { seenIDs.insert($0.id).inserted }
+        let ordered = (retained + generated).sorted {
+            if $0.startSample != $1.startSample { return $0.startSample < $1.startSample }
+            if $0.endSample != $1.endSample { return $0.endSample < $1.endSample }
+            return $0.id.uuidString < $1.id.uuidString
+        }
+        var copy = self
+        copy.segments = ordered.enumerated().map { offset, segment in
+            Segment(
+                id: segment.id,
+                sequence: offset + 1,
+                startedAt: segment.startedAt,
+                offsetMilliseconds: segment.offsetMilliseconds,
                 text: segment.text,
                 startSample: segment.startSample,
                 endSample: segment.endSample,
@@ -863,6 +836,9 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
                 editedAt: segment.editedAt
             )
         }
+        copy.state = RecordingState.processing.rawValue
+        copy.revision += 1
+        return copy
     }
 
     /// Compatibility wrapper for the pre-source_ranges per-chunk commit path.
@@ -931,8 +907,8 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
     }
 
     /// A new ASR pass invalidates speaker labels derived from the previous
-    /// transcript. A full user-requested retranscription also clears old text;
-    /// a granular failed-source retry may preserve unaffected segments.
+    /// transcript. Existing text stays readable until a successful source
+    /// result can be merged without overwriting a manual correction.
     func preparingForRetranscription(clearSegments: Bool = false) -> TranscriptDocumentV1 {
         var copy = self
         copy.state = RecordingState.processing.rawValue
@@ -1049,6 +1025,12 @@ nonisolated struct TranscriptDocumentV1: Codable, Equatable, Sendable {
 
     func requireContent() throws {
         guard !segments.isEmpty else { throw DocumentError.emptyTranscript }
+    }
+
+    func requireEditableSegments(_ segmentIDs: Set<UUID>) throws {
+        guard segmentIDs.isSubset(of: Set(segments.map(\.id))) else {
+            throw DocumentError.sourceUpdated
+        }
     }
 
     // MARK: - Multi-range consumers (timeline / export / delete / errors)
@@ -1230,6 +1212,19 @@ actor TranscriptDocumentStore {
         try markdownData.write(to: markdownDestination, options: .atomic)
         // Keep the local search index in sync after durable JSON/Markdown land.
         try searchIndex.upsert(document: document)
+    }
+
+    /// Read, merge, and persist without an actor suspension in between. ASR
+    /// must merge against the latest saved edits, rather than an earlier read.
+    @discardableResult
+    func update(
+        recordingID: UUID,
+        transform: @Sendable (TranscriptDocumentV1?) throws -> TranscriptDocumentV1?
+    ) throws -> TranscriptDocumentV1? {
+        let current = try document(recordingID: recordingID)
+        guard let updated = try transform(current) else { return nil }
+        if updated != current { try write(updated) }
+        return updated
     }
 
     /// Search titles + transcript plain text (+ speakers/tags). Empty query yields [].

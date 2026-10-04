@@ -11,6 +11,7 @@
 #import <UIKit/UIKit.h>
 #import <CoreLocation/CoreLocation.h>
 #import "NativeOffloadUtils.h"
+#import "ReminderOffloadContract.h"
 #include "kernel/native_offload.h"
 #include <unistd.h>
 
@@ -22,6 +23,7 @@ static const NSInteger DEFAULT_LIMIT = 100;
 /// below; forward-declared so the reminder LIST command (which appears earlier
 /// in this file) can report an existing geofence too.
 static NSDictionary *reminder_location_dict(EKReminder *reminder);
+static NSDictionary *reminder_to_dict(EKReminder *reminder);
 
 static NSString *const HELP_TEXT =
     @"apple-calendar - Query and manage iOS calendar events and reminders\n"
@@ -79,7 +81,7 @@ static NSString *const HELP_TEXT =
      "REMIND OPTIONS:\n"
      "  --title <title>      Reminder title (required)\n"
      "  --due <datetime>     Due date\n"
-     "  --list <name>        Reminder list name\n"
+     "  --list <name>        Exact reminder list name; ambiguous names fail\n"
      "  --priority <0-9>     Priority level\n"
      "  --notes <text>       Reminder notes\n"
      "  --lat <deg>          Geofence latitude (WGS-84). Requires --lng.\n"
@@ -116,7 +118,7 @@ static NSString *const HELP_TEXT =
      "  --id <reminder_id>   Reminder ID (required)\n"
      "  --title <title>      New title\n"
      "  --due <datetime>     New due date\n"
-     "  --list <name>        Move to a different list\n"
+     "  --list <name>        Move to an exact, unique writable list\n"
      "  --priority <0-9>     New priority\n"
      "  --notes <text>       New notes\n"
      "  --lat/--lng/--location-name/--radius/--proximity\n"
@@ -417,16 +419,17 @@ int calendar_cmd_reminders(int argc, char **argv, int stdout_fd, BOOL compact, B
     NSString *limitStr = noff_find_arg(argc, argv, "--limit");
     NSInteger limit = limitStr ? [limitStr integerValue] : DEFAULT_LIMIT;
     NSString *listName = noff_find_arg(argc, argv, "--list");
+    if (noff_has_flag(argc, argv, "--list") && !listName) listName = @"";
 
     NSArray<EKCalendar *> *calendars = nil;
-    if (listName) {
-        NSMutableArray *filtered = [NSMutableArray array];
-        for (EKCalendar *cal in [eventStore() calendarsForEntityType:EKEntityTypeReminder]) {
-            if ([cal.title localizedCaseInsensitiveContainsString:listName]) {
-                [filtered addObject:cal];
-            }
+    if (listName != nil) {
+        NSString *listError = nil;
+        EKCalendar *selected = reminder_resolve_list([eventStore() calendarsForEntityType:EKEntityTypeReminder], nil, listName, NO, &listError);
+        if (!selected) {
+            noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"reminders", NOFF_ERR_INVALID_ARGS, listError), compact, quiet);
+            return NOFF_EXIT_INVALID_ARGS;
         }
-        calendars = filtered;
+        calendars = @[selected];
     }
 
     NSPredicate *pred;
@@ -446,33 +449,20 @@ int calendar_cmd_reminders(int argc, char **argv, int stdout_fd, BOOL compact, B
         reminders = r;
         dispatch_semaphore_signal(sem);
     }];
-    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+    long waitResult = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+    if (waitResult != 0 || reminders == nil) {
+        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"reminders", NOFF_ERR_INTERNAL_ERROR,
+            waitResult != 0 ? @"Reminder query timed out; the result is unknown. Retry the query before creating any replacement."
+                            : @"Unable to read reminders. An unreadable store is not an empty list."), compact, quiet);
+        return NOFF_EXIT_ERROR;
+    }
 
     NSInteger totalCount = (NSInteger)(reminders ?: @[]).count;
     NSMutableArray *items = [NSMutableArray array];
     NSInteger count = 0;
     for (EKReminder *r in reminders) {
         if (count >= limit) break;
-        NSMutableDictionary *d = [NSMutableDictionary dictionary];
-        d[@"id"] = r.calendarItemIdentifier ?: @"";
-        d[@"title"] = r.title ?: @"";
-        d[@"completed"] = @(r.isCompleted);
-        d[@"list"] = r.calendar.title ?: @"";
-        d[@"priority"] = @(r.priority);
-        d[@"notes"] = r.notes ?: [NSNull null];
-        if (r.dueDateComponents) {
-            NSDate *due = [[NSCalendar currentCalendar] dateFromComponents:r.dueDateComponents];
-            d[@"due"] = due ? noff_format_date(due) : [NSNull null];
-        }
-        // [T-reminders-location-alarm] Present only for geofenced reminders, so
-        // existing time-only output is unchanged.
-        NSDictionary *rLoc = reminder_location_dict(r);
-        if (rLoc) d[@"location"] = rLoc;
-        // [T-reminders-recurrence] Likewise present only for repeating
-        // reminders, matching how events report their rule.
-        if (r.hasRecurrenceRules && r.recurrenceRules.count > 0) {
-            d[@"recurrence"] = recurrence_to_dict(r.recurrenceRules.firstObject);
-        }
+        NSDictionary *d = reminder_to_dict(r);
         [items addObject:d];
         count++;
     }
@@ -1190,6 +1180,49 @@ static NSDictionary *reminder_location_dict(EKReminder *reminder) {
     return nil;
 }
 
+static NSDictionary *reminder_to_dict(EKReminder *reminder) {
+    NSMutableArray *alarms = [NSMutableArray array];
+    BOOL hasTimedAlarm = NO;
+    for (EKAlarm *alarm in reminder.alarms ?: @[]) {
+        NSMutableDictionary *value = [@{
+            @"type": alarm.structuredLocation ? @"location" : alarm.absoluteDate ? @"absolute" : @"relative",
+            @"absolute_date": alarm.absoluteDate ? noff_format_date(alarm.absoluteDate) : [NSNull null],
+            @"relative_offset_seconds": @(alarm.relativeOffset),
+        } mutableCopy];
+        if (alarm.structuredLocation) {
+            EKStructuredLocation *location = alarm.structuredLocation;
+            value[@"name"] = location.title ?: @"";
+            value[@"radius_m"] = @(location.radius);
+            value[@"proximity"] = alarm.proximity == EKAlarmProximityLeave ? @"leave" :
+                alarm.proximity == EKAlarmProximityEnter ? @"enter" : @"none";
+            if (location.geoLocation) {
+                value[@"latitude"] = @(location.geoLocation.coordinate.latitude);
+                value[@"longitude"] = @(location.geoLocation.coordinate.longitude);
+            }
+        } else { hasTimedAlarm = YES; }
+        [alarms addObject:value];
+    }
+    NSMutableDictionary *data = [@{
+        @"id": reminder.calendarItemIdentifier ?: @"",
+        @"title": reminder.title ?: @"",
+        @"completed": @(reminder.isCompleted),
+        @"list": reminder.calendar.title ?: @"",
+        @"list_id": reminder.calendar.calendarIdentifier ?: @"",
+        @"account": reminder.calendar.source.title ?: @"",
+        @"priority": @(reminder.priority),
+        @"notes": reminder.notes ?: [NSNull null],
+        @"alarms": alarms,
+        @"has_timed_alarm": @(hasTimedAlarm),
+    } mutableCopy];
+    [data addEntriesFromDictionary:reminder_due_dict(reminder.dueDateComponents)];
+    NSDictionary *location = reminder_location_dict(reminder);
+    if (location) data[@"location"] = location;
+    if (reminder.hasRecurrenceRules && reminder.recurrenceRules.count > 0) {
+        data[@"recurrence"] = recurrence_to_dict(reminder.recurrenceRules.firstObject);
+    }
+    return data;
+}
+
 /// Parse --location-name/--lat/--lng/--radius/--proximity and, when present,
 /// attach a geofence alarm to `reminder` (replacing any existing location
 /// alarm, so update is idempotent).
@@ -1306,15 +1339,16 @@ int calendar_cmd_remind(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
 
     NSDate *dueDate = nil;
     NSString *dueStr = noff_find_arg(argc, argv, "--due");
-    if (dueStr) {
-        NSDate *due = noff_parse_date(dueStr);
-        if (due) {
-            dueDate = due;
-            reminder.dueDateComponents = [[NSCalendar currentCalendar]
-                components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay |
-                            NSCalendarUnitHour | NSCalendarUnitMinute)
-                fromDate:due];
+    if (noff_has_flag(argc, argv, "--due")) {
+        NSDateComponents *components = reminder_parse_due_components(dueStr);
+        if (!components) {
+            noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"remind", NOFF_ERR_INVALID_ARGS,
+                @"Invalid --due. Use a valid ISO 8601 date/time or relative -Nd, -Nh, -Nm value."), compact, quiet);
+            return NOFF_EXIT_INVALID_ARGS;
         }
+        dueDate = [components.calendar dateFromComponents:components];
+        reminder.dueDateComponents = components;
+        reminder.startDateComponents = components;
     }
 
     // [T-reminders-recurrence] EKReminder inherits recurrenceRules from
@@ -1368,18 +1402,14 @@ int calendar_cmd_remind(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
         return NOFF_EXIT_NOT_AVAILABLE;
     }
 
-    // Find reminder list by name
     NSString *listName = noff_find_arg(argc, argv, "--list");
-    if (listName) {
-        for (EKCalendar *cal in [eventStore() calendarsForEntityType:EKEntityTypeReminder]) {
-            if ([cal.title localizedCaseInsensitiveContainsString:listName]) {
-                reminder.calendar = cal;
-                break;
-            }
-        }
-    }
+    if (noff_has_flag(argc, argv, "--list") && !listName) listName = @"";
+    NSString *listError = nil;
+    reminder.calendar = reminder_resolve_list([eventStore() calendarsForEntityType:EKEntityTypeReminder],
+        listName == nil ? [eventStore() defaultCalendarForNewReminders] : nil, listName, YES, &listError);
     if (!reminder.calendar) {
-        reminder.calendar = [eventStore() defaultCalendarForNewReminders];
+        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"remind", NOFF_ERR_INVALID_ARGS, listError), compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
     }
 
     // [T-reminders-location-alarm] Attach a geofence alarm when location args
@@ -1402,40 +1432,21 @@ int calendar_cmd_remind(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
         return NOFF_EXIT_ERROR;
     }
 
-    NSMutableDictionary *data = [@{
-        @"id": reminder.calendarItemIdentifier ?: @"",
-        @"title": title,
-        @"list": reminder.calendar.title ?: @"",
-    } mutableCopy];
-    NSDictionary *locInfo = reminder_location_dict(reminder);
-    if (locInfo) data[@"location"] = locInfo;
-    // [T-reminders-recurrence] Echo the stored rule so the caller can confirm
-    // what was actually saved without a follow-up list call (same rationale as
-    // the event create path).
-    if (reminder.hasRecurrenceRules && reminder.recurrenceRules.count > 0) {
-        data[@"recurrence"] = recurrence_to_dict(reminder.recurrenceRules.firstObject);
+    if (![reminder refresh]) {
+        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"remind", NOFF_ERR_INTERNAL_ERROR,
+            [NSString stringWithFormat:@"Reminder save succeeded, but readback failed (id '%@'). Query this ID before retrying; do not create a replacement blindly.", reminder.calendarItemIdentifier ?: @""]), compact, quiet);
+        return NOFF_EXIT_ERROR;
     }
+    NSDictionary *data = reminder_to_dict(reminder);
     noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"remind", data), compact, quiet);
     return NOFF_EXIT_SUCCESS;
 }
 
 // Helper: fetch a single reminder by calendarItemIdentifier
 static EKReminder *fetch_reminder_by_id(NSString *reminderId) {
-    NSPredicate *pred = [eventStore() predicateForRemindersInCalendars:nil];
-    __block NSArray<EKReminder *> *reminders = nil;
-    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-    [eventStore() fetchRemindersMatchingPredicate:pred completion:^(NSArray *r) {
-        reminders = r;
-        dispatch_semaphore_signal(sem);
-    }];
-    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
-
-    for (EKReminder *r in reminders) {
-        if ([r.calendarItemIdentifier isEqualToString:reminderId]) {
-            return r;
-        }
-    }
-    return nil;
+    EKCalendarItem *item = [eventStore() calendarItemWithIdentifier:reminderId];
+    if (![item isKindOfClass:EKReminder.class] || ![item refresh]) return nil;
+    return (EKReminder *)item;
 }
 
 int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
@@ -1465,34 +1476,29 @@ int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL comp
         return NOFF_EXIT_ERROR;
     }
 
-    NSString *title = noff_find_arg(argc, argv, "--title");
-    if (title) reminder.title = title;
-
     NSString *dueStr = noff_find_arg(argc, argv, "--due");
-    if (dueStr) {
-        NSDate *due = noff_parse_date(dueStr);
-        if (due) {
-            reminder.dueDateComponents = [[NSCalendar currentCalendar]
-                components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay |
-                            NSCalendarUnitHour | NSCalendarUnitMinute)
-                fromDate:due];
+    NSDate *dueDate = nil;
+    NSDateComponents *dueComponents = nil;
+    if (noff_has_flag(argc, argv, "--due")) {
+        dueComponents = reminder_parse_due_components(dueStr);
+        if (!dueComponents) {
+            noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"update", NOFF_ERR_INVALID_ARGS,
+                @"Invalid --due. Use a valid ISO 8601 date/time or relative -Nd, -Nh, -Nm value."), compact, quiet);
+            return NOFF_EXIT_INVALID_ARGS;
         }
+        dueDate = [dueComponents.calendar dateFromComponents:dueComponents];
     }
 
-    NSString *notes = noff_find_arg(argc, argv, "--notes");
-    if (notes) reminder.notes = notes;
-
-    NSString *priorityStr = noff_find_arg(argc, argv, "--priority");
-    if (priorityStr) reminder.priority = (NSUInteger)[priorityStr integerValue];
-
     NSString *listName = noff_find_arg(argc, argv, "--list");
-    if (listName) {
-        for (EKCalendar *cal in [eventStore() calendarsForEntityType:EKEntityTypeReminder]) {
-            if ([cal.title localizedCaseInsensitiveContainsString:listName]) {
-                reminder.calendar = cal;
-                break;
-            }
-        }
+    if (noff_has_flag(argc, argv, "--list") && !listName) listName = @"";
+    NSString *listError = nil;
+    // A move must not turn a read-only original into an editable copy.
+    EKCalendar *target = reminder.calendar.allowsContentModifications
+        ? reminder_resolve_list([eventStore() calendarsForEntityType:EKEntityTypeReminder], reminder.calendar, listName, YES, &listError) : nil;
+    if (!target) {
+        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"update", NOFF_ERR_INVALID_ARGS,
+            listError ?: @"The reminder's current list is read-only."), compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
     }
 
     // [T-reminders-recurrence] Same builder / flags as create and as
@@ -1500,9 +1506,10 @@ int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL comp
     // one just set by --due if present, otherwise the stored one — so
     // --recur-until is validated against the date the rule will really repeat
     // from. --clear-recur removes an existing rule (no other way to undo one).
-    NSDate *effectiveDue = reminder.dueDateComponents
-        ? [[NSCalendar currentCalendar] dateFromComponents:reminder.dueDateComponents]
-        : nil;
+    NSCalendar *existingCalendar = [reminder.dueDateComponents.calendar copy] ?: [NSCalendar currentCalendar];
+    if (reminder.dueDateComponents.timeZone) existingCalendar.timeZone = reminder.dueDateComponents.timeZone;
+    NSDate *effectiveDue = dueDate ?: (reminder.dueDateComponents
+        ? [existingCalendar dateFromComponents:reminder.dueDateComponents] : nil);
     NSString *updRecurErr = nil;
     EKRecurrenceRule *updRecurRule = build_recurrence_rule(argc, argv, effectiveDue, &updRecurErr);
     if (updRecurErr) {
@@ -1517,6 +1524,17 @@ int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL comp
                                              @"--recur requires the reminder to have a due date: pass --due, or set one first.");
         noff_emit_json(stdout_fd, err, compact, quiet);
         return NOFF_EXIT_INVALID_ARGS;
+    }
+    NSString *title = noff_find_arg(argc, argv, "--title");
+    if (title) reminder.title = title;
+    NSString *notes = noff_find_arg(argc, argv, "--notes");
+    if (notes) reminder.notes = notes;
+    NSString *priorityStr = noff_find_arg(argc, argv, "--priority");
+    if (priorityStr) reminder.priority = (NSUInteger)[priorityStr integerValue];
+    if (listName != nil) reminder.calendar = target;
+    if (dueComponents) {
+        reminder.dueDateComponents = dueComponents;
+        if (!reminder.startDateComponents) reminder.startDateComponents = dueComponents;
     }
     if (noff_has_flag(argc, argv, "--clear-recur")) {
         reminder.recurrenceRules = nil;
@@ -1536,6 +1554,7 @@ int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL comp
     NSDictionary *locErr = nil;
     int locRc = apply_location_alarm_args(argc, argv, reminder, @"update", &locErr);
     if (locRc != 0) {
+        [reminder reset];
         noff_emit_json(stdout_fd, locErr, compact, quiet);
         return locRc;
     }
@@ -1543,6 +1562,7 @@ int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL comp
     NSError *saveErr = nil;
     BOOL saved = [eventStore() saveReminder:reminder commit:YES error:&saveErr];
     if (!saved) {
+        [reminder reset];
         NSDictionary *err = noff_json_error(TOOL_NAME, @"update",
                                              NOFF_ERR_INTERNAL_ERROR,
                                              saveErr.localizedDescription ?: @"Failed to update reminder");
@@ -1550,23 +1570,12 @@ int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL comp
         return NOFF_EXIT_ERROR;
     }
 
-    NSMutableDictionary *data = [@{
-        @"id": reminder.calendarItemIdentifier ?: @"",
-        @"title": reminder.title ?: @"",
-        @"completed": @(reminder.isCompleted),
-        @"list": reminder.calendar.title ?: @"",
-        @"priority": @(reminder.priority),
-        @"notes": reminder.notes ?: [NSNull null],
-    } mutableCopy];
-    if (reminder.dueDateComponents) {
-        NSDate *due = [[NSCalendar currentCalendar] dateFromComponents:reminder.dueDateComponents];
-        data[@"due"] = due ? noff_format_date(due) : [NSNull null];
+    if (![reminder refresh]) {
+        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"update", NOFF_ERR_INTERNAL_ERROR,
+            [NSString stringWithFormat:@"Reminder save succeeded, but readback failed (id '%@'). Query this ID before retrying.", reminderId]), compact, quiet);
+        return NOFF_EXIT_ERROR;
     }
-    NSDictionary *updLoc = reminder_location_dict(reminder);
-    if (updLoc) data[@"location"] = updLoc;
-    if (reminder.hasRecurrenceRules && reminder.recurrenceRules.count > 0) {
-        data[@"recurrence"] = recurrence_to_dict(reminder.recurrenceRules.firstObject);
-    }
+    NSDictionary *data = reminder_to_dict(reminder);
     noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"update", data), compact, quiet);
     return NOFF_EXIT_SUCCESS;
 }

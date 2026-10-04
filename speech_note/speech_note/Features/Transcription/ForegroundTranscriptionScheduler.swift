@@ -289,6 +289,19 @@ actor ForegroundTranscriptionScheduler {
         }
     }
 
+    /// The repository has already registered every source in the new attempt.
+    /// Attach all callbacks before allowing its first pending source to execute.
+    func resumePreparedRetranscription(
+        recordingID: UUID,
+        onOutcome: @escaping OutcomeHandler
+    ) async throws {
+        for job in try await repository.jobs(recordingID: recordingID) where
+            job.kind == .transcription && job.state == .pending {
+            outcomeHandlers[job.id] = onOutcome
+        }
+        startDrainingIfPossible()
+    }
+
     /// Resumes any jobs that were stopped by the user or are pending.
     func resumeAll(onOutcome: OutcomeHandler? = nil) async {
         let stoppedJobs = (try? await repository.jobs(kind: .transcription, states: [.failed])) ?? []

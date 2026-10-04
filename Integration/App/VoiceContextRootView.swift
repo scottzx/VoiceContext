@@ -23,7 +23,7 @@ struct VoiceContextRootView: View {
                 .tabItem { Label("会议", systemImage: "waveform") }
                 .tag(Tab.meetings)
             SystemRemindersView()
-                .tabItem { Label("待办事项", systemImage: "checklist") }
+                .tabItem { Label("提醒", systemImage: "checklist") }
                 .tag(Tab.reminders)
             VoiceContextExtensionsView(browserPool: browserPool)
                 .tabItem { Label("拓展", systemImage: "square.grid.2x2") }
@@ -108,35 +108,37 @@ struct VoiceContextRootView: View {
 private struct RecordingResultsRequest: Identifiable { let id: String }
 
 private struct VoiceContextExtensionsView: View {
+    private enum Destination: Hashable { case skills, providers, soul, memory, mcp, hardware, terminal, browser }
+    @State private var navigationPath: [Destination] = []
     @State private var settings = false
     @State private var terminal = false
     @State private var browser = false
     @ObservedObject var browserPool: BrowserTabPool
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             List {
                 Section("助手能力") {
-                    NavigationLink { SkillsManagementView() } label: {
+                    NavigationLink(value: Destination.skills) {
                         Label(AppLocalized("Skills"), systemImage: "book.closed")
                     }
-                    NavigationLink { ModelsAndServicesView() } label: { Label("模型与服务", systemImage: "cpu") }
-                    NavigationLink { SoulSettingsView() } label: { Label("助手设定", systemImage: "person.crop.circle") }
-                    NavigationLink { MemoryManagementView() } label: {
+                    NavigationLink(value: Destination.providers) { Label("模型与服务", systemImage: "cpu") }
+                    NavigationLink(value: Destination.soul) { Label("助手设定", systemImage: "person.crop.circle") }
+                    NavigationLink(value: Destination.memory) {
                         Label(AppLocalized("Memory"), systemImage: "brain.head.profile")
                     }
                 }
                 Section("工具连接") {
-                    NavigationLink { MCPIntegrationsView() } label: {
+                    NavigationLink(value: Destination.mcp) {
                         Label(AppLocalized("MCP Integrations"), systemImage: "square.stack.3d.up")
                     }
-                    NavigationLink { HardwareBridgeSettingsView() } label: {
+                    NavigationLink(value: Destination.hardware) {
                         Label(AppLocalized("Hardware Devices"), systemImage: "antenna.radiowaves.left.and.right")
                     }
                 }
                 Section("工具") {
-                    NavigationLink { terminalPage } label: { Label("终端", systemImage: "terminal") }
-                    NavigationLink { browserPage } label: {
+                    NavigationLink(value: Destination.terminal) { Label("终端", systemImage: "terminal") }
+                    NavigationLink(value: Destination.browser) {
                         Label("浏览器", systemImage: "globe")
                     }
                 }
@@ -151,7 +153,20 @@ private struct VoiceContextExtensionsView: View {
             .environment(\.defaultMinListRowHeight, YimaDesign.Layout.primaryHeight)
             .navigationTitle("拓展")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: Destination.self) { destination in
+                switch destination {
+                case .skills: SkillsManagementView()
+                case .providers: ModelsAndServicesView()
+                case .soul: SoulSettingsView()
+                case .memory: MemoryManagementView()
+                case .mcp: MCPIntegrationsView()
+                case .hardware: HardwareBridgeSettingsView()
+                case .terminal: terminalPage
+                case .browser: browserPage
+                }
+            }
         }
+        .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
         .onAppear {
             if UserDefaults.standard.string(forKey: "pendingSettingsReopen") != nil,
                UserDefaults.standard.string(forKey: "settingsPresentationOwner") == "extensions" {
