@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F339EEA80A76F82095F9B3C1 /* YimaDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 465389EF3FF256BA53E3261C /* YimaDesignTokens.swift */; };
 		A70WDG010000000000000005 /* RecordWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A70WDG010000000000000001 /* RecordWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D2155B260000000000000001 /* TranscribeCpp.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D2155B270000000000000001 /* TranscribeCpp.xcframework */; };
 		D2155B260000000000000002 /* TranscribeCpp.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = D2155B270000000000000001 /* TranscribeCpp.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -64,6 +65,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		465389EF3FF256BA53E3261C /* YimaDesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Integration/Shared/YimaDesignTokens.swift; sourceTree = SOURCE_ROOT; };
 		A70WDG010000000000000001 /* RecordWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RecordWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D2155AF93020A7E100F29231 /* speech_note.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = speech_note.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D2155B0A3020A7E300F29231 /* speech_noteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = speech_noteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -162,6 +164,7 @@
 		D2155AF03020A7E100F29231 = {
 			isa = PBXGroup;
 			children = (
+				465389EF3FF256BA53E3261C /* YimaDesignTokens.swift */,
 				D2155AFB3020A7E100F29231 /* speech_note */,
 				A70WDG010000000000000002 /* RecordWidget */,
 				A70WDG0100000000000000F0 /* LiveActivityShared */,
@@ -383,6 +386,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F339EEA80A76F82095F9B3C1 /* YimaDesignTokens.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

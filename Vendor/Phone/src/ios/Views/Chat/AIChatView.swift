@@ -69,21 +69,21 @@ private final class CachedViewModel: ObservableObject {
 // MARK: - Color Palette (clean light theme)
 
 enum ChatColors {
-    static let background = Color(UIColor.systemBackground)
-    static let secondaryBg = Color(UIColor.secondarySystemBackground)
-    static let inputIconBg = Color(UIColor.secondarySystemBackground)
-    static let inputIconBorder = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.35, alpha: 1) : UIColor(white: 0, alpha: 0) })
-    static let inputBg = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.12, alpha: 1) : .white })
-    static let inputBorder = Color(UIColor.separator)
-    static let primaryText = Color(UIColor.label)
-    static let secondaryText = Color(UIColor.secondaryLabel)
-    static let tertiaryText = Color(UIColor.tertiaryLabel)
-    static let userBubble = Color(UIColor.tertiarySystemFill)
-    static let toolBg = Color(UIColor.tertiarySystemGroupedBackground)
-    static let toolBorder = Color(UIColor.separator).opacity(0.5)
-    static let accent = Color(UIColor.label)
-    static let sendButton = Color(UIColor.label)
-    static let sendButtonDisabled = Color(UIColor.quaternaryLabel)
+    static let background = YimaDesign.Color.canvas
+    static let secondaryBg = YimaDesign.Color.grouped
+    static let inputIconBg = YimaDesign.Color.grouped
+    static let inputIconBorder = YimaDesign.Color.line
+    static let inputBg = YimaDesign.Color.surface
+    static let inputBorder = YimaDesign.Color.line
+    static let primaryText = YimaDesign.Color.ink
+    static let secondaryText = YimaDesign.Color.muted
+    static let tertiaryText = YimaDesign.Color.tertiary
+    static let userBubble = YimaDesign.Color.grouped
+    static let toolBg = YimaDesign.Color.surface
+    static let toolBorder = YimaDesign.Color.line
+    static let accent = YimaDesign.Color.ink
+    static let sendButton = YimaDesign.Color.ink
+    static let sendButtonDisabled = YimaDesign.Color.tertiary
 }
 
 // MARK: - System Resource Monitor
@@ -2012,7 +2012,7 @@ struct AIChatView: View {
                             Image(systemName: systemImage)
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundStyle(.primary)
-                                .frame(width: 40, height: 40)
+                                .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -2023,7 +2023,7 @@ struct AIChatView: View {
                     }
 
                     trailingMenu
-                        .frame(width: 40, height: 40)
+                        .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
                 }
             }
         )
@@ -2914,6 +2914,8 @@ struct AIChatView: View {
             .background(ChatColors.inputIconBg)
             .clipShape(Circle())
             .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
+            .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+            .contentShape(Rectangle())
 
         if #available(iOS 17, *) {
             Menu {
@@ -2939,7 +2941,7 @@ struct AIChatView: View {
     /// Returns AnyView to keep `inputBar`'s generic type compact; SwiftUI
     /// runtime demangle chokes on deep nested types otherwise.
     private var inputBottomRow: AnyView {
-        let row = HStack(spacing: 12) {
+        let row = HStack(spacing: YimaDesign.Space.xs) {
             attachmentMenuButton
             slashMenuButton
             modelPickerButton
@@ -3012,11 +3014,13 @@ struct AIChatView: View {
             .foregroundStyle(on ? Color.accentColor : .secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(
-                Capsule().fill(on ? Color.accentColor.opacity(0.15)
+                .background(
+                    Capsule().fill(on ? Color.accentColor.opacity(0.15)
                                   : Color.secondary.opacity(0.10))
-            )
-            .fixedSize()
+                )
+                .frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
+                .contentShape(Rectangle())
+                .fixedSize()
         }
         .buttonStyle(.plain)
         // [T-ios-voiceover-labels] State goes in the VALUE, not the label:
@@ -3051,6 +3055,8 @@ struct AIChatView: View {
                 .background(ChatColors.inputIconBg)
                 .clipShape(Circle())
                 .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
+                .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+                .contentShape(Rectangle())
         }
     }
 
@@ -3069,6 +3075,8 @@ struct AIChatView: View {
                 .background(ChatColors.inputIconBg)
                 .clipShape(Circle())
                 .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
+                .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+                .contentShape(Rectangle())
         }
         .accessibilityLabel(String(localized: "Choose Model"))
     }
@@ -3083,11 +3091,13 @@ struct AIChatView: View {
         let isLite = vm.chatMode == .lite
         let icon = Image(systemName: vm.chatMode.iconName)
             .font(.system(size: 15, weight: .medium))
-            .foregroundStyle(isLite ? Color.accentColor : ChatColors.secondaryText)
+            .foregroundStyle(isLite ? ChatColors.primaryText : ChatColors.secondaryText)
             .frame(width: 34, height: 34)
-            .background(isLite ? Color.accentColor.opacity(0.15) : ChatColors.inputIconBg)
+            .background(isLite ? ChatColors.primaryText.opacity(0.12) : ChatColors.inputIconBg)
             .clipShape(Circle())
             .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
+            .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+            .contentShape(Rectangle())
 
         if #available(iOS 17, *) {
             Menu {
@@ -3135,13 +3145,15 @@ struct AIChatView: View {
             vm.cancelEdit()
         } label: {
             Text("Exit Edit Mode", comment: "Cancel message editing")
-                .font(.system(size: 13, weight: .medium))
+                .font(YimaDesign.Typography.compactMetadata.weight(.medium))
                 .foregroundStyle(ChatColors.secondaryText)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(ChatColors.inputIconBg)
                 .clipShape(Capsule())
                 .overlay(Capsule().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
+                .frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
+                .contentShape(Rectangle())
         }
     }
 
@@ -3157,6 +3169,8 @@ struct AIChatView: View {
                 .background(ChatColors.inputIconBg)
                 .clipShape(Circle())
                 .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
+                .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+                .contentShape(Rectangle())
         }
     }
 
@@ -3215,6 +3229,8 @@ struct AIChatView: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 34))
                     .foregroundStyle(ChatColors.sendButton)
+                    .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+                    .contentShape(Rectangle())
             }
             .keyboardShortcut(.return, modifiers: .command)
             .accessibilityLabel(Text("Add to queue", comment: "VoiceOver label for the send button while a reply is generating"))
@@ -3223,7 +3239,9 @@ struct AIChatView: View {
             Button { vm.cancel() } label: {
                 Image(systemName: "stop.circle.fill")
                     .font(.system(size: 34))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(YimaDesign.Color.recording)
+                    .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel(Text("Stop generating", comment: "VoiceOver label for the stop button"))
             .accessibilityHint(Text("Stops the reply that is being generated", comment: "VoiceOver hint for the stop button"))
@@ -3232,6 +3250,8 @@ struct AIChatView: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 34))
                     .foregroundStyle(canSend ? ChatColors.sendButton : ChatColors.sendButtonDisabled)
+                    .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+                    .contentShape(Rectangle())
             }
             .disabled(!canSend)
             .keyboardShortcut(.return, modifiers: .command)
@@ -5000,6 +5020,11 @@ private struct ChatTrailingMenu: View, Equatable {
             NavbarEvalStats.logger.info("[NavbarEval] menuEval=\(NavbarEvalStats.menuEval) (toolbarPass=\(NavbarEvalStats.toolbarPass))")
         }()
         #endif
+        #if VOICE_AGENT_FUSION
+        let showModelControls = showEnhancedCacheToggle
+        #else
+        let showModelControls = showEnhancedCacheToggle || showFastModeToggle
+        #endif
         return Menu {
             Button { onNewChat() } label: {
                 Label(AppLocalized("New Chat"), systemImage: "square.and.pencil")
@@ -5064,6 +5089,7 @@ private struct ChatTrailingMenu: View, Equatable {
                 }
             }
 
+            #if !VOICE_AGENT_FUSION
             Toggle(isOn: Binding(
                 get: { speakEnabled },
                 set: { setSpeakEnabled($0) }
@@ -5071,9 +5097,10 @@ private struct ChatTrailingMenu: View, Equatable {
                 Label(AppLocalized("Speak Responses"), systemImage: "speaker.wave.2")
             }
 
+            #endif
             // [T-codex-fast-mode-menu-group] Model-control toggles in their
             // own divider-separated section (mirrors the UIKit buildMenu).
-            if showEnhancedCacheToggle || showFastModeToggle {
+            if showModelControls {
                 Divider()
 
                 if showEnhancedCacheToggle {
@@ -5085,6 +5112,7 @@ private struct ChatTrailingMenu: View, Equatable {
                     }
                 }
 
+                #if !VOICE_AGENT_FUSION
                 if showFastModeToggle {
                     Toggle(isOn: Binding(
                         get: { fastModeEnabled },
@@ -5093,6 +5121,7 @@ private struct ChatTrailingMenu: View, Equatable {
                         Label(AppLocalized("Enable Fast Mode"), systemImage: "bolt.fill")
                     }
                 }
+                #endif
             }
 
             Divider()
@@ -5288,11 +5317,13 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
             sessionGroup.append(UIAction(title: AppLocalized("Memories in Session"),
                                          image: UIImage(systemName: "brain.head.profile")) { _ in coordinator.parent.onMemories() })
         }
+        #if !VOICE_AGENT_FUSION
         sessionGroup.append(UIAction(title: AppLocalized("Speak Responses"),
                                      image: UIImage(systemName: "speaker.wave.2"),
                                      state: key.speakEnabled ? .on : .off) { _ in
             coordinator.parent.setSpeakEnabled(!key.speakEnabled)
         })
+        #endif
         groups.append(UIMenu(options: .displayInline, children: sessionGroup))
 
         // [T-codex-fast-mode-menu-group] Model-control toggles (they shape how
@@ -5309,6 +5340,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
         // [T-codex-fast-mode] Only for Codex OAuth models. Injects
         // service_tier=priority (the wire value codex_cli_rs sends for its
         // Fast mode) into Codex requests while enabled; 2x credit burn.
+        #if !VOICE_AGENT_FUSION
         if key.showFastModeToggle {
             modelControlGroup.append(UIAction(title: AppLocalized("Enable Fast Mode"),
                                               image: UIImage(systemName: "bolt.fill"),
@@ -5316,6 +5348,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
                 coordinator.parent.setFastMode(!key.fastModeEnabled)
             })
         }
+        #endif
         if !modelControlGroup.isEmpty {
             groups.append(UIMenu(options: .displayInline, children: modelControlGroup))
         }

@@ -98,6 +98,30 @@ xcrun swiftc -module-cache-path /tmp/yima-swift-module-cache Integration/App/Sys
 
 本机证据：`build/todo-calendar-access-fix-build.log`（`BUILD SUCCEEDED`）、`build/todo-calendar-access-fix-signing-audit.json`、`build/todo-calendar-access-fix-install.json`、`build/todo-calendar-access-fix-launch.json`（记录锁屏启动拒绝，不能作成功启动证据）、`build/todo-calendar-access-fix-processes.json`。成功启动和数据展示证据为本会话的 iPhone 镜像截图。此次真机验证的是已有授权后的加载恢复；未重置隐私权限来重新触发首次授权弹窗，首次授权、拒绝和撤销的真机组合仍未完整验收。
 
+## 全部事项筛选弹窗（2026-10-02）
+
+用户要求选择来源时弹窗筛选，并可在弹窗内切换日历／待办。将全部页原先内嵌的两组清单移入原生 sheet，顶部用分段控件切换清单，支持中等／全高面板和“完成”关闭。沿用原有两组来源标识、即时保存、权限／空状态和只在待办清单中的“显示已完成待办”；切换分段不重置勾选，不改变全部事项的两类混合展示或首页数据。
+
+设备目标签名编译通过（`build/todo-filter-sheet-build.log`：`BUILD SUCCEEDED`），改动的待办页面无编译警告，应用及四扩展的身份／签名／设备授权检查通过（`build/todo-filter-sheet-signing-audit.json`）。沿用已有来源持久化规则，本次仅调整展示流程，没有新增与实现重复的测试。
+
+已增量安装开发版并通过 iPhone 镜像运行，确认：点击全部事项筛选弹出原生面板；日历／待办分段显示各自来源与账户；切换和“完成”关闭后重开保留勾选及最近查看的分段。取消一个已有日历来源后，今天数量由 1 变为 0，未来数量由 56 变为 14，逾期待办仍为 3；恢复勾选后回到今天 1、未来 56。另一个用于检查保存的日历勾选也已恢复，未修改系统日程或待办。重启后的偏好、全高面板、大字体及未授权组合未在此次交互检查中重新遍历。
+
+安装与进程证据：`build/todo-filter-sheet-install.json`、`build/todo-filter-sheet-processes.json`（开发版 PID 2597）；界面证据为本会话的 iPhone 镜像截图。新增筛选文案的英文／简体中文已确认合入生成词表，`git diff --check` 通过。
+
+## 待办到期／提醒日期同一行（2026-10-02）
+
+用户要求到期日期在左、提醒日期在右，放在同一行。共用 `SystemReminderRow` 将两类日期合并为基线对齐的横向布局；保留到期原时区、日期精度和既有绝对提醒读取规则，仅提醒时仍靠右，均无日期时不生成空行。两列文字允许随长日期／大字体垂直增长，并分别提供到期日期／提醒时间的无障碍文本。
+
+设备目标签名编译通过（`build/todo-row-dates-build.log`：`BUILD SUCCEEDED`），待办页面无编译警告；签名及设备授权审计通过（`build/todo-row-dates-signing-audit.json`），开发版增量安装成功（`build/todo-row-dates-install.json`）。iPhone 镜像已确认：首页及全部事项中，同时有到期与提醒的真实待办显示为同一行，到期靠左、铃铛和提醒日期靠右；仅到期的待办仍靠左显示，长标题自然增长。未编辑、完成或删除系统待办。大字体、仅提醒及均无日期分支经静态复核，本次没有更改字体偏好或创建测试数据来进行这些分支的真机检查。界面证据为本会话的镜像截图。
+
+## 日历标记说明入口（2026-10-02）
+
+用户要求将红色待办／绿色日程说明移到“今天”右侧，通过 info 图标点击查看。移除日历底部常驻图例，在“今天”旁增加 44pt 的 `info.circle` 按钮，使用锚定按钮的原生 popover 显示两类标记及文字说明。标题栏空间不足时允许分为两行，“今天”和说明入口保持相邻；日期网格、月／周切换、翻页手势和日期选择入口沿用原有行为。
+
+设备目标签名编译通过（`build/todo-calendar-legend-build.log`：`BUILD SUCCEEDED`），日历页面无编译警告；应用及四扩展签名／设备授权审计通过（`build/todo-calendar-legend-signing-audit.json`），开发版增量安装成功（`build/todo-calendar-legend-install.json`）。iPhone 镜像已确认：月视图和周视图均显示紧邻“今天”的 info 图标；点击弹出“红色：待办／绿色：日程”小弹窗，点击外部关闭，选中日期和当天事项保持不变；底部图例已移除。检查结束恢复月视图，没有修改系统日程或待办。
+
+新增三条说明文案的英文／简体中文已确认合入生成词表。窄屏／大字体的标题换行和无障碍标签经静态复核，本次未改变设备字体偏好或进行 VoiceOver 操作。界面证据为本会话的镜像截图。
+
 ## 2026-10-04：reset 到 d8344f2，仅接入 EventKitUI
 
 撤回官方 UICalendarView 以及相关翻月性能试用，执行 git reset --hard d8344f2 后，仅重新接入原生日程详情／编辑及来源选择。TaskCalendarView.swift 与基线一致；月／周折叠、双标记、“今天”、既有日期手势、统一事项列表及持久筛选保持基线实现。当前日程详情不再采用此前的只读 SwiftUI 详情页。
@@ -122,3 +146,9 @@ EKEventViewController 按来源和具体发生时间重新查询所选日程，�
 真机待测：同时设置到期与提醒的待办，两页都只显示到期；只有提醒、没有到期的待办不显示日期。进入编辑页确认定时提醒仍可查看和调整。
 
 已安装并回读 scottxz 的 Yima Dev 1.0 (7)，回执一致，正式版安装元信息相同；未代为启动 App。记录：本机 build/recording-ai-actions-device/reminder-due-only-{build.log,install.json,deployment.json}。
+
+## 2026-10-04：与 main 合并核对
+
+保留 main 的共享 YimaDesign token、拓展页全局能力分组及自绘日历说明入口；保留本分支的提醒改名、全局筛选、按有事项日期分组及跳转、统一事项行、仅到期日期、EventKitUI 和二级页隐藏主 Tab。两页共用原生筛选 Sheet，可切换日历／待办类型，再打开对应的 EventKitUI 来源多选。录音详情保留标题点击编辑和拖动进度／跟随控制，适配 main 的共享样式。
+
+合并后的 iPhoneOS Debug-Dev 构建通过；日期／筛选、权限／发生标识、录音入口／播放匹配、文稿保护和字体策略主机回归通过。macOS 录音主机 harness 为 UI-only 颜色 token 提供占位，实际 iOS token 由 iPhoneOS 编译检查；不将其计作视觉测试。证据位于主仓库 build/recording-ai-actions-device/merge-*.log。未运行模拟器或代为启动合并后的真机 App。

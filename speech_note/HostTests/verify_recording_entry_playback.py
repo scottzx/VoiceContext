@@ -24,6 +24,13 @@ with tempfile.TemporaryDirectory(prefix="yima-recording-entry-") as temporary:
     temporary = Path(temporary)
     wrapper = temporary / "ProductionEntryMethods.swift"
     wrapper.write_text("""import Foundation
+import SwiftUI
+// UI-only token stand-ins: playback/entry rules run on macOS without UIKit.
+// The iPhoneOS build validates the real shared color tokens.
+enum YimaDesign { enum Color {
+    static let ink = SwiftUI.Color.primary
+    static let muted = SwiftUI.Color.secondary
+} }
 @MainActor final class EntryModel {
     enum Presentation { case idle, recording, paused, interrupted, stopping, processing, failed }
     var presentation: Presentation = .idle

@@ -7,6 +7,8 @@
 
 This file is the project-wide source of truth for visual and interaction design. Screen-specific documents may add implementation detail, but they must not contradict this file. Any departure requires explicit product-owner approval and a dated entry in the decision log below.
 
+Cross-page implementation guide: [Unified interface language and tokens](docs/design/interface-language.md) (2026-10-02) maps this approved direction to shared typography roles, spacing, component contracts, and a staged migration for Chat, Meetings, and Tasks. It includes the current implementation audit and pending work; it does not imply that the code or runtime acceptance is complete.
+
 ## Product Context
 
 - **Name:** 一芥伙伴 (Chinese), Yima (English).
@@ -83,6 +85,7 @@ Use regular, medium/semibold, and bold intentionally. If most text is bold, hier
 | `vc.recordingText` | `#D70015` | `#FF6961` | Small recording/status text where system red lacks light-mode text contrast |
 | `vc.recordingSoft` | `#FFF1F0` | `#3A1513` | Rare recording/error notice background |
 | `vc.warning` | `#FF9F0A` | `#FF9F0A` | Processing, suspected identity, attention |
+| `vc.warningText` | `#8A4B00` | `#FFB340` | Small warning/status text; use the base warning color for indicators |
 | `vc.warningSoft` | `#FFF7E8` | `#332309` | Warning notice background |
 | `vc.success` | `#34C759` | `#30D158` | Confirmed success only |
 | `vc.successSoft` | `#EEF9F0` | `#123019` | Success notice background |
@@ -123,6 +126,7 @@ Use regular, medium/semibold, and bold intentionally. If most text is bold, hier
 - **Shared reminder filters (2026-10-04):** The Reminders home and All Items share persisted calendar/reminder source selection and completed-reminder visibility. Both offer a filter entry. Home rows, counts, overdue summary, and calendar dots respect selected sources; completed reminders never produce unfinished-reminder dots. Changes persist immediately across navigation and app reopening.
 - **Reminder date metadata (2026-10-04):** Reminder rows on Home and All Items show only the due date/time. Do not display notification dates or a bell row. Keep notification settings available in the reminder editor and preserve the existing system alarms.
 - **EventKitUI integration (2026-10-04):** Restore the custom month/week calendar from d8344f2, including collapse, filtered red/green dots and the top Today action. Do not use UICalendarView. Use EventKitUI only for event details/editing and separate multi-selection calendar/reminder source choosers. Done saves the shared source selection; Cancel keeps it unchanged. Closing native sheets refreshes the existing unified lists and date markers.
+- **Chat and Extensions navigation (approved 2026-10-02):** Keep search visible above the conversation list and New Conversation in the upper-right corner. Move the list's global settings and terminal/browser menus to Extensions. Group Skills, models and services/model groups/global usage, assistant configuration, memory, tool connections (MCP/hardware), terminal and its runtime environment (Rootfs/environment variables), and browser in Extensions. The browser page offers Open Browser and Browser Settings using the same global browser pool. Extensions keeps one unified Settings entry for general, chat, recording, data, privacy/permissions, diagnostics, and about. Keep the current conversation's model, files, tools, context, and usage inside the conversation. Preserve the separate conversation browser-tab pool and global browser pool. Reuse the existing native monochrome list style; add no tab or Agent-list shortcut. This approval confirms navigation scope, not runtime acceptance.
 - **Records screen within Meetings:** Large title, restrained calendar strip, flat Recording rows, and a fixed bottom recording control. In the integration version, profile/settings move to Extensions. Recording state and a stop action remain reachable across tabs.
 - **Recording details:** Title and metadata, audio player, transcript, then secondary metadata/actions. Audio always precedes transcript.
 - **Settings:** Native `List` / `Form` grouping. Do not create a custom card for every setting row.
@@ -252,3 +256,5 @@ Do not apply border, fill, radius, and shadow to the same element by default. Ca
 | 2026-10-04 | Unify reminder/event rows and add populated-date jumping in All Items | Explicit product-owner request; extend the existing reminder style and meeting date-jump interaction |
 | 2026-10-04 | Rename the tab to 提醒 and share saved filters with its home page | Explicit product-owner request; retain existing persisted source identifiers and apply the same choices to both pages |
 | 2026-10-04 | Reset to d8344f2 and integrate EventKitUI without the official month calendar | Explicit product-owner request; retain the established custom month/week calendar and saved filters, while using native event editing and source selection |
+| 2026-10-02 | Consolidate Chat, Meetings, and Tasks with shared semantic typography, spacing, colors, and 44 pt targets | Explicit product-owner approval of the cross-page token guide; preserve existing font preferences and each content type's structure |
+| 2026-10-02 | Move global settings and terminal/browser navigation from the chat list to Extensions; keep conversation controls in the conversation | Explicit product-owner confirmation; make Chat focus on search, creating, and managing conversations while Extensions provides grouped capabilities and one Settings entry |

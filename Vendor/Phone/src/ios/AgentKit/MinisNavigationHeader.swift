@@ -55,6 +55,8 @@ struct MinisNavigationHeader<Accessory: View>: View {
         if let onTitleTap {
             Button(action: onTitleTap) {
                 titleLabel
+                    .frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         } else {
@@ -64,9 +66,8 @@ struct MinisNavigationHeader<Accessory: View>: View {
 
     private var titleLabel: some View {
         Text(title)
-            .font(.headline)
-            .fontWeight(.semibold)
-            .foregroundStyle(.primary)
+            .font(YimaDesign.Typography.navigation)
+            .foregroundStyle(YimaDesign.Color.ink)
             .lineLimit(1)
             .truncationMode(.tail)
             .minimumScaleFactor(0.85)
@@ -122,9 +123,9 @@ struct MinisCustomPageHeader<Leading: View, Center: View, Trailing: View>: View 
                     .fixedSize()
             }
         }
-        .frame(height: 52)
-        .padding(.horizontal, 12)
-        .background(Color(uiColor: .systemBackground))
+        .frame(height: YimaDesign.Layout.primaryHeight)
+        .padding(.horizontal, YimaDesign.Space.md)
+        .background(YimaDesign.Color.canvas)
         .overlay(alignment: .bottom) {
             Divider().opacity(0.35)
         }
@@ -199,9 +200,9 @@ struct MinisPageHeader<Leading: View, Trailing: View>: View {
                 }
             }
         }
-        .frame(height: 52)
-        .padding(.horizontal, 12)
-        .background(Color(uiColor: .systemBackground))
+        .frame(height: YimaDesign.Layout.primaryHeight)
+        .padding(.horizontal, YimaDesign.Space.md)
+        .background(YimaDesign.Color.canvas)
         .overlay(alignment: .bottom) {
             Divider().opacity(0.35)
         }
@@ -219,9 +220,9 @@ struct MinisHeaderIconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 40, height: 40)
-                .contentShape(Circle())
+                .foregroundStyle(YimaDesign.Color.ink)
+                .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)

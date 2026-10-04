@@ -47,7 +47,7 @@ struct MessageContextMenuPreview: View {
             // width comes from the ScrollView's width (the outer .frame below),
             // which starts at the cap and shrinks to the measured content.
             Text(shown)
-                .font(.system(size: FontSettings.shared.scaledMessage(16.5)))
+                .font(.system(size: FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)))
                 .foregroundStyle(ChatColors.primaryText)
                 .multilineTextAlignment(.leading)
                 .padding(16)
@@ -386,7 +386,7 @@ struct ChatMessageRow: View {
             .fixedSize(horizontal: false, vertical: true)
         } else {
             Text(userDisplayText)
-                .font(.system(size: FontSettings.shared.scaledMessage(16.5)))
+                .font(.system(size: FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)))
                 .foregroundStyle(message.isQueued ? ChatColors.secondaryText : ChatColors.primaryText)
         }
     }
@@ -484,7 +484,7 @@ struct ChatMessageRow: View {
                 MessageContextMenuPreview(text: message.content)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, YimaDesign.Layout.listInset)
         .padding(.vertical, 4)
         // [T-ios-delete-from-message] Suffix deletion is irreversible and takes
         // the following replies with it, so it gets an explicit confirmation
@@ -507,16 +507,9 @@ struct ChatMessageRow: View {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color(red: 0.72, green: 0.69, blue: 0.59),
-                                     Color(red: 0.6, green: 0.6, blue: 0.55)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .foregroundStyle(ChatColors.secondaryText)
                 AssistantSoulName()
-                    .font(.body.weight(.semibold))
+                    .font(YimaDesign.Typography.section)
                     .foregroundStyle(ChatColors.primaryText)
             }
             .padding(.top, 4)
@@ -586,7 +579,7 @@ struct ChatMessageRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, YimaDesign.Layout.listInset)
         .padding(.vertical, 6)
         // [T-ios-geometry-observer-crash] THE crasher from the v1.8b13 IPS:
         // onChange(of: geo.frame(in: .global)) wrote state inside the
@@ -821,4 +814,3 @@ struct ChatMessageRow: View {
     // copy per view is what let the four call sites drift apart in the first
     // place.
 }
-

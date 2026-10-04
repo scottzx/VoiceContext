@@ -1,8 +1,8 @@
 # 一芥伙伴 / Yima 统一界面语言与 token
 
-日期：2026-10-02。适用：融合版的聊天、会议、待办事项、拓展，以及 App 自己绘制的详情和阅读界面。
+确认日期：2026-10-02；实现更新：2026-10-03。适用：融合版的聊天、会议、待办事项、拓展，以及 App 自己绘制的详情和阅读界面。
 
-状态：完成现状审计与规范整理；代码 token、页面迁移及真机对照尚未实施。用户本轮要求建立统一设计语言，未要求立即批量修改页面。
+状态：用户已确认规范并授权实施。共享 token、核心页面接线与字号兼容逻辑已实现；构建／真机验证结果见[验收记录](../testing/interface-language.md)。
 
 ## 1. 目标与设计依据
 
@@ -10,7 +10,7 @@
 
 项目级事实源仍是 [`DESIGN.md`](../../DESIGN.md)。本文将其 Typography、Color、Spacing、Layout、Accessibility 细化为跨页面的角色、组件契约及迁移输入；不另建品牌方向。2026-09-29 的融合导航约定优先于历史 v1 的单录音首页。现有待办原型继续提供业务布局输入，字体和留白按项目级规范收敛。
 
-本轮交付是规范、差异清单与实施顺序。录音可靠性、聊天流式行为、日历和提醒事项权限／写入规则、用户字号设置继续作为兼容约束。
+交付范围为规范、共享实现、核心页面迁移及对应验收。录音可靠性、聊天流式行为、日历和提醒事项权限／写入规则、用户字号设置继续作为兼容约束。
 
 使用场景：用户在对话、会议回看和待办跟进之间切换；开发者新增页面或调整组件时，能找到明确的文字角色和布局规则。
 
@@ -20,9 +20,9 @@
 
 本轮无需另做流程原型：入口、业务路径和数据模型没有变化。后续用同一真机、相同字号与外观对照实际页面。新增纪要阅读器属于独立功能，需要另行定义阅读流程；不能将系统预览改造混入机械 token 替换。
 
-## 2. 当前差异及成因
+## 2. 迁移前差异及成因
 
-本表是源码审计，参考字号对应系统默认档位；不是实测屏幕字号，也没有读取或重置当前设备的字体偏好。聊天审计覆盖当前 `CollectionViewMessageListV3` 路径。
+本表保留 2026-10-02 迁移前的源码审计及当时行号，参考字号对应系统默认档位；不是实测屏幕字号，也没有读取或重置当前设备的字体偏好。聊天审计覆盖 `CollectionViewMessageListV3` 路径，迁移后的实现及验证见第 5 节和验收记录。
 
 | 角色 / 区域 | 当前实现 | 收敛方向 |
 |---|---|---|
@@ -125,7 +125,7 @@ SwiftUI 的语义字体和 UIKit 的 `preferredFont` / `UIFontMetrics` 使用同
 
 聊天气泡、输入框、代码块属于内容组件，现有圆角 18／20／8 等作为迁移时需核对的组件几何，不能扩散成新的通用 card 规则。其最终 token 值与 padding 在聊天迁移任务中对照确认；本轮不冒充已批准的新形状例外。
 
-发现的既有规范冲突应逐步清理：助手图标渐变（[`CollectionViewMessageListV3.swift:284`](../../Vendor/Phone/src/ios/Agent/MessageList/CollectionViewMessageListV3.swift#L284)）、工具类别紫色／多色（[`AssistantBlockView.swift:42`](../../Vendor/Phone/src/ios/Views/Chat/AssistantBlockView.swift#L42)）、橙色行内代码和黑底绿字代码块（[`SelectableMarkdownView.swift:323`](../../Vendor/Phone/src/ios/Views/Chat/SelectableMarkdownView.swift#L323)），以及逐字稿句级卡片和红色填充描边（[`RecordingDetailView.swift:1166`](../../speech_note/speech_note/Features/Recording/RecordingDetailView.swift#L1166)）、紫／靛蓝说话人色板（[`RecordingDetailPlaybackPresentation.swift:93`](../../speech_note/speech_note/Features/Recording/RecordingDetailPlaybackPresentation.swift#L93)）。这些是后续有边界的组件调整，不在 token 接线时顺带大改。
+迁移前发现的冲突已在 DS-05 的明确范围内处理：默认助手渐变图标改为中性 SF Symbol；会话／工具类别、行内代码、代码块和说话人色板改用中性色；逐字稿改为文档流，播放位置使用中性边线和图标提示。真机发现的会话分类装饰色已同步补改分类编辑面板。用户自定义的助手图标仍保留，真实成功／失败／处理状态继续使用相应语义色。
 
 ## 4. 跨页面组件契约
 
@@ -142,13 +142,13 @@ SwiftUI 的语义字体和 UIKit 的 `preferredFont` / `UIFontMetrics` 使用同
 
 ## 5. 工程落点
 
-当前没有跨 App 与录音 framework 的设计 token 实现。`ChatColors`、`FontSettings` 位于 App 内，`RecordingStatusStyle` 位于独立 `VoiceRecording` 模块，不能直接让录音 framework 依赖 App 的 internal 类型。
+共享实现现位于 [`Integration/Shared/YimaDesignTokens.swift`](../../Integration/Shared/YimaDesignTokens.swift)。`ChatColors`、`FontSettings` 位于 App 内，`RecordingStatusStyle` 位于独立 `VoiceRecording` 模块，录音 framework 不依赖 App 的 internal 类型。
 
-优先采用最小改动：在产品仓库建立一份 `Integration/Shared/YimaDesignTokens.swift` 源码，承载角色与基础尺寸，通过 `tools/integration/generate_project.py` 显式编入 App 与 `VoiceRecording`。物理源码只有一份；两模块使用各自编译出的无状态值，不复制数值，不引入模块循环。保留原录音 target 的构建时也需添加相同源码输入。
+采用一份共享源码承载角色与基础尺寸，通过 `tools/integration/generate_project.py` 显式编入 App 与 `VoiceRecording`；原录音 target 也已添加相同输入。物理源码只有一份；两模块使用各自编译出的无状态值，不复制数值，不引入模块循环。纯 Foundation 的字号策略同文件供 macOS 边界检查使用。
 
 共享定义保持各模块内部使用，不将两次编译产生的 token 类型作为跨模块 public API 参数；它们的类型身份不同。跨模块只传已有系统值／配置输入。
 
-SwiftUI／UIKit 字体与颜色适配共用这份定义；用户偏好由 App 调用端提供，token 文件不持有 `FontSettings`、EventKit、录音服务或持久化状态。先转接 `ChatColors` 和 `RecordingStatusStyle`，再渐进替换调用处。暂不为标尺引入第三方库、主题引擎或独立组件框架；将来确有额外消费模块再评估 Swift package。
+SwiftUI／UIKit 字体与颜色适配共用这份定义；用户偏好由 App 调用端提供，token 文件不持有 `FontSettings`、EventKit、录音服务或持久化状态。`ChatColors` 和 `RecordingStatusStyle` 已转接，待办、聊天核心呈现、录音列表／详情及产物列表的调用已接线。暂不为标尺引入第三方库、主题引擎或独立组件框架；将来确有额外消费模块再评估 Swift package。
 
 工程生成器是输入事实源，不直接维护一次性的生成项目文件。Vendor 改动按现有 [`OpenMinis 上游维护约定`](../architecture/openminis-upstream.md) 保存定制及来源清单，不能覆盖 vendored tree。
 
@@ -158,7 +158,7 @@ SwiftUI／UIKit 字体与颜色适配共用这份定义；用户偏好由 App �
 
 ## 6. 增量实施任务与依赖
 
-本地任务草案，执行人除最后产品走查外为 Agent。先明确可验证交付，再落库；不自动启动其他会话。
+本地交付分解；DS-01–DS-05 核心范围已实施，DS-06 按真实检查记录验收，Human 产品走查仍由用户完成。不自动启动其他会话。
 
 | 顺序 / ID | 可独立交付的范围 | 依赖 | 验收标准 |
 |---|---|---|---|
@@ -184,4 +184,4 @@ PM 追踪：项目启用了功能蓝图，但本轮 `project-items list`、`feat
 - 不使用 iOS Simulator。仅在用户授权的物理设备运行；编译和静态审计不能标记上述矩阵通过。
 - 新页面先选择既有 token／组件角色。确需新增角色时同时更新本文、共享源码和对应验收；偏离已批准 `DESIGN.md` 的方向才需要产品负责人另行决定。
 
-待落地边界：聊天特殊形状的最终映射、SwiftUI／UIKit 缩放实现细节与真机矩阵；系统 QuickLook 正文排版不在 App token 可控制范围。本文没有宣称现有 UI 已统一，也没有将未来 App 内纪要阅读器列为已实现能力。
+实现边界：共享角色已接入核心页面，SwiftUI／UIKit 的字号策略与缓存刷新已落地。聊天气泡和输入框的既有特殊圆角仍待专门走查，不把其数值推广为通用卡片规则。系统 QuickLook 正文排版不在 App token 可控制范围；App 内纪要阅读器未包含在本轮。运行矩阵按[验收记录](../testing/interface-language.md)标注已测／未测，不能由编译通过推断全部无障碍与业务回归通过。

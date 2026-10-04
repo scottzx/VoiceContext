@@ -4,6 +4,8 @@
 
 ## 产品文档
 
+- [统一界面语言与 token](./design/interface-language.md)：2026-10-02 确认，2026-10-03 核心页面已接入共享字体／间距／颜色角色及字号兼容策略；沿用项目级 [`DESIGN.md`](../DESIGN.md)。[验收记录](./testing/interface-language.md)区分编译、策略检查与真机走查。
+
 - [产品身份与定位](./design/product-identity.md)：一芥伙伴 / Yima，手机上的个人助手（Personal Agent），命名及升级兼容性约定。
 
 - [个人智能体融合设计](./design/personal-agent-integration.md)：PM `#85`；已实现首轮工程融合，记录产品身份、完整 Agent 工程方向、四 Tab、录音优先和系统提醒事项，以及仍待真机验收的边界。涉及新范围时按此增补，v1 文档保留历史基线。

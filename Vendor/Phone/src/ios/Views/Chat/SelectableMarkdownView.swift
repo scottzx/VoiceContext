@@ -295,60 +295,47 @@ func displayTargetPixels(for data: Data, screenScale: CGFloat) -> CGFloat {
 
 // MARK: - SelectableMarkdownTheme
 
-/// [T-inline-code-dark-bg-ios] Inline-code span background, shared by the
-/// theme and the layout manager's fillBackgroundRectArray (the actual paint
-/// site) so the two can never drift. Light stays EXACTLY .systemGray6
-/// (#F2F2F7); dark lifts to #3A3A3C (systemGray4's dark value) — systemGray6
-/// resolves to #1C1C1E in dark, indistinguishable from the near-black chat
-/// background, which made inline code read as bare orange text.
-private let minisInlineCodeBackgroundColor = UIColor { traits in
-    traits.userInterfaceStyle == .dark
-        ? UIColor(red: 0x3A / 255.0, green: 0x3A / 255.0, blue: 0x3C / 255.0, alpha: 1)
-        : .systemGray6
-}
+/// Shared by attributed text and its layout manager's background painter.
+private let minisInlineCodeBackgroundColor = YimaDesign.UIKitColor.grouped
 
-/// Mirrors the `.minisChat` MarkdownUI theme using UIKit types.
+/// Shared document roles, rendered with the user's scaled message font.
 struct SelectableMarkdownTheme {
     let baseFontSize: CGFloat
-    let codeBlockCornerRadius: CGFloat = 8
+    let codeBlockCornerRadius: CGFloat = YimaDesign.Radius.codeBlock
     let inlineCodeCornerRadius: CGFloat = 5
 
     init(baseFontSize: CGFloat? = nil) {
-        self.baseFontSize = baseFontSize ?? 16.5
+        self.baseFontSize = baseFontSize ?? YimaDesign.Typography.bodySize
     }
 
     var baseFont: UIFont { .systemFont(ofSize: baseFontSize) }
-    var labelColor: UIColor { .label }
-    var secondaryLabelColor: UIColor { .secondaryLabel }
-    var accentColor: UIColor { .systemOrange }
-    var linkColor: UIColor { .systemBlue }
-    var codeBlockBackground: UIColor {
-        UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : .black }
+    var lineSpacing: CGFloat {
+        YimaDesign.Document.lineSpacing * baseFontSize / YimaDesign.Typography.bodySize
     }
-    var codeBlockTextColor: UIColor {
-        UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.55, green: 0.95, blue: 0.55, alpha: 1) : .systemGreen }
-    }
+    var labelColor: UIColor { YimaDesign.UIKitColor.ink }
+    var secondaryLabelColor: UIColor { YimaDesign.UIKitColor.muted }
+    var accentColor: UIColor { YimaDesign.UIKitColor.ink }
+    var linkColor: UIColor { YimaDesign.UIKitColor.info }
+    var codeBlockBackground: UIColor { YimaDesign.UIKitColor.grouped }
+    var codeBlockTextColor: UIColor { YimaDesign.UIKitColor.ink }
     var inlineCodeBackground: UIColor { minisInlineCodeBackgroundColor }
-    var inlineCodeColor: UIColor { .systemOrange }
-    var blockquoteBarColor: UIColor { UIColor.systemOrange.withAlphaComponent(0.5) }
-    var tableBorderColor: UIColor { UIColor.label.withAlphaComponent(0.25) }
+    var inlineCodeColor: UIColor { YimaDesign.UIKitColor.ink }
+    var blockquoteBarColor: UIColor { YimaDesign.UIKitColor.line }
+    var tableBorderColor: UIColor { YimaDesign.UIKitColor.line }
 
     func headingFont(level: Int) -> UIFont {
         let size: CGFloat
         let weight: UIFont.Weight
         switch level {
-        case 1: size = baseFontSize * 1.5; weight = .bold
-        case 2: size = baseFontSize * 1.3; weight = .bold
-        case 3: size = baseFontSize * 1.15; weight = .semibold
-        case 5: size = baseFontSize * 0.875; weight = .semibold
-        case 6: size = baseFontSize * 0.85; weight = .semibold
-        default: size = baseFontSize; weight = .semibold // H4 and fallback
+        case 1: size = baseFontSize * YimaDesign.Typography.detailTitleSize / YimaDesign.Typography.bodySize; weight = .bold
+        case 2: size = baseFontSize * YimaDesign.Typography.subsectionSize / YimaDesign.Typography.bodySize; weight = .semibold
+        default: size = baseFontSize; weight = .semibold
         }
         return .systemFont(ofSize: size, weight: weight)
     }
 
     var inlineCodeFont: UIFont {
-        let size = baseFontSize * 0.845
+        let size = baseFontSize * YimaDesign.Typography.metadataSize / YimaDesign.Typography.bodySize
         if let menlo = UIFont(name: "Menlo", size: size) {
             let descriptor = menlo.fontDescriptor.addingAttributes([
                 .cascadeList: [UIFontDescriptor(fontAttributes: [.name: "PingFang SC"])]
@@ -359,7 +346,7 @@ struct SelectableMarkdownTheme {
     }
 
     var codeBlockFont: UIFont {
-        let size = baseFontSize * 0.85
+        let size = baseFontSize * YimaDesign.Typography.metadataSize / YimaDesign.Typography.bodySize
         // Use Menlo as the base monospaced font, with PingFang SC as CJK fallback.
         // PingFang SC's CJK glyphs are exactly 2x the width of Menlo's ASCII glyphs
         // at the same point size, enabling proper table alignment in code blocks.
@@ -373,12 +360,28 @@ struct SelectableMarkdownTheme {
     }
 }
 
+private let markdownBaseFontSizeAttribute = NSAttributedString.Key("YimaMarkdownBaseFontSize")
+
+private func markdownFontMatches(_ string: NSAttributedString, size: CGFloat) -> Bool {
+    guard string.length > 0,
+          let stamped = string.attribute(markdownBaseFontSizeAttribute, at: 0, effectiveRange: nil) as? NSNumber else {
+        return false
+    }
+    return stamped.doubleValue == Double(size)
+}
+
 /// Renders markdown blocks into an NSAttributedString using a fresh MarkdownNSRenderer.
 /// Intended for one-shot rendering of completed messages (e.g. caching in AIChatViewModel).
 @MainActor
 func renderMarkdownBlocks(_ blocks: [BlockNode]) -> NSAttributedString {
-    let renderer = MarkdownNSRenderer(baseFontSize: FontSettings.shared.scaledMessage(16.5))
-    return renderer.render(blocks: blocks)
+    let fontSize = FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)
+    let renderer = MarkdownNSRenderer(baseFontSize: fontSize)
+    let rendered = NSMutableAttributedString(attributedString: renderer.render(blocks: blocks))
+    if rendered.length > 0 {
+        rendered.addAttribute(markdownBaseFontSizeAttribute, value: NSNumber(value: Double(fontSize)),
+                              range: NSRange(location: 0, length: rendered.length))
+    }
+    return rendered
 }
 
 // MARK: - MarkdownNSRenderer
@@ -402,14 +405,20 @@ fileprivate final class MarkdownNSRenderer {
     }
 
     func updateFontSize(_ size: CGFloat) {
+        guard theme.baseFontSize != size else { return }
         theme = SelectableMarkdownTheme(baseFontSize: size)
+        codeBlockAttachmentCache.removeAll()
+        codeBlockContentHashes.removeAll()
+        tableAttachmentCache.removeAll()
+        tableAttachmentLRU.removeAll()
+        tableSlotCache.removeAll()
+        tableAttachmentReverseKey.removeAll()
+        mathAttachmentCache.removeAll()
     }
-    private var bodyLineSpacing: CGFloat { theme.baseFontSize * 0.25 }
-    /// minisChat list item: .em(0.25) top margin
-    private var listItemTopMargin: CGFloat { theme.baseFontSize * 0.25 }
-    /// minisChat headings: .em(1) top and bottom
-    private var headingTopMargin: CGFloat { theme.baseFontSize }
-    private var headingBottomMargin: CGFloat { theme.baseFontSize }
+    private var bodyLineSpacing: CGFloat { theme.lineSpacing }
+    private var listItemTopMargin: CGFloat { YimaDesign.Space.xs }
+    private var headingTopMargin: CGFloat { YimaDesign.Document.sectionGap }
+    private var headingBottomMargin: CGFloat { YimaDesign.Layout.headingGap }
 
     /// Reuse existing media attachments across re-renders to avoid reload flicker during streaming.
     var imageAttachmentCache: [String: ImageAttachment] = [:]
@@ -613,7 +622,7 @@ fileprivate final class MarkdownNSRenderer {
         return RenderedBlock(
             attributed: renderInlines(inlines, baseAttributes: baseAttrs),
             topMargin: 0,
-            bottomMargin: 12
+            bottomMargin: YimaDesign.Document.paragraphGap
         )
     }
 
@@ -1452,7 +1461,7 @@ final class CodeBlockAttachment: NSTextAttachment {
             return cached.height
         }
         let codeStyle = NSMutableParagraphStyle()
-        codeStyle.lineSpacing = 4
+        codeStyle.lineSpacing = theme.lineSpacing
         codeStyle.lineBreakMode = .byClipping
         let attrStr = NSAttributedString(string: code, attributes: [
             .font: theme.codeBlockFont,
@@ -1524,7 +1533,7 @@ final class CodeBlockAttachment: NSTextAttachment {
         codeTextView.textContainer.lineBreakMode = .byClipping
 
         let codeStyle = NSMutableParagraphStyle()
-        codeStyle.lineSpacing = 4
+        codeStyle.lineSpacing = theme.lineSpacing
         codeStyle.lineBreakMode = .byClipping
         let codeAttr = NSAttributedString(string: code, attributes: [
             .font: theme.codeBlockFont,
@@ -1625,7 +1634,7 @@ final class CodeBlockAttachment: NSTextAttachment {
         guard let codeTextView = scrollView.subviews.first(where: { $0 is UITextView }) as? UITextView else { return }
 
         let codeStyle = NSMutableParagraphStyle()
-        codeStyle.lineSpacing = 4
+        codeStyle.lineSpacing = theme.lineSpacing
         codeStyle.lineBreakMode = .byClipping
         let codeAttr = NSAttributedString(string: code, attributes: [
             .font: theme.codeBlockFont,
@@ -7478,6 +7487,8 @@ struct SelectableMarkdownView: UIViewRepresentable {
         // rects cached.
         if let mid = messageId, let existing = SelectableMarkdownView.rendererCache[mid] {
             coord.renderer = existing
+            coord.lastFontSize = existing.theme.baseFontSize
+            coord.lastMeasurementFontSize = existing.theme.baseFontSize
         } else if let mid = messageId {
             SelectableMarkdownView.rendererCache[mid] = coord.renderer
         }
@@ -7529,7 +7540,7 @@ struct SelectableMarkdownView: UIViewRepresentable {
         textView.onReadAloud = onReadAloud
         textView.onSpeakText = onSpeakText
 
-        let currentFontSize = FontSettings.shared.scaledMessage(16.5)
+        let currentFontSize = FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)
         let fontChanged = context.coordinator.lastFontSize != currentFontSize
 
         // [AttachHotPath] updateUIView entry — only log when this textView has
@@ -7652,11 +7663,10 @@ struct SelectableMarkdownView: UIViewRepresentable {
         context.coordinator.lastMarkdown = markdown
 
         if fontChanged {
+            context.coordinator.invalidateFontMeasurements(for: currentFontSize)
             context.coordinator.renderer.updateFontSize(currentFontSize)
             context.coordinator.lastFontSize = currentFontSize
             context.coordinator.lastRenderedContentHash = nil
-            // Math images are rendered at a specific font size — clear stale caches.
-            context.coordinator.renderer.mathAttachmentCache.removeAll()
             textView.clearAllAttachmentViews()
         }
 
@@ -7804,7 +7814,7 @@ struct SelectableMarkdownView: UIViewRepresentable {
 
         var hasher = Hasher()
         hasher.combine(cachedContent != nil ? cachedContent!.blocks.hashValue : markdown.hashValue)
-        hasher.combine(FontSettings.shared.scaledMessage(16.5))
+        hasher.combine(FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize))
         let contentHash: Int = hasher.finalize()
         if contentHash == context.coordinator.lastRenderedContentHash {
             // [DIAG-RENDER-3] Content hash matches — skip re-render.
@@ -7864,7 +7874,8 @@ struct SelectableMarkdownView: UIViewRepresentable {
         // suffix above, the prebuilt cache covers the wrong content —
         // bypass it and re-render so the appended suffix lives in the
         // current view's storage (the prebuilt was for the full markdown).
-        if let prebuilt = cachedAttributedString, !fontChanged, !prebuiltHasTable, !_hasPlainSuffix {
+        if let prebuilt = cachedAttributedString, !fontChanged, !prebuiltHasTable, !_hasPlainSuffix,
+           markdownFontMatches(prebuilt, size: currentFontSize) {
             attributed = prebuilt
             usedCache = true
         } else {
@@ -7876,7 +7887,7 @@ struct SelectableMarkdownView: UIViewRepresentable {
             if _hasPlainSuffix {
                 let mut = NSMutableAttributedString(attributedString: renderedBody)
                 let suffixAttrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: FontSettings.shared.scaledMessage(16.5)),
+                    .font: UIFont.systemFont(ofSize: FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)),
                     .foregroundColor: UIColor.label,
                 ]
                 mut.append(NSAttributedString(string: _splitForUpdate.plainSuffix, attributes: suffixAttrs))
@@ -8231,6 +8242,12 @@ struct SelectableMarkdownView: UIViewRepresentable {
         let storageLen = uiView.textStorage.length
 
         let coord = context.coordinator
+        let currentFontSize = FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)
+        let fontChanged = coord.lastFontSize != currentFontSize
+        if coord.lastMeasurementFontSize != currentFontSize {
+            coord.invalidateFontMeasurements(for: currentFontSize)
+            coord.renderer.updateFontSize(currentFontSize)
+        }
         coord.sizeThatFitsCallCount &+= 1
         let callIdx = coord.sizeThatFitsCallCount
         let t0 = CFAbsoluteTimeGetCurrent()
@@ -8304,7 +8321,7 @@ struct SelectableMarkdownView: UIViewRepresentable {
         // estimate is bounded by an absolute cap, and the estimate is NOT
         // written back to cachedSizes so a later sizeThatFits at the same
         // length doesn't reuse it.
-        let useMeasureTextView = bindingLen != storageLen
+        let useMeasureTextView = bindingLen != storageLen || fontChanged
         // [T-ios-streaming-est-attachment-clip] STREAM-EST disabled again.
         // It was restored in de4d3df6 to kill visible-streaming hangs, but the
         // linear pxPerChar extrapolation under-measures cells that contain
@@ -8390,7 +8407,8 @@ struct SelectableMarkdownView: UIViewRepresentable {
                 return found
             }()
             let pending: NSAttributedString
-            if let pre = cachedAttributedString, !preHasTable {
+            if let pre = cachedAttributedString, !preHasTable, !fontChanged,
+               markdownFontMatches(pre, size: currentFontSize) {
                 pending = pre
             } else {
                 // REPRO-FIX(2026-05-16): split off any in-flight (`|`-row
@@ -8419,7 +8437,7 @@ struct SelectableMarkdownView: UIViewRepresentable {
                 } else {
                     let mut = NSMutableAttributedString(attributedString: rendered)
                     let suffixAttrs: [NSAttributedString.Key: Any] = [
-                        .font: UIFont.systemFont(ofSize: FontSettings.shared.scaledMessage(16.5)),
+                        .font: UIFont.systemFont(ofSize: FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)),
                         .foregroundColor: UIColor.label,
                     ]
                     mut.append(NSAttributedString(string: split.plainSuffix, attributes: suffixAttrs))
@@ -8865,7 +8883,18 @@ struct SelectableMarkdownView: UIViewRepresentable {
                 NotificationCenter.default.removeObserver(resignActiveObserver)
             }
         }
-        var lastFontSize: CGFloat = FontSettings.shared.scaledMessage(16.5)
+        var lastFontSize: CGFloat = FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)
+        var lastMeasurementFontSize: CGFloat = FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)
+
+        func invalidateFontMeasurements(for size: CGFloat) {
+            cachedSizes.removeAll(keepingCapacity: true)
+            cachedSizeMarkdownCount = -1
+            lastFullMeasureHeight.removeAll(keepingCapacity: true)
+            lastFullMeasureBindingLen = 0
+            lastFullMeasureAt = 0
+            lastMeasurementFontSize = size
+        }
+
         var openURL: OpenURLAction?
         /// Cached sizeThatFits results keyed by integer width bucket.
         /// Multi-bucket cache is required because SwiftUI layout protocol
@@ -8905,7 +8934,7 @@ struct SelectableMarkdownView: UIViewRepresentable {
         var lastFullMeasureBindingLen: Int = 0
         var lastFullMeasureHeight: [Int: CGFloat] = [:]
         var lastFullMeasureAt: CFAbsoluteTime = 0
-        fileprivate var renderer = MarkdownNSRenderer(baseFontSize: FontSettings.shared.scaledMessage(16.5))
+        fileprivate var renderer = MarkdownNSRenderer(baseFontSize: FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize))
 
         /// [WordFade] The textView whose storage the fade animator mutates.
         /// Set on the append fast path so the animator's redraw closure can

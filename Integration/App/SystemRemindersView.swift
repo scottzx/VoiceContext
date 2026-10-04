@@ -130,6 +130,7 @@ struct SystemRemindersView: View {
     @State private var filtersOpen = false
     @State private var homeFiltersOpen = false
     @State private var sourceChooser: TaskSourceChooserRequest?
+    @State private var filterIsCalendar = true
     @State private var sourceNotice = false
     @State private var dateJump: TaskDateJumpRequest?
     @State private var jumpTargetDate: Date?
@@ -191,14 +192,7 @@ struct SystemRemindersView: View {
                     }
                 }
                 .navigationDestination(isPresented: $showAll) { allItems }
-                .sheet(isPresented: $homeFiltersOpen) {
-                    NavigationStack {
-                        List { sourceFilters }
-                            .navigationTitle("筛选提醒").navigationBarTitleDisplayMode(.inline)
-                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { homeFiltersOpen = false } } }
-                            .sheet(item: $sourceChooser, onDismiss: { Task { await refresh() } }) { nativeSourceChooser($0) }
-                    }
-                }
+                .sheet(isPresented: $homeFiltersOpen) { sourceFilters }
                 .sheet(item: $editor) { item in
                     ReminderEditor(model: model, existing: item.reminder, preferredCalendarID: nil, suggestedDate: item.suggestedDate)
                 }
@@ -229,15 +223,15 @@ struct SystemRemindersView: View {
     private var home: some View {
         List {
             TaskCalendarView(selected: $selected, month: $month, expanded: $expanded, counts: counts)
-                .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 0, trailing: 20)).listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: YimaDesign.Space.md, leading: YimaDesign.Layout.pageInset, bottom: 0, trailing: YimaDesign.Layout.pageInset)).listRowSeparator(.hidden)
             ViewThatFits(in: .horizontal) {
-                HStack { dayHeading; Spacer(minLength: 8); sectionActions }
-                VStack(alignment: .leading, spacing: 8) { dayHeading; HStack { Spacer(); sectionActions } }
-            }.listRowInsets(EdgeInsets(top: 24, leading: 20, bottom: 12, trailing: 20)).listRowSeparator(.hidden)
+                HStack { dayHeading; Spacer(minLength: YimaDesign.Space.sm); sectionActions }
+                VStack(alignment: .leading, spacing: YimaDesign.Space.sm) { dayHeading; HStack { Spacer(); sectionActions } }
+            }.listRowInsets(EdgeInsets(top: YimaDesign.Layout.sectionGap, leading: YimaDesign.Layout.pageInset, bottom: 0, trailing: YimaDesign.Layout.pageInset)).listRowSeparator(.hidden)
             if !hasSelectedSources && (reminderReady || calendarReady) {
                 quietText("尚未选择列表，请在筛选中勾选要展示的日历或待办列表。")
             }
-            groupHeading("待办", count: reminderReady ? dayReminders.count : nil)
+            groupHeading("待办", count: reminderReady ? dayReminders.count : nil, top: YimaDesign.Layout.headingGap)
             reminderStatus
             if reminderReady {
                 if dayReminders.isEmpty { quietText("这天没有待办。") }
@@ -252,12 +246,12 @@ struct SystemRemindersView: View {
             }
             if reminderReady && overdueCount > 0 {
                 Text("\(overdueCount) 项逾期待办 · 在“全部”中查看")
-                    .font(.caption).foregroundStyle(.secondary).listRowSeparator(.hidden)
+                    .font(YimaDesign.Typography.compactMetadata).foregroundStyle(YimaDesign.Color.muted).listRowSeparator(.hidden)
             }
         }
         .listStyle(.plain).scrollContentBackground(.hidden)
-        .background(Color(uiColor: .systemBackground))
-        .environment(\.defaultMinListRowHeight, 44)
+        .background(YimaDesign.Color.canvas)
+        .environment(\.defaultMinListRowHeight, YimaDesign.Layout.hitTarget)
         .refreshable { await refresh() }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: dayReminders.map(\.calendarItemIdentifier))
     }
@@ -266,18 +260,18 @@ struct SystemRemindersView: View {
         Group {
             if calendar.isDateInToday(selected) { Text("今日事项") }
             else { Text("\(selected, format: .dateTime.month().day().weekday())事项") }
-        }.font(.title2.weight(.bold)).accessibilityAddTraits(.isHeader)
+        }.font(YimaDesign.Typography.section).accessibilityAddTraits(.isHeader)
     }
 
     private var sectionActions: some View {
-        HStack(spacing: 4) {
-            Button { showAll = true } label: { HStack(spacing: 4) { Text("全部"); Image(systemName: "chevron.right").font(.caption) } }
-                .font(.subheadline).frame(minWidth: 44, minHeight: 44).accessibilityLabel("查看全部事项")
+        HStack(spacing: YimaDesign.Space.xs) {
+            Button { showAll = true } label: { HStack(spacing: YimaDesign.Space.xs) { Text("全部"); Image(systemName: "chevron.right").font(YimaDesign.Typography.compactMetadata) } }
+                .font(YimaDesign.Typography.metadata).frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget).accessibilityLabel("查看全部事项")
             Button { editor = ReminderEditorItem(reminder: nil, suggestedDate: selected) } label: {
-                Image(systemName: "plus").font(.title2)
-                    .frame(width: 44, height: 44)
-                    .foregroundStyle(Color(uiColor: .systemBackground))
-                    .background(Color.primary, in: RoundedRectangle(cornerRadius: 12))
+                Image(systemName: "plus").font(YimaDesign.Typography.body.weight(.medium))
+                    .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+                    .foregroundStyle(YimaDesign.Color.canvas)
+                    .background(YimaDesign.Color.ink, in: RoundedRectangle(cornerRadius: YimaDesign.Radius.control))
             }.disabled(!canAdd).opacity(canAdd ? 1 : 0.4).accessibilityLabel("新增待办事项")
                 .accessibilityHint(canAdd ? "预填所选日期，通知单独设置" : "允许提醒事项访问并选择可写列表后可新增")
         }.buttonStyle(.plain)
@@ -297,25 +291,30 @@ struct SystemRemindersView: View {
 
     private func reminderRow(_ item: EKReminder) -> some View {
         SystemReminderRow(model: model, item: item, edit: { editor = ReminderEditorItem(reminder: $0) }, delete: { deleteCandidate = $0 })
-            .padding(.vertical, 8).listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .padding(.vertical, YimaDesign.Layout.rowPaddingY).frame(minHeight: YimaDesign.Layout.rowMinHeight)
+            .listRowInsets(EdgeInsets(top: 0, leading: YimaDesign.Layout.pageInset, bottom: 0, trailing: YimaDesign.Layout.pageInset))
     }
 
     private func eventRow(_ event: TaskCalendarEvent) -> some View {
         TaskEventRow(event: event) { eventDetail = event }
-            .padding(.vertical, 8).listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+            .listRowInsets(EdgeInsets(top: 0, leading: YimaDesign.Layout.pageInset, bottom: 0, trailing: YimaDesign.Layout.pageInset))
     }
 
-    private func groupHeading(_ title: LocalizedStringKey, count: Int?) -> some View {
+    private func groupHeading(_ title: LocalizedStringKey, count: Int?, top: CGFloat = YimaDesign.Layout.groupGap) -> some View {
         HStack {
             Text(title).fontWeight(.semibold).accessibilityAddTraits(.isHeader)
             Spacer()
-            if let count { Text("\(count) 项") } else { Text("未读取") }
-        }.font(.subheadline).foregroundStyle(.secondary)
-            .listRowInsets(EdgeInsets(top: 16, leading: 20, bottom: 4, trailing: 20)).listRowSeparator(.hidden)
+            Group { if let count { Text("\(count) 项") } else { Text("未读取") } }
+                .font(YimaDesign.Typography.compactMetadata)
+        }.font(YimaDesign.Typography.metadata).foregroundStyle(YimaDesign.Color.muted)
+            .listRowInsets(EdgeInsets(top: top, leading: YimaDesign.Layout.pageInset, bottom: YimaDesign.Space.xs, trailing: YimaDesign.Layout.pageInset))
+            .environment(\.defaultMinListRowHeight, 0).listRowSeparator(.hidden)
     }
 
     private func quietText(_ text: LocalizedStringKey) -> some View {
-        Text(text).font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8).listRowSeparator(.hidden)
+        Text(text).font(YimaDesign.Typography.metadata).foregroundStyle(YimaDesign.Color.muted)
+            .listRowInsets(EdgeInsets(top: YimaDesign.Space.sm, leading: YimaDesign.Layout.pageInset, bottom: YimaDesign.Space.sm, trailing: YimaDesign.Layout.pageInset))
+            .environment(\.defaultMinListRowHeight, 0).listRowSeparator(.hidden)
     }
 
     @ViewBuilder private var reminderStatus: some View {
@@ -324,9 +323,9 @@ struct SystemRemindersView: View {
                 .listRowSeparator(.hidden)
         } else if model.loading { ProgressView("正在读取提醒事项…").listRowSeparator(.hidden) }
         else if let error = model.readError {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(error).font(.subheadline).foregroundStyle(.secondary)
-                Button("重试") { Task { await model.refresh() } }.frame(minHeight: 44)
+            VStack(alignment: .leading, spacing: YimaDesign.Space.sm) {
+                Text(error).font(YimaDesign.Typography.metadata).foregroundStyle(YimaDesign.Color.muted)
+                Button("重试") { Task { await model.refresh() } }.frame(minHeight: YimaDesign.Layout.hitTarget)
             }.buttonStyle(.plain).listRowSeparator(.hidden)
         }
     }
@@ -341,9 +340,9 @@ struct SystemRemindersView: View {
             ProgressView("正在读取日历…").listRowSeparator(.hidden)
         }
         else if let error = calendarModel.readError {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(error).font(.subheadline).foregroundStyle(.secondary)
-                Button("重试") { Task { await refreshCalendar() } }.frame(minHeight: 44)
+            VStack(alignment: .leading, spacing: YimaDesign.Space.sm) {
+                Text(error).font(YimaDesign.Typography.metadata).foregroundStyle(YimaDesign.Color.muted)
+                Button("重试") { Task { await refreshCalendar() } }.frame(minHeight: YimaDesign.Layout.hitTarget)
             }.buttonStyle(.plain).listRowSeparator(.hidden)
         }
     }
@@ -355,9 +354,8 @@ struct SystemRemindersView: View {
         let unscheduled = entries.filter { $0.date == nil }
         return ScrollViewReader { proxy in
             List {
-                if filtersOpen {
-                    sourceFilters
-                } else { reminderStatus; calendarStatus }
+                reminderStatus
+                calendarStatus
                 if sourceNotice {
                     VStack(alignment: .leading) {
                         Text("部分来源列表已不可用，已移除失效选择。其他筛选保持不变。").font(.subheadline).foregroundStyle(.secondary)
@@ -415,12 +413,12 @@ struct SystemRemindersView: View {
             .navigationTitle("全部事项").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { filtersOpen.toggle() } label: { Image(systemName: "line.3.horizontal.decrease") }
-                        .accessibilityLabel("筛选全部事项").accessibilityValue(filtersOpen ? "已展开" : "已收起")
+                    Button { filtersOpen = true } label: { Image(systemName: "line.3.horizontal.decrease") }
+                        .accessibilityLabel("筛选全部事项")
                 }
             }
             .refreshable { await refresh() }
-            .sheet(item: $sourceChooser, onDismiss: { Task { await refresh() } }) { nativeSourceChooser($0) }
+            .sheet(isPresented: $filtersOpen) { sourceFilters }
             .sheet(item: $dateJump, onDismiss: {
                 guard let target = jumpTargetDate else { return }
                 jumpTargetDate = nil
@@ -432,24 +430,43 @@ struct SystemRemindersView: View {
         }
     }
 
-    private var hasSelectedSources: Bool {
-        !TaskSourceSelection(encoded: reminderSources).selected.isEmpty || !TaskSourceSelection(encoded: eventSources).selected.isEmpty
+    private var sourceFilters: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Picker("来源类型", selection: $filterIsCalendar) {
+                    Text("日历").tag(true)
+                    Text("待办").tag(false)
+                }.pickerStyle(.segmented).padding(.horizontal, YimaDesign.Layout.pageInset)
+                    .padding(.top, YimaDesign.Space.md).padding(.bottom, YimaDesign.Space.sm)
+                List {
+                    if filterIsCalendar {
+                        Section("日历列表") {
+                            calendarStatus
+                            if calendarReady && calendarModel.sources.isEmpty { quietText("没有可读取的日历列表。") }
+                            Button("选择日历列表") { sourceChooser = .events }.disabled(!calendarReady)
+                        }
+                    } else {
+                        Section("待办列表") {
+                            reminderStatus
+                            if reminderReady && model.calendars.isEmpty { quietText("没有可读取的待办列表。") }
+                            Button("选择待办列表") { sourceChooser = .reminders }.disabled(!reminderReady)
+                            Toggle("显示已完成待办", isOn: $showCompleted).tint(YimaDesign.Color.ink)
+                        }
+                    }
+                }.listStyle(.plain).scrollContentBackground(.hidden)
+            }
+            .background(YimaDesign.Color.canvas)
+            .navigationTitle("筛选").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { filtersOpen = false; homeFiltersOpen = false } } }
+        }
+        .tint(YimaDesign.Color.ink)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .sheet(item: $sourceChooser, onDismiss: { Task { await refresh() } }) { nativeSourceChooser($0) }
     }
 
-    private var sourceFilters: some View {
-        Group {
-            Section("日历列表") {
-                calendarStatus
-                if calendarReady && calendarModel.sources.isEmpty { quietText("没有可读取的日历列表。") }
-                Button("选择日历列表") { sourceChooser = .events }.disabled(!calendarReady)
-            }
-            Section("待办列表") {
-                reminderStatus
-                if reminderReady && model.calendars.isEmpty { quietText("没有可读取的待办列表。") }
-                Button("选择待办列表") { sourceChooser = .reminders }.disabled(!reminderReady)
-                Toggle("显示已完成待办", isOn: $showCompleted).tint(.primary)
-            }
-        }
+    private var hasSelectedSources: Bool {
+        !TaskSourceSelection(encoded: reminderSources).selected.isEmpty || !TaskSourceSelection(encoded: eventSources).selected.isEmpty
     }
 
     private func nativeSourceChooser(_ request: TaskSourceChooserRequest) -> some View {
@@ -535,7 +552,7 @@ private struct TaskSourcePermission: View {
     let loading: Bool
     let request: () -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: YimaDesign.Space.sm) {
             if authorization == .restricted {
                 Text(isCalendar ? "系统限制了日历访问，请检查设备的访问限制。" : "系统限制了提醒事项访问，请检查设备的访问限制。")
             } else if authorization == .notDetermined {
@@ -544,12 +561,13 @@ private struct TaskSourcePermission: View {
                 Text(isCalendar ? "日历访问已关闭，请在系统设置中允许访问。" : "提醒事项访问已关闭，请在系统设置中允许访问。")
             }
             if authorization == .notDetermined || (isCalendar && authorization == .writeOnly) {
-                Button(isCalendar ? "允许访问日历" : "允许访问提醒事项", action: request).disabled(loading).frame(minHeight: 44)
+                Button(isCalendar ? "允许访问日历" : "允许访问提醒事项", action: request).disabled(loading).frame(minHeight: YimaDesign.Layout.hitTarget)
             }
             if authorization != .notDetermined {
-                Link("打开系统设置", destination: URL(string: UIApplication.openSettingsURLString)!).tint(.blue).frame(minHeight: 44)
+                Link("打开系统设置", destination: URL(string: UIApplication.openSettingsURLString)!).tint(YimaDesign.Color.info).frame(minHeight: YimaDesign.Layout.hitTarget)
             }
-        }.font(.subheadline).foregroundStyle(.secondary).buttonStyle(.plain).padding(.vertical, 8)
+        }.font(YimaDesign.Typography.metadata).foregroundStyle(YimaDesign.Color.muted).buttonStyle(.plain)
+            .padding(.vertical, YimaDesign.Layout.rowPaddingY)
     }
 }
 
@@ -626,11 +644,11 @@ private struct TaskItemContent<Details: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.body.weight(.medium)).strikethrough(completed).foregroundStyle(.primary)
-            Text(source).font(.caption).foregroundStyle(.secondary)
-            details.font(.caption).foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        VStack(alignment: .leading, spacing: YimaDesign.Space.xs) {
+            Text(title).font(YimaDesign.Typography.itemTitle).strikethrough(completed).foregroundStyle(YimaDesign.Color.ink)
+            Text(source).font(YimaDesign.Typography.compactMetadata).foregroundStyle(YimaDesign.Color.muted)
+            details.font(YimaDesign.Typography.compactMetadata).foregroundStyle(YimaDesign.Color.muted)
+        }.frame(maxWidth: .infinity, minHeight: YimaDesign.Layout.hitTarget, alignment: .leading)
     }
 }
 
@@ -639,12 +657,12 @@ private struct TaskEventRow: View {
     let open: () -> Void
     var body: some View {
         Button(action: open) {
-            HStack {
-                Image(systemName: "calendar").frame(width: 44, height: 44).accessibilityHidden(true)
+            HStack(spacing: YimaDesign.Space.md) {
+                Image(systemName: "calendar").frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget).accessibilityHidden(true)
                 TaskItemContent(title: event.title.isEmpty ? AppLocalized("未命名日程") : event.title, source: event.source) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: YimaDesign.Space.sm) {
                         Text(event.start, format: .dateTime.year().month().day())
-                        Spacer(minLength: 8)
+                        Spacer(minLength: YimaDesign.Space.sm)
                         if event.allDay {
                             Text("全天")
                         } else {
@@ -660,7 +678,8 @@ private struct TaskEventRow: View {
                         Text(location)
                     }
                 }
-            }.foregroundStyle(.primary).contentShape(Rectangle())
+            }.foregroundStyle(YimaDesign.Color.ink).padding(.vertical, YimaDesign.Layout.rowPaddingY)
+                .frame(minHeight: YimaDesign.Layout.rowMinHeight).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityHint("查看日程详情")
     }
 }
@@ -774,21 +793,21 @@ private struct SystemReminderRow: View {
         HStack {
             Button { Task { await model.toggle(item) } } label: {
                 Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .frame(width: 44, height: 44)
+                    .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
             }
             .buttonStyle(.plain)
             .disabled(!writable || busy)
             .accessibilityLabel(action)
             Button { edit(item) } label: {
                 TaskItemContent(title: item.title ?? AppLocalized("未命名待办"), source: item.calendar.title, completed: item.isCompleted) {
-                    if item.isCompleted { Text("已完成").font(.caption).foregroundStyle(.secondary) }
-                    if !writable { Text("只读列表").font(.caption).foregroundStyle(.secondary) }
+                    if item.isCompleted { Text("已完成").font(YimaDesign.Typography.compactMetadata).foregroundStyle(YimaDesign.Color.muted) }
+                    if !writable { Text("只读列表").font(YimaDesign.Typography.compactMetadata).foregroundStyle(YimaDesign.Color.muted) }
                     if let components = item.dueDateComponents, let due = ReminderDateEditing.date(from: components) {
                         Text(due, format: components.hour == nil ? .dateTime.year().month().day() : .dateTime.year().month().day().hour().minute())
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(YimaDesign.Typography.compactMetadata).foregroundStyle(YimaDesign.Color.muted)
                             .environment(\.timeZone, components.timeZone ?? .current)
                     }
-                    if busy { Text("正在更新…").font(.caption).foregroundStyle(.secondary) }
+                    if busy { Text("正在更新…").font(YimaDesign.Typography.compactMetadata).foregroundStyle(YimaDesign.Color.muted) }
                 }
             }
             .buttonStyle(.plain)
