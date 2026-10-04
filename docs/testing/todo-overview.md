@@ -97,3 +97,28 @@ xcrun swiftc -module-cache-path /tmp/yima-swift-module-cache Integration/App/Sys
 修复版设备目标签名编译成功，应用及四扩展签名／设备授权检查通过，已增量安装至同一真机的 `YiJie.speech-note.dev`。命令行启动被锁屏策略拒绝，改由已连接的 iPhone 镜像搜索并打开 `Yima Dev`，没有修改系统权限。启动后直接识别已有日历授权：月／周视图显示绿色日程点，2026-10-02 当天显示 2 项真实全天日程；全部页展示今天与未来日程，筛选面板展示来自 iCloud、Outlook、订阅日历等的来源。返回首页和应用返回前台后，当天 2 项日程仍显示。未创建、编辑或删除系统日程。
 
 本机证据：`build/todo-calendar-access-fix-build.log`（`BUILD SUCCEEDED`）、`build/todo-calendar-access-fix-signing-audit.json`、`build/todo-calendar-access-fix-install.json`、`build/todo-calendar-access-fix-launch.json`（记录锁屏启动拒绝，不能作成功启动证据）、`build/todo-calendar-access-fix-processes.json`。成功启动和数据展示证据为本会话的 iPhone 镜像截图。此次真机验证的是已有授权后的加载恢复；未重置隐私权限来重新触发首次授权弹窗，首次授权、拒绝和撤销的真机组合仍未完整验收。
+
+## 2026-10-04：reset 到 d8344f2，仅接入 EventKitUI
+
+撤回官方 UICalendarView 以及相关翻月性能试用，执行 git reset --hard d8344f2 后，仅重新接入原生日程详情／编辑及来源选择。TaskCalendarView.swift 与基线一致；月／周折叠、双标记、“今天”、既有日期手势、统一事项列表及持久筛选保持基线实现。当前日程详情不再采用此前的只读 SwiftUI 详情页。
+
+EKEventViewController 按来源和具体发生时间重新查询所选日程，防止打开同系列的其他发生日期；允许系统编辑，订阅／只读限制及重复日程编辑范围交由系统。关闭后刷新首页、全部页及标记。EKCalendarChooser 分别支持日历和提醒事项列表的多选：完成保存全局偏好，取消或划掉不保存。权限撤销及事项失效显示不可用界面。
+
+主机回归：保留基线日历／周历／筛选／日期跳转测试；新增发生标识区分和原生来源保存的空选择、新来源主动取消、失效来源及序列化检查。无需访问真实系统事项。iPhoneOS 构建与安装不替代真机交互验收，不使用模拟器。
+
+真机待验收：
+
+1. 自绘月历与周历切换、左右翻页、顶部“今天”、双标记和已保存筛选保持原体验。
+2. 从首页和全部页分别打开日程，检查所选重复日程的发生日期；用专用测试日程验证编辑保存／取消、只读限制和系统重复范围选择，关闭后两页及标记更新。
+3. 两页分别选择日历及待办来源，完成后同步，取消／划掉保持原值；全部取消、新出现来源主动取消后刷新、重开 App 都保留选择。
+4. 权限撤销、外部删除、深浅色、大字号、VoiceOver 和录音过程中打开原生 Sheet；二级页面保持主 Tab 隐藏。
+
+本轮 iPhoneOS 签名构建、两组主机回归及融合装配检查通过；中英／简繁查看编辑权限说明和新增界面词条覆盖检查通过。已安装并回读 scottxz 的 Yima Dev 1.0 (7)，回执路径一致，正式版安装元信息相同。没有启动 App、代为操作真实日程或使用模拟器。证据：本机 build/recording-ai-actions-device/eventkit-only-{build.log,rules-test.log,access-test.log,assembly.json,install.json,deployment.json}。HEAD 保持 d8344f2，EventKitUI 改动留在工作树供验收。
+
+## 2026-10-04：待办卡片仅显示到期日期
+
+首页与全部页共用的 SystemReminderRow 移除提醒日期／铃铛行，只展示到期日期及已设置的到期时间。没有到期日期时不显示日期，不使用提醒日期替代。静态核对确认 ReminderEditor 及提醒保存逻辑与 d8344f2 一致；iPhoneOS 开发版构建通过。此处仅改展示，没有改动实际系统通知设置。
+
+真机待测：同时设置到期与提醒的待办，两页都只显示到期；只有提醒、没有到期的待办不显示日期。进入编辑页确认定时提醒仍可查看和调整。
+
+已安装并回读 scottxz 的 Yima Dev 1.0 (7)，回执一致，正式版安装元信息相同；未代为启动 App。记录：本机 build/recording-ai-actions-device/reminder-due-only-{build.log,install.json,deployment.json}。

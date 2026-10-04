@@ -1,5 +1,6 @@
 import SwiftUI
 import EventKit
+import EventKitUI
 
 @MainActor
 final class SystemRemindersModel: ObservableObject {
@@ -128,6 +129,7 @@ struct SystemRemindersView: View {
     @State private var showAll = false
     @State private var filtersOpen = false
     @State private var homeFiltersOpen = false
+    @State private var sourceChooser: TaskSourceChooserRequest?
     @State private var sourceNotice = false
     @State private var dateJump: TaskDateJumpRequest?
     @State private var jumpTargetDate: Date?
@@ -194,12 +196,13 @@ struct SystemRemindersView: View {
                         List { sourceFilters }
                             .navigationTitle("筛选提醒").navigationBarTitleDisplayMode(.inline)
                             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { homeFiltersOpen = false } } }
+                            .sheet(item: $sourceChooser, onDismiss: { Task { await refresh() } }) { nativeSourceChooser($0) }
                     }
                 }
                 .sheet(item: $editor) { item in
                     ReminderEditor(model: model, existing: item.reminder, preferredCalendarID: nil, suggestedDate: item.suggestedDate)
                 }
-                .sheet(item: $eventDetail) { event in TaskEventDetail(event: event) }
+                .sheet(item: $eventDetail, onDismiss: { Task { await refresh() } }) { event in TaskEventDetail(event: event) }
                 .confirmationDialog("删除此系统提醒事项？", isPresented: Binding(
                     get: { deleteCandidate != nil }, set: { if !$0 { deleteCandidate = nil } }
                 ), titleVisibility: .visible) {
@@ -417,6 +420,7 @@ struct SystemRemindersView: View {
                 }
             }
             .refreshable { await refresh() }
+            .sheet(item: $sourceChooser, onDismiss: { Task { await refresh() } }) { nativeSourceChooser($0) }
             .sheet(item: $dateJump, onDismiss: {
                 guard let target = jumpTargetDate else { return }
                 jumpTargetDate = nil
@@ -437,35 +441,25 @@ struct SystemRemindersView: View {
             Section("日历列表") {
                 calendarStatus
                 if calendarReady && calendarModel.sources.isEmpty { quietText("没有可读取的日历列表。") }
-                ForEach(calendarModel.sources) { source in
-                    sourceToggle(id: source.id, title: source.title, account: source.account, isCalendar: true)
-                }
+                Button("选择日历列表") { sourceChooser = .events }.disabled(!calendarReady)
             }
             Section("待办列表") {
                 reminderStatus
                 if reminderReady && model.calendars.isEmpty { quietText("没有可读取的待办列表。") }
-                ForEach(model.calendars, id: \.calendarIdentifier) { source in
-                    sourceToggle(id: source.calendarIdentifier, title: source.title, account: source.source.title, isCalendar: false)
-                }
+                Button("选择待办列表") { sourceChooser = .reminders }.disabled(!reminderReady)
                 Toggle("显示已完成待办", isOn: $showCompleted).tint(.primary)
             }
         }
     }
 
-    private func sourceToggle(id: String, title: String, account: String, isCalendar: Bool) -> some View {
-        let selection = TaskSourceSelection(encoded: isCalendar ? eventSources : reminderSources)
-        return Button {
-            var value = selection; value.toggle(id)
-            if isCalendar { eventSources = value.encoded } else { reminderSources = value.encoded }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: selection.selected.contains(id) ? "checkmark.square.fill" : "square").frame(width: 24)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).foregroundStyle(.primary)
-                    Text(account).font(.caption).foregroundStyle(.secondary)
-                }
-            }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        }.buttonStyle(.plain).accessibilityValue(selection.selected.contains(id) ? "已选择" : "未选择")
+    private func nativeSourceChooser(_ request: TaskSourceChooserRequest) -> some View {
+        NativeTaskSourceChooser(request: request,
+            selectedIDs: TaskSourceSelection(encoded: request == .events ? eventSources : reminderSources).selected
+        ) { ids, available in
+            var selection = TaskSourceSelection(encoded: request == .events ? eventSources : reminderSources)
+            selection.applySelection(ids, available: available)
+            if request == .events { eventSources = selection.encoded } else { reminderSources = selection.encoded }
+        }
     }
 
     private struct Entry: Identifiable {
@@ -671,25 +665,99 @@ private struct TaskEventRow: View {
     }
 }
 
-private struct TaskEventDetail: View {
+private enum TaskSourceChooserRequest: String, Identifiable {
+    case events, reminders
+    var id: String { rawValue }
+    var entity: EKEntityType { self == .events ? .event : .reminder }
+}
+
+private class NativeTaskSheetCoordinator: NSObject {
+    var store: EKEventStore?
+    let dismiss: () -> Void
+    init(dismiss: @escaping () -> Void) { self.dismiss = dismiss }
+    @objc func close() { dismiss() }
+}
+
+private func unavailableTaskNavigation(_ coordinator: NativeTaskSheetCoordinator) -> UINavigationController {
+    let content = UIHostingController(rootView: ContentUnavailableView("日历内容暂不可用", systemImage: "calendar.badge.exclamationmark",
+        description: Text("请返回后刷新，并检查日历或提醒事项的访问权限。")))
+    content.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { _ in coordinator.close() })
+    return UINavigationController(rootViewController: content)
+}
+
+private struct TaskEventDetail: UIViewControllerRepresentable {
     let event: TaskCalendarEvent
     @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Text(event.title.isEmpty ? AppLocalized("未命名日程") : event.title).font(.title3.weight(.semibold))
-                    Text(event.source).foregroundStyle(.secondary)
-                    if event.allDay { Text("全天") }
-                    LabeledContent("开始") { Text(event.start, format: .dateTime.year().month().day().hour().minute()) }
-                    LabeledContent(event.allDay ? "结束（不含）" : "结束") { Text(event.end, format: .dateTime.year().month().day().hour().minute()) }
-                }
-                if let location = event.location, !location.isEmpty { Section("地点") { Text(location) } }
-                if let notes = event.notes, !notes.isEmpty { Section("备注") { Text(notes).textSelection(.enabled) } }
-                Text("日程为只读展示，请在系统日历中编辑。").font(.subheadline).foregroundStyle(.secondary)
-            }.navigationTitle("日程详情").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { dismiss() } } }
+
+    func makeCoordinator() -> Coordinator { Coordinator(dismiss: { dismiss() }) }
+
+    func makeUIViewController(context: Context) -> UINavigationController {
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return unavailableTaskNavigation(context.coordinator) }
+        let store = EKEventStore()
+        context.coordinator.store = store
+        guard let source = store.calendars(for: .event).first(where: { $0.calendarIdentifier == event.sourceID }) else {
+            return unavailableTaskNavigation(context.coordinator)
         }
+        let day = Calendar.current.dateInterval(of: .day, for: event.start)!
+        let predicate = store.predicateForEvents(withStart: day.start, end: day.end, calendars: [source])
+        // Resolve the selected occurrence in this UI's store, rather than editing a different repeat.
+        guard let current = store.events(matching: predicate).first(where: {
+            TaskCalendarEvent.occurrenceID(calendarItemID: $0.calendarItemIdentifier, start: $0.startDate) == event.id
+        }), EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+            return unavailableTaskNavigation(context.coordinator)
+        }
+        let controller = EKEventViewController()
+        controller.event = current
+        controller.allowsEditing = true
+        controller.allowsCalendarPreview = true
+        controller.delegate = context.coordinator
+        controller.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { _ in context.coordinator.close() })
+        return UINavigationController(rootViewController: controller)
+    }
+
+    func updateUIViewController(_ controller: UINavigationController, context: Context) {}
+
+    final class Coordinator: NativeTaskSheetCoordinator, EKEventViewDelegate {
+        func eventViewController(_ controller: EKEventViewController, didCompleteWith action: EKEventViewAction) { close() }
+    }
+}
+
+private struct NativeTaskSourceChooser: UIViewControllerRepresentable {
+    let request: TaskSourceChooserRequest
+    let selectedIDs: Set<String>
+    let onSelect: (Set<String>, Set<String>) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIViewController(context: Context) -> UINavigationController {
+        guard EKEventStore.authorizationStatus(for: request.entity) == .fullAccess else { return unavailableTaskNavigation(context.coordinator) }
+        let store = EKEventStore()
+        context.coordinator.store = store
+        let controller = EKCalendarChooser(selectionStyle: .multiple, displayStyle: .allCalendars, entityType: request.entity, eventStore: store)
+        controller.selectedCalendars = Set(store.calendars(for: request.entity).filter { selectedIDs.contains($0.calendarIdentifier) })
+        controller.showsDoneButton = true
+        controller.showsCancelButton = true
+        controller.delegate = context.coordinator
+        return UINavigationController(rootViewController: controller)
+    }
+
+    func updateUIViewController(_ controller: UINavigationController, context: Context) {}
+
+    final class Coordinator: NativeTaskSheetCoordinator, EKCalendarChooserDelegate {
+        let parent: NativeTaskSourceChooser
+        init(_ parent: NativeTaskSourceChooser) {
+            self.parent = parent
+            super.init(dismiss: { parent.dismiss() })
+        }
+        func calendarChooserDidFinish(_ calendarChooser: EKCalendarChooser) {
+            if EKEventStore.authorizationStatus(for: parent.request.entity) == .fullAccess, let store {
+                let available = Set(store.calendars(for: parent.request.entity).map(\.calendarIdentifier))
+                parent.onSelect(Set(calendarChooser.selectedCalendars.map(\.calendarIdentifier)), available)
+            }
+            close()
+        }
+        func calendarChooserDidCancel(_ calendarChooser: EKCalendarChooser) { close() }
     }
 }
 
@@ -719,10 +787,6 @@ private struct SystemReminderRow: View {
                         Text(due, format: components.hour == nil ? .dateTime.year().month().day() : .dateTime.year().month().day().hour().minute())
                             .font(.caption).foregroundStyle(.secondary)
                             .environment(\.timeZone, components.timeZone ?? .current)
-                    }
-                    if let alarm = item.alarms?.first?.absoluteDate {
-                        Label { Text(alarm, format: .dateTime.month().day().hour().minute()) } icon: { Image(systemName: "bell") }
-                            .font(.caption).foregroundStyle(.secondary)
                     }
                     if busy { Text("正在更新…").font(.caption).foregroundStyle(.secondary) }
                 }

@@ -37,6 +37,9 @@ private final class PermissionDialog {
 struct CalendarAccessTests {
     @MainActor static func main() async {
         let interval = DateInterval(start: Date(timeIntervalSinceReferenceDate: 0), duration: 86400)
+        let firstOccurrence = TaskCalendarEvent.occurrenceID(calendarItemID: "repeat", start: interval.start)
+        precondition(firstOccurrence != TaskCalendarEvent.occurrenceID(calendarItemID: "repeat", start: interval.end), "Different repeats cannot open the same native detail")
+        precondition(firstOccurrence != TaskCalendarEvent.occurrenceID(calendarItemID: "other", start: interval.start), "Different items at the same time remain distinct")
         let auth = Authorization(), reader = Reader(), dialog = PermissionDialog()
         let model = SystemCalendarModel(reader: reader, accessRequest: { await dialog.request() }, authorizationStatus: { auth.get() })
         precondition(model.loading)

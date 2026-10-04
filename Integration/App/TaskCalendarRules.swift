@@ -96,6 +96,11 @@ struct TaskSourceSelection: Codable, Equatable {
         selected.contains(sourceID) && (showCompleted || !completed || recentlyCompleted)
     }
 
+    mutating func applySelection(_ ids: Set<String>, available: Set<String>) {
+        known.formUnion(available)
+        selected = ids.intersection(available)
+    }
+
     var encoded: String { String(data: try! JSONEncoder().encode(self), encoding: .utf8)! }
     init(encoded: String) { self = (try? JSONDecoder().decode(Self.self, from: Data(encoded.utf8))) ?? Self() }
     init() {}

@@ -96,6 +96,15 @@ struct TaskCalendarTests {
         preferences.set(emptySelection.encoded, forKey: "yima.tasks.reminderSources")
         precondition(TaskSourceSelection(encoded: reopened.string(forKey: "yima.tasks.reminderSources")!).selected.isEmpty,
                      "Persisting no sources must not reset to all sources")
+        var nativeSelection = TaskSourceSelection()
+        nativeSelection.reconcile(["A"])
+        nativeSelection.applySelection([], available: ["A", "new-source"])
+        precondition(nativeSelection.selected.isEmpty)
+        precondition(!nativeSelection.reconcile(["A", "new-source"]) && nativeSelection.selected.isEmpty,
+                     "Done with no sources must stay empty, including newly seen lists")
+        nativeSelection.applySelection(["A", "removed"], available: ["A", "new-source"])
+        precondition(nativeSelection.selected == ["A"], "Cannot save sources removed while the chooser was open")
+        precondition(TaskSourceSelection(encoded: nativeSelection.encoded) == nativeSelection)
         print("Task calendar regressions passed: local grouping, grids/paging, event boundaries, populated-date wheels, leap-year/filter reconciliation, DST, source persistence/removal/independence")
     }
 }

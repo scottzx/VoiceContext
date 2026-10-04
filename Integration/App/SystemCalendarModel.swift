@@ -17,6 +17,10 @@ struct TaskCalendarEvent: Identifiable, Sendable {
     let allDay: Bool
     let location: String?
     let notes: String?
+
+    static func occurrenceID(calendarItemID: String, start: Date) -> String {
+        calendarItemID + ":" + String(start.timeIntervalSinceReferenceDate)
+    }
 }
 
 struct SystemCalendarSnapshot: Sendable {
@@ -54,7 +58,7 @@ private actor SystemCalendarReader: SystemCalendarReading {
                 let end = min(Calendar.current.date(byAdding: .year, value: 1, to: start)!, interval.end)
                 let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
                 for event in store.events(matching: predicate) {
-                    let id = event.calendarItemIdentifier + ":" + String(event.startDate.timeIntervalSinceReferenceDate)
+                    let id = TaskCalendarEvent.occurrenceID(calendarItemID: event.calendarItemIdentifier, start: event.startDate)
                     result[id] = TaskCalendarEvent(id: id, title: event.title ?? "", sourceID: event.calendar.calendarIdentifier,
                         source: event.calendar.title, start: event.startDate, end: event.endDate, allDay: event.isAllDay,
                         location: event.location, notes: event.notes)
