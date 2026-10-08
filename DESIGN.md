@@ -9,11 +9,13 @@ This file is the project-wide source of truth for visual and interaction design.
 
 Cross-page implementation guide: [Unified interface language and tokens](docs/design/interface-language.md) (2026-10-02) maps this approved direction to shared typography roles, spacing, component contracts, and a staged migration for Chat, Meetings, and Tasks. It includes the current implementation audit and pending work; it does not imply that the code or runtime acceptance is complete.
 
+Calendar and reminder ownership update (2026-10-06, explicit product-owner request): [Yima-owned calendar, reminders, and meeting links](docs/design/yima-owned-calendar-reminders.md) replaces the system-only source restriction for Yima items. The local-first scope and one calendar event per meeting are confirmed; synchronization direction and implementation details remain under review.
+
 ## Product Context
 
 - **Name:** 一芥伙伴 (Chinese), Yima (English).
 - **Positioning:** Your personal assistant on your phone — Personal Agent.
-- **What this is:** An iPhone personal agent combining chat, reliable recording, meetings, system reminders, shell, Skills, and browser tools. It captures a personal thought, a conversation, or a meeting as one `Recording`, then connects open Markdown/JSON context with chat and agent execution. Recording reliability remains the priority.
+- **What this is:** An iPhone personal agent combining chat, reliable recording, meetings, Yima-owned calendar and reminders with optional system integration, shell, Skills, and browser tools. Recordings capture personal thoughts and conversations; each meeting has one calendar event and can link recording evidence. Open Markdown/JSON context connects them with chat and agent execution. Recording reliability remains the priority.
 - **Who it is for:** Privacy-conscious Apple users who value reliable recording, local processing, open documents, and one-time purchase over cloud AI spectacle or subscriptions.
 - **Product type:** Native iOS personal assistant (Personal Agent).
 - **Core promise:** The user's recording is private, understandable, recoverable, and under their control.
@@ -34,7 +36,7 @@ Cross-page implementation guide: [Unified interface language and tokens](docs/de
 3. **One dominant action.** The red recording control is the only persistent high-saturation visual anchor.
 4. **Native before novel.** Prefer familiar iOS navigation, lists, sheets, controls, typography, materials, and haptics.
 5. **State must be honest.** Text and iconography must distinguish recording, paused, processing, interrupted, failed, locked, and complete states. Color is never the only signal.
-6. **Personal and professional share one language.** A personal thought and a formal meeting use the same Recording hierarchy; metadata changes, not the visual identity.
+6. **Personal and professional share one language.** Personal recordings and meeting evidence use the same Recording hierarchy and visual language. A meeting also has its own calendar event, shown consistently in Meetings and Reminders.
 7. **Whitespace is functional.** Space separates ideas and creates focus. Do not fill empty areas with decorative panels, illustrations, or promotional copy.
 
 ## Typography
@@ -119,7 +121,8 @@ Use regular, medium/semibold, and bold intentionally. If most text is bold, hier
 
 - **Approach:** Grid-disciplined, single-column iPhone layout.
 - **Navigation:** `NavigationStack`, native sheets, and value-based destinations.
-- **Integration navigation (approved 2026-09-29, label updated 2026-10-04):** Four tabs in order: 聊天, 会议, 提醒, 拓展. Chat reuses the full phone agent capabilities; Meetings hosts the recording workspace; Reminders uses system Reminders and Calendar; Extensions contains 我的 and settings. See `docs/design/personal-agent-integration.md` for confirmed scope and remaining page details.
+- **Integration navigation (approved 2026-09-29, label updated 2026-10-04, source scope updated 2026-10-06):** Four tabs in order: 聊天, 会议, 提醒, 拓展. Chat reuses the full phone agent capabilities; Meetings hosts meeting context and the recording workspace; Reminders shows Yima-owned items and authorized system Reminders/Calendar sources; Extensions contains 我的 and settings. See `docs/design/personal-agent-integration.md` for integration history and `docs/design/yima-owned-calendar-reminders.md` for the current source scope.
+- **Yima lists and meeting events (approved 2026-10-06):** Provide Yima日历 and Yima待办 as local sources even when system access is denied. Optional system integration binds dedicated system lists; display the bound source and items once in the app. Each meeting has one Yima event, reachable from both Meetings and the schedule area in Reminders; action tasks remain separate. Unknown dates stay in an unscheduled area. Keep local creation/editing available independently of EventKit permission. Local rows use native Forms; EventKitUI remains for system objects. Preserve flat rows, shared filters, and the approved calendar dots. Synchronization direction is pending user feedback.
 - **Shared tab layout and preferences (2026-09-29):** Match Chat and Meetings with inline navigation titles, flat lists, system canvas backgrounds, and neutral navigation icons on Tasks and Extensions. Extensions offers one Settings entry; language and appearance are app-wide. Recording-specific preferences remain a subsection. Do not show an Agent-list shortcut in Extensions.
 - **Tab visibility (2026-10-03):** Show the main tab bar only on the four root pages. Hide it on all secondary and deeper pages, including recording details and tools; restore it with the return transition. Keep recording and playback controls available in their own pages. Sheets use native modal presentation.
 - **Task rows and date navigation (2026-10-04):** Calendar events share reminder row typography, source placement, leading icon width, and spacing. Their date is on the left and time range or All Day on the right of one metadata row; location is plain text without an icon. All Items groups visible items by date; tapping a date opens native year/month/day wheels that offer only populated dates under the current source/completion filters. Undated reminders remain in an Unscheduled section. Date selection jumps within the list.
@@ -258,3 +261,4 @@ Do not apply border, fill, radius, and shadow to the same element by default. Ca
 | 2026-10-04 | Reset to d8344f2 and integrate EventKitUI without the official month calendar | Explicit product-owner request; retain the established custom month/week calendar and saved filters, while using native event editing and source selection |
 | 2026-10-02 | Consolidate Chat, Meetings, and Tasks with shared semantic typography, spacing, colors, and 44 pt targets | Explicit product-owner approval of the cross-page token guide; preserve existing font preferences and each content type's structure |
 | 2026-10-02 | Move global settings and terminal/browser navigation from the chat list to Extensions; keep conversation controls in the conversation | Explicit product-owner confirmation; make Chat focus on search, creating, and managing conversations while Extensions provides grouped capabilities and one Settings entry |
+| 2026-10-06 | Add Yima-owned calendar and reminder lists, optional system integration, and one event per meeting visible in Meetings and Reminders | Explicit product-owner request; basic use must work without system access. Supersedes the 2026-09-29 system-only authority rule for Yima-owned items; synchronization direction remains pending |

@@ -4339,6 +4339,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>A3E840EFBADA576CFFFB0FA4</string>
 				<string>06A1E86753823D237F900C78</string>
 				<string>67219CDA90C1B3815C0214D5</string>
+				<string>55C02780D3B769DF7C97EEA1</string>
 				<string>57BC00116124A502E1B10BF5</string>
 				<string>55120B7E6F16D89B95383382</string>
 				<string>BA060F0741D894D4C2D816EC</string>
@@ -4362,6 +4363,10 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>7954FC7013FEC5D24ECA0D1E</string>
 				<string>FC2077F47DF662865D8A2C9C</string>
 				<string>2AF58B5C2A7C1D37580C3D08</string>
+				<string>6399D8CBC49AC2BCCA27B000</string>
+				<string>D8C17318F6F238A391802232</string>
+				<string>4BAD8119BC3975B07310C63F</string>
+				<string>C62BFC28E738B5BF34424F74</string>
 				<string>466E718AAB8A589451CEB5E4</string>
 				<string>2D871345D1E38ACF991C91FF</string>
 				<string>639730705DEFB91B1B15ABA5</string>
@@ -4378,7 +4383,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>06225E73CA3E73A7A5A24CEF</string>
 				<string>62236324E7462917E9990755</string>
 				<string>28567AAFE75900F1D57A2135</string>
-				<string>60DBBEC13F584AF4AFB11F9F</string>
 			</array>
 		</dict>
 		<key>BKP000215</key>
@@ -8028,6 +8032,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>2EBE2250C94A8190EBE26795</string>
 				<string>1056456F0DB469C3B428CC83</string>
 				<string>107D84F45B286EA326550DBA</string>
+				<string>ACE9966574ED92EA596258E8</string>
+				<string>767A0376611825FA7F285724</string>
+				<string>D70C81B406EA46E7C9E4A257</string>
+				<string>ADA9100410EF92013EF33BA6</string>
 				<string>44FA46CCE0322629D0CB3BE4</string>
 				<string>64FB247A0ACBBD00E802B814</string>
 			</array>
@@ -17130,6 +17138,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>B4E0E2190C3B8F200AC4F6CD</string>
 				<string>6A3667DA0B1B701550D97FF5</string>
 				<string>FF2D6524C78F4806B60FDC80</string>
+				<string>3ADB34D5B203507C5195A988</string>
 				<string>0F2D787A2CF260B2D4BC367F</string>
 				<string>17A1C6428DDA9E5684638F2E</string>
 				<string>47E16B6A8BC9B47DC3EAC675</string>
@@ -17142,7 +17151,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>2A45E1AB97FE5823722A53E3</string>
 				<string>9B8D79BE197770B81554AC43</string>
 				<string>1A204D3FD4BF8596AAFC7F56</string>
-				<string>DA86E2938284C92084D55AF1</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
@@ -19045,6 +19053,24 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>67219CDA90C1B3815C0214D5</string>
 		</dict>
+		<key>55C02780D3B769DF7C97EEA1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../speech_note/speech_note/Features/Transcription/TranscriptionRetryPreflight.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>3ADB34D5B203507C5195A988</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>55C02780D3B769DF7C97EEA1</string>
+		</dict>
 		<key>57BC00116124A502E1B10BF5</key>
 		<dict>
 			<key>isa</key>
@@ -19458,6 +19484,78 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>2AF58B5C2A7C1D37580C3D08</string>
+		</dict>
+		<key>6399D8CBC49AC2BCCA27B000</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/YimaItemViews.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>ACE9966574ED92EA596258E8</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>6399D8CBC49AC2BCCA27B000</string>
+		</dict>
+		<key>D8C17318F6F238A391802232</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/YimaItemsAgentTool.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>767A0376611825FA7F285724</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>D8C17318F6F238A391802232</string>
+		</dict>
+		<key>4BAD8119BC3975B07310C63F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/YimaItemsRepository.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>D70C81B406EA46E7C9E4A257</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>4BAD8119BC3975B07310C63F</string>
+		</dict>
+		<key>C62BFC28E738B5BF34424F74</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/YimaItemsStore.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>ADA9100410EF92013EF33BA6</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C62BFC28E738B5BF34424F74</string>
 		</dict>
 		<key>44FA46CCE0322629D0CB3BE4</key>
 		<dict>
@@ -20472,24 +20570,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>Launch Screen.storyboard</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
-		</dict>
-		<key>60DBBEC13F584AF4AFB11F9F</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>path</key>
-			<string>../../../../speech_note/speech_note/Features/Transcription/TranscriptionRetryPreflight.swift</string>
-			<key>sourceTree</key>
-			<string>SOURCE_ROOT</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-		</dict>
-		<key>DA86E2938284C92084D55AF1</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>60DBBEC13F584AF4AFB11F9F</string>
 		</dict>
 	</dict>
 	<key>rootObject</key>

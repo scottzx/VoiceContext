@@ -92,7 +92,13 @@ final class SystemCalendarModel: ObservableObject {
     private let accessRequest: @MainActor () async throws -> Bool
     private let authorizationStatus: @Sendable () -> EKAuthorizationStatus
     private var generation = 0
+    private var requestedOverview: DateInterval?
+    private var requestedFuture: DateInterval?
     var authorized: Bool { authorization == .fullAccess }
+
+    func hasSnapshot(overview: DateInterval, future: DateInterval) -> Bool {
+        authorized && loadedOverview == overview && loadedFuture == future
+    }
 
     init(reader: any SystemCalendarReading = SystemCalendarReader(),
          accessRequest: @escaping @MainActor () async throws -> Bool = {
@@ -123,7 +129,13 @@ final class SystemCalendarModel: ObservableObject {
         }
     }
 
+    func loadIfNeeded(overview: DateInterval, future: DateInterval) async {
+        guard requestedOverview != overview || requestedFuture != future else { return }
+        await refresh(overview: overview, future: future)
+    }
+
     func refresh(overview: DateInterval, future: DateInterval) async {
+        requestedOverview = overview; requestedFuture = future
         generation += 1
         let current = generation
         authorization = authorizationStatus()

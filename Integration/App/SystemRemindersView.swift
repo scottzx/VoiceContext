@@ -8,6 +8,7 @@ final class SystemRemindersModel: ObservableObject {
     @Published private(set) var reminders: [EKReminder] = []
     @Published private(set) var calendars: [EKCalendar] = []
     @Published private(set) var loading = true
+    @Published private(set) var hasSnapshot = false
     @Published private(set) var authorization = EKEventStore.authorizationStatus(for: .reminder)
     @Published private(set) var readError: String?
     @Published private(set) var busyIDs: Set<String> = []
@@ -15,6 +16,7 @@ final class SystemRemindersModel: ObservableObject {
     @Published var error: String?
     private var generation = 0
     private var requestingAccess = false
+    private var didLoad = false
     var authorized: Bool { authorization == .fullAccess }
     var writable: [EKCalendar] { calendars.filter(\.allowsContentModifications) }
 
@@ -29,26 +31,32 @@ final class SystemRemindersModel: ObservableObject {
         await refresh()
     }
 
+    func loadIfNeeded() async {
+        guard !didLoad else { return }
+        await refresh()
+    }
+
     func refresh() async {
+        didLoad = true
         generation += 1
         let current = generation
         authorization = EKEventStore.authorizationStatus(for: .reminder)
         guard authorized else {
-            reminders = []; calendars = []; loading = requestingAccess; readError = nil
+            reminders = []; calendars = []; hasSnapshot = false; loading = requestingAccess; readError = nil
             return
         }
         loading = true
         calendars = store.calendars(for: .reminder)
         // An empty calendar array is not passed to a predicate as 'all lists'.
-        if calendars.isEmpty { reminders = []; readError = nil; loading = false; return }
+        if calendars.isEmpty { reminders = []; hasSnapshot = true; readError = nil; loading = false; return }
         let predicate = store.predicateForReminders(in: calendars)
         let result: [EKReminder]? = await withCheckedContinuation { continuation in
             store.fetchReminders(matching: predicate) { continuation.resume(returning: $0) }
         }
         guard current == generation else { return }
-        loading = false
         authorization = EKEventStore.authorizationStatus(for: .reminder)
-        guard authorized else { reminders = []; calendars = []; readError = nil; return }
+        defer { loading = false }
+        guard authorized else { reminders = []; calendars = []; hasSnapshot = false; readError = nil; return }
         guard let result else { readError = AppLocalized("无法读取提醒事项，请重试。"); return }
         readError = nil
         reminders = result.sorted {
@@ -58,6 +66,7 @@ final class SystemRemindersModel: ObservableObject {
             if left != right { return left < right }
             return ($0.title ?? "").localizedStandardCompare($1.title ?? "") == .orderedAscending
         }
+        hasSnapshot = true
     }
 
     func editableReminder(id: String) throws -> EKReminder {
@@ -114,7 +123,11 @@ final class SystemRemindersModel: ObservableObject {
 }
 
 struct SystemRemindersView: View {
+    @Binding var openFilters: Bool
+    init(openFilters: Binding<Bool> = .constant(false)) { _openFilters = openFilters }
     @StateObject private var model = SystemRemindersModel()
+    @ObservedObject private var local = YimaItemsStore.shared
+    @State private var localEditor: YimaItemRequest?
     @StateObject private var calendarModel = SystemCalendarModel()
     @Environment(\.scenePhase) private var phase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -147,12 +160,31 @@ struct SystemRemindersView: View {
     private var futureInterval: DateInterval {
         DateInterval(start: calendar.startOfDay(for: today), end: futureEnd)
     }
-    private var reminderReady: Bool { model.authorized && !model.loading && model.readError == nil }
+    private var reminderReady: Bool { model.authorized && model.hasSnapshot }
     private var calendarReady: Bool {
-        calendarModel.authorized && !calendarModel.loading && calendarModel.readError == nil &&
-        calendarModel.loadedOverview == overviewInterval && calendarModel.loadedFuture == futureInterval
+        calendarModel.hasSnapshot(overview: overviewInterval, future: futureInterval)
     }
-    private var canAdd: Bool { reminderReady && !model.writable.isEmpty }
+    private var canAdd: Bool { local.available }
+    private var localTodos: [YimaTodo] {
+        let sources = TaskSourceSelection(encoded: reminderSources)
+        return local.state.todos.filter {
+            sources.includesReminder(sourceID: YimaItemsRepository.todoSourceID, completed: $0.completed,
+                                     showCompleted: showCompleted, recentlyCompleted: false)
+        }
+    }
+    private var localEvents: [YimaEvent] {
+        TaskSourceSelection(encoded: eventSources).selected.contains(YimaItemsRepository.calendarSourceID) ? local.state.events : []
+    }
+    private var dayLocalTodos: [YimaTodo] {
+        localTodos.filter { $0.due.map { calendar.isDate($0, inSameDayAs: selected) } ?? false }
+            .sorted { ($0.due ?? .distantFuture) < ($1.due ?? .distantFuture) }
+    }
+    private var dayLocalEvents: [YimaEvent] {
+        localEvents.filter {
+            guard let start = $0.start, let end = $0.end else { return false }
+            return TaskCalendarRules.intersects(start: start, end: end, day: selected)
+        }.sorted { ($0.start ?? .distantFuture) < ($1.start ?? .distantFuture) }
+    }
     private var visibleReminders: [EKReminder] {
         let sources = TaskSourceSelection(encoded: reminderSources)
         return model.reminders.filter {
@@ -178,6 +210,7 @@ struct SystemRemindersView: View {
         visibleOverviewEvents.filter { TaskCalendarRules.intersects(start: $0.start, end: $0.end, day: selected) }
     }
     private var overdueCount: Int {
+        localTodos.filter { !$0.completed && TaskCalendarRules.group(due: $0.due, today: today) == .overdue }.count +
         visibleReminders.filter { !$0.isCompleted && TaskCalendarRules.group(due: ReminderDateEditing.date(from: $0.dueDateComponents), today: today) == .overdue }.count
     }
 
@@ -185,6 +218,7 @@ struct SystemRemindersView: View {
         NavigationStack {
             home
                 .navigationTitle("提醒").navigationBarTitleDisplayMode(.inline)
+                .toolbar(.visible, for: .tabBar)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { homeFiltersOpen = true } label: { Image(systemName: "line.3.horizontal.decrease") }
@@ -193,6 +227,7 @@ struct SystemRemindersView: View {
                 }
                 .navigationDestination(isPresented: $showAll) { allItems }
                 .sheet(isPresented: $homeFiltersOpen) { sourceFilters }
+                .protectedYimaSheet(item: $localEditor, onDismiss: YimaItemSheet.didDismiss) { YimaItemSheet(store: local, request: $0) }
                 .sheet(item: $editor) { item in
                     ReminderEditor(model: model, existing: item.reminder, preferredCalendarID: nil, suggestedDate: item.suggestedDate)
                 }
@@ -209,9 +244,10 @@ struct SystemRemindersView: View {
                     Button("好", role: .cancel) { model.error = nil }
                 } message: { Text(model.error ?? "") }
         }
-        .toolbar(showAll ? .hidden : .visible, for: .tabBar)
-        .task { await model.refresh(); reconcileSources() }
-        .task(id: overviewInterval) { await refreshCalendar() }
+        .onAppear { presentRequestedFilters() }
+        .onChange(of: openFilters) { _, _ in presentRequestedFilters() }
+        .task { reconcileSources(); await model.loadIfNeeded(); reconcileSources() }
+        .task(id: overviewInterval) { await calendarModel.loadIfNeeded(overview: overviewInterval, future: futureInterval) }
         .onChange(of: phase) { _, value in if value == .active { Task { await refresh() } } }
         .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in Task { await refresh() } }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in Task { await refresh() } }
@@ -220,31 +256,40 @@ struct SystemRemindersView: View {
         .onChange(of: calendarModel.loading) { _, loading in if !loading { reconcileSources() } }
     }
 
+    private func presentRequestedFilters() {
+        guard openFilters else { return }
+        homeFiltersOpen = true; openFilters = false
+    }
+
     private var home: some View {
-        List {
-            TaskCalendarView(selected: $selected, month: $month, expanded: $expanded, counts: counts)
+        let counts = calendarCounts
+        return List {
+            TaskCalendarView(selected: $selected, month: $month, expanded: $expanded,
+                             counts: { counts[$0] ?? TaskDayCounts(reminders: 0, events: 0) })
                 .listRowInsets(EdgeInsets(top: YimaDesign.Space.md, leading: YimaDesign.Layout.pageInset, bottom: 0, trailing: YimaDesign.Layout.pageInset)).listRowSeparator(.hidden)
             ViewThatFits(in: .horizontal) {
                 HStack { dayHeading; Spacer(minLength: YimaDesign.Space.sm); sectionActions }
                 VStack(alignment: .leading, spacing: YimaDesign.Space.sm) { dayHeading; HStack { Spacer(); sectionActions } }
             }.listRowInsets(EdgeInsets(top: YimaDesign.Layout.sectionGap, leading: YimaDesign.Layout.pageInset, bottom: 0, trailing: YimaDesign.Layout.pageInset)).listRowSeparator(.hidden)
-            if !hasSelectedSources && (reminderReady || calendarReady) {
+            if let failure = local.failure { quietText(LocalizedStringKey(failure)) }
+            if !hasSelectedSources {
                 quietText("尚未选择列表，请在筛选中勾选要展示的日历或待办列表。")
             }
-            groupHeading("待办", count: reminderReady ? dayReminders.count : nil, top: YimaDesign.Layout.headingGap)
-            reminderStatus
+            groupHeading("待办", count: dayLocalTodos.count + (reminderReady ? dayReminders.count : 0), top: YimaDesign.Layout.headingGap)
+            ForEach(dayLocalTodos) { localTodoRow($0) }
+            if dayLocalTodos.isEmpty && (!reminderReady || dayReminders.isEmpty) { quietText("这天没有待办。") }
+            if model.authorized { reminderStatus }
             if reminderReady {
-                if dayReminders.isEmpty { quietText("这天没有待办。") }
                 ForEach(dayReminders, id: \.calendarItemIdentifier) { reminderRow($0) }
-                if model.writable.isEmpty { quietText("没有可写的提醒事项列表，请在系统提醒事项中创建列表。") }
             }
-            groupHeading("日程", count: calendarReady ? dayEvents.count : nil)
-            calendarStatus
+            groupHeading("日程", count: dayLocalEvents.count + (calendarReady ? dayEvents.count : 0))
+            ForEach(dayLocalEvents) { localEventRow($0) }
+            if dayLocalEvents.isEmpty && (!calendarReady || dayEvents.isEmpty) { quietText("这天没有日程。") }
+            if calendarModel.authorized { calendarStatus }
             if calendarReady {
-                if dayEvents.isEmpty { quietText("这天没有日程。") }
                 ForEach(dayEvents) { eventRow($0) }
             }
-            if reminderReady && overdueCount > 0 {
+            if overdueCount > 0 {
                 Text("\(overdueCount) 项逾期待办 · 在“全部”中查看")
                     .font(YimaDesign.Typography.compactMetadata).foregroundStyle(YimaDesign.Color.muted).listRowSeparator(.hidden)
             }
@@ -267,26 +312,44 @@ struct SystemRemindersView: View {
         HStack(spacing: YimaDesign.Space.xs) {
             Button { showAll = true } label: { HStack(spacing: YimaDesign.Space.xs) { Text("全部"); Image(systemName: "chevron.right").font(YimaDesign.Typography.compactMetadata) } }
                 .font(YimaDesign.Typography.metadata).frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget).accessibilityLabel("查看全部事项")
-            Button { editor = ReminderEditorItem(reminder: nil, suggestedDate: selected) } label: {
+            Menu {
+                Button("新增 Yima 待办") { localEditor = .new(.todo, date: selected) }
+                Button("新增 Yima 日程") { localEditor = .new(.event, date: selected) }
+                Button("新增会议安排") { localEditor = .new(.event, date: selected, asMeeting: true) }
+                if reminderReady && !model.writable.isEmpty {
+                    Button("新增系统待办") { editor = ReminderEditorItem(reminder: nil, suggestedDate: selected) }
+                }
+            } label: {
                 Image(systemName: "plus").font(YimaDesign.Typography.body.weight(.medium))
                     .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
                     .foregroundStyle(YimaDesign.Color.canvas)
                     .background(YimaDesign.Color.ink, in: RoundedRectangle(cornerRadius: YimaDesign.Radius.control))
-            }.disabled(!canAdd).opacity(canAdd ? 1 : 0.4).accessibilityLabel("新增待办事项")
-                .accessibilityHint(canAdd ? "预填所选日期，通知单独设置" : "允许提醒事项访问并选择可写列表后可新增")
+            }.disabled(!canAdd).accessibilityLabel("新增日程或待办")
         }.buttonStyle(.plain)
     }
 
-    private func counts(_ day: Date) -> TaskDayCounts {
-        let reminders = reminderReady ? visibleReminders.filter {
-            guard !$0.isCompleted, let due = ReminderDateEditing.date(from: $0.dueDateComponents) else { return false }
-            return calendar.isDate(due, inSameDayAs: day)
-        }.count : nil
-        let covered = calendarModel.loadedOverview.map { $0.start <= day && day < $0.end } ?? false
-        let events = calendarReady && covered ? visibleOverviewEvents.filter {
-            TaskCalendarRules.intersects(start: $0.start, end: $0.end, day: day)
-        }.count : nil
-        return TaskDayCounts(reminders: reminders, events: events)
+    private var calendarCounts: [Date: TaskDayCounts] {
+        var dueDates = localTodos.filter { !$0.completed }.compactMap(\.due)
+        if reminderReady {
+            dueDates += visibleReminders.filter { !$0.isCompleted }.compactMap {
+                ReminderDateEditing.date(from: $0.dueDateComponents)
+            }
+        }
+        var events = localEvents.compactMap { event -> DateInterval? in
+            guard let start = event.start, let end = event.end else { return nil }
+            return DateInterval(start: start, end: end)
+        }
+        if calendarReady { events += visibleOverviewEvents.map { DateInterval(start: $0.start, end: $0.end) } }
+        return TaskCalendarRules.dayCounts(days: days, dueDates: dueDates, events: events, calendar: calendar)
+    }
+
+    private func localTodoRow(_ item: YimaTodo) -> some View {
+        YimaTodoRow(store: local, todo: item) { localEditor = YimaItemRequest(id: item.id, kind: .todo) }
+            .listRowInsets(EdgeInsets(top: 0, leading: YimaDesign.Layout.pageInset, bottom: 0, trailing: YimaDesign.Layout.pageInset))
+    }
+    private func localEventRow(_ item: YimaEvent) -> some View {
+        YimaEventRow(event: item) { localEditor = YimaItemRequest(id: item.id, kind: .event) }
+            .listRowInsets(EdgeInsets(top: 0, leading: YimaDesign.Layout.pageInset, bottom: 0, trailing: YimaDesign.Layout.pageInset))
     }
 
     private func reminderRow(_ item: EKReminder) -> some View {
@@ -321,7 +384,7 @@ struct SystemRemindersView: View {
         if !model.authorized {
             TaskSourcePermission(isCalendar: false, authorization: model.authorization, loading: model.loading) { Task { await model.requestAccess() } }
                 .listRowSeparator(.hidden)
-        } else if model.loading { ProgressView("正在读取提醒事项…").listRowSeparator(.hidden) }
+        } else if model.loading && !reminderReady { ProgressView("正在读取提醒事项…").listRowSeparator(.hidden) }
         else if let error = model.readError {
             VStack(alignment: .leading, spacing: YimaDesign.Space.sm) {
                 Text(error).font(YimaDesign.Typography.metadata).foregroundStyle(YimaDesign.Color.muted)
@@ -336,7 +399,7 @@ struct SystemRemindersView: View {
                 Task { await calendarModel.requestAccess(overview: overviewInterval, future: futureInterval) }
             }.listRowSeparator(.hidden)
             if let error = calendarModel.readError { quietText(LocalizedStringKey(error)) }
-        } else if calendarModel.loading || (calendarModel.readError == nil && !calendarReady) {
+        } else if !calendarReady && (calendarModel.loading || calendarModel.readError == nil) {
             ProgressView("正在读取日历…").listRowSeparator(.hidden)
         }
         else if let error = calendarModel.readError {
@@ -354,20 +417,23 @@ struct SystemRemindersView: View {
         let unscheduled = entries.filter { $0.date == nil }
         return ScrollViewReader { proxy in
             List {
-                reminderStatus
-                calendarStatus
+                if model.authorized { reminderStatus }
+                if calendarModel.authorized { calendarStatus }
+                if let failure = local.failure { quietText(LocalizedStringKey(failure)) }
                 if sourceNotice {
                     VStack(alignment: .leading) {
                         Text("部分来源列表已不可用，已移除失效选择。其他筛选保持不变。").font(.subheadline).foregroundStyle(.secondary)
                         Button("知道了") { sourceNotice = false }.frame(minHeight: 44)
                     }.buttonStyle(.plain).listRowSeparator(.hidden)
                 }
-                if !hasSelectedSources && (reminderReady || calendarReady) {
+                if !hasSelectedSources {
                     quietText("尚未选择列表，请在筛选中勾选要展示的日历或待办列表。")
                 } else if hasSelectedSources {
                     ForEach(dateIndex.dates, id: \.self) { date in
                         Section {
                             ForEach(dated[date] ?? []) { entry in
+                                if let localTodo = entry.localTodo { localTodoRow(localTodo) }
+                                if let localEvent = entry.localEvent { localEventRow(localEvent) }
                                 if let reminder = entry.reminder { reminderRow(reminder) }
                                 if let event = entry.event { eventRow(event) }
                             }
@@ -387,11 +453,13 @@ struct SystemRemindersView: View {
                     if !unscheduled.isEmpty {
                         Section {
                             ForEach(unscheduled) { entry in
+                                if let localTodo = entry.localTodo { localTodoRow(localTodo) }
+                                if let localEvent = entry.localEvent { localEventRow(localEvent) }
                                 if let reminder = entry.reminder { reminderRow(reminder) }
                             }
                         } header: { groupHeading("未安排", count: unscheduled.count) }
                     }
-                    if entries.isEmpty && (reminderReady || calendarReady) {
+                    if entries.isEmpty {
                         quietText("当前已读取的所选列表没有事项。")
                     }
                     if calendarReady && !TaskSourceSelection(encoded: eventSources).selected.isEmpty {
@@ -411,6 +479,7 @@ struct SystemRemindersView: View {
             .listStyle(.plain).scrollContentBackground(.hidden)
             .background(Color(uiColor: .systemBackground))
             .navigationTitle("全部事项").navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .tabBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { filtersOpen = true } label: { Image(systemName: "line.3.horizontal.decrease") }
@@ -440,13 +509,15 @@ struct SystemRemindersView: View {
                     .padding(.top, YimaDesign.Space.md).padding(.bottom, YimaDesign.Space.sm)
                 List {
                     if filterIsCalendar {
-                        Section("日历列表") {
+                        Section("本地日历") { localSourceToggle(isCalendar: true) }
+                        Section("接入系统日历") {
                             calendarStatus
                             if calendarReady && calendarModel.sources.isEmpty { quietText("没有可读取的日历列表。") }
                             Button("选择日历列表") { sourceChooser = .events }.disabled(!calendarReady)
                         }
                     } else {
-                        Section("待办列表") {
+                        Section("本地待办") { localSourceToggle(isCalendar: false) }
+                        Section("接入系统待办") {
                             reminderStatus
                             if reminderReady && model.calendars.isEmpty { quietText("没有可读取的待办列表。") }
                             Button("选择待办列表") { sourceChooser = .reminders }.disabled(!reminderReady)
@@ -465,16 +536,31 @@ struct SystemRemindersView: View {
         .sheet(item: $sourceChooser, onDismiss: { Task { await refresh() } }) { nativeSourceChooser($0) }
     }
 
+    private func localSourceToggle(isCalendar: Bool) -> some View {
+        let id = isCalendar ? YimaItemsRepository.calendarSourceID : YimaItemsRepository.todoSourceID
+        return Toggle(isCalendar ? "Yima日历 · 仅本机" : "Yima待办 · 仅本机", isOn: Binding(
+            get: { TaskSourceSelection(encoded: isCalendar ? eventSources : reminderSources).selected.contains(id) },
+            set: { enabled in
+                var selection = TaskSourceSelection(encoded: isCalendar ? eventSources : reminderSources)
+                selection.known.insert(id)
+                if enabled { selection.selected.insert(id) } else { selection.selected.remove(id) }
+                if isCalendar { eventSources = selection.encoded } else { reminderSources = selection.encoded }
+            }
+        )).tint(YimaDesign.Color.ink)
+    }
+
     private var hasSelectedSources: Bool {
         !TaskSourceSelection(encoded: reminderSources).selected.isEmpty || !TaskSourceSelection(encoded: eventSources).selected.isEmpty
     }
 
     private func nativeSourceChooser(_ request: TaskSourceChooserRequest) -> some View {
-        NativeTaskSourceChooser(request: request,
+        NativeTaskSourceChooser(request: request, store: model.store,
             selectedIDs: TaskSourceSelection(encoded: request == .events ? eventSources : reminderSources).selected
         ) { ids, available in
             var selection = TaskSourceSelection(encoded: request == .events ? eventSources : reminderSources)
-            selection.applySelection(ids, available: available)
+            let localID = request == .events ? YimaItemsRepository.calendarSourceID : YimaItemsRepository.todoSourceID
+            let localSelected = selection.selected.intersection([localID])
+            selection.applySelection(ids.union(localSelected), available: available.union([localID]))
             if request == .events { eventSources = selection.encoded } else { reminderSources = selection.encoded }
         }
     }
@@ -485,11 +571,14 @@ struct SystemRemindersView: View {
         let time: Date
         var reminder: EKReminder?
         var event: TaskCalendarEvent?
+        var localTodo: YimaTodo?
+        var localEvent: YimaEvent?
     }
 
     private var allEntries: [Entry] {
         let eventIDs = TaskSourceSelection(encoded: eventSources).selected
-        var entries: [Entry] = []
+        var entries = localTodos.map { Entry(id: "yima-todo:" + $0.id, date: $0.due, time: $0.due ?? .distantFuture, localTodo: $0) }
+        entries += localEvents.map { Entry(id: "yima-event:" + $0.id, date: $0.start, time: $0.start ?? .distantFuture, localEvent: $0) }
         if reminderReady {
             entries += visibleReminders.map {
                 let due = ReminderDateEditing.date(from: $0.dueDateComponents)
@@ -514,21 +603,18 @@ struct SystemRemindersView: View {
     }
 
     private func reconcileSources() {
-        if reminderReady {
-            var value = TaskSourceSelection(encoded: reminderSources)
-            let ids = Set(model.calendars.map(\.calendarIdentifier))
-            // Keep the existing persisted filter when sharing it with the overview.
-            if reminderSources.isEmpty, let old = UserDefaults.standard.string(forKey: "yima.reminders.calendarID"), ids.contains(old) {
-                value.known = ids; value.selected = [old]
-            }
-            if value.reconcile(ids) { sourceNotice = true }
-            reminderSources = value.encoded
-        }
-        if calendarReady {
-            var value = TaskSourceSelection(encoded: eventSources)
-            if value.reconcile(Set(calendarModel.sources.map(\.id))) { sourceNotice = true }
-            eventSources = value.encoded
-        }
+        let previousReminders = TaskSourceSelection(encoded: reminderSources)
+        let previousEvents = TaskSourceSelection(encoded: eventSources)
+        var reminders = previousReminders
+        var events = previousEvents
+        // Never treat missing authorization/loading as source deletion.
+        let reminderIDs = reminderReady ? Set(model.calendars.map(\.calendarIdentifier)) : nil
+        let eventIDs = calendarReady ? Set(calendarModel.sources.map(\.id)) : nil
+        let legacyID = UserDefaults.standard.string(forKey: "yima.reminders.calendarID")
+        if reminders.reconcile(systemIDs: reminderIDs, localID: YimaItemsRepository.todoSourceID, legacyID: legacyID) { sourceNotice = true }
+        if events.reconcile(systemIDs: eventIDs, localID: YimaItemsRepository.calendarSourceID) { sourceNotice = true }
+        if reminders != previousReminders { reminderSources = reminders.encoded }
+        if events != previousEvents { eventSources = events.encoded }
     }
 
     private func refreshCalendar() async { await calendarModel.refresh(overview: overviewInterval, future: futureInterval) }
@@ -633,7 +719,7 @@ private struct TaskDateJumpSheet: View {
     }
 }
 
-private struct TaskItemContent<Details: View>: View {
+struct TaskItemContent<Details: View>: View {
     let title: String
     let source: String
     let completed: Bool
@@ -652,6 +738,28 @@ private struct TaskItemContent<Details: View>: View {
     }
 }
 
+struct TaskEventDateMetadata: View {
+    let start: Date
+    let end: Date
+    var allDay = false
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: YimaDesign.Space.sm) {
+            Text(start, format: .dateTime.year().month().day())
+            Spacer(minLength: YimaDesign.Space.sm)
+            if allDay {
+                Text("全天")
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text(start, format: .dateTime.hour().minute())
+                    Text(verbatim: "–")
+                    Text(end, format: Calendar.current.isDate(start, inSameDayAs: end)
+                        ? .dateTime.hour().minute() : .dateTime.year().month().day().hour().minute())
+                }.monospacedDigit().multilineTextAlignment(.trailing)
+            }
+        }.accessibilityElement(children: .combine)
+    }
+}
+
 private struct TaskEventRow: View {
     let event: TaskCalendarEvent
     let open: () -> Void
@@ -660,20 +768,7 @@ private struct TaskEventRow: View {
             HStack(spacing: YimaDesign.Space.md) {
                 Image(systemName: "calendar").frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget).accessibilityHidden(true)
                 TaskItemContent(title: event.title.isEmpty ? AppLocalized("未命名日程") : event.title, source: event.source) {
-                    HStack(alignment: .firstTextBaseline, spacing: YimaDesign.Space.sm) {
-                        Text(event.start, format: .dateTime.year().month().day())
-                        Spacer(minLength: YimaDesign.Space.sm)
-                        if event.allDay {
-                            Text("全天")
-                        } else {
-                            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                                Text(event.start, format: .dateTime.hour().minute())
-                                Text(verbatim: "–")
-                                Text(event.end, format: Calendar.current.isDate(event.start, inSameDayAs: event.end)
-                                    ? .dateTime.hour().minute() : .dateTime.year().month().day().hour().minute())
-                            }.monospacedDigit().multilineTextAlignment(.trailing)
-                        }
-                    }.accessibilityElement(children: .combine)
+                    TaskEventDateMetadata(start: event.start, end: event.end, allDay: event.allDay)
                     if let location = event.location, !location.isEmpty {
                         Text(location)
                     }
@@ -743,6 +838,7 @@ private struct TaskEventDetail: UIViewControllerRepresentable {
 
 private struct NativeTaskSourceChooser: UIViewControllerRepresentable {
     let request: TaskSourceChooserRequest
+    let store: EKEventStore
     let selectedIDs: Set<String>
     let onSelect: (Set<String>, Set<String>) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -751,14 +847,16 @@ private struct NativeTaskSourceChooser: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UINavigationController {
         guard EKEventStore.authorizationStatus(for: request.entity) == .fullAccess else { return unavailableTaskNavigation(context.coordinator) }
-        let store = EKEventStore()
         context.coordinator.store = store
         let controller = EKCalendarChooser(selectionStyle: .multiple, displayStyle: .allCalendars, entityType: request.entity, eventStore: store)
         controller.selectedCalendars = Set(store.calendars(for: request.entity).filter { selectedIDs.contains($0.calendarIdentifier) })
         controller.showsDoneButton = true
         controller.showsCancelButton = true
         controller.delegate = context.coordinator
-        return UINavigationController(rootViewController: controller)
+        let navigation = UINavigationController(rootViewController: controller)
+        navigation.view.tintColor = YimaDesign.UIKitColor.ink
+        controller.view.tintColor = YimaDesign.UIKitColor.ink
+        return navigation
     }
 
     func updateUIViewController(_ controller: UINavigationController, context: Context) {}

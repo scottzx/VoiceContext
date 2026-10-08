@@ -39,6 +39,20 @@ struct TaskCalendarTests {
         precondition(TaskCalendarRules.intersects(start: dstStart, end: dstEnd, day: dstStart, calendar: dst))
         precondition(!TaskCalendarRules.intersects(start: dstStart, end: dstEnd, day: dstEnd, calendar: dst))
 
+        let markedDays = [calendar.startOfDay(for: crossStart), midnight, next]
+        let markers = TaskCalendarRules.dayCounts(days: markedDays,
+            dueDates: [crossStart, midnight, midnight.addingTimeInterval(3600), next.addingTimeInterval(86400)],
+            events: [DateInterval(start: crossStart, end: crossEnd), DateInterval(start: midnight, end: next),
+                     DateInterval(start: next, duration: 0)], calendar: calendar)
+        precondition(markers[markedDays[0]] == TaskDayCounts(reminders: 1, events: 1))
+        precondition(markers[midnight] == TaskDayCounts(reminders: 2, events: 2), "Cross-day events and multiple reminders share their calendar markers")
+        precondition(markers[next] == TaskDayCounts(reminders: 0, events: 1), "Exclusive ends and reminders outside the grid must not add markers")
+        let dstMarkers = TaskCalendarRules.dayCounts(days: [dstStart, dstEnd],
+            dueDates: [dstStart, dstEnd.addingTimeInterval(-1), dstEnd],
+            events: [DateInterval(start: dstStart, end: dstEnd)], calendar: dst)
+        precondition(dstMarkers[dstStart] == TaskDayCounts(reminders: 2, events: 1))
+        precondition(dstMarkers[dstEnd] == TaskDayCounts(reminders: 1, events: 0), "Calendar markers must preserve DST day boundaries")
+
         let leapDay = date("2024-02-29T02:00:00Z")
         let marchDay = date("2024-03-30T02:00:00Z")
         let nextYear = date("2025-02-28T02:00:00Z")
@@ -105,6 +119,39 @@ struct TaskCalendarTests {
         nativeSelection.applySelection(["A", "removed"], available: ["A", "new-source"])
         precondition(nativeSelection.selected == ["A"], "Cannot save sources removed while the chooser was open")
         precondition(TaskSourceSelection(encoded: nativeSelection.encoded) == nativeSelection)
+        var localSources = TaskSourceSelection()
+        localSources.reconcile(["yima:calendar", "system:A"])
+        localSources.toggle("yima:calendar")
+        // While system permission is unavailable the page passes the known IDs,
+        // rather than treating absence of a system read as list deletion.
+        localSources.reconcile(localSources.known.union(["yima:calendar"]))
+        precondition(!localSources.selected.contains("yima:calendar") && localSources.selected.contains("system:A"))
+        let retainedLocal = localSources.selected.intersection(["yima:calendar"])
+        localSources.applySelection(Set(["system:A"]).union(retainedLocal), available: ["system:A", "yima:calendar"])
+        precondition(!localSources.selected.contains("yima:calendar"), "Native system source selection must preserve the hidden local list")
+        let localTodoID = "yima:todos"
+        var legacySources = TaskSourceSelection()
+        legacySources.reconcile(systemIDs: nil, localID: localTodoID, legacyID: "A")
+        precondition(legacySources.selected == [localTodoID] && legacySources.pendingLegacyID == "A")
+        // Permissions may remain denied across a relaunch; keep the migration pending.
+        legacySources = TaskSourceSelection(encoded: legacySources.encoded)
+        legacySources.toggle(localTodoID)
+        legacySources.reconcile(systemIDs: nil, localID: localTodoID, legacyID: "A")
+        precondition(legacySources.selected.isEmpty && legacySources.pendingLegacyID == "A")
+        legacySources.reconcile(systemIDs: ["A", "B"], localID: localTodoID, legacyID: "A")
+        precondition(legacySources.selected == ["A"] && legacySources.pendingLegacyID == nil,
+                     "First system read must retain the old single-list filter and the hidden local list")
+        legacySources = TaskSourceSelection(encoded: legacySources.encoded)
+        legacySources.reconcile(systemIDs: ["A", "B"], localID: localTodoID, legacyID: "B")
+        precondition(legacySources.selected == ["A"], "Completed migration must not reapply an old preference")
+        var visibleLocal = TaskSourceSelection()
+        visibleLocal.reconcile(systemIDs: nil, localID: localTodoID, legacyID: "A")
+        visibleLocal.reconcile(systemIDs: ["A", "B"], localID: localTodoID)
+        precondition(visibleLocal.selected == ["A", localTodoID])
+        let existingSources = TaskSourceSelection(encoded: #"{"known":["A","B"],"selected":["A"]}"#)
+        var upgradedSources = existingSources
+        upgradedSources.reconcile(systemIDs: ["A", "B"], localID: localTodoID, legacyID: "B")
+        precondition(upgradedSources.selected == ["A", localTodoID], "Existing shared filters must not be overwritten by legacy migration")
         print("Task calendar regressions passed: local grouping, grids/paging, event boundaries, populated-date wheels, leap-year/filter reconciliation, DST, source persistence/removal/independence")
     }
 }

@@ -566,6 +566,15 @@ extension AIChatViewModel {
             }
             toolOutput = redactedOut
 
+        #if VOICE_AGENT_FUSION
+        case "yima_items":
+            let result = await MainActor.run { YimaItemsAgentTool.execute(toolArgs, sessionID: self.sessionId) }
+            toolOutput = result.output
+            toolSuccess = result.success
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+        #endif
         case "file_read":
             let fileResult: FileToolResult
             do {

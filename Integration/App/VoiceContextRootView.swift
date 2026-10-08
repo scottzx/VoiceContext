@@ -3,8 +3,15 @@ import VoiceRecording
 
 struct VoiceContextRootView: View {
     private enum Tab: String { case chat, meetings, reminders, extensions }
-    @SceneStorage("voiceContext.selectedTab") private var selection: Tab = .chat
+    @SceneStorage("voiceContext.selectedTab") private var savedSelection: Tab = .chat
+    @State private var selection: Tab = .chat
+    @State private var restoredSelection = false
     @ObservedObject var recordings: VoiceRecordingWorkspace
+    @ObservedObject private var lock = SessionLockStore.shared
+    @StateObject private var items = YimaItemsStore.shared
+    @State private var localItem: YimaItemRequest?
+    @State private var startingMeeting = false
+    @State private var manageSources = false
     @State private var startRecording = false
     @State private var stopRecording = false
     @State private var workspaceError: String?
@@ -20,9 +27,9 @@ struct VoiceContextRootView: View {
                 .tabItem { Label("聊天", systemImage: "bubble.left.and.bubble.right") }
                 .tag(Tab.chat)
             recordings.meetings(start: $startRecording, stop: $stopRecording)
-                .tabItem { Label("会议", systemImage: "waveform") }
+                .tabItem { Label("记录", systemImage: "waveform") }
                 .tag(Tab.meetings)
-            SystemRemindersView()
+            SystemRemindersView(openFilters: $manageSources)
                 .tabItem { Label("提醒", systemImage: "checklist") }
                 .tag(Tab.reminders)
             VoiceContextExtensionsView(browserPool: browserPool)
@@ -32,11 +39,17 @@ struct VoiceContextRootView: View {
         .environmentObject(recordings)
         .tint(YimaDesign.Color.ink)
         .onAppear {
+            if !restoredSelection {
+                selection = savedSelection
+                restoredSelection = true
+            }
+            presentPendingItem()
             if UserDefaults.standard.string(forKey: "pendingSettingsReopen") != nil,
                UserDefaults.standard.string(forKey: "settingsPresentationOwner") == "meeting-model-setup" {
                 DispatchQueue.main.async { modelSettings = true }
             }
         }
+        .onChange(of: selection) { _, tab in savedSelection = tab }
         .safeAreaInset(edge: .top, spacing: 0) {
             if selection != .meetings && recordings.showsRecording {
                 recordings.recordingBar()
@@ -48,6 +61,10 @@ struct VoiceContextRootView: View {
         }
         .onOpenURL { url in
             guard url.scheme == AgentBuildIdentity.recordingURLScheme else { return }
+            if let item = YimaItemLink(url: url, scheme: AgentBuildIdentity.recordingURLScheme) {
+                items.pendingItem = item
+                return
+            }
             selection = .meetings
             if url.host == "start-recording" { startRecording = true }
             if url.host == "stop-recording" { stopRecording = true }
@@ -58,6 +75,35 @@ struct VoiceContextRootView: View {
             results = RecordingResultsRequest(id: id)
         }
         .sheet(item: $results) { request in RecordingAgentResults(recordingID: request.id) }
+        .protectedYimaSheet(item: $localItem, onDismiss: YimaItemSheet.didDismiss) { YimaItemSheet(store: items, request: $0).environmentObject(recordings) }
+        .onChange(of: lock.appIsLocked) { _, locked in
+            if locked { items.recordingMeetingInProgress = nil }
+            else { presentPendingItem() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.itemSheetDismissed"))) { _ in
+            guard !lock.appIsLocked, !startingMeeting, let meetingID = items.recordingMeetingInProgress,
+                  let meeting = items.meeting(meetingID), let event = items.event(meeting.eventID) else { return }
+            startingMeeting = true; selection = .meetings
+            Task {
+                defer { startingMeeting = false; items.recordingMeetingInProgress = nil; migrateMeetings() }
+                do {
+                    let id = try await recordings.startMeeting(title: event.title)
+                    do { try items.linkRecording(id, meetingID: meetingID) }
+                    catch { throw YimaItemsError.invalid("录音已开始，但关联未保存。录音 ID：\(id)。\(error.localizedDescription)") }
+                } catch { workspaceError = error.localizedDescription }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.manageSources"))) { _ in
+            selection = .reminders; manageSources = true
+        }
+        .onChange(of: items.pendingItem) { _, _ in presentPendingItem() }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.openSourceChat"))) { note in
+            guard let id = note.userInfo?["sessionID"] as? String else { return }
+            selection = .chat; localItem = nil
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .openSessionFromIntent, object: nil, userInfo: ["sessionId": id])
+            }
+        }
         .sheet(isPresented: $modelSettings) {
             NavigationStack {
                 ModelsAndServicesView()
@@ -87,28 +133,55 @@ struct VoiceContextRootView: View {
                 selection = .chat
                 await Task.yield()
                 NotificationCenter.default.post(name: .newChatRequested, object: nil, userInfo: [
-                    "voiceContextPrompt": "请基于录音 \(id) 帮我整理重点和下一步。先读取 /var/minis/shared/VoiceContext/README.md，再查找 Source/Transcripts/\(id).json；核对文稿 state，缺失或处理中时据实说明，仅基于已有文字整理。结果保存到 /var/minis/shared/VoiceContext/Generated/\(id)/ 并标注来源 recordingID、revision 和时间位置。先给行动建议，只有我明确确认具体事项后才创建系统提醒事项；未明确时间时不要猜日期。先查看 apple-reminders --help；成功后报告可查询的系统事项 ID、标题、列表、到期时间和实际提醒设置。取消、权限拒绝或工具失败不能报告已创建；结果不明时先查询，不盲目重复创建。--due 只代表到期日期，不能据此宣称有通知。"
+                    "voiceContextPrompt": "请基于录音 \(id) 帮我整理重点和下一步。先读取 /var/minis/shared/VoiceContext/README.md，再查找 Source/Transcripts/\(id).json；核对文稿 state，缺失或处理中时据实说明，仅基于已有文字整理。结果保存到 /var/minis/shared/VoiceContext/Generated/\(id)/ 并标注来源 recordingID、revision 和时间位置。先给行动建议，只有我明确确认具体事项后才使用 yima_items 创建 Yima 本地待办，并关联对应 meeting_id；先查询已有会议，创建用稳定 request_id，重试复用同一请求。未明确时间不要猜日期。成功后报告本地 ID、列表、到期时间并提供打开链接。未接入系统，不宣称系统已创建；到期日期不代表定时通知。"
                 ])
             }
         }
         .task {
             await recordings.prepare()
+            migrateMeetings()
             MeetingWorkspaceBridge.installSkill()
             await MeetingWorkspaceBridge.shared.refresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("VoiceContext.documentsChanged"))) { _ in
-            Task { await MeetingWorkspaceBridge.shared.refresh() }
+            Task { @MainActor in
+                migrateMeetings()
+                await MeetingWorkspaceBridge.shared.refresh()
+            }
         }
         .alert("会议资料暂不可用", isPresented: Binding(get: { workspaceError != nil }, set: { if !$0 { workspaceError = nil } })) {
             Button("好", role: .cancel) { workspaceError = nil }
         } message: { Text(workspaceError ?? "") }
     }
+    private func presentPendingItem() {
+        guard !lock.appIsLocked, let item = items.pendingItem else { return }
+        items.pendingItem = nil
+        openLocalItem(id: item.id, kind: item.kind)
+    }
+
+    private func openLocalItem(id: String, kind: YimaItemRequest.Kind) {
+        guard (kind == .event ? items.event(id) != nil : items.todo(id) != nil) else {
+            workspaceError = "事项已删除或不存在。"; return
+        }
+        localItem = YimaItemRequest(id: id, kind: kind)
+    }
+
+    private func migrateMeetings() {
+        items.knownRecordingIDs = recordings.recordingIDs
+        guard items.available, items.recordingMeetingInProgress == nil else { return }
+        do {
+            for recording in recordings.meetingRecords {
+                try items.migrateRecording(id: recording.id, title: recording.title, recordedAt: recording.recordedAt)
+            }
+        } catch { workspaceError = "录音资料已保留，会议安排补充失败：" + error.localizedDescription }
+    }
+
 }
 
 private struct RecordingResultsRequest: Identifiable { let id: String }
 
 private struct VoiceContextExtensionsView: View {
-    private enum Destination: Hashable { case skills, providers, soul, memory, mcp, hardware, terminal, browser }
+    private enum Destination: Hashable { case skills, providers, soul, memory, mcp, hardware, terminal, browser, calendarLists }
     @State private var navigationPath: [Destination] = []
     @State private var settings = false
     @State private var terminal = false
@@ -143,6 +216,7 @@ private struct VoiceContextExtensionsView: View {
                     }
                 }
                 Section("我的与设置") {
+                    NavigationLink(value: Destination.calendarLists) { Label("日历与待办", systemImage: "calendar") }
                     Button { settings = true } label: { Label("设置", systemImage: "gearshape") }
                 }
             }
@@ -163,6 +237,7 @@ private struct VoiceContextExtensionsView: View {
                 case .hardware: HardwareBridgeSettingsView()
                 case .terminal: terminalPage
                 case .browser: browserPage
+                case .calendarLists: YimaListSettingsView()
                 }
             }
         }

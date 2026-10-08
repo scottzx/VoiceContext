@@ -46,6 +46,12 @@ enum DeepLinkRouter {
 
     @MainActor
     static func handle(url: URL, shareCoordinator: ShareCoordinator) {
+        #if VOICE_AGENT_FUSION
+        if let item = YimaItemLink(url: url, scheme: AgentBuildIdentity.recordingURLScheme) {
+            YimaItemsStore.shared.pendingItem = item
+            return
+        }
+        #endif
         guard url.scheme == "minis" || url.scheme == AgentBuildIdentity.urlScheme, let host = url.host else {
             deepLinkLog.info("ignored — non-minis or missing host: \(url.absoluteString)")
             return

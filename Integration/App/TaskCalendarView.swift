@@ -1,10 +1,5 @@
 import SwiftUI
 
-struct TaskDayCounts {
-    var reminders: Int?
-    var events: Int?
-}
-
 struct TaskCalendarView: View {
     @Binding var selected: Date
     @Binding var month: Date

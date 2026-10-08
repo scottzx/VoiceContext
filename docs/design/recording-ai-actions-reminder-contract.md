@@ -1,5 +1,7 @@
 # Reminder 契约评审附录（C00 未批准提案）
 
+2026-10-06 范围变更：[Yima 自有日程/待办设计](./yima-owned-calendar-reminders.md)新增无需 EventKit 权限的本地事项来源；本附录的系统对象契约继续用于系统来源，不能用来限制 Yima 本地创建/完成。新增来源标识、可选系统镜像和同步规则仍需评审，旧 schema 不被视为已兼容这些能力。
+
 状态：**待 D04/D05 交互评审与 C00 技术评审，未批准、未冻结、未实施。** 本文日期为 2026-10-03，是 [C00 主草案](recording-ai-actions-contract.md) 的 Reminder 附录。示例字段、接口名称及持久化格式都是提案；本文件不会改变现有 CLI 参数、用户 Skill 或已保存数据，也不代表 C10/C11 验收通过。
 
 依据：[PRD F05/F06/F07、§7 与验收案例](../PRD-recording-ai-actions.md)、[C00/C10/C11 任务](recording-ai-actions-delivery.md)、[DESIGN.md](../../DESIGN.md)。交付顺序仍为交互评审 → 契约冻结 → 实施与验收。

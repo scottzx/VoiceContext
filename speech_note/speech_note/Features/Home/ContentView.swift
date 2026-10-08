@@ -1285,7 +1285,7 @@ struct ContentView: View {
     private var folderNavigationTitle: String {
         switch filterCriteria.folderFilter {
         case .all:
-            return "全部录音"
+            return isHostedWorkspace ? "记录" : "全部录音"
         case .uncategorized:
             return "未分类"
         case .folder(let id):

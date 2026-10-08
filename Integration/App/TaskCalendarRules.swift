@@ -1,5 +1,10 @@
 import Foundation
 
+struct TaskDayCounts: Equatable {
+    var reminders: Int?
+    var events: Int?
+}
+
 enum TaskCalendarRules {
     enum Group: CaseIterable { case overdue, today, future, unscheduled }
 
@@ -12,9 +17,28 @@ enum TaskCalendarRules {
 
     static func intersects(start: Date, end: Date, day: Date, calendar: Calendar = .current) -> Bool {
         let interval = calendar.dateInterval(of: .day, for: day)!
+        return intersects(start: start, end: end, interval: interval)
+    }
+
+    private static func intersects(start: Date, end: Date, interval: DateInterval) -> Bool {
         // EventKit's all-day end is exclusive. Zero-duration events belong to their start day.
         if start == end { return interval.contains(start) && start < interval.end }
         return start < interval.end && end > interval.start
+    }
+
+    static func dayCounts(days: [Date], dueDates: [Date], events: [DateInterval],
+                          calendar: Calendar = .current) -> [Date: TaskDayCounts] {
+        var counts = Dictionary(uniqueKeysWithValues: days.map { (calendar.startOfDay(for: $0), TaskDayCounts(reminders: 0, events: 0)) })
+        for due in dueDates {
+            let day = calendar.startOfDay(for: due)
+            if let count = counts[day]?.reminders { counts[day]?.reminders = count + 1 }
+        }
+        for date in days {
+            let day = calendar.startOfDay(for: date)
+            let interval = calendar.dateInterval(of: .day, for: day)!
+            counts[day]?.events = events.filter { intersects(start: $0.start, end: $0.end, interval: interval) }.count
+        }
+        return counts
     }
 
     static func days(month: Date, selected: Date, expanded: Bool, calendar: Calendar = .current) -> [Date] {
@@ -80,6 +104,18 @@ struct TaskDateIndex {
 struct TaskSourceSelection: Codable, Equatable {
     var known: Set<String> = []
     var selected: Set<String> = []
+    var pendingLegacyID: String?
+
+    @discardableResult mutating func reconcile(systemIDs: Set<String>?, localID: String, legacyID: String? = nil) -> Bool {
+        if known.isEmpty, let legacyID, !legacyID.isEmpty { pendingLegacyID = legacyID }
+        if let systemIDs, let legacyID = pendingLegacyID {
+            // Local visibility is independent of the first successful system read.
+            known = systemIDs.union(known.intersection([localID]))
+            selected = (systemIDs.contains(legacyID) ? [legacyID] : systemIDs).union(selected.intersection([localID]))
+            pendingLegacyID = nil
+        }
+        return reconcile((systemIDs ?? known).union([localID]))
+    }
 
     @discardableResult mutating func reconcile(_ available: Set<String>) -> Bool {
         let removed = !known.subtracting(available).isEmpty
@@ -97,6 +133,7 @@ struct TaskSourceSelection: Codable, Equatable {
     }
 
     mutating func applySelection(_ ids: Set<String>, available: Set<String>) {
+        pendingLegacyID = nil
         known.formUnion(available)
         selected = ids.intersection(available)
     }

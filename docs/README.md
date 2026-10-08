@@ -6,6 +6,8 @@
 
 - [统一界面语言与 token](./design/interface-language.md)：2026-10-02 确认，2026-10-03 核心页面已接入共享字体／间距／颜色角色及字号兼容策略；沿用项目级 [`DESIGN.md`](../DESIGN.md)。[验收记录](./testing/interface-language.md)区分编译、策略检查与真机走查。
 
+- [录音、AI 整理与行动事项闭环 PRD](./PRD-recording-ai-actions.md)：2026-10-02 需求池草案；F01–F08 覆盖文稿保护与完整性、来源版本、纪要与导图、行动确认、系统提醒关联及删除隐私。配套[交付任务清单](./design/recording-ai-actions-delivery.md)按交互设计、代码开发和测试验收拆分，Plane 沿用听记 / TINGJI 项目。
+
 - [产品身份与定位](./design/product-identity.md)：一芥伙伴 / Yima，手机上的个人助手（Personal Agent），命名及升级兼容性约定。
 
 - [个人智能体融合设计](./design/personal-agent-integration.md)：PM `#85`；已实现首轮工程融合，记录产品身份、完整 Agent 工程方向、四 Tab、录音优先和系统提醒事项，以及仍待真机验收的边界。涉及新范围时按此增补，v1 文档保留历史基线。

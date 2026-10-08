@@ -6,7 +6,7 @@ public final class VoiceRecordingWorkspace: ObservableObject {
     private let model: RecordingCoreModel
     public let startupError: String?
     private var prepared = false
-    @Published private var ready = false
+    @Published public private(set) var ready = false
 
     public init() {
         do {
@@ -22,6 +22,30 @@ public final class VoiceRecordingWorkspace: ObservableObject {
 
     public func meetings(start: Binding<Bool>, stop: Binding<Bool>) -> AnyView {
         AnyView(WorkspaceMeetings(model: model, error: startupError, ready: ready, start: start, stop: stop))
+    }
+
+    public var recordingIDs: Set<String> { Set(model.recordings.map { $0.id.uuidString }) }
+
+    public var meetingRecords: [VoiceMeetingRecording] {
+        model.recordings.filter(\.isMeeting).map {
+            VoiceMeetingRecording(id: $0.id.uuidString, title: $0.title ?? "", recordedAt: $0.startedAt)
+        }
+    }
+
+    public func detail(id: UUID) -> AnyView {
+        AnyView(AppLanguageGate { NavigationStack { RecordingDetailScreen(model: model, recordingID: id) } })
+    }
+
+    public func startMeeting(title: String) async throws -> String {
+        guard ready, startupError == nil, !showsRecording, !model.trialEntitlement.isPurchaseLocked,
+              UserDefaults.standard.bool(forKey: OnboardingPreferences.completedKey) else {
+            throw NSError(domain: "Yima.Recording", code: 1, userInfo: [NSLocalizedDescriptionKey: "请先完成录音设置、确认录音功能可用，并确认没有其他录音进行中。"])
+        }
+        await model.start(title: title, isMeeting: true)
+        guard model.captureIsActive, let id = model.activeRecordingID else {
+            throw NSError(domain: "Yima.Recording", code: 2, userInfo: [NSLocalizedDescriptionKey: model.notice ?? "无法开始录音。"])
+        }
+        return id.uuidString
     }
 
     public func settings() -> AnyView {
@@ -51,6 +75,12 @@ public final class VoiceRecordingWorkspace: ObservableObject {
     public func stop() async { await model.stop() }
 
     public static var documentsURL: URL { PublicDocumentContainer.localRootURL() }
+}
+
+public struct VoiceMeetingRecording: Sendable {
+    public let id: String
+    public let title: String
+    public let recordedAt: Date
 }
 
 private struct WorkspaceMeetings: View {

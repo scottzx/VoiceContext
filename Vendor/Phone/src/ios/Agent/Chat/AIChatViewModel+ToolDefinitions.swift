@@ -302,6 +302,9 @@ extension AIChatViewModel {
             ))
         }
 
+        #if VOICE_AGENT_FUSION
+        if agentRole != .executor { tools.append(YimaItemsAgentTool.definition) }
+        #endif
         return tools
     }
 
