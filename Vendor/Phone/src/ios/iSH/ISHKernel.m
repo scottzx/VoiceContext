@@ -66,6 +66,10 @@
 #import "BrowserUseOffload.h"
 #import "DebugOffload.h"
 
+#if VOICE_AGENT_FUSION
+extern void yima_extensions_offload_register(void);
+#endif
+
 NSNotificationName const ISHProcessExitedNotification = @"ISHProcessExited";
 NSNotificationName const ISHTerminalOutputNotification = @"ISHTerminalOutput";
 
@@ -679,6 +683,9 @@ static void handle_process_exit(struct task *task, int code) {
     sessions_offload_register();
     browser_use_offload_register();
     config_offload_register();
+#if VOICE_AGENT_FUSION
+    yima_extensions_offload_register();
+#endif
     // Registered in every build: the `minis-debug logs` subcommand reads the
     // app's own runtime log in-process (OSLogStore + LoggingManager) and must
     // work on Release devices (T-ios-minis-debug-logs-oslogstore). The

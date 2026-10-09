@@ -195,50 +195,45 @@ struct VoiceContextRootView: View {
 private struct RecordingResultsRequest: Identifiable { let id: String }
 
 private struct VoiceContextExtensionsView: View {
-    private enum Destination: Hashable { case skills, providers, soul, memory, mcp, hardware, terminal, browser, calendarLists }
+    private enum Destination: Hashable { case skills, providers, soul, memory, mcp, hardware, terminal, browser, calendarLists, customFunctions }
     @State private var navigationPath: [Destination] = []
     @State private var settings = false
     @State private var terminal = false
     @State private var browser = false
+    @State private var addCustomFunction = false
+    @State private var openedCustomFunction: CustomExtensionItem?
+    @StateObject private var customFunctions = CustomExtensionsStore.shared
     @ObservedObject var browserPool: BrowserTabPool
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: YimaDesign.Space.sm, alignment: .top), count: 4)
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            List {
-                Section("助手能力") {
-                    NavigationLink(value: Destination.skills) {
-                        Label(AppLocalized("Skills"), systemImage: "book.closed")
+            ScrollView {
+                VStack(alignment: .leading, spacing: YimaDesign.Layout.sectionGap) {
+                    customFunctionsSection
+                    extensionSection("助手能力") {
+                        destinationTile(.skills, title: AppLocalized("Skills"), symbol: "book.closed")
+                        destinationTile(.providers, title: AppLocalized("模型与服务"), symbol: "cpu")
+                        destinationTile(.soul, title: AppLocalized("助手设定"), symbol: "person.crop.circle")
+                        destinationTile(.memory, title: AppLocalized("Memory"), symbol: "brain.head.profile")
                     }
-                    NavigationLink(value: Destination.providers) { Label("模型与服务", systemImage: "cpu") }
-                    NavigationLink(value: Destination.soul) { Label("助手设定", systemImage: "person.crop.circle") }
-                    NavigationLink(value: Destination.memory) {
-                        Label(AppLocalized("Memory"), systemImage: "brain.head.profile")
+                    extensionSection("工具连接") {
+                        destinationTile(.mcp, title: AppLocalized("MCP Integrations"), symbol: "square.stack.3d.up")
+                        destinationTile(.hardware, title: AppLocalized("Hardware Devices"), symbol: "antenna.radiowaves.left.and.right")
                     }
-                }
-                Section("工具连接") {
-                    NavigationLink(value: Destination.mcp) {
-                        Label(AppLocalized("MCP Integrations"), systemImage: "square.stack.3d.up")
+                    extensionSection("工具") {
+                        destinationTile(.terminal, title: AppLocalized("终端"), symbol: "terminal")
+                        destinationTile(.browser, title: AppLocalized("浏览器"), symbol: "globe")
                     }
-                    NavigationLink(value: Destination.hardware) {
-                        Label(AppLocalized("Hardware Devices"), systemImage: "antenna.radiowaves.left.and.right")
-                    }
-                }
-                Section("工具") {
-                    NavigationLink(value: Destination.terminal) { Label("终端", systemImage: "terminal") }
-                    NavigationLink(value: Destination.browser) {
-                        Label("浏览器", systemImage: "globe")
+                    extensionSection("我的与设置") {
+                        destinationTile(.calendarLists, title: AppLocalized("日历与待办"), symbol: "calendar")
+                        Button { settings = true } label: { tile(AppLocalized("设置"), symbol: "gearshape") }
                     }
                 }
-                Section("我的与设置") {
-                    NavigationLink(value: Destination.calendarLists) { Label("日历与待办", systemImage: "calendar") }
-                    Button { settings = true } label: { Label("设置", systemImage: "gearshape") }
-                }
+                .padding(YimaDesign.Layout.pageInset)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
+            .buttonStyle(.plain)
             .background(YimaDesign.Color.canvas)
-            .font(YimaDesign.Typography.body)
-            .environment(\.defaultMinListRowHeight, YimaDesign.Layout.primaryHeight)
             .navigationTitle("拓展")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: Destination.self) { destination in
@@ -252,6 +247,7 @@ private struct VoiceContextExtensionsView: View {
                 case .terminal: terminalPage
                 case .browser: browserPage
                 case .calendarLists: YimaListSettingsView()
+                case .customFunctions: CustomExtensionsManagementView(store: customFunctions)
                 }
             }
         }
@@ -269,6 +265,78 @@ private struct VoiceContextExtensionsView: View {
             NavigationStack { ISHTerminalView(showCloseButton: true) }
         }
         .sheet(isPresented: $browser) { BrowserSheetView(pool: browserPool) }
+        .fullScreenCover(item: $openedCustomFunction) { CustomExtensionBrowserView(item: $0) }
+        .sheet(isPresented: $addCustomFunction) { CustomExtensionEditor(store: customFunctions) }
+    }
+
+    private var customFunctionsSection: some View {
+        VStack(alignment: .leading, spacing: YimaDesign.Layout.headingGap) {
+            HStack {
+                Text("自定义功能").font(YimaDesign.Typography.section).accessibilityAddTraits(.isHeader)
+                Spacer()
+                if !customFunctions.items.isEmpty {
+                    Button("管理") { navigationPath.append(.customFunctions) }
+                        .font(YimaDesign.Typography.metadata)
+                        .frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
+                }
+            }
+            if let error = customFunctions.readError {
+                Text(error).font(YimaDesign.Typography.metadata).foregroundStyle(YimaDesign.Color.muted)
+            }
+            LazyVGrid(columns: columns, alignment: .leading, spacing: YimaDesign.Space.lg) {
+                ForEach(customFunctions.items) { item in
+                    tile(item.name) { CustomExtensionIcon(name: item.name, logoData: item.logoData) }
+                    .gesture(LongPressGesture().exclusively(before: TapGesture()).onEnded { gesture in
+                        switch gesture {
+                        case .first: navigationPath.append(.customFunctions)
+                        case .second: openedCustomFunction = item
+                        }
+                    })
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { openedCustomFunction = item }
+                    .accessibilityHint("打开功能；长按可调整顺序与删除")
+                    .accessibilityAction(named: Text("调整顺序与删除")) { navigationPath.append(.customFunctions) }
+                }
+                Button { addCustomFunction = true } label: { tile(AppLocalized("添加"), symbol: "plus") }
+                    .disabled(!customFunctions.available)
+                    .accessibilityLabel("添加自定义功能")
+            }
+        }
+    }
+
+    private func extensionSection<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: YimaDesign.Layout.headingGap) {
+            Text(title).font(YimaDesign.Typography.section).accessibilityAddTraits(.isHeader)
+            LazyVGrid(columns: columns, alignment: .leading, spacing: YimaDesign.Space.lg, content: content)
+        }
+    }
+
+    private func destinationTile(_ destination: Destination, title: String, symbol: String) -> some View {
+        NavigationLink(value: destination) { tile(title, symbol: symbol) }
+    }
+
+    private func tile(_ title: String, symbol: String) -> some View {
+        tile(title) { Image(systemName: symbol).font(.title2) }
+    }
+
+    private func tile<Icon: View>(_ title: String, @ViewBuilder icon: () -> Icon) -> some View {
+        VStack(spacing: YimaDesign.Space.sm) {
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)
+                .overlay { icon().padding(YimaDesign.Space.md) }
+                .background(YimaDesign.Color.grouped)
+                .clipShape(RoundedRectangle(cornerRadius: YimaDesign.Radius.control))
+                .accessibilityHidden(true)
+            Text(title)
+                .font(YimaDesign.Typography.compactMetadata)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: YimaDesign.Layout.hitTarget, alignment: .top)
+        .foregroundStyle(YimaDesign.Color.ink)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(title))
     }
 
     private var terminalPage: some View {

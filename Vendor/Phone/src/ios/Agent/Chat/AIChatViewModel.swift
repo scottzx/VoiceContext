@@ -1961,7 +1961,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // Personality section from SOUL.md's body. The original wording
         // is preserved inside SystemPromptBuilder.identityTemplate so we
         // don't regress model behavior that depended on it.
-        SystemPromptBuilder.identitySection(for: agentId)
+        let prompt = SystemPromptBuilder.identitySection(for: agentId)
             + "You should proactively use shell commands to accomplish the user's tasks — installing packages (apk add), "
             + "writing and running scripts, managing files, networking, and any other operations a Linux terminal can perform.\n\n"
             + "Available tools:\n"
@@ -2129,6 +2129,12 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             + "Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended, so in-app scheduled scripts may not run as expected. "
             + "For recurring tasks that must fire beyond the current conversation, tell the user to set up an automation in Apple Shortcuts — it is the only reliable way to trigger periodic execution on iOS. "
             + "(Waiting or polling WITHIN the current turn is different — that is what shell_execute `delay` chains are for, per the shell_execute notes above.)"
+        #if VOICE_AGENT_FUSION
+        return prompt + "\n\nYima custom functions:\n"
+            + "yima-extensions manages the same saved custom function shortcuts shown at the top of Extensions. Run `yima-extensions --help` before first use. Commands: list; get --id; add --name --url; update --id with --name, --url, or --clear-logo; move --id --position (zero-based final position from list); delete --id. Updates retain an uploaded logo unless --clear-logo is supplied. New entries use the name's first character. Only change or delete shortcuts when the user's request authorizes it. URLs must include http:// or https:// and any required port; localhost refers to this iPhone, so services on another device need a reachable LAN or Tailscale address. Saving a shortcut does not start its service.\n"
+        #else
+        return prompt
+        #endif
     }
 
     /// [T-memory-toggle-gates-injection-and-tools-ios]

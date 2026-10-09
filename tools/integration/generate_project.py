@@ -23,6 +23,11 @@ def read(path):
 def uid(name):
     return hashlib.sha256(('VoiceContextFusion:' + name).encode()).hexdigest()[:24].upper()
 
+# Preserve generated references when the checkout moves to another directory.
+previous_project = OUT / 'project.pbxproj'
+previous_ids = {value['path']: key for key, value in read(previous_project)['objects'].items()
+                if value.get('isa') == 'PBXFileReference' and value.get('sourceTree') == 'SOURCE_ROOT'} if previous_project.exists() else {}
+
 d = read(PHONE / 'Minis.xcodeproj/project.pbxproj')
 o = d['objects']
 p = o[d['rootObject']]
@@ -76,8 +81,11 @@ def phase(target, kind):
     return next(o[x] for x in target['buildPhases'] if o[x]['isa'] == kind)
 def ref(path, kind):
     import os
-    key = uid('file:' + str(path))
-    o[key] = {'isa':'PBXFileReference', 'path':os.path.relpath(path, PHONE), 'sourceTree':'SOURCE_ROOT', 'lastKnownFileType':kind}
+    relative = os.path.relpath(path, PHONE)
+    key = next((key for key, value in o.items() if value.get('isa') == 'PBXFileReference'
+                and value.get('sourceTree') == 'SOURCE_ROOT' and value.get('path') == relative),
+               previous_ids.get(relative, uid('file:' + str(path.relative_to(ROOT)))))
+    o[key] = {'isa':'PBXFileReference', 'path':relative, 'sourceTree':'SOURCE_ROOT', 'lastKnownFileType':kind}
     if not any(key in group.get('children', []) for group in o.values() if group['isa'] == 'PBXGroup'):
         o[p['mainGroup']]['children'].append(key)
     return key
@@ -97,6 +105,8 @@ for file in sorted((ROOT / 'Integration/Recording').glob('*.swift')):
     add(record,'PBXSourcesBuildPhase',ref(file,'sourcecode.swift'))
 for file in sorted((ROOT / 'Integration/App').glob('*.swift')):
     add(main,'PBXSourcesBuildPhase',ref(file,'sourcecode.swift'))
+for file in sorted((ROOT / 'Integration/NativeOffloads').glob('*.m')):
+    add(main,'PBXSourcesBuildPhase',ref(file,'sourcecode.c.objc'))
 design_tokens = ref(ROOT / 'Integration/Shared/YimaDesignTokens.swift', 'sourcecode.swift')
 add(main, 'PBXSourcesBuildPhase', design_tokens)
 # The legacy recording target already includes this shared source.
@@ -228,6 +238,7 @@ for tid in p['targets']:
                       CODE_SIGN_ENTITLEMENTS='$(SRCROOT)/../../../../Integration/VoiceContextAgent.entitlements',
                       FLAVOR_ID='openminis', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon',
                       SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) VOICE_AGENT_FUSION',
+                      GCC_PREPROCESSOR_DEFINITIONS='$(inherited) VOICE_AGENT_FUSION=1',
                       TARGETED_DEVICE_FAMILY='1', INFOPLIST_KEY_CFBundleDisplayName='一芥伙伴',
                       INFOPLIST_KEY_CFBundleName='Yima',
                       INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone='UIInterfaceOrientationPortrait')

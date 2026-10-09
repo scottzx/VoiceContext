@@ -803,7 +803,7 @@ final class DownloadProgressObserver: ObservableObject {
 /// page. Split into its own `@ObservedObject` view so a `loadError` change
 /// actually re-renders — the parent reads `manager` via a computed property and
 /// wouldn't otherwise observe it.
-private struct BrowserLoadErrorOverlay: View {
+struct BrowserLoadErrorOverlay: View {
     @ObservedObject var manager: BrowserUseManager
 
     var body: some View {

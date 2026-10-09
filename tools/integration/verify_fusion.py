@@ -63,6 +63,11 @@ for kind in ['PBXSourcesBuildPhase', 'PBXFrameworksBuildPhase']:
     if kind == 'PBXFrameworksBuildPhase':
         missing = {fid for fid in missing if not upstream[fid].get('path', '').endswith('TranscribeCpp.xcframework')}
     assert not missing, f'Dropped Phone build inputs: {kind}: {missing}'
+main_sources = [fusion[fid].get('path', '') for fid in members(fusion, main, 'PBXSourcesBuildPhase')]
+for source in ['Integration/App/CustomExtensionsCLI.swift',
+               'Integration/App/CustomExtensionsOffloadBridge.swift',
+               'Integration/NativeOffloads/CustomExtensionsOffload.m']:
+    assert sum(path.endswith(source) for path in main_sources) == 1, f'Missing or duplicated custom function CLI source: {source}'
 package_root = ROOT / 'Vendor/TranscribeKit'
 package_snapshot = json.loads((package_root / 'SOURCE_SNAPSHOT.json').read_text())
 for relative, expected_digest in package_snapshot['files'].items():
@@ -94,6 +99,10 @@ for c in fusion[main['buildConfigurationList']]['buildConfigurations']:
         assert settings[key] == expected, f'Identity changed: {config["name"]}: {key}'
     assert settings['SUPPORTED_PLATFORMS'] == 'iphoneos'
     assert settings['IPHONEOS_DEPLOYMENT_TARGET'] == '18.0'
+    assert 'VOICE_AGENT_FUSION' in settings.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS', '').split(), f'Missing Swift fusion condition: {config["name"]}'
+    definitions = settings.get('GCC_PREPROCESSOR_DEFINITIONS', [])
+    if isinstance(definitions, str): definitions = definitions.split()
+    assert 'VOICE_AGENT_FUSION=1' in definitions, f'Missing native fusion condition: {config["name"]}'
 
 ent = plistlib.loads((ROOT / 'Integration/VoiceContextAgent.entitlements').read_bytes())
 assert ent['keychain-access-groups'] == plistlib.loads((ROOT / 'speech_note/speech_note/speech_note.entitlements').read_bytes())['keychain-access-groups']
