@@ -9,6 +9,8 @@ struct TranscriptionCenterView: View {
     @State private var selectedTab: TaskTabState = .todo
     @State private var isRefreshing = false
     @State private var selectedRecordingID: UUID? = nil
+    @ObservedObject private var modelDownload = TranscriptionModelDownloadService.shared
+    @State private var isModelDownloadPresented = false
 
     enum TaskTabState: String, CaseIterable, Identifiable {
         case todo = "待办"
@@ -34,6 +36,12 @@ struct TranscriptionCenterView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    if modelDownload.state != .ready {
+                        TranscriptionModelStatusBanner {
+                            isModelDownloadPresented = true
+                        }
+                        .padding(.horizontal, 20)
+                    }
                     // 卡片 1：统计卡片
                     statisticsCard
 
@@ -76,6 +84,9 @@ struct TranscriptionCenterView: View {
                 NavigationStack {
                     RecordingDetailScreen(model: model, recordingID: item.id)
                 }
+            }
+            .sheet(isPresented: $isModelDownloadPresented) {
+                TranscriptionModelDownloadSheet()
             }
         }
     }
@@ -352,6 +363,10 @@ struct TranscriptionCenterView: View {
 
                 if task.state == .failed {
                     Button("重试") {
+                        guard TranscriptionModelStore.isReady else {
+                            isModelDownloadPresented = true
+                            return
+                        }
                         Task {
                             await model.retryProcessingTask(
                                 recordingID: task.recordingID,
@@ -421,6 +436,10 @@ struct TranscriptionCenterView: View {
         .contextMenu {
             if task.state == .cancelled {
                 Button {
+                    guard TranscriptionModelStore.isReady else {
+                        isModelDownloadPresented = true
+                        return
+                    }
                     Task {
                         await model.restartCancelledProcessingTask(
                             recordingID: task.recordingID,
@@ -564,6 +583,10 @@ struct TranscriptionCenterView: View {
                 stopAllButton
 
                 Button {
+                    guard TranscriptionModelStore.isReady else {
+                        isModelDownloadPresented = true
+                        return
+                    }
                     Task {
                         await model.retryAllFailedJobs()
                         await refreshQueue()
@@ -729,7 +752,9 @@ struct TranscriptionCenterView: View {
         case "deferredUntilMetalAvailable":
             return "Metal 图形加速通道排队中，稍候自动执行。"
         case "lockedPendingPurchase":
-            return "试用配额已达上限，待解锁后继续。"
+            return "音频已保存，转写排队处理中。"
+        case "modelsNotReady":
+            return "音频已保存，下载模型后可转文字。"
         case "recoveredAfterTermination":
             return "应用退出后已自动恢复，排队转写中。"
         case "unreadableAudioSkipped":

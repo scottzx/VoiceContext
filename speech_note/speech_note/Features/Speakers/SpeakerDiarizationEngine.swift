@@ -424,22 +424,15 @@ nonisolated enum SpeakerDiarizationEngineFactory {
     static let embeddingArtifactID = "cam-plus"
 
     /// Returns nil unless both model artifacts are explicitly listed in the
-    /// reviewed manifest and their SHA-256 digests match the bundle.
+    /// reviewed manifest and their downloaded SHA-256 digests match.
     static func approvedSherpaEngine(bundle: Bundle = .main) -> SherpaOfflineSpeakerDiarizationEngine? {
-        guard let manifestURL = bundle.url(forResource: "ModelManifest", withExtension: "json"),
-              let artifacts = try? ModelIntegrity.manifest(from: manifestURL),
-              let segmentation = artifacts.first(where: { $0.id == segmentationArtifactID }),
-              let embedding = artifacts.first(where: { $0.id == embeddingArtifactID }) else {
-            return nil
-        }
-        let root = manifestURL.deletingLastPathComponent()
-        guard (try? ModelIntegrity.validate(segmentation, in: root)) != nil,
-              (try? ModelIntegrity.validate(embedding, in: root)) != nil else {
+        guard let segmentation = try? TranscriptionModelStore.modelURL(id: segmentationArtifactID),
+              let embedding = try? TranscriptionModelStore.modelURL(id: embeddingArtifactID) else {
             return nil
         }
         return SherpaOfflineSpeakerDiarizationEngine(
-            segmentationModelURL: root.appending(path: segmentation.relativePath),
-            embeddingModelURL: root.appending(path: embedding.relativePath)
+            segmentationModelURL: segmentation,
+            embeddingModelURL: embedding
         )
     }
 }

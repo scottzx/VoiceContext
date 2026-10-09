@@ -163,8 +163,6 @@ final class RecordingCoreModel {
     private let voiceprintSyncConfiguration: EncryptedVoiceprintiCloudMirror.Configuration
     private let transcriptionScheduler: ForegroundTranscriptionScheduler
     private let backgroundTranscriptionContinuation: BackgroundTranscriptionContinuation
-    let trialEntitlement: TrialEntitlementController
-    private let trialLedger: TrialQuotaLedger
     private let diagnostics = RecordingDiagnostics()
     private let realtimeTranscription: RealtimeTranscriptionPreferences
     private var refreshTask: Task<Void, Never>?
@@ -179,8 +177,6 @@ final class RecordingCoreModel {
     init(
         rootURL: URL,
         coordinator customCoordinator: RecordingSessionCoordinator? = nil,
-        trialLedger: TrialQuotaLedger? = nil,
-        purchaseClient: (any PurchaseUnlockClient)? = nil,
         voiceprintArchiveURL: URL? = nil,
         voiceprintKeyProvider: any VoiceprintArchiveKeyProviding = VoiceprintArchiveKeyStore.shared,
         voiceprintSyncConfiguration: EncryptedVoiceprintiCloudMirror.Configuration = .init(),
@@ -208,21 +204,14 @@ final class RecordingCoreModel {
         let lifecycleGate = InferenceLifecycleGate()
         let inferenceService = SenseVoiceInferenceService(lifecycleGate: lifecycleGate)
         self.inferenceService = inferenceService
-        let ledger = trialLedger ?? TrialQuotaLedger()
-        self.trialLedger = ledger
-        let entitlement = TrialEntitlementController(
-            ledger: ledger,
-            client: purchaseClient ?? StoreKitPurchaseUnlockClient()
-        )
-        self.trialEntitlement = entitlement
+        let initiallyInBackground = UIApplication.shared.applicationState != .active
+        self.isInBackground = initiallyInBackground
         let transcriptionScheduler = ForegroundTranscriptionScheduler(
             repository: repository,
             lifecycleGate: lifecycleGate,
-            admissionPolicy: TranscriptionAdmissionPolicy(
-                isPurchaseLocked: {
-                    TrialQuotaLedger.isManualTrialEnabled && ledger.isPurchaseLocked
-                }
-            ),
+            admissionPolicy: TranscriptionAdmissionPolicy(isModelReady: { TranscriptionModelStore.isReady }),
+            initiallyInBackground: initiallyInBackground,
+            requiresInitialRecovery: true,
             execute: { [repository, inferenceService, transcriptStore, publicDocumentPublisher] lease in
                 let recordingID = lease.recordingID
                 guard let recording = try await repository.recording(id: recordingID) else {
@@ -498,14 +487,21 @@ final class RecordingCoreModel {
             _ = try? await skillPackSeeder.seed()
         }
 
-        if TrialQuotaLedger.isManualTrialEnabled {
-            trialEntitlement.onUnlocked = { [weak self] in
-                await self?.resumeTranscriptionAfterUnlock()
+        NotificationCenter.default.addObserver(
+            forName: .transcriptionModelsDidBecomeReady,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // Download callbacks grant no background inference permission.
+                if UIApplication.shared.applicationState == .active
+                    || self.backgroundTranscriptionContinuation.isExecutionRequested {
+                    await self.transcriptionScheduler.requestDrain()
+                    self.enqueueSpeakerFinalization(recordingIDs: [])
+                }
+                await self.refresh()
             }
-            trialEntitlement.onTrialStateChanged = { [weak self] in
-                await self?.resumeTranscriptionAfterTrialStateChanged()
-            }
-            trialEntitlement.start()
         }
 
         NotificationCenter.default.addObserver(
@@ -522,22 +518,6 @@ final class RecordingCoreModel {
                 }
             }
         }
-    }
-
-    /// Purchase / restore entry point used by Settings and locked-detail CTA.
-    func resumeTranscriptionAfterUnlock() async {
-        trialLedger.markUnlocked()
-        await transcriptionScheduler.requestDrain()
-        await refresh()
-        if notice == nil || notice?.contains("解锁") == true || notice?.contains("锁定") == true {
-            notice = "已解锁，正在继续处理待转写音频。"
-        }
-    }
-
-    /// Refresh and drain queue when trial countdown is reset or simulated in testing.
-    func resumeTranscriptionAfterTrialStateChanged() async {
-        await transcriptionScheduler.requestDrain()
-        await refresh()
     }
 
     /// Fallback for the error path of the UI: a tmp-backed model that keeps
@@ -1412,7 +1392,6 @@ final class RecordingCoreModel {
 
     func fetchTranscriptionQueueStatus() async -> TranscriptionQueueStatus {
         var status = TranscriptionQueueStatus()
-        status.isPurchaseLocked = TrialQuotaLedger.isManualTrialEnabled && trialLedger.isPurchaseLocked
         status.thermalState = {
             switch ProcessInfo.processInfo.thermalState {
             case .nominal: "正常 (Nominal)"
@@ -2424,7 +2403,7 @@ final class RecordingCoreModel {
         recordingID: UUID,
         repository: RecordingRepository
     ) async throws -> OfflineSpeakerReclusterPass.PassResult {
-        let resourceRoot = try OfflineSpeakerReclusterPass.bundledResourceRoot()
+        let resourceRoot = try OfflineSpeakerReclusterPass.downloadedResourceRoot()
         if var asset = try await repository.importedAudioAsset(recordingID: recordingID),
            asset.audioRemovedAt == nil {
             var url = repository.rootURL.appendingPathComponent(asset.relativePath)
@@ -2495,9 +2474,7 @@ final class RecordingCoreModel {
         case .active:
             coordinator.applicationBecameActive()
             isInBackground = false
-            if TrialQuotaLedger.isManualTrialEnabled {
-                trialEntitlement.noteAppBecameActive()
-            }
+            enqueueSpeakerFinalization(recordingIDs: [])
             Task { [inferenceService, transcriptionScheduler] in
                 await inferenceService.enteredForeground()
                 await transcriptionScheduler.enteredForeground()
@@ -3073,6 +3050,7 @@ final class RecordingCoreModel {
     /// longer block recovery of pending ASR jobs at launch.
     private func enqueueSpeakerFinalization(recordingIDs: [UUID]) {
         pendingSpeakerFinalizationIDs.formUnion(recordingIDs)
+        guard TranscriptionModelStore.isReady, permitsSpeakerInference else { return }
         guard speakerFinalizationDrainTask == nil else { return }
         speakerFinalizationDrainTask = Task { @MainActor [weak self] in
             await self?.drainSpeakerFinalizationQueue()
@@ -3082,15 +3060,28 @@ final class RecordingCoreModel {
     private func drainSpeakerFinalizationQueue() async {
         defer { speakerFinalizationDrainTask = nil }
         while let recordingID = await nextSpeakerFinalizationRecordingID() {
+            guard TranscriptionModelStore.isReady, permitsSpeakerInference else { return }
             pendingSpeakerFinalizationIDs.remove(recordingID)
             do {
                 _ = try await speakerFinalizationCoordinator.runPersisted(
                     recordingID: recordingID,
                     repository: repository,
                     transcriptStore: transcriptStore,
-                    publisher: publicDocumentPublisher
+                    publisher: publicDocumentPublisher,
+                    executionAllowed: { [weak self] in
+                        guard TranscriptionModelStore.isReady else { return false }
+                        return await self?.permitsSpeakerInference ?? false
+                    }
                 )
                 _ = try await completionReconciler.reconcile(recordingID: recordingID)
+            } catch is SpeakerInferenceDeferred {
+                pendingSpeakerFinalizationIDs.insert(recordingID)
+                // The scene may already be active again by the time the
+                // interrupted lease has returned to pending.
+                if permitsSpeakerInference && TranscriptionModelStore.isReady {
+                    continue
+                }
+                return
             } catch is CancellationError {
                 // Retranscription invalidates this pass and will enqueue a new
                 // finalization after its transcription jobs complete.
@@ -3121,6 +3112,11 @@ final class RecordingCoreModel {
             if left != right { return left > right }
             return lhs.uuidString < rhs.uuidString
         }.first
+    }
+
+    private var permitsSpeakerInference: Bool {
+        UIApplication.shared.applicationState == .active
+            || backgroundTranscriptionContinuation.isExecutionRequested
     }
 
     // MARK: - Diagnostics and report

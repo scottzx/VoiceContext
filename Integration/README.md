@@ -18,7 +18,7 @@
 - `Vendor/Phone`：完整 iOS 平台源码、Apple/shared 共用代码、资源、构建脚本及 iSH 源码快照；不是只复制 AgentRunEngine。
 - `Integration/App`：四 Tab、Yima 本地事项与会议关系、系统来源、音频桥接、文稿快照、录音产物预览。
 - `Integration/Recording`：将原录音业务作为 `VoiceRecording.framework` 提供给宿主。独立 Swift 模块保留原 actor isolation，避免两套 `ContentView` 等类型冲突。
-- `speech_note/speech_note`：复用原录音、转写、SQLite/journal、文稿、购买和设置；仅增加宿主入口与必要桥接。旧数据不搬进新 Agent 容器。
+- `speech_note/speech_note`：复用原录音、转写、SQLite/journal、文稿和设置；增加宿主入口与模型按需下载。语音转文字免费开放，旧数据不搬进新 Agent 容器。
 - 主模块名保留 `Minis`，以兼容 phone 原有 Objective-C/Swift 桥接与运行时类型查找；产品显示名为一芥伙伴 / Yima，签名身份沿用原产品。
 
 录音服务由 App 层持有，四 Tab 和语言切换共用同一个实例。恢复完成后再显示会议页，避免冷启动深链先于数据恢复开始录音。
@@ -61,9 +61,9 @@ build/test-global-preferences
 | Agent App Group | `group.YiJie.speech-note.agent` |
 | 原 Keychain group | `$(AppIdentifierPrefix)com.yijie.shared_entitlements` |
 
-生成器继承原听记的 Team、版本号、build 号，所有扩展保持一致。原文稿容器不可用时留在本地，不退到 Agent 容器。保留原 StoreKit 标识与既有数据相对路径。
+生成器继承原听记的 Team、版本号、build 号，所有扩展保持一致。原文稿容器不可用时留在本地，不退到 Agent 容器。保留原 Keychain group 与既有数据相对路径以兼容升级；语音转文字免费开放，不再依赖 StoreKit 或购买凭证。模型权重不随安装包分发，首次需要时由用户在 App 内主动下载。
 
-开发版将上表所有 `YiJie.speech-note` 前缀替换为 `YiJie.speech-note.dev`，包括四个扩展、两个 iCloud 容器和 App Group；Keychain group 为 `$(AppIdentifierPrefix)com.yijie.shared_entitlements.dev`。Swift 运行时代码通过 `VOICE_AGENT_DEV` 与签名配置选择同一组身份。录音 Widget 使用 `voicecontext-dev://`，分享扩展使用 `minis-dev://`；正式版继续使用原 scheme。第三方 OAuth 回调约定保留，不视为已完成双安装 OAuth 验收。开发版的新 Bundle ID 不继承正式 App Store 的内购商品关联，购买流程需要单独配置与验证。
+开发版将上表所有 `YiJie.speech-note` 前缀替换为 `YiJie.speech-note.dev`，包括四个扩展、两个 iCloud 容器和 App Group；Keychain group 为 `$(AppIdentifierPrefix)com.yijie.shared_entitlements.dev`。Swift 运行时代码通过 `VOICE_AGENT_DEV` 与签名配置选择同一组身份。录音 Widget 使用 `voicecontext-dev://`，分享扩展使用 `minis-dev://`；正式版继续使用原 scheme。第三方 OAuth 回调约定保留，不视为已完成双安装 OAuth 验收。两种身份都可免费转写，下载模型分别保存在各自的持久目录中。
 
 2026-09-29：已通过 Xcode 自动签名完成 USB iPhone 15 Pro 的开发编译。主应用和四个扩展的 embedded provisioning profile 均包含该设备；签名中的新 App Group、iCloud 容器均由描述文件覆盖，保留原 Keychain 组。此次验证为开发签名，尚未验证发行归档与真机运行。
 
@@ -94,7 +94,7 @@ build/test-global-preferences
 | 原生 Apple 工具 | `NativeOffloads/`（27 个 `*Offload.m`） | 参与编译；权限及系统服务尚未逐项运行 |
 | 后台、通知、同步 | `Agent/Background/`、`Agent/Sync/`、`Shared/` | 原链路保留，新容器 ID 已映射；受 iOS 生命周期限制 |
 | 分享、Agent Widget、FileProvider | `ShareExtension/`、`AgentWidget/`、`FileProvider/` | 三个扩展与原 RecordWidget 均已构建并嵌入 |
-| 原录音/ASR/购买/文档 | 原 `speech_note` 源码 | 独立 app 和融合 framework 均编译通过 |
+| 原录音/ASR/文档 | 原 `speech_note` 源码 | 原模块构建链保留；免费转写和模型下载的本次验证另行记录 |
 
 ## 构建与依赖
 
@@ -108,7 +108,7 @@ bash tools/integration/build_device.sh
 
 已有工作区的依赖缓存已经就位；`build/`、原生缓存和生成资源不提交。新 checkout 需要：
 
-1. 恢复原听记使用的 `speech_note/speech_note/Frameworks/TranscribeCpp.xcframework` 与本地模型资源（原仓库既有依赖约定）。
+1. 恢复原听记使用的 `speech_note/speech_note/Frameworks/TranscribeCpp.xcframework`（原仓库既有依赖约定）。构建保留模型清单和归因许可，四个权重由 App 按需下载；仅在开发机需要离线资源时运行 `zsh tools/fetch-model-resources.sh`。
 2. 在 `Vendor/Phone` 按 `BUILDING.md` 的 **iOS 真机**流程依次构建 `deps/build_lame.sh`、`deps/build_ffmpeg.sh`、`deps/build_ish.sh`、`deps/prepare_alpine_rootfs.sh` 和 `deps/build_rclone_ios.sh`（需要 Go 1.25 或兼容工具链，仅生成 iphoneos slice），或从相同来源缓存复制 `deps/{libs,include,frameworks,resources}`。首次导入使用本机缓存；v1.13 合并时已重建 iSH 和 Rclone，其余依赖继续使用原缓存，未声称全量干净重建。
 3. 运行 `python3 tools/integration/generate_project.py`。它会生成 assets/strings 和工程，并从 example 创建不含凭据的本地 provider 配置。
 4. 如 SwiftPM 尚无缓存，用 Xcode 解析 workspace 内已锁定的 `Package.resolved` 依赖，再执行设备编译。不要直接搬带有另一仓库绝对 artifact 路径的 `workspace-state.json`。
@@ -125,7 +125,7 @@ python3 tools/integration/verify_fusion.py \
 
 审计正式身份产物时省略 `--variant development` 并使用 `Debug-iphoneos` 路径。两种模式都检查开发配置与正式配置的数据容器不重合、扩展身份前缀，以及录音 framework 的加载路径。
 
-它核对当前 Phone 工程的 448 个编译输入（包含原有 403 个）、首次导入的 4643 个来源文件、产品身份、权限文案、原 Keychain、容器映射、四个扩展版本和关键资源。`--check-cache` 核对本次缓存指纹；自行重建原生库后二进制可不同，需要另行记录新构建来源。
+它核对当前 Phone 工程的 448 个编译输入（包含原有 403 个）、首次导入的 4643 个来源文件、产品身份、权限文案、原 Keychain、容器映射、四个扩展版本和关键资源，并确认两套工程排除四个模型权重。提供 `--products` 时还递归检查 App 内无权重且清单与归因许可完整。`--check-cache` 核对本次缓存指纹；自行重建原生库后二进制可不同，需要另行记录新构建来源。
 
 ## 来源与本地补丁
 
@@ -164,7 +164,7 @@ python3 tools/integration/verify_fusion.py \
 
 后续真机功能验收：
 
-- 同身份覆盖升级：录音、文稿、附件、购买恢复、iCloud 和 Widget 深链。
+- 同身份覆盖升级：录音、文稿、附件、iCloud 和 Widget 深链；旧试用、到期和已购用户均可免费转写，模型缺失时主动下载，已有有效下载在后续升级中复用。
 - 长录音跨四 Tab、语言切换、聊天语音、shell 语音、TTS、浏览器媒体、锁屏/后台、来电/蓝牙切换；检查原音频连续性与 gap。
 - shell 执行、Skills 加载、浏览器操作、模型认证、同步和所有原生工具的真实权限/失败路径。
 - 会议 → 聊天草稿 → 读取快照 → 保存产物 → 详情预览 → 系统提醒事项的全流程。

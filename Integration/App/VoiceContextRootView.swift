@@ -18,6 +18,7 @@ struct VoiceContextRootView: View {
     @State private var results: RecordingResultsRequest?
     @State private var modelSetupNeeded = false
     @State private var modelSettings = false
+    @State private var transcriptionModelDownload = false
     @StateObject private var browserPool = BrowserTabPool()
     @Environment(\.scenePhase) private var phase
 
@@ -55,7 +56,7 @@ struct VoiceContextRootView: View {
                 recordings.recordingBar()
             }
         }
-        .onChange(of: phase) { newValue in
+        .onChange(of: phase, initial: true) { _, newValue in
             recordings.sceneChanged(newValue)
             if newValue == .active { Task { await MeetingWorkspaceBridge.shared.refresh() } }
         }
@@ -70,6 +71,19 @@ struct VoiceContextRootView: View {
             if url.host == "stop-recording" { stopRecording = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: .newChatRequested)) { _ in selection = .chat }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.openTranscriptionModels"))) { _ in
+            transcriptionModelDownload = true
+        }
+        .sheet(isPresented: $transcriptionModelDownload) {
+            NavigationStack {
+                TranscriptionModelDownloadView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭") { transcriptionModelDownload = false }
+                        }
+                    }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("VoiceContext.openResults"))) { note in
             guard let id = note.userInfo?["recordingID"] as? String, UUID(uuidString: id) != nil else { return }
             results = RecordingResultsRequest(id: id)

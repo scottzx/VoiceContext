@@ -9,6 +9,9 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import WebKit
+#if VOICE_AGENT_FUSION
+import VoiceRecording
+#endif
 
 private let minisLogger = AppLogger(category: "MinisURL")
 
@@ -413,6 +416,7 @@ struct AIChatView: View {
     @State private var showVoiceConfigMenu = false
     @State private var showVoiceLanguagePicker = false
     @State private var showVoiceModelSelector = false
+    @State private var showTranscriptionModelDownload = false
     /// Global read-replies state — observed so the voice-mode "Read replies" toggle
     /// reflects enabled/muted in lockstep with the global voice-output capsule.
     @ObservedObject private var voiceOutput = VoiceOutputState.shared
@@ -522,6 +526,7 @@ struct AIChatView: View {
     private var hasOverlayPresented: Bool {
         showFileBrowser || showBrowserSheet || showTerminal || showCamera
             || showPhotoPicker || showDocumentPicker || showModelPicker
+            || showTranscriptionModelDownload
     }
 
     /// Tracks whether this ChatView is the currently visible screen.
@@ -1622,6 +1627,10 @@ struct AIChatView: View {
         }
         switch action {
         case .startVoice:
+            guard ensureLocalVoiceModels() else {
+                QuickActionWorkflow.shared.markCoverPresented()
+                return
+            }
             // Mirror the mic button's action: ask for speech +
             // microphone permission, then start recording. Drop
             // input-focus so the keyboard doesn't fight the speech
@@ -3174,6 +3183,17 @@ struct AIChatView: View {
         }
     }
 
+    private func ensureLocalVoiceModels() -> Bool {
+        #if VOICE_AGENT_FUSION
+        if VoiceProviderResolver.resolvedInputEntry()?.providerInstanceId == SenseVoiceProvider.builtinProviderId,
+           !TranscriptionModelStore.isReady {
+            showTranscriptionModelDownload = true
+            return false
+        }
+        #endif
+        return true
+    }
+
     /// Mic button: single tap toggles voice mode (the .onChange(of: voiceInputActive)
     /// below drives the actual VAD start/stop); long-press opens a quick config
     /// menu for recognition language + input model.
@@ -3188,6 +3208,7 @@ struct AIChatView: View {
                     voiceVM.reset(clearTranscript: false)
                     withAnimation(.easeInOut(duration: 0.2)) { voiceInputActive = false }
                 } else {
+                    guard ensureLocalVoiceModels() else { return }
                     // Mark the composition as voice-assisted (committed to the
                     // "voice" input-mode preference only at send time). Switch the
                     // composer into inline voice mode — the single voice entry point.
@@ -3211,6 +3232,18 @@ struct AIChatView: View {
             }
             .sheet(isPresented: $showVoiceModelSelector) {
                 NavigationStack { UnifiedModelPicker(config: .voiceInput()) }
+            }
+            .sheet(isPresented: $showTranscriptionModelDownload) {
+                #if VOICE_AGENT_FUSION
+                NavigationStack {
+                    TranscriptionModelDownloadView()
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("关闭") { showTranscriptionModelDownload = false }
+                            }
+                        }
+                }
+                #endif
             }
         )
     }
@@ -3524,6 +3557,10 @@ struct AIChatView: View {
             // be InlineVoiceInputView.onAppear/.onDisappear.
             .onChange(of: voiceInputActive) { active in
                 if active {
+                    guard ensureLocalVoiceModels() else {
+                        voiceInputActive = false
+                        return
+                    }
                     voiceVM.accumulate = true
                     VoiceCorrectionEngine.warmUp()
                     // Seamless text → voice: carry whatever was typed into the
@@ -3552,6 +3589,11 @@ struct AIChatView: View {
                 }
             }
             .onChange(of: voiceSelection.inputEntryId) { _ in
+                if voiceInputActive && !ensureLocalVoiceModels() {
+                    voiceVM.stopListening()
+                    voiceInputActive = false
+                    return
+                }
                 voiceVM.refreshInputProvider()
             }
             #if DEBUG

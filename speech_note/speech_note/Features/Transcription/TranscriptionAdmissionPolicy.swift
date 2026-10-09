@@ -1,30 +1,29 @@
 import Foundation
 
 /// Decides whether the foreground transcription scheduler may submit work to
-/// SenseVoice / Metal. Purchase locks must never reach the GPU admission gate.
+/// SenseVoice / Metal. Missing models leave durable jobs pending.
 nonisolated struct TranscriptionAdmissionPolicy: Sendable {
     nonisolated enum Decision: Equatable, Sendable {
         case admit
         case deferInference(reason: String)
-        case lockedPendingPurchase
     }
 
     var thermalState: @Sendable () -> ProcessInfo.ThermalState
-    var isPurchaseLocked: @Sendable () -> Bool
+    var isModelReady: @Sendable () -> Bool
 
     nonisolated init(
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
             ProcessInfo.processInfo.thermalState
         },
-        isPurchaseLocked: @escaping @Sendable () -> Bool = { false }
+        isModelReady: @escaping @Sendable () -> Bool = { true }
     ) {
         self.thermalState = thermalState
-        self.isPurchaseLocked = isPurchaseLocked
+        self.isModelReady = isModelReady
     }
 
     nonisolated func evaluate() -> Decision {
-        if isPurchaseLocked() {
-            return .lockedPendingPurchase
+        if !isModelReady() {
+            return .deferInference(reason: "modelsNotReady")
         }
         return .admit
     }

@@ -1,0 +1,147 @@
+{
+  "checkedAt": "2026-10-09T08:00:48.346437+00:00",
+  "discoveryCommand": "transcribe invoke --payload {\"method\": \"asr.info\"}",
+  "cliVersion": "0.4.1",
+  "authUsed": false,
+  "modelBytesDownloaded": 64,
+  "repositories": [
+    {
+      "id": "scott887/SenseVoiceSmall-Q8_0.gguf",
+      "url": "https://modelscope.cn/models/scott887/SenseVoiceSmall-Q8_0.gguf",
+      "filesAPI": "https://modelscope.cn/api/v1/models/scott887/SenseVoiceSmall-Q8_0.gguf/repo/files?Revision=master&Recursive=true",
+      "entryCount": 9,
+      "fileCount": 9,
+      "binaryFiles": [
+        {
+          "Path": "3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx",
+          "Size": 39593765,
+          "Sha256": "e2d2048292e055f7b61cdec3db010503f35369b245bf0b3bbad021c9a91e4053",
+          "Revision": "0ac25de3b24eae49f5bf00dc485ef954b1f23a31"
+        },
+        {
+          "Path": "pyannote-segmentation-3.0.int8.onnx",
+          "Size": 1540506,
+          "Sha256": "d582f4b4c6b48205de7e0643c57df0df5615a3c176189be3fc461e9d18827b5d",
+          "Revision": "0ac25de3b24eae49f5bf00dc485ef954b1f23a31"
+        },
+        {
+          "Path": "SenseVoiceSmall-Q8_0.gguf",
+          "Size": 252684608,
+          "Sha256": "6c759ee4c9748c9b3f7a5a60ca74f0f7e685fb9d45d1378fce7cfd62f59adf29",
+          "Revision": "0ac25de3b24eae49f5bf00dc485ef954b1f23a31"
+        },
+        {
+          "Path": "silero_vad.onnx",
+          "Size": 643854,
+          "Sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+          "Revision": "0ac25de3b24eae49f5bf00dc485ef954b1f23a31"
+        }
+      ]
+    },
+    {
+      "id": "scott887/speech",
+      "url": "https://modelscope.cn/models/scott887/speech",
+      "filesAPI": "https://modelscope.cn/api/v1/models/scott887/speech/repo/files?Revision=master&Recursive=true",
+      "entryCount": 63,
+      "fileCount": 44,
+      "binaryFiles": [
+        {
+          "Path": "damo--speech_campplus_sv_zh-cn_16k-common/snapshots/master/campplus_cn_common.bin",
+          "Size": 28036335,
+          "Sha256": "3388cf5fd3493c9ac9c69851d8e7a8badcfb4f3dc631020c4961371646d5ada8",
+          "Revision": "c7755ca1dac0210f666e28549000818e82e45c41"
+        },
+        {
+          "Path": "damo--punc_ct-transformer_zh-cn-common-vocab272727-pytorch/snapshots/master/model.pt",
+          "Size": 291979892,
+          "Sha256": "a5818bb9d933805a916eebe41eb41648f7f9caad30b4bd59d56f3ca135421916",
+          "Revision": "c7755ca1dac0210f666e28549000818e82e45c41"
+        },
+        {
+          "Path": "iic--speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/snapshots/master/model.pt",
+          "Size": 989763045,
+          "Sha256": "3d491689244ec5dfbf9170ef3827c358aa10f1f20e42a7c59e15e688647946d1",
+          "Revision": "c7755ca1dac0210f666e28549000818e82e45c41"
+        },
+        {
+          "Path": "damo--speech_fsmn_vad_zh-cn-16k-common-pytorch/snapshots/master/model.pt",
+          "Size": 1721366,
+          "Sha256": "b3be75be477f0780277f3bae0fe489f48718f585f3a6e45d7dd1fbb1a4255fc5",
+          "Revision": "c7755ca1dac0210f666e28549000818e82e45c41"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "sensevoice-q8-0",
+      "fileName": "SenseVoiceSmall-Q8_0.gguf",
+      "sizeBytes": 252684608,
+      "sha256": "6c759ee4c9748c9b3f7a5a60ca74f0f7e685fb9d45d1378fce7cfd62f59adf29",
+      "revision": "0ac25de3b24eae49f5bf00dc485ef954b1f23a31",
+      "downloadURL": "https://modelscope.cn/api/v1/models/scott887/SenseVoiceSmall-Q8_0.gguf/repo?Revision=0ac25de3b24eae49f5bf00dc485ef954b1f23a31&FilePath=SenseVoiceSmall-Q8_0.gguf",
+      "metadataMatchesAppManifest": true,
+      "rangeRequest": {
+        "header": "bytes=0-15",
+        "status": 206,
+        "receivedBytes": 16,
+        "contentRange": "bytes 0-15/252684608",
+        "prefixMatchesLocalFile": true
+      },
+      "fullRemoteFileDownloadedAndHashed": false
+    },
+    {
+      "id": "silero-vad",
+      "fileName": "silero_vad.onnx",
+      "sizeBytes": 643854,
+      "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+      "revision": "0ac25de3b24eae49f5bf00dc485ef954b1f23a31",
+      "downloadURL": "https://modelscope.cn/api/v1/models/scott887/SenseVoiceSmall-Q8_0.gguf/repo?Revision=0ac25de3b24eae49f5bf00dc485ef954b1f23a31&FilePath=silero_vad.onnx",
+      "metadataMatchesAppManifest": true,
+      "rangeRequest": {
+        "header": "bytes=0-15",
+        "status": 206,
+        "receivedBytes": 16,
+        "contentRange": "bytes 0-15/643854",
+        "prefixMatchesLocalFile": true
+      },
+      "fullRemoteFileDownloadedAndHashed": false
+    },
+    {
+      "id": "cam-plus",
+      "fileName": "3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx",
+      "sizeBytes": 39593765,
+      "sha256": "e2d2048292e055f7b61cdec3db010503f35369b245bf0b3bbad021c9a91e4053",
+      "revision": "0ac25de3b24eae49f5bf00dc485ef954b1f23a31",
+      "downloadURL": "https://modelscope.cn/api/v1/models/scott887/SenseVoiceSmall-Q8_0.gguf/repo?Revision=0ac25de3b24eae49f5bf00dc485ef954b1f23a31&FilePath=3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx",
+      "metadataMatchesAppManifest": true,
+      "rangeRequest": {
+        "header": "bytes=0-15",
+        "status": 206,
+        "receivedBytes": 16,
+        "contentRange": "bytes 0-15/39593765",
+        "prefixMatchesLocalFile": true
+      },
+      "fullRemoteFileDownloadedAndHashed": false
+    },
+    {
+      "id": "pyannote-segmentation-3-int8",
+      "fileName": "pyannote-segmentation-3.0.int8.onnx",
+      "sizeBytes": 1540506,
+      "sha256": "d582f4b4c6b48205de7e0643c57df0df5615a3c176189be3fc461e9d18827b5d",
+      "revision": "0ac25de3b24eae49f5bf00dc485ef954b1f23a31",
+      "downloadURL": "https://modelscope.cn/api/v1/models/scott887/SenseVoiceSmall-Q8_0.gguf/repo?Revision=0ac25de3b24eae49f5bf00dc485ef954b1f23a31&FilePath=pyannote-segmentation-3.0.int8.onnx",
+      "metadataMatchesAppManifest": true,
+      "rangeRequest": {
+        "header": "bytes=0-15",
+        "status": 206,
+        "receivedBytes": 16,
+        "contentRange": "bytes 0-15/1540506",
+        "prefixMatchesLocalFile": true
+      },
+      "fullRemoteFileDownloadedAndHashed": false
+    }
+  ],
+  "conclusion": "All four iOS artifacts are present in scott887/SenseVoiceSmall-Q8_0.gguf. Sizes and server-reported SHA-256 match the app manifest. Anonymous immutable-revision range requests returned HTTP 206 and prefixes match local files. Full remote file hashes were not recomputed.",
+  "speechRepositoryCompatibility": "The speech repository contains Seaco Paraformer, FSMN VAD, punctuation, and CAMPPlus PyTorch files; these do not substitute for the app ONNX files."
+}

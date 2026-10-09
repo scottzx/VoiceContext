@@ -4,6 +4,8 @@
 
 ## 产品文档
 
+- [免费转写与魔搭按需模型下载](./design/free-transcription-model-download.md)：2026-10-09 产品调整方案，取消内购与试用门禁、模型安装后主动后台下载；记录四工件兼容、旧用户升级、下载流程和交付验收，尚未实施代码。
+
 - [2026-10-09 进展与下一步计划](./planning/2026-10-09-progress-and-next-steps.md)：按已推送的 `1853327` 核对本地事项、导航修复、录音反馈及 AI 闭环的实际交付；同步既有 Plane 项目，区分实现、验收与发布，按依赖排列下一步工作。
 
 - [统一界面语言与 token](./design/interface-language.md)：2026-10-02 确认，2026-10-03 核心页面已接入共享字体／间距／颜色角色及字号兼容策略；沿用项目级 [`DESIGN.md`](../DESIGN.md)。[验收记录](./testing/interface-language.md)区分编译、策略检查与真机走查。

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import plistlib
 import subprocess
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 PHONE = ROOT / 'Vendor/Phone'
@@ -31,11 +32,32 @@ main = target(fusion, 'VoiceContextAgent')
 original = target(upstream, 'Minis')
 model_root = ROOT / 'speech_note/speech_note/ModelResources'
 model_manifest = json.loads((model_root / 'ModelManifest.json').read_text())
-model_resource_names = {'ModelManifest.json', *(artifact['relativePath'] for artifact in model_manifest)}
+model_weight_names = {artifact['relativePath'] for artifact in model_manifest}
+excluded_model_names = model_weight_names | {name + '.partial' for name in model_weight_names}
+model_resource_names = {path.name for path in model_root.iterdir()
+                        if path.is_file() and (path.name == 'ModelManifest.json' or path.suffix in {'.txt', '.md'})}
+assert 'MODEL_ATTRIBUTIONS.md' in model_resource_names, 'Missing model attribution notice'
+assert 'pyannote-segmentation-3.0-LICENSE.txt' in model_resource_names, 'Missing bundled pyannote license'
+for artifact in model_manifest:
+    for key in ['sourceURL', 'licenseURL', 'downloadURL']:
+        assert artifact[key].startswith('https://'), f'Missing HTTPS model metadata: {artifact["id"]}: {key}'
+    assert artifact['sizeBytes'] > 0, f'Missing model size: {artifact["id"]}'
+    assert len(artifact['revision']) == 40 and all(c in '0123456789abcdef' for c in artifact['revision']), f'Model revision is not pinned: {artifact["id"]}'
+    assert len(artifact['sha256']) == 64 and all(c in '0123456789abcdef' for c in artifact['sha256']), f'Model checksum is not pinned: {artifact["id"]}'
+    download = urlsplit(artifact['downloadURL'])
+    query = parse_qs(download.query)
+    assert download.hostname == 'modelscope.cn' and query.get('Revision') == [artifact['revision']] and query.get('FilePath') == [artifact['relativePath']], f'Model download metadata does not match the manifest: {artifact["id"]}'
 resource_paths = {fusion[fid].get('path', '') for fid in members(fusion, main, 'PBXResourcesBuildPhase')}
 for name in model_resource_names:
     assert any(Path(path).name == name for path in resource_paths), f'Model resource not copied to app root: {name}'
-assert not any(Path(path).name == 'ModelResources' for path in resource_paths), 'Nested model resources break Bundle.main loaders'
+for native_target in [value for value in fusion.values() if value.get('isa') == 'PBXNativeTarget' and value['name'] in ['VoiceContextAgent', 'VoiceRecording']]:
+    for phase_id in native_target['buildPhases']:
+        phase = fusion[phase_id]
+        if phase['isa'] != 'PBXResourcesBuildPhase':
+            continue
+        for build_id in phase['files']:
+            path = fusion[fusion[build_id]['fileRef']].get('path', '')
+            assert Path(path).name not in excluded_model_names | {'ModelResources'}, f'Bundled model weights in {native_target["name"]}: {path}'
 for kind in ['PBXSourcesBuildPhase', 'PBXFrameworksBuildPhase']:
     missing = members(upstream, original, kind) - members(fusion, main, kind)
     if kind == 'PBXFrameworksBuildPhase':
@@ -59,6 +81,11 @@ for module_name in ['VoiceContextAgent', 'VoiceRecording']:
 
 legacy = read_project(ROOT / 'speech_note/speech_note.xcodeproj/project.pbxproj')
 legacy_target = target(legacy, 'speech_note')
+model_exceptions = {path for group_id in legacy_target['fileSystemSynchronizedGroups']
+                    for exception_id in legacy[group_id].get('exceptions', [])
+                    if legacy[legacy[exception_id]['target']]['name'] == 'speech_note'
+                    for path in legacy[exception_id].get('membershipExceptions', [])}
+assert {'ModelResources/' + name for name in excluded_model_names} <= model_exceptions, 'Standalone app still includes model weights'
 legacy_settings = {legacy[c]['name']: legacy[c]['buildSettings'] for c in legacy[legacy_target['buildConfigurationList']]['buildConfigurations']}
 for c in fusion[main['buildConfigurationList']]['buildConfigurations']:
     config = fusion[c]; settings = config['buildSettings']; old = legacy_settings[config['name'].removesuffix('-Dev')]
@@ -147,14 +174,24 @@ if args.products:
     for resource in ['alpine-rootfs.zip', 'RootfsPatch.bundle', 'VoiceContextPack.zip', 'FlavorConfig.json', *model_resource_names]:
         assert (app / resource).exists(), f'Missing bundled capability: {resource}'
     assert json.loads((app / 'ModelManifest.json').read_text()) == model_manifest
-    for artifact in model_manifest:
-        hasher = hashlib.sha256()
-        with (app / artifact['relativePath']).open('rb') as model_file:
-            for chunk in iter(lambda: model_file.read(1 << 20), b''):
-                hasher.update(chunk)
-        assert hasher.hexdigest() == artifact['sha256'], f'Bundled model checksum mismatch: {artifact["id"]}'
-        if artifact['relativePath'].endswith('.gguf'):
-            assert list(app.rglob(artifact['relativePath'])) == [app / artifact['relativePath']], f'Duplicate bundled ASR model: {artifact["id"]}'
+    for name in model_resource_names - {'ModelManifest.json'}:
+        assert (app / name).read_bytes() == (model_root / name).read_bytes(), f'Model attribution changed: {name}'
+    # Phone's system/cloud chat voice capture uses an independent Silero v5.
+    # SwiftPM 1.0.14 also includes v4 under the same basename as our smaller VAD.
+    chat_vad_resources = {
+        'RealTimeCutVADLibrary_RealTimeCutVADLibrary.bundle/silero_vad.onnx':
+            (1807522, 'a35ebf52fd3ce5f1469b2a36158dba761bc47b973ea3382b3186ca15b1f5af28'),
+        'RealTimeCutVADLibrary_RealTimeCutVADLibrary.bundle/silero_vad_v5.onnx':
+            (2327524, '2623a2953f6ff3d2c1e61740c6cdb7168133479b267dfef114a4a3cc5bdd788f'),
+    }
+    for relative, (size, digest) in chat_vad_resources.items():
+        path = app / relative
+        assert path.is_file(), f'Missing independent chat VAD resource: {relative}'
+        assert path.stat().st_size == size and hashlib.sha256(path.read_bytes()).hexdigest() == digest, f'Independent chat VAD resource changed: {relative}'
+    bundled_weights = [str(path.relative_to(app)) for path in app.rglob('*')
+                       if path.is_file() and path.name in excluded_model_names
+                       and path.relative_to(app).as_posix() not in chat_vad_resources]
+    assert not bundled_weights, f'On-demand model weights are bundled: {bundled_weights}'
     extensions = list((app / 'PlugIns').glob('*.appex'))
     assert {p.name for p in extensions} == {'MinisShare.appex', 'MinisFileProvider.appex', 'AgentWidgetExtension.appex', 'RecordWidgetExtension.appex'}
     for extension in extensions:

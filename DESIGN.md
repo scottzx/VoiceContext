@@ -16,7 +16,7 @@ Calendar and reminder ownership update (2026-10-06, explicit product-owner reque
 - **Name:** 一芥伙伴 (Chinese), Yima (English).
 - **Positioning:** Your personal assistant on your phone — Personal Agent.
 - **What this is:** An iPhone personal agent combining chat, reliable recording, meetings, Yima-owned calendar and reminders with optional system integration, shell, Skills, and browser tools. Recordings capture personal thoughts and conversations; each meeting has one calendar event and can link recording evidence. Open Markdown/JSON context connects them with chat and agent execution. Recording reliability remains the priority.
-- **Who it is for:** Privacy-conscious Apple users who value reliable recording, local processing, open documents, and one-time purchase over cloud AI spectacle or subscriptions.
+- **Who it is for:** Privacy-conscious Apple users who value reliable recording, local processing, open documents, and free speech-to-text with models downloaded when needed.
 - **Product type:** Native iOS personal assistant (Personal Agent).
 - **Core promise:** The user's recording is private, understandable, recoverable, and under their control.
 - **Memorable impression:** It feels as simple and trustworthy as an Apple system recording tool.
@@ -262,3 +262,4 @@ Do not apply border, fill, radius, and shadow to the same element by default. Ca
 | 2026-10-02 | Consolidate Chat, Meetings, and Tasks with shared semantic typography, spacing, colors, and 44 pt targets | Explicit product-owner approval of the cross-page token guide; preserve existing font preferences and each content type's structure |
 | 2026-10-02 | Move global settings and terminal/browser navigation from the chat list to Extensions; keep conversation controls in the conversation | Explicit product-owner confirmation; make Chat focus on search, creating, and managing conversations while Extensions provides grouped capabilities and one Settings entry |
 | 2026-10-06 | Add Yima-owned calendar and reminder lists, optional system integration, and one event per meeting visible in Meetings and Reminders | Explicit product-owner request; basic use must work without system access. Supersedes the 2026-09-29 system-only authority rule for Yima-owned items; synchronization direction remains pending |
+| 2026-10-09 | Remove in-app purchases and make speech-to-text free; distribute models through user-initiated downloads after installation | Explicit product-owner request; implementation is pending. See docs/design/free-transcription-model-download.md; retain the existing visual system |

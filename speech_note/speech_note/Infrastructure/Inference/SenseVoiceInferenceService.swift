@@ -157,7 +157,7 @@ actor SenseVoiceInferenceService {
         languageMode: TranscriptionLanguageMode = .default
     ) async throws -> Result {
         let inputMetrics = AudioInputMetrics.from(samples: samples)
-        let resourceRoot = try bundledModelResourceRoot()
+        let resourceRoot = try TranscriptionModelStore.requiredResourceRoot()
         cancellation.clearAbort()
         var nativeResults: [NativeResult] = []
         var utteranceDuration: TimeInterval = 0
@@ -318,23 +318,6 @@ actor SenseVoiceInferenceService {
 
     func metrics() async -> InferenceLifecycleGate.Metrics {
         await lifecycleGate.metrics()
-    }
-
-    private func bundledModelResourceRoot() throws -> URL {
-        guard let manifestURL = Bundle.main.url(forResource: "ModelManifest", withExtension: "json") else {
-            throw InferenceError.runtime("找不到 ModelManifest.json")
-        }
-
-        let resourceRoot = manifestURL.deletingLastPathComponent()
-        let artifacts = try ModelIntegrity.manifest(from: manifestURL)
-        let requiredModels = ["sensevoice-q8-0", "silero-vad", "cam-plus"]
-        for id in requiredModels {
-            guard let artifact = artifacts.first(where: { $0.id == id }) else {
-                throw InferenceError.runtime("ModelManifest.json 中缺少 \(id)")
-            }
-            try ModelIntegrity.validate(artifact, in: resourceRoot)
-        }
-        return resourceRoot
     }
 
     #if VOICE_AGENT_FUSION

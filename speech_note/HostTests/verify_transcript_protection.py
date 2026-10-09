@@ -77,6 +77,7 @@ with tempfile.TemporaryDirectory(prefix="yima-transcript-protection-") as tempor
         "-module-cache-path", str(temporary / "module-cache"),
         *[str(source / file) for file in files], str(helper_file),
         str(root / "HostTests/TranscriptProtectionChecks.swift"),
-        str(root / "HostTests/TranscriptLegacyCompatibilityChecks.swift"), "-o", str(binary),
+        str(root / "HostTests/TranscriptLegacyCompatibilityChecks.swift"),
+        str(root / "HostTests/FreeTranscriptionCompatibilityChecks.swift"), "-o", str(binary),
     ], check=True)
     subprocess.run([str(binary), *(["--legacy-only"] if args.legacy_only else [])], check=True)

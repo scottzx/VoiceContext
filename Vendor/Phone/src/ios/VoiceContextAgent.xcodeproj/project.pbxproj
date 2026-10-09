@@ -4287,11 +4287,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>25E26CB3B633CD63977A4E9E</string>
 				<string>1141E0AA75EE561BDA642EAB</string>
 				<string>F5BA37D64CDC8BCFAD415DFC</string>
-				<string>50726C8CAF1B593FC851092F</string>
-				<string>84D39D0725117C16DA0D3B1E</string>
-				<string>778A14AB66FFC836725391CC</string>
-				<string>2382723004CBE23BD6E38B0D</string>
-				<string>8BC856912D7AE25EAED9909E</string>
 				<string>8D73FFF4ED8642A9ACFE5B44</string>
 				<string>E15F6BB3B6C8F84AD50F8CAD</string>
 				<string>B794A7060388E38BE6D8EA2C</string>
@@ -4339,6 +4334,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>A3E840EFBADA576CFFFB0FA4</string>
 				<string>06A1E86753823D237F900C78</string>
 				<string>67219CDA90C1B3815C0214D5</string>
+				<string>8BF5989A61D9C3FD70EA7567</string>
 				<string>55C02780D3B769DF7C97EEA1</string>
 				<string>57BC00116124A502E1B10BF5</string>
 				<string>55120B7E6F16D89B95383382</string>
@@ -4347,6 +4343,8 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>74945BC5B1A8AADA6042C79A</string>
 				<string>13750FD690DD5917F9B243FC</string>
 				<string>55BA1B07741DF27D832757B4</string>
+				<string>1FE5111B624D9B538C7CE969</string>
+				<string>6AD2B41F1F121C8B58016A9F</string>
 				<string>9B065FCFC867FC8BBCDF1784</string>
 				<string>FCBB97F1A372E0A5344B82EA</string>
 				<string>6DEFBD42EAC93BB58F9A21D7</string>
@@ -4371,12 +4369,9 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>2D871345D1E38ACF991C91FF</string>
 				<string>639730705DEFB91B1B15ABA5</string>
 				<string>1F735BF4F13D0C06676E8EA3</string>
-				<string>D983291FA8BEF8C3345650A8</string>
+				<string>7DFC1CF26EA83D1E38DA3EAB</string>
 				<string>B13CAB27693B13DE9D21F14D</string>
-				<string>5015204BB03788DD2EED5454</string>
 				<string>5F471D40BE35CB0C1B677281</string>
-				<string>544748AC938E5F3D8F75F850</string>
-				<string>F96D5DEA6E22C2B74A16A17A</string>
 				<string>CC72E634FC5263CDFF209186</string>
 				<string>5BC55D283ABC5834CAB02A15</string>
 				<string>51C1C4868C80FD4CCEF5CC6E</string>
@@ -11118,12 +11113,9 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>D4C84C1842D37CE989EF5AC9</string>
 				<string>9AB4751F1CDD650D51A70787</string>
 				<string>2F7422003D4691484AFC3A91</string>
-				<string>87EEB2BB6BACF8B0DE21784E</string>
+				<string>6404D79DAE600EB3A30B991A</string>
 				<string>0AE50E00EE5CC0B920509B33</string>
-				<string>B7F9B1E5E5AF338D0CCA732A</string>
 				<string>94AA958B31D66274E1558152</string>
-				<string>708C903D6F0ACE7542063315</string>
-				<string>BC787530CD2CEB9CBEFE6150</string>
 				<string>692D6E068BFD97F31CEEC8EF</string>
 				<string>38C26F4440A8055BA5B0CD3E</string>
 			</array>
@@ -17086,11 +17078,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>C61288C7B12EB726DED2BD65</string>
 				<string>51E916A172035BC021965E9E</string>
 				<string>B9F2DA29A611700EFAAC22B0</string>
-				<string>FE1E00517C60025439FA762F</string>
-				<string>7F3920162F7A2F4B4F22CF0F</string>
-				<string>3D8D0927DD4A025EE003D0C8</string>
-				<string>D618214FB2DE1B17A2D0E384</string>
-				<string>F5C1BCFD630F511409960C33</string>
 				<string>D85402D4B81D248366F6535A</string>
 				<string>B39EF29290AA0D6A5A6CF7D0</string>
 				<string>562A3132DFEC1C9D8CF9342C</string>
@@ -17138,6 +17125,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>B4E0E2190C3B8F200AC4F6CD</string>
 				<string>6A3667DA0B1B701550D97FF5</string>
 				<string>FF2D6524C78F4806B60FDC80</string>
+				<string>46B388202B63DC0078C0913C</string>
 				<string>3ADB34D5B203507C5195A988</string>
 				<string>0F2D787A2CF260B2D4BC367F</string>
 				<string>17A1C6428DDA9E5684638F2E</string>
@@ -17146,6 +17134,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>B1F21195B4B7086DBB86B899</string>
 				<string>2DEABB93825C72C21DA3EF19</string>
 				<string>FC0A3857FF4E07DB205AD791</string>
+				<string>413195494A415D5300A902D9</string>
+				<string>EDE79D4371C5682ECFE6A134</string>
 				<string>3D92A243A2E2F2CB857CA470</string>
 				<string>FEDEB6CEB9747917534789C6</string>
 				<string>2A45E1AB97FE5823722A53E3</string>
@@ -17503,6 +17493,14 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>membershipExceptions</key>
 			<array>
 				<string>Info.plist</string>
+				<string>ModelResources/SenseVoiceSmall-Q8_0.gguf</string>
+				<string>ModelResources/silero_vad.onnx</string>
+				<string>ModelResources/3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx</string>
+				<string>ModelResources/pyannote-segmentation-3.0.int8.onnx</string>
+				<string>ModelResources/SenseVoiceSmall-Q8_0.gguf.partial</string>
+				<string>ModelResources/silero_vad.onnx.partial</string>
+				<string>ModelResources/3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx.partial</string>
+				<string>ModelResources/pyannote-segmentation-3.0.int8.onnx.partial</string>
 			</array>
 			<key>target</key>
 			<string>D2155AF83020A7E100F29231</string>
@@ -18116,96 +18114,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>F5BA37D64CDC8BCFAD415DFC</string>
-		</dict>
-		<key>50726C8CAF1B593FC851092F</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>path</key>
-			<string>../../../../speech_note/speech_note/Features/Purchase/PurchaseUnlockClient.swift</string>
-			<key>sourceTree</key>
-			<string>SOURCE_ROOT</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-		</dict>
-		<key>FE1E00517C60025439FA762F</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>50726C8CAF1B593FC851092F</string>
-		</dict>
-		<key>84D39D0725117C16DA0D3B1E</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>path</key>
-			<string>../../../../speech_note/speech_note/Features/Purchase/PurchaseUnlockView.swift</string>
-			<key>sourceTree</key>
-			<string>SOURCE_ROOT</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-		</dict>
-		<key>7F3920162F7A2F4B4F22CF0F</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>84D39D0725117C16DA0D3B1E</string>
-		</dict>
-		<key>778A14AB66FFC836725391CC</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>path</key>
-			<string>../../../../speech_note/speech_note/Features/Purchase/SharedKeychainEntitlementStore.swift</string>
-			<key>sourceTree</key>
-			<string>SOURCE_ROOT</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-		</dict>
-		<key>3D8D0927DD4A025EE003D0C8</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>778A14AB66FFC836725391CC</string>
-		</dict>
-		<key>2382723004CBE23BD6E38B0D</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>path</key>
-			<string>../../../../speech_note/speech_note/Features/Purchase/TrialEntitlementController.swift</string>
-			<key>sourceTree</key>
-			<string>SOURCE_ROOT</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-		</dict>
-		<key>D618214FB2DE1B17A2D0E384</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>2382723004CBE23BD6E38B0D</string>
-		</dict>
-		<key>8BC856912D7AE25EAED9909E</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>path</key>
-			<string>../../../../speech_note/speech_note/Features/Purchase/TrialQuotaLedger.swift</string>
-			<key>sourceTree</key>
-			<string>SOURCE_ROOT</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-		</dict>
-		<key>F5C1BCFD630F511409960C33</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>8BC856912D7AE25EAED9909E</string>
 		</dict>
 		<key>8D73FFF4ED8642A9ACFE5B44</key>
 		<dict>
@@ -19053,6 +18961,24 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>67219CDA90C1B3815C0214D5</string>
 		</dict>
+		<key>8BF5989A61D9C3FD70EA7567</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../speech_note/speech_note/Features/Transcription/TranscriptionModelDownloadView.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>46B388202B63DC0078C0913C</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>8BF5989A61D9C3FD70EA7567</string>
+		</dict>
 		<key>55C02780D3B769DF7C97EEA1</key>
 		<dict>
 			<key>isa</key>
@@ -19196,6 +19122,42 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>55BA1B07741DF27D832757B4</string>
+		</dict>
+		<key>1FE5111B624D9B538C7CE969</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../speech_note/speech_note/Infrastructure/Models/TranscriptionModelDownloadService.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>413195494A415D5300A902D9</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>1FE5111B624D9B538C7CE969</string>
+		</dict>
+		<key>6AD2B41F1F121C8B58016A9F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../speech_note/speech_note/Infrastructure/Models/TranscriptionModelStore.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>EDE79D4371C5682ECFE6A134</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>6AD2B41F1F121C8B58016A9F</string>
 		</dict>
 		<key>9B065FCFC867FC8BBCDF1784</key>
 		<dict>
@@ -19779,23 +19741,23 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>1F735BF4F13D0C06676E8EA3</string>
 		</dict>
-		<key>D983291FA8BEF8C3345650A8</key>
+		<key>7DFC1CF26EA83D1E38DA3EAB</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>path</key>
-			<string>../../../../speech_note/speech_note/ModelResources/3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx</string>
+			<string>../../../../speech_note/speech_note/ModelResources/MODEL_ATTRIBUTIONS.md</string>
 			<key>sourceTree</key>
 			<string>SOURCE_ROOT</string>
 			<key>lastKnownFileType</key>
 			<string>file</string>
 		</dict>
-		<key>87EEB2BB6BACF8B0DE21784E</key>
+		<key>6404D79DAE600EB3A30B991A</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
-			<string>D983291FA8BEF8C3345650A8</string>
+			<string>7DFC1CF26EA83D1E38DA3EAB</string>
 		</dict>
 		<key>B13CAB27693B13DE9D21F14D</key>
 		<dict>
@@ -19815,24 +19777,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>B13CAB27693B13DE9D21F14D</string>
 		</dict>
-		<key>5015204BB03788DD2EED5454</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>path</key>
-			<string>../../../../speech_note/speech_note/ModelResources/SenseVoiceSmall-Q8_0.gguf</string>
-			<key>sourceTree</key>
-			<string>SOURCE_ROOT</string>
-			<key>lastKnownFileType</key>
-			<string>file</string>
-		</dict>
-		<key>B7F9B1E5E5AF338D0CCA732A</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>5015204BB03788DD2EED5454</string>
-		</dict>
 		<key>5F471D40BE35CB0C1B677281</key>
 		<dict>
 			<key>isa</key>
@@ -19850,42 +19794,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>5F471D40BE35CB0C1B677281</string>
-		</dict>
-		<key>544748AC938E5F3D8F75F850</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>path</key>
-			<string>../../../../speech_note/speech_note/ModelResources/pyannote-segmentation-3.0.int8.onnx</string>
-			<key>sourceTree</key>
-			<string>SOURCE_ROOT</string>
-			<key>lastKnownFileType</key>
-			<string>file</string>
-		</dict>
-		<key>708C903D6F0ACE7542063315</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>544748AC938E5F3D8F75F850</string>
-		</dict>
-		<key>F96D5DEA6E22C2B74A16A17A</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>path</key>
-			<string>../../../../speech_note/speech_note/ModelResources/silero_vad.onnx</string>
-			<key>sourceTree</key>
-			<string>SOURCE_ROOT</string>
-			<key>lastKnownFileType</key>
-			<string>file</string>
-		</dict>
-		<key>BC787530CD2CEB9CBEFE6150</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>F96D5DEA6E22C2B74A16A17A</string>
 		</dict>
 		<key>CC72E634FC5263CDFF209186</key>
 		<dict>

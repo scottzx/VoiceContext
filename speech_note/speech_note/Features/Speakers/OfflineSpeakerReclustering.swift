@@ -633,31 +633,26 @@ enum OfflineSpeakerReclusterPass {
 
     enum PassError: LocalizedError {
         case missingResource(String)
-        case missingManifest
 
         var errorDescription: String? {
             switch self {
             case let .missingResource(name):
                 "离线重聚类缺少模型：\(name)。"
-            case .missingManifest:
-                "离线重聚类找不到 ModelManifest.json。"
             }
         }
     }
 
-    nonisolated static func bundledResourceRoot(bundle: Bundle = .main) throws -> URL {
-        guard let manifestURL = bundle.url(forResource: "ModelManifest", withExtension: "json") else {
-            throw PassError.missingManifest
-        }
-        return manifestURL.deletingLastPathComponent()
+    nonisolated static func downloadedResourceRoot() throws -> URL {
+        try TranscriptionModelStore.requiredResourceRoot()
     }
 
     static func run(
         chunkURLs: [(url: URL, startSample: Int64)],
-        resourceRoot: URL
+        resourceRoot: URL,
+        executionAllowed: @escaping @Sendable () async -> Bool = { true }
     ) async throws -> PassResult {
         try await Task.detached(priority: .userInitiated) {
-            try runSync(chunkURLs: chunkURLs, resourceRoot: resourceRoot)
+            try await runChunks(chunkURLs: chunkURLs, resourceRoot: resourceRoot, executionAllowed: executionAllowed)
         }.value
     }
 
@@ -667,13 +662,15 @@ enum OfflineSpeakerReclusterPass {
     static func runImportedAsset(
         url: URL,
         totalSamples: Int64,
-        resourceRoot: URL
+        resourceRoot: URL,
+        executionAllowed: @escaping @Sendable () async -> Bool = { true }
     ) async throws -> PassResult {
         try await Task.detached(priority: .userInitiated) {
-            try runImportedAssetSync(
+            try await runImportedWindows(
                 url: url,
                 totalSamples: totalSamples,
-                resourceRoot: resourceRoot
+                resourceRoot: resourceRoot,
+                executionAllowed: executionAllowed
             )
         }.value
     }
@@ -688,14 +685,17 @@ enum OfflineSpeakerReclusterPass {
         }
     }
 
-    nonisolated private static func runSync(
+    nonisolated private static func runChunks(
         chunkURLs: [(url: URL, startSample: Int64)],
-        resourceRoot: URL
-    ) throws -> PassResult {
+        resourceRoot: URL,
+        executionAllowed: @escaping @Sendable () async -> Bool
+    ) async throws -> PassResult {
         try ensureSpeakerModels(resourceRoot: resourceRoot)
 
         var observations: [OfflineSpeakerObservation] = []
         for chunk in chunkURLs {
+            try Task.checkCancellation()
+            guard await executionAllowed() else { throw SpeakerInferenceDeferred() }
             let samples = try PCM16KMonoLoader.samples(from: chunk.url)
             guard !samples.isEmpty else { continue }
             // Fresh online clusterer per chunk mirrors the live path so
@@ -711,11 +711,12 @@ enum OfflineSpeakerReclusterPass {
         return PassResult(recluster: recluster, observations: observations)
     }
 
-    nonisolated private static func runImportedAssetSync(
+    nonisolated private static func runImportedWindows(
         url: URL,
         totalSamples: Int64,
-        resourceRoot: URL
-    ) throws -> PassResult {
+        resourceRoot: URL,
+        executionAllowed: @escaping @Sendable () async -> Bool
+    ) async throws -> PassResult {
         try ensureSpeakerModels(resourceRoot: resourceRoot)
         guard totalSamples > 0 else {
             return PassResult(recluster: .init(speakers: [], turns: [], labels: []), observations: [])
@@ -724,6 +725,8 @@ enum OfflineSpeakerReclusterPass {
         var observations: [OfflineSpeakerObservation] = []
         let windows = importWindows(totalSamples: totalSamples)
         for window in windows {
+            try Task.checkCancellation()
+            guard await executionAllowed() else { throw SpeakerInferenceDeferred() }
             let samples = try ImportAudioRangeDecoder.samples(
                 from: url,
                 startSample: window.startSample,

@@ -28,6 +28,7 @@ nonisolated enum RecordingProcessingState: String, Codable, CaseIterable, Sendab
     case processing
     case speakerFinalization
     case deferredUntilForeground
+    /// Retained so historical journal values remain decodable after free access.
     case lockedPendingPurchase
     case needsAttention
     case complete
@@ -398,7 +399,6 @@ nonisolated struct TranscriptionQueueStatus: Sendable, Equatable {
     var completedTasks: [RecordingProcessingTaskItem] = []
     var metalSubmissions: Int = 0
     var thermalState: String = "正常"
-    var isPurchaseLocked: Bool = false
 
     var completedRecordingGroups: [CompletedRecordingProcessingGroup] {
         var recordingOrder: [UUID] = []
@@ -539,9 +539,6 @@ extension RecordingProcessingState {
             return .processing
         }
         let pendingJobs = jobs.filter { $0.state == .pending }
-        if pendingJobs.contains(where: { $0.lastError == "lockedPendingPurchase" }) {
-            return .lockedPendingPurchase
-        }
         if pendingJobs.contains(where: { $0.lastError == "deferredUntilForeground" }) {
             return .deferredUntilForeground
         }

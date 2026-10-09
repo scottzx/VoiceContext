@@ -36,7 +36,6 @@ enum OnboardingStep: Int, CaseIterable {
     case privacy
     case microphone
     case iCloud
-    case trial
 }
 
 /// Shared microphone-boundary helpers for onboarding, settings, and start UX.
@@ -141,8 +140,6 @@ struct OnboardingFlowView: View {
                     microphoneStep
                 case .iCloud:
                     iCloudStep
-                case .trial:
-                    trialStep
                 }
             }
             .navigationTitle(title)
@@ -162,7 +159,6 @@ struct OnboardingFlowView: View {
         case .privacy: "欢迎"
         case .microphone: "麦克风权限"
         case .iCloud: "同步选择"
-        case .trial: "免费试用"
         }
     }
 
@@ -218,7 +214,7 @@ struct OnboardingFlowView: View {
         VStack(alignment: .leading, spacing: 24) {
             Spacer(minLength: 20)
 
-            Text(TrialQuotaLedger.isManualTrialEnabled ? "第 1 步，共 3 步" : "第 1 步，共 2 步")
+            Text("第 1 步，共 2 步")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
@@ -303,59 +299,15 @@ struct OnboardingFlowView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            Button(TrialQuotaLedger.isManualTrialEnabled ? "继续" : "开始使用") {
-                if TrialQuotaLedger.isManualTrialEnabled {
-                    step = .trial
-                } else {
-                    completeOnboarding()
-                }
-            }
+            Button("开始使用") { completeOnboarding() }
                 .buttonStyle(.borderedProminent)
                 .tint(.primary)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
                 .background(.bar)
-                .accessibilityHint(
-                    TrialQuotaLedger.isManualTrialEnabled
-                        ? "继续了解试用"
-                        : "进入记录页，不会自动开始录音"
-                )
-        }
-    }
-
-    private var trialStep: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Spacer(minLength: 20)
-
-            Text("第 3 步，共 3 步")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("首次打开后 3 天免费试用。")
-                    .font(.title2.weight(.semibold))
-                Text("试用自首次打开应用起连续计时 72 小时；试用期满后可一次性永久解锁。具体价格以 App Store 显示为准。")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-            }
-
-            Label("试用到期后仍可录音和保存音频；转写会等待永久解锁。", systemImage: "lock.open")
-                .font(.subheadline)
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-
-            Spacer()
-
-            Button("开始使用") { completeOnboarding() }
-                .buttonStyle(.borderedProminent)
-                .tint(.primary)
-                .frame(maxWidth: .infinity, minHeight: 52)
                 .accessibilityHint("进入记录页，不会自动开始录音")
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 24)
     }
 
     private func continueFromMicrophoneStep() async {
@@ -618,10 +570,10 @@ enum LegalReviewChecklist {
         ),
         .init(
             id: "camplusplus-license",
-            title: "CAM++ / 3D-Speaker 许可复核",
-            detail: "已完成 3D-Speaker / CAM++ 许可复核（Apache 2.0），允许商用；已保留版权与许可声明。",
+            title: "ERes2Net / 3D-Speaker 许可复核",
+            detail: "已完成 3D-Speaker / ERes2Net 许可复核（Apache 2.0），允许商用；已保留版权与许可声明。",
             status: .satisfied,
-            relatedAttributionName: "CAM++ / 3D-Speaker"
+            relatedAttributionName: "ERes2Net / 3D-Speaker"
         ),
         .init(
             id: "offline-attribution-ui",
@@ -717,14 +669,14 @@ struct ThirdPartyAttribution: Identifiable, Hashable, Sendable {
             """
         ),
         .init(
-            name: "CAM++ / 3D-Speaker",
+            name: "ERes2Net / 3D-Speaker",
             summary: "端侧说话人 embedding 模型",
             license: "Apache License 2.0",
             sourceURL: URL(string: "https://github.com/modelscope/3D-Speaker")!,
             licenseURL: URL(string: "https://github.com/modelscope/3D-Speaker/blob/main/LICENSE")!,
             reviewStatus: "已审核通过（Apache License 2.0）：允许商用，发布时遵守 Apache 2.0 归因与 NOTICE 要求。",
             offlineLicenseText: """
-            上游项目 3D-Speaker 及 CAM++ 模型遵循 Apache License 2.0。VoiceContext 仅在设备本地使用说话人 embedding，已满足许可归因与保留版权声明要求。完整条款见许可原文链接。
+            上游项目 3D-Speaker 及 ERes2Net 模型遵循 Apache License 2.0。VoiceContext 仅在设备本地使用说话人 embedding，已满足许可归因与保留版权声明要求。完整条款见许可原文链接。
             """
         ),
         .init(

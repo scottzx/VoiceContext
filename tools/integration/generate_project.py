@@ -166,9 +166,10 @@ for path,kind in [(ROOT/'Integration/Resources/Localizable.xcstrings','text.json
                   (ROOT/'Integration/Resources/Assets.xcassets','folder.assetcatalog'),
                   (ROOT/'speech_note/speech_note/VoiceContextPack.zip','archive.zip')]:
     if path.exists(): add(main,'PBXResourcesBuildPhase',ref(path,kind))
-# Copy model files individually so Bundle.main loaders share one flat resource root.
+# Keep the download manifest and attribution in the app; weights are fetched on demand.
 for path in sorted((ROOT/'speech_note/speech_note/ModelResources').iterdir()):
-    if path.is_file(): add(main,'PBXResourcesBuildPhase',ref(path, 'text.json' if path.suffix == '.json' else 'file'))
+    if path.is_file() and (path.name == 'ModelManifest.json' or path.suffix in {'.txt', '.md'}):
+        add(main,'PBXResourcesBuildPhase',ref(path, 'text.json' if path.suffix == '.json' else 'file'))
 add(main,'PBXResourcesBuildPhase',ref(ROOT/'speech_note/speech_note/SenseVoiceFixture.m4a', 'file'))
 # Preserve the full platform plist but use the released product's identity and privacy text.
 with (PHONE/'Info.plist').open('rb') as f: info=plistlib.load(f)

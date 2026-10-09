@@ -44,7 +44,7 @@ actor ForegroundTranscriptionScheduler {
     private let admissionPolicy: TranscriptionAdmissionPolicy
     private let execute: Executor
     private let now: @Sendable () -> Date
-    private var isInBackground = false
+    private var isInBackground: Bool
     private var continuedBackgroundExecutionAllowed = false
     private var recoveryBarrierActive = false
     private var drainTask: Task<Void, Never>?
@@ -55,12 +55,16 @@ actor ForegroundTranscriptionScheduler {
         repository: RecordingRepository,
         lifecycleGate: InferenceLifecycleGate = InferenceLifecycleGate(),
         admissionPolicy: TranscriptionAdmissionPolicy = TranscriptionAdmissionPolicy(),
+        initiallyInBackground: Bool = false,
+        requiresInitialRecovery: Bool = false,
         now: @escaping @Sendable () -> Date = Date.init,
         execute: @escaping Executor
     ) {
         self.repository = repository
         self.lifecycleGate = lifecycleGate
         self.admissionPolicy = admissionPolicy
+        self.isInBackground = initiallyInBackground
+        self.recoveryBarrierActive = requiresInitialRecovery
         self.now = now
         self.execute = execute
     }
@@ -209,7 +213,7 @@ actor ForegroundTranscriptionScheduler {
         await suspendCurrentDrain(reason: reason)
     }
 
-    /// Re-evaluates admission after purchase unlock or thermal recovery without
+    /// Re-evaluates admission after models become ready or thermal recovery without
     /// requiring a scene-phase transition.
     func requestDrain() {
         startDrainingIfPossible()
@@ -429,12 +433,6 @@ actor ForegroundTranscriptionScheduler {
             case let .deferInference(reason):
                 var job = job
                 job.lastError = reason
-                job.updatedAt = now()
-                _ = try? await repository.upsertJob(job, at: job.updatedAt)
-                return
-            case .lockedPendingPurchase:
-                var job = job
-                job.lastError = "lockedPendingPurchase"
                 job.updatedAt = now()
                 _ = try? await repository.upsertJob(job, at: job.updatedAt)
                 return

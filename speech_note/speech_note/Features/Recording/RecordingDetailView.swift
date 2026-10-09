@@ -34,6 +34,8 @@ struct RecordingDetailScreen: View {
     @State private var transcriptError: String?
     @State private var contentTab: DetailContentTab = .transcript
     @StateObject private var timelinePlayer = RecordingAudioTimelinePlayer()
+    @ObservedObject private var modelDownload = TranscriptionModelDownloadService.shared
+    @State private var isModelDownloadPresented = false
 
     // Speaker to Client binding state
     @State private var selectedSpeakerForClientBinding: MeetingSpeakerBinding? = nil
@@ -175,15 +177,16 @@ struct RecordingDetailScreen: View {
                 .disabled(transcript == nil || transcript?.segments.isEmpty == true)
 
                 Button {
-                    Task {
-                        await model.retryTranscription(recordingID: recordingID)
-                        await loadDetail()
-                    }
+                    requestRetranscription()
                 } label: {
                     Label("重新转写 / 分析", systemImage: "arrow.clockwise")
                 }
 
                 Button {
+                    guard TranscriptionModelStore.isReady else {
+                        isModelDownloadPresented = true
+                        return
+                    }
                     isSpeakerRecognitionConfirmationPresented = true
                 } label: {
                     Label(
@@ -228,6 +231,9 @@ struct RecordingDetailScreen: View {
                 NavigationStack {
                     ExportDocumentsDestination(model: model, recordingID: recordingID)
                 }
+            }
+            .sheet(isPresented: $isModelDownloadPresented) {
+                TranscriptionModelDownloadSheet()
             }
             .sheet(isPresented: $isMetadataEditSheetPresented, onDismiss: {
                 Task { await loadDetail() }
@@ -557,7 +563,7 @@ struct RecordingDetailScreen: View {
             case .deferredUntilForeground:
                 return ("待恢复", "pause.circle", YimaDesign.Color.warningText)
             case .lockedPendingPurchase:
-                return ("待解锁", "lock", YimaDesign.Color.warningText)
+                return ("正在处理", "hourglass", YimaDesign.Color.warningText)
             case .needsAttention:
                 return ("注意", "exclamationmark.triangle", YimaDesign.Color.recordingText)
             case .complete:
@@ -918,6 +924,11 @@ struct RecordingDetailScreen: View {
         let failedJobs = jobs.filter { $0.kind == .transcription && $0.state == .failed }
 
         return VStack(alignment: .leading, spacing: YimaDesign.Layout.groupGap) {
+            if modelDownload.state != .ready {
+                TranscriptionModelStatusBanner {
+                    isModelDownloadPresented = true
+                }
+            }
             if roster.count >= 2 {
                 speakerLegend(
                     roster: roster,
@@ -936,7 +947,7 @@ struct RecordingDetailScreen: View {
                     }
                 }
 
-                if !isCapturingThisRecording && !pendingOrRunningJobs.isEmpty {
+                if !isCapturingThisRecording && !pendingOrRunningJobs.isEmpty && modelDownload.state == .ready {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
@@ -953,7 +964,7 @@ struct RecordingDetailScreen: View {
             } else if isCapturingThisRecording {
                 // liveRecordingBanner is rendered below
             } else {
-                if !pendingOrRunningJobs.isEmpty {
+                if !pendingOrRunningJobs.isEmpty && modelDownload.state == .ready {
                     VStack(spacing: 12) {
                         ProgressView()
                             .controlSize(.regular)
@@ -965,7 +976,7 @@ struct RecordingDetailScreen: View {
                     .padding(.vertical, 36)
                 } else if !failedJobs.isEmpty {
                     failedJobsCard(failedJobs: failedJobs)
-                } else {
+                } else if modelDownload.state == .ready {
                     Text(documentPlaceholder)
                         .font(YimaDesign.Typography.body)
                         .foregroundStyle(YimaDesign.Color.muted)
@@ -1001,10 +1012,7 @@ struct RecordingDetailScreen: View {
             }
             Spacer()
             Button {
-                Task {
-                    await model.retryTranscription(recordingID: recordingID)
-                    await loadDetail()
-                }
+                requestRetranscription()
             } label: {
                 Text("重试")
                     .font(YimaDesign.Typography.compactMetadata.weight(.semibold))
@@ -1034,10 +1042,7 @@ struct RecordingDetailScreen: View {
                     .padding(.horizontal, YimaDesign.Layout.pageInset)
             }
             Button {
-                Task {
-                    await model.retryTranscription(recordingID: recordingID)
-                    await loadDetail()
-                }
+                requestRetranscription()
             } label: {
                 Text("重新转写")
                     .font(YimaDesign.Typography.metadata.weight(.medium))
@@ -1053,8 +1058,21 @@ struct RecordingDetailScreen: View {
         .padding(.vertical, 32)
     }
 
+    private func requestRetranscription() {
+        guard TranscriptionModelStore.isReady else {
+            isModelDownloadPresented = true
+            return
+        }
+        Task {
+            await model.retryTranscription(recordingID: recordingID)
+            await loadDetail()
+        }
+    }
+
     private func formatErrorMessage(_ error: String) -> String {
         switch error {
+        case "modelsNotReady":
+            return "音频已保存，下载模型后可转文字。"
         case "deferredUntilThermalImproves":
             return "设备发热较严重，已暂缓以保护硬件；降温后将自动恢复转写。"
         case "deferredUntilForeground":
@@ -1062,7 +1080,7 @@ struct RecordingDetailScreen: View {
         case "deferredUntilMetalAvailable":
             return "Metal 图形加速通道排队中，稍候自动执行。"
         case "lockedPendingPurchase":
-            return "试用配额已达上限，待解锁后继续。"
+            return "音频已保存，转写排队处理中。"
         case "recoveredAfterTermination":
             return "应用退出后已自动恢复，排队转写中。"
         default:
@@ -1076,14 +1094,15 @@ struct RecordingDetailScreen: View {
                 .foregroundStyle(RecordingStatusStyle.color(for: model.presentation))
                 .symbolEffect(.pulse, isActive: !reduceMotion && model.presentation == .recording)
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.presentation == .paused ? "录音已暂停" : "正在录音并实时转写…")
+                Text(LocalizedStringKey(model.presentation == .paused ? "录音已暂停"
+                    : modelDownload.state == .ready ? "正在录音并实时转写…" : "正在录音"))
                     .font(YimaDesign.Typography.metadata.weight(.medium))
                     .foregroundStyle(YimaDesign.Color.ink)
-                if let progress = model.sessionProgress {
+                if let progress = model.sessionProgress, modelDownload.state == .ready {
                     Text(RecordingStatusStyle.progressDetailText(for: progress, isInBackground: model.isInBackground))
                         .font(YimaDesign.Typography.compactMetadata.monospacedDigit())
                         .foregroundStyle(YimaDesign.Color.muted)
-                } else {
+                } else if modelDownload.state == .ready {
                     Text("每约 60 秒增量转写已关闭分片")
                         .font(YimaDesign.Typography.compactMetadata)
                         .foregroundStyle(YimaDesign.Color.muted)
@@ -1689,6 +1708,9 @@ struct RecordingDetailScreen: View {
     }
 
     private var documentPlaceholder: String {
+        guard modelDownload.state == .ready else {
+            return L("音频已保存，下载模型后可转文字。")
+        }
         switch progress?.processing {
         case .queued, .processing:
             return "正在生成本地转写文稿…"
@@ -1697,7 +1719,7 @@ struct RecordingDetailScreen: View {
         case .deferredUntilForeground:
             return "转写待回到前台后继续。"
         case .lockedPendingPurchase:
-            return "音频已保存，转写等待解锁。"
+            return "正在生成本地转写文稿…"
         case .needsAttention:
             return "转写处理需要注意，可点击下方重试。"
         default:

@@ -10,6 +10,7 @@ import SwiftUI
 #if !VOICE_AGENT_FUSION
 @main
 struct speech_noteApp: App {
+    @UIApplicationDelegateAdaptor(TranscriptionDownloadAppDelegate.self) private var appDelegate
     @AppStorage(OnboardingPreferences.completedKey) private var hasCompletedOnboarding = false
     /// Stashed across cold start / onboarding so Widget taps are not lost.
     @State private var pendingStartRecording = false
@@ -54,6 +55,28 @@ struct speech_noteApp: App {
                     }
                 }
             }
+        }
+    }
+}
+
+final class TranscriptionDownloadAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        TranscriptionModelDownloadService.shared.restore()
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        if !TranscriptionModelDownloadService.shared.handleBackgroundEvents(
+            identifier: identifier, completionHandler: completionHandler
+        ) {
+            completionHandler()
         }
     }
 }

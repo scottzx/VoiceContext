@@ -182,7 +182,6 @@ enum AppStringKey {
     case statusReady
     case statusTranscribing
     case statusNeedsAttention
-    case statusLocked
     case revision(Int)
     case settings
     case languageSetting
@@ -285,7 +284,6 @@ enum AppStringKey {
         case .statusReady: "已就绪"
         case .statusTranscribing: "转写中"
         case .statusNeedsAttention: "需要注意"
-        case .statusLocked: "等待解锁"
         case .revision(let n): "版本 \(n)"
         case .settings: "设置与偏好"
         case .languageSetting: "界面语言"
@@ -390,7 +388,6 @@ enum AppStringKey {
         case .statusReady: "Ready"
         case .statusTranscribing: "Transcribing"
         case .statusNeedsAttention: "Attention Needed"
-        case .statusLocked: "Pending Unlock"
         case .revision(let n): "Revision \(n)"
         case .settings: "Settings & Preferences"
         case .languageSetting: "Language"

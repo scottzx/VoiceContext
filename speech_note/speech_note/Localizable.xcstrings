@@ -1614,28 +1614,6 @@
         }
       }
     },
-    "等待解锁": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pending unlock"
-          }
-        }
-      }
-    },
-    "待解锁": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pending unlock"
-          }
-        }
-      }
-    },
     "待恢复": {
       "extractionState": "manual",
       "localizations": {
@@ -1687,17 +1665,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Processing on-device. Return to the app to see progress."
-          }
-        }
-      }
-    },
-    "音频已保存，转写等待解锁": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Audio saved. Transcription waits for unlock."
           }
         }
       }
@@ -3875,28 +3842,6 @@
         }
       }
     },
-    "第 3 步，共 3 步": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Step 3 of 3"
-          }
-        }
-      }
-    },
-    "第 1 步，共 3 步": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Step 1 of 3"
-          }
-        }
-      }
-    },
     "第 1 步，共 2 步": {
       "extractionState": "manual",
       "localizations": {
@@ -3904,28 +3849,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Step 1 of 2"
-          }
-        }
-      }
-    },
-    "首次打开后 3 天免费试用。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "3-day free trial from first launch."
-          }
-        }
-      }
-    },
-    "试用自首次打开应用起连续计时 72 小时；试用期满后可一次性永久解锁。具体价格以 App Store 显示为准。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The trial runs 72 hours from first launch. After that you can unlock once, forever. Price is shown by the App Store."
           }
         }
       }
@@ -4053,199 +3976,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Continue. Recording does not start yet."
-          }
-        }
-      }
-    },
-    "继续了解试用": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Continue to the trial"
-          }
-        }
-      }
-    },
-    "免费试用": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Free trial"
-          }
-        }
-      }
-    },
-    "解锁": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unlock"
-          }
-        }
-      }
-    },
-    "兑换优惠码": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Redeem code"
-          }
-        }
-      }
-    },
-    "72 小时试用已到期": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The 72-hour trial has ended"
-          }
-        }
-      }
-    },
-    "试用即将到期。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The trial is ending soon."
-          }
-        }
-      }
-    },
-    "试用到期后仍可录音和保存音频；转写会等待永久解锁。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "After the trial you can still record and save audio. Transcription waits for a one-time unlock."
-          }
-        }
-      }
-    },
-    "这是一次性永久解锁，不是订阅。无业务服务器。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This is a one-time unlock, not a subscription. There is no account server."
-          }
-        }
-      }
-    },
-    "这是一次性永久解锁，不是订阅。无业务服务器，100% 本地端侧隐私安全。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This is a one-time unlock, not a subscription. No account server — processing stays on-device."
-          }
-        }
-      }
-    },
-    "一次性永久解锁 VoiceContext 全部功能（本地端侧 AI 转写、说话人识别与会议整理）。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "One-time unlock of Yima: on-device transcription, speaker identification, and meeting organization."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一次性永久解锁 一芥伙伴 全部功能（本地端侧 AI 转写、说话人识别与会议整理）。"
-          }
-        }
-      }
-    },
-    "支持输入 App Store 兑换码直接解锁；原始录音文件保存在设备本机，可通过系统「文件」App 查阅与导出。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You can redeem an App Store code. Original recordings stay on this device and can be opened in the Files app."
-          }
-        }
-      }
-    },
-    "暂时无法获取永久解锁商品，请稍后重试。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Couldn’t load the unlock product. Try again in a moment."
-          }
-        }
-      }
-    },
-    "无法验证购买凭证。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Couldn’t verify the purchase."
-          }
-        }
-      }
-    },
-    "未检测到有效购买。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No valid purchase found."
-          }
-        }
-      }
-    },
-    "没有可恢复的购买。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No purchases to restore."
-          }
-        }
-      }
-    },
-    "购买待批准，批准后将自动解锁。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Purchase pending approval. Unlock happens after it is approved."
-          }
-        }
-      }
-    },
-    "未知购买结果": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unknown purchase result"
           }
         }
       }
@@ -5296,116 +5026,6 @@
         }
       }
     },
-    "锁定": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Locked"
-          }
-        }
-      }
-    },
-    "即将到期": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ending soon"
-          }
-        }
-      }
-    },
-    "转写试用": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Transcription trial"
-          }
-        }
-      }
-    },
-    "首次打开后 72 小时": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "72 hours after first launch"
-          }
-        }
-      }
-    },
-    "首次打开后 72 小时内可试用，到期后可永久解锁。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Try free for 72 hours after first launch, then unlock forever."
-          }
-        }
-      }
-    },
-    "首次打开应用后开始 72 小时试用；试用期内不按语音秒扣减。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The 72-hour trial starts at first launch and is not billed per second of audio."
-          }
-        }
-      }
-    },
-    "已解锁，正在继续处理待转写音频。": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unlocked. Continuing queued transcription."
-          }
-        }
-      }
-    },
-    "已重置 3 天试用倒计时": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reset the 3-day trial countdown"
-          }
-        }
-      }
-    },
-    "模拟商店离线": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Simulate store offline"
-          }
-        }
-      }
-    },
-    "模拟恢复失败": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Simulate restore failure"
-          }
-        }
-      }
-    },
     "已选择 %lld 条": {
       "extractionState": "manual",
       "localizations": {
@@ -5761,6 +5381,873 @@
           "stringUnit": {
             "state": "translated",
             "value": "一芥伙伴（Yima）是手机上的个人助手，帮助你记录、理解和处理日常事务。基于 OpenMinis 开源项目构建。"
+          }
+        }
+      }
+    },
+    "语音转文字模型": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech-to-Text Models"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音转文字模型"
+          }
+        }
+      }
+    },
+    "语音转文字免费使用。首次需下载本地模型，下载完成后可离线使用。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech-to-text is free. Download the local models once to use it offline."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音转文字免费使用。首次需下载本地模型，下载完成后可离线使用。"
+          }
+        }
+      }
+    },
+    "下载大小": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download Size"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载大小"
+          }
+        }
+      }
+    },
+    "模型来源：魔搭": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model source: ModelScope"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型来源：魔搭"
+          }
+        }
+      }
+    },
+    "模型状态": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model Status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型状态"
+          }
+        }
+      }
+    },
+    "模型下载进度": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model download progress"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型下载进度"
+          }
+        }
+      }
+    },
+    "正在校验模型文件…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verifying model files…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在校验模型文件…"
+          }
+        }
+      }
+    },
+    "取消下载": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Download"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消下载"
+          }
+        }
+      }
+    },
+    "允许使用蜂窝网络": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow Cellular Data"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许使用蜂窝网络"
+          }
+        }
+      }
+    },
+    "默认仅使用 Wi-Fi。使用蜂窝网络会消耗流量。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi-Fi only by default. Cellular downloads use your mobile data."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认仅使用 Wi-Fi。使用蜂窝网络会消耗流量。"
+          }
+        }
+      }
+    },
+    "重试下载": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry Download"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试下载"
+          }
+        }
+      }
+    },
+    "下载模型": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download Models"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载模型"
+          }
+        }
+      }
+    },
+    "下载期间可离开此页，系统会在后台继续传输。强制退出 App 可能中断下载，重新打开后可继续。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can leave this page while the system downloads in the background. Force quitting the app may interrupt the download; reopen the app to continue."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载期间可离开此页，系统会在后台继续传输。强制退出 App 可能中断下载，重新打开后可继续。"
+          }
+        }
+      }
+    },
+    "音频、文稿和声纹保留在本机，模型下载不会上传这些内容。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your audio, transcripts, and voiceprints stay on this device. Downloading models does not upload them."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频、文稿和声纹保留在本机，模型下载不会上传这些内容。"
+          }
+        }
+      }
+    },
+    "尚未下载": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not Downloaded"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未下载"
+          }
+        }
+      }
+    },
+    "等待网络或系统调度": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for the network or system"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待网络或系统调度"
+          }
+        }
+      }
+    },
+    "正在下载": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载"
+          }
+        }
+      }
+    },
+    "正在校验": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verifying"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在校验"
+          }
+        }
+      }
+    },
+    "已就绪，可离线使用": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready for offline use"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已就绪，可离线使用"
+          }
+        }
+      }
+    },
+    "下载未完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download Incomplete"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载未完成"
+          }
+        }
+      }
+    },
+    "音频已保存，下载模型后可转文字。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio saved. Download the models to transcribe it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频已保存，下载模型后可转文字。"
+          }
+        }
+      }
+    },
+    "查看并下载模型": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View and Download Models"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看并下载模型"
+          }
+        }
+      }
+    },
+    "音频已保存，转写排队处理中。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio saved. Transcription is queued."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频已保存，转写排队处理中。"
+          }
+        }
+      }
+    },
+    "找不到语音转文字模型清单。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The speech-to-text model manifest could not be found."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到语音转文字模型清单。"
+          }
+        }
+      }
+    },
+    "语音转文字模型清单不完整。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The speech-to-text model manifest is incomplete."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音转文字模型清单不完整。"
+          }
+        }
+      }
+    },
+    "请先下载语音转文字模型。音频已保存，下载完成后可继续转写。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download the speech-to-text models first. Your audio is saved, and transcription can continue after the download."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先下载语音转文字模型。音频已保存，下载完成后可继续转写。"
+          }
+        }
+      }
+    },
+    "可用空间不足，请释放空间后重新下载模型。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There is not enough storage. Free up space and try downloading the models again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可用空间不足，请释放空间后重新下载模型。"
+          }
+        }
+      }
+    },
+    "模型下载失败（HTTP %lld），请重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model download failed (HTTP %lld). Please try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型下载失败（HTTP %lld），请重试。"
+          }
+        }
+      }
+    },
+    "缺少本地模型资源：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Missing local model resource: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缺少本地模型资源：%@"
+          }
+        }
+      }
+    },
+    "模型 %@ 的 SHA-256 不匹配（期望 %@，实际 %@）": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The SHA-256 checksum for model %@ does not match (expected %@, received %@)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型 %@ 的 SHA-256 不匹配（期望 %@，实际 %@）"
+          }
+        }
+      }
+    },
+    "模型 %@ 的文件大小不符，请重新下载。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file size for model %@ does not match. Download it again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型 %@ 的文件大小不符，请重新下载。"
+          }
+        }
+      }
+    },
+    "ERes2Net / 3D-Speaker": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ERes2Net / 3D-Speaker"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ERes2Net / 3D-Speaker"
+          }
+        }
+      }
+    },
+    "ERes2Net / 3D-Speaker 许可复核": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ERes2Net / 3D-Speaker License Review"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ERes2Net / 3D-Speaker 许可复核"
+          }
+        }
+      }
+    },
+    "已完成 3D-Speaker / ERes2Net 许可复核（Apache 2.0），允许商用；已保留版权与许可声明。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The 3D-Speaker / ERes2Net license review is complete (Apache 2.0). Commercial use is permitted, and copyright and license notices are retained."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成 3D-Speaker / ERes2Net 许可复核（Apache 2.0），允许商用；已保留版权与许可声明。"
+          }
+        }
+      }
+    },
+    "上游项目 3D-Speaker 及 ERes2Net 模型遵循 Apache License 2.0。VoiceContext 仅在设备本地使用说话人 embedding，已满足许可归因与保留版权声明要求。完整条款见许可原文链接。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The upstream 3D-Speaker project and ERes2Net model use the Apache License 2.0. VoiceContext uses speaker embeddings only on-device and meets the attribution and copyright notice requirements. See the original license link for the full terms."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上游项目 3D-Speaker 及 ERes2Net 模型遵循 Apache License 2.0。VoiceContext 仅在设备本地使用说话人 embedding，已满足许可归因与保留版权声明要求。完整条款见许可原文链接。"
+          }
+        }
+      }
+    },
+    "模型文件不完整，请重新下载。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model files are incomplete or invalid. Download them again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型文件不完整，请重新下载。"
+          }
+        }
+      }
+    },
+    "下载模型，开启免费转写": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download models to transcribe for free"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载模型，开启免费转写"
+          }
+        }
+      }
+    },
+    "模型正在等待下载": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model download is waiting"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型正在等待下载"
+          }
+        }
+      }
+    },
+    "正在下载转写模型": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading transcription models"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载转写模型"
+          }
+        }
+      }
+    },
+    "正在检查模型文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking model files"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查模型文件"
+          }
+        }
+      }
+    },
+    "模型已就绪": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Models are ready"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型已就绪"
+          }
+        }
+      }
+    },
+    "模型下载未完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model download is incomplete"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型下载未完成"
+          }
+        }
+      }
+    },
+    "首次下载 %@，之后可离线转写。录音和已有文稿仍可使用。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download %@ once to transcribe offline. Recording and existing transcripts remain available."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首次下载 %@，之后可离线转写。录音和已有文稿仍可使用。"
+          }
+        }
+      }
+    },
+    "正在等待网络或系统调度，可离开此页。录音和已有文稿仍可使用。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for the network or system. You can leave this page, record audio, and read existing transcripts."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待网络或系统调度，可离开此页。录音和已有文稿仍可使用。"
+          }
+        }
+      }
+    },
+    "下载期间可继续录音、回听或查看已有文稿。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can keep recording, playing audio, and reading existing transcripts while models download."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载期间可继续录音、回听或查看已有文稿。"
+          }
+        }
+      }
+    },
+    "正在检查本机文件，检查通过后可离线转写。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking local files. Offline transcription will be available once verification succeeds."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查本机文件，检查通过后可离线转写。"
+          }
+        }
+      }
+    },
+    "可以离线转写，无需重复下载。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready to transcribe offline. No additional download is needed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以离线转写，无需重复下载。"
+          }
+        }
+      }
+    },
+    "已下载的模型会保留，请重试补齐剩余文件。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloaded models are kept. Retry to download the remaining files."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已下载的模型会保留，请重试补齐剩余文件。"
+          }
+        }
+      }
+    },
+    "前往下载": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Go to Download"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前往下载"
+          }
+        }
+      }
+    },
+    "查看并重试下载": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review and Retry Download"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看并重试下载"
+          }
+        }
+      }
+    },
+    "查看下载进度": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View Download Progress"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看下载进度"
           }
         }
       }

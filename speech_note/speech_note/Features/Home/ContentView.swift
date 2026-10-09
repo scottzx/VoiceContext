@@ -415,19 +415,15 @@ struct ContentView: View {
         Group {
             if let modelError {
                 startupFailure(modelError)
-            } else if model.trialEntitlement.isPurchaseLocked {
-                NavigationStack {
-                    ExpiredPaywallView(trial: model.trialEntitlement)
-                }
             } else {
                 workspace
             }
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase, initial: true) { _, phase in
             if !isHostedWorkspace { model.scenePhaseChanged(to: ScenePhaseLike(phase)) }
         }
         .onChange(of: model.captureIsActive) { _, isActive in
-            if isActive, !model.trialEntitlement.isPurchaseLocked {
+            if isActive {
                 isRecordingScreenPresented = true
             }
         }
@@ -459,7 +455,7 @@ struct ContentView: View {
     /// Widget / deep-link entry into the start-recording flow.
     private func handleWidgetStartRecording() {
         openStartRecording = false
-        if modelError != nil || model.trialEntitlement.isPurchaseLocked { return }
+        if modelError != nil { return }
         if model.captureIsActive || model.presentation == .stopping {
             isRecordingScreenPresented = true
             return
@@ -1860,9 +1856,6 @@ struct SettingsScreen: View {
     var body: some View {
         NavigationStack {
             List {
-                if TrialQuotaLedger.isManualTrialEnabled {
-                    TrialQuotaSettingsSection(trial: model.trialEntitlement)
-                }
 
                 #if !VOICE_AGENT_FUSION
                 Section("界面语言") {
@@ -1876,6 +1869,11 @@ struct SettingsScreen: View {
                 #endif
 
                 Section("转写") {
+                    NavigationLink {
+                        TranscriptionModelDownloadView()
+                    } label: {
+                        Label("语音转文字模型", systemImage: "arrow.down.circle")
+                    }
                     Picker("语言模式", selection: languageModeBinding) {
                         ForEach(TranscriptionLanguageMode.allCases) { mode in
                             Text(LocalizedStringKey(mode.settingsTitle)).tag(mode)

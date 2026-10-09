@@ -76,3 +76,9 @@ python3 tools/integration/verify_fusion.py --variant production
 上述拉取阶段只获取上游历史并核对差异，没有 merge、cherry-pick 或覆盖 `Vendor/Phone`。产品实际合入基线仍为原记录，既有定制与工作区未提交代码继续保留；后续按上面的更新流程选择并合入具体变更。
 
 后续已按用户要求将 v1.13 的 iOS 及共用依赖更新合入融合工程。当前适配、检查和运行验证边界见 [v1.13 合并记录](openminis-v1.13-integration.md)。
+
+## 2026-10-09 免费转写与按需模型分发定制
+
+本次是产品 fork 定制，不推进 OpenMinis 上游基线。`src/ios/AppDelegate.swift` 在融合条件下桥接产品的后台下载 session；`HardwareBridge/Transcription/HardwareVoiceTranscriber.swift` 从已校验的持久模型目录加载，缺模型时请求打开下载页；`Views/Chat/AIChatView.swift` 在开始本地 SenseVoice 输入前检查模型并展示产品下载页。`Providers/Voice/VoiceProvider+SenseVoice.swift` 更新模型来源注释。
+
+以上适配通过 `VOICE_AGENT_FUSION` 与独立上游模块隔离。保留原聊天的系统 / 云语音和固定 RealTimeCutVADLibrary 依赖，未修改 TranscribeKit 快照。后续合并上游时保留这些下载入口、生命周期桥接与模型路径适配。设计与验证边界见[免费转写与魔搭按需模型下载](../design/free-transcription-model-download.md)。

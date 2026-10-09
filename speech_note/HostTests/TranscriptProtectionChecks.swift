@@ -18,7 +18,8 @@ struct TranscriptProtectionChecks {
         try await registersEntireReadableQueueBeforeDraining()
         try await finalizationUsesLatestAndPreservesLegitimateEmptyCreation()
         try await TranscriptLegacyCompatibilityChecks.run()
-        print("Transcript protection host checks passed (10 groups, including legacy compatibility).")
+        try await FreeTranscriptionCompatibilityChecks.run()
+        print("Transcript protection host checks passed (11 groups, including legacy and free transcription compatibility).")
     }
 
     static let startedAt = Date(timeIntervalSince1970: 1_788_000_000)

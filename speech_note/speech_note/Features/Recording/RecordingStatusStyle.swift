@@ -118,7 +118,7 @@ enum RecordingStatusStyle {
         case .processing: L("正在处理")
         case .speakerFinalization: L("逐字稿已完成，正在整理说话人")
         case .deferredUntilForeground: L("待回到前台后继续")
-        case .lockedPendingPurchase: L("音频已保存，转写等待解锁")
+        case .lockedPendingPurchase: L("排队处理中")
         case .needsAttention: L("需要注意，可重试")
         case .complete: L("全部完成")
         }
@@ -131,7 +131,7 @@ enum RecordingStatusStyle {
         case .processing: "hourglass"
         case .speakerFinalization: "person.2"
         case .deferredUntilForeground: "iphone"
-        case .lockedPendingPurchase: "lock.fill"
+        case .lockedPendingPurchase: "clock"
         case .needsAttention: "exclamationmark.triangle.fill"
         case .complete: "checkmark.circle"
         }

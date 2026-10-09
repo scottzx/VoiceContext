@@ -43,7 +43,7 @@ struct speech_noteTests {
             "sherpa-onnx",
             "ONNX Runtime",
             "Silero VAD",
-            "CAM++ / 3D-Speaker",
+            "ERes2Net / 3D-Speaker",
             "pyannote segmentation 3.0",
         ])
         #expect(ThirdPartyAttribution.catalog.allSatisfy { !$0.license.isEmpty && !$0.reviewStatus.isEmpty })
@@ -250,28 +250,25 @@ struct speech_noteTests {
         #expect(await sharedGate.metrics().submittedMetalWork == 2)
     }
 
-    @Test func admissionPolicyAdmitsUnderThermalAndLocksPurchaseWithoutAdmit() {
+    @Test func admissionPolicyAdmitsUnderThermalAndWaitsForModels() {
         let thermal = TranscriptionAdmissionPolicy(
-            thermalState: { .serious },
-            isPurchaseLocked: { false }
+            thermalState: { .serious }
         )
         #expect(thermal.evaluate() == .admit)
 
         let critical = TranscriptionAdmissionPolicy(
-            thermalState: { .critical },
-            isPurchaseLocked: { false }
+            thermalState: { .critical }
         )
         #expect(critical.evaluate() == .admit)
 
-        let locked = TranscriptionAdmissionPolicy(
+        let unavailable = TranscriptionAdmissionPolicy(
             thermalState: { .nominal },
-            isPurchaseLocked: { true }
+            isModelReady: { false }
         )
-        #expect(locked.evaluate() == .lockedPendingPurchase)
+        #expect(unavailable.evaluate() == .deferInference(reason: "modelsNotReady"))
 
         let admit = TranscriptionAdmissionPolicy(
-            thermalState: { .fair },
-            isPurchaseLocked: { false }
+            thermalState: { .fair }
         )
         #expect(admit.evaluate() == .admit)
     }

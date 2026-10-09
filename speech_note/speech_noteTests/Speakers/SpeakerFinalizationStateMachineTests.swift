@@ -3,6 +3,47 @@ import Testing
 @testable import speech_note
 
 struct SpeakerFinalizationStateMachineTests {
+    @Test(arguments: [0, 1])
+    func speakerExecutionPermissionDenialKeepsSourcePending(_ allowedChecks: Int) async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try RecordingRepository(rootURL: root)
+        let transcriptStore = try TranscriptDocumentStore(rootURL: root)
+        let startedAt = Date(timeIntervalSince1970: 1_787_480_000)
+        let recording = Recording(startedAt: startedAt, endedAt: startedAt.addingTimeInterval(60),
+                                  isMeeting: true, state: .processing)
+        try await repository.createRecording(recording, at: startedAt)
+        let chunk = AudioChunk(recordingID: recording.id, relativePath: "Recordings/permission.m4a",
+                               startSample: 0, endSample: 960_000, startedAt: startedAt,
+                               endedAt: startedAt.addingTimeInterval(60))
+        try await repository.addChunk(chunk, at: chunk.endedAt)
+        try await repository.upsertJob(RecordingJob(
+            recordingID: recording.id, chunkID: chunk.id, kind: .transcription,
+            state: .completed, attemptCount: 1, lastError: nil,
+            createdAt: chunk.endedAt, updatedAt: chunk.endedAt
+        ), at: chunk.endedAt)
+        let allowance = SpeakerExecutionAllowance(allowedChecks: allowedChecks)
+        do {
+            _ = try await SpeakerFinalizationCoordinator().runPersisted(
+                recordingID: recording.id, repository: repository, transcriptStore: transcriptStore,
+                publisher: PublicDocumentPublisher(rootURL: root, enableDefaultiCloudMirror: false),
+                executionAllowed: { await allowance.next() }
+            )
+            Issue.record("Denied execution unexpectedly reached speaker inference")
+        } catch is SpeakerInferenceDeferred {}
+
+        let jobs = try await repository.jobs(recordingID: recording.id)
+        let embedding = try #require(jobs.first { $0.kind == .speakerEmbedding })
+        #expect(embedding.state == .pending)
+        #expect(embedding.executionToken == nil)
+        #expect(embedding.attemptCount == allowedChecks)
+        if allowedChecks == 1 {
+            #expect(embedding.terminationReason == "deferredUntilSpeakerExecutionAllowed")
+        }
+        #expect(jobs.first { $0.kind == .speakerFinalization }?.state == .pending)
+        #expect(!jobs.contains { $0.state == .failed })
+    }
+
     @Test func personalRecordingCompletesAfterASRWithoutSpeakerJobs() async throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -616,5 +657,17 @@ struct SpeakerFinalizationStateMachineTests {
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("speaker-finalization-state-\(UUID().uuidString)", isDirectory: true)
+    }
+}
+
+private actor SpeakerExecutionAllowance {
+    private var remaining: Int
+
+    init(allowedChecks: Int) { remaining = allowedChecks }
+
+    func next() -> Bool {
+        guard remaining > 0 else { return false }
+        remaining -= 1
+        return true
     }
 }

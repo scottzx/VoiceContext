@@ -475,8 +475,7 @@ struct RecordingCoreTests {
             repository: repository,
             lifecycleGate: gate,
             admissionPolicy: TranscriptionAdmissionPolicy(
-                thermalState: { .serious },
-                isPurchaseLocked: { false }
+                thermalState: { .serious }
             )
         ) { lease in
             try await gate.beginMetalWork()
@@ -493,7 +492,7 @@ struct RecordingCoreTests {
         #expect(job.state == .completed)
     }
 
-    @Test func schedulerAdmissionLocksPendingPurchaseWithoutSubmittingMetalWork() async throws {
+    @Test func schedulerAdmissionWaitsForModelsWithoutSubmittingMetalWork() async throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let repository = try RecordingRepository(rootURL: root)
@@ -506,7 +505,7 @@ struct RecordingCoreTests {
             lifecycleGate: gate,
             admissionPolicy: TranscriptionAdmissionPolicy(
                 thermalState: { .nominal },
-                isPurchaseLocked: { true }
+                isModelReady: { false }
             )
         ) { lease in
             try await gate.beginMetalWork()
@@ -521,12 +520,12 @@ struct RecordingCoreTests {
         #expect(await gate.metrics().submittedMetalWork == 0)
         let job = try #require(await repository.jobs(recordingID: recording.id).first)
         #expect(job.state == .pending)
-        #expect(job.lastError == "lockedPendingPurchase")
+        #expect(job.lastError == "modelsNotReady")
         #expect(
             RecordingProcessingState.resolve(
                 legacyRecordingState: .processing,
                 jobs: [job]
-            ) == .lockedPendingPurchase
+            ) == .queued
         )
     }
 
@@ -2469,8 +2468,7 @@ struct RecordingCoreTests {
             repository: repository,
             lifecycleGate: gate,
             admissionPolicy: TranscriptionAdmissionPolicy(
-                thermalState: { thermal.current() },
-                isPurchaseLocked: { false }
+                thermalState: { thermal.current() }
             )
         ) { lease in
             try await gate.beginMetalWork()
@@ -2665,8 +2663,7 @@ struct RecordingCoreTests {
             repository: repository,
             lifecycleGate: gate,
             admissionPolicy: TranscriptionAdmissionPolicy(
-                thermalState: { thermal.current() },
-                isPurchaseLocked: { false }
+                thermalState: { thermal.current() }
             )
         ) { _ in
             try await gate.beginMetalWork()

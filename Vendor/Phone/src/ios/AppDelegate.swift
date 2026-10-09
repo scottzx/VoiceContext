@@ -17,6 +17,9 @@
 
 import CoreLocation
 import UIKit
+#if VOICE_AGENT_FUSION
+import VoiceRecording
+#endif
 
 private let logger = AppLogger(category: "AppDelegate")
 
@@ -26,6 +29,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        #if VOICE_AGENT_FUSION
+        TranscriptionModelDownloadService.shared.restore()
+        #endif
         if #available(iOS 17.0, *) {
             CLBackgroundActivitySession().invalidate()
         }
@@ -55,6 +61,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // than the UIApplication delegate. See SceneDelegate below.
         return true
     }
+
+    #if VOICE_AGENT_FUSION
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        if !TranscriptionModelDownloadService.shared.handleBackgroundEvents(
+            identifier: identifier, completionHandler: completionHandler
+        ) {
+            completionHandler()
+        }
+    }
+    #endif
 
     /// Tell UIKit to instantiate our `SceneDelegate` for every window
     /// scene. SwiftUI still owns the actual UIWindow + root hosting

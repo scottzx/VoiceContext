@@ -495,7 +495,19 @@ struct SpeakerFinalizationTests {
         #expect(aligned.turns.compactMap(\.speaker) == ["A", "B", "B", "A"])
     }
 
-    @Test func packagedSherpaDiarizationRunsOnBundledFixture() async throws {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["YIMA_TEST_DOWNLOADED_MODELS"] == "1",
+                   "Requires explicitly enabled device verification with already downloaded models"))
+    @MainActor func downloadedModelsSherpaDiarizationRunsOnBundledFixture() async throws {
+        // Restore validates local files and reconnects existing transfers; this
+        // test never calls startDownload or creates a network download task.
+        TranscriptionModelDownloadService.shared.restore()
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(30))
+        while !TranscriptionModelStore.isReady, clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        try #require(TranscriptionModelStore.isReady,
+                     "Download the model set before enabling this device test; local verification timed out")
         let fixtureURL = try #require(
             Bundle.main.url(forResource: "SenseVoiceFixture", withExtension: "m4a")
         )

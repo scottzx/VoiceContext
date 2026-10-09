@@ -4,7 +4,7 @@ import AVFoundation
 // MARK: - Built-in SenseVoice (offline, local model) voice provider
 //
 // Wraps HardwareVoiceTranscriber (HardwareBridge/Transcription/) — a direct
-// CTranscribe wrapper around a bundled SenseVoiceSmall-Q8_0.gguf model — as a
+// CTranscribe wrapper around the downloaded SenseVoiceSmall-Q8_0.gguf model — as a
 // second built-in, local-only ASR option alongside SystemVoiceProvider,
 // following the exact same synthetic-instance pattern (see
 // VoiceProvider+System.swift): never stored in ProviderConfigStore.instances,

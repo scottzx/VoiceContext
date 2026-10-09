@@ -1,5 +1,8 @@
 import Foundation
 
+/// Lifecycle deferral is distinct from cancellation by a new transcription.
+nonisolated struct SpeakerInferenceDeferred: Error, Sendable {}
+
 /// Stable, versioned identity for the one global speaker pass that follows all
 /// minute-level transcription jobs. Re-running the same job is safe because
 /// every output is atomically replaced at a deterministic path.
@@ -204,7 +207,8 @@ actor SpeakerFinalizationCoordinator {
         recordingID: UUID,
         repository: RecordingRepository,
         transcriptStore: TranscriptDocumentStore,
-        publisher: PublicDocumentPublisher
+        publisher: PublicDocumentPublisher,
+        executionAllowed: @escaping @Sendable () async -> Bool = { true }
     ) async throws -> SpeakerFinalizationMetrics {
         let durable = try await ensureDurableJob(
             recordingID: recordingID,
@@ -232,8 +236,12 @@ actor SpeakerFinalizationCoordinator {
             embeddingJobs,
             recordingID: recordingID,
             repository: repository,
-            transcriptStore: transcriptStore
+            transcriptStore: transcriptStore,
+            executionAllowed: executionAllowed
         )
+
+        try Task.checkCancellation()
+        guard await executionAllowed() else { throw SpeakerInferenceDeferred() }
 
         let job = SpeakerFinalizationJob(recordingID: recordingID)
         if durable.state == .running, inFlight[job] != nil {
@@ -242,7 +250,8 @@ actor SpeakerFinalizationCoordinator {
                 execution: durable,
                 repository: repository,
                 transcriptStore: transcriptStore,
-                publisher: publisher
+                publisher: publisher,
+                executionAllowed: executionAllowed
             )
         }
         if durable.state == .running || durable.state == .completed {
@@ -270,7 +279,8 @@ actor SpeakerFinalizationCoordinator {
                 execution: running,
                 repository: repository,
                 transcriptStore: transcriptStore,
-                publisher: publisher
+                publisher: publisher,
+                executionAllowed: executionAllowed
             )
             guard let token = running.executionToken,
                   try await repository.finishSpeakerFinalization(
@@ -282,14 +292,16 @@ actor SpeakerFinalizationCoordinator {
                   ) != nil else { throw FinalizationError.invalidated }
             return metrics
         } catch {
+            let deferred = error is CancellationError || error is SpeakerInferenceDeferred
             if let token = running.executionToken {
                 _ = try? await repository.finishSpeakerFinalization(
                     jobID: running.id,
                     recordingID: recordingID,
                     executionToken: token,
-                    state: error is CancellationError ? .pending : .failed,
-                    lastError: error.localizedDescription,
-                    terminationReason: error is CancellationError ? "cancelled" : "finalizerFailed",
+                    state: deferred ? .pending : .failed,
+                    lastError: error is SpeakerInferenceDeferred ? "deferredUntilSpeakerExecutionAllowed" : error.localizedDescription,
+                    terminationReason: error is SpeakerInferenceDeferred ? "deferredUntilSpeakerExecutionAllowed"
+                        : deferred ? "cancelled" : "finalizerFailed",
                     at: Date()
                 )
             }
@@ -302,14 +314,17 @@ actor SpeakerFinalizationCoordinator {
         execution: RecordingJob,
         repository: RecordingRepository,
         transcriptStore: TranscriptDocumentStore,
-        publisher: PublicDocumentPublisher
+        publisher: PublicDocumentPublisher,
+        executionAllowed: @escaping @Sendable () async -> Bool = { true }
     ) async throws -> SpeakerFinalizationMetrics {
         if let existing = inFlight[job] {
             return try await existing.value
         }
 
         let task = Task {
-            try await Self.perform(
+            try Task.checkCancellation()
+            guard await executionAllowed() else { throw SpeakerInferenceDeferred() }
+            return try await Self.perform(
                 job: job,
                 execution: execution,
                 repository: repository,
@@ -515,7 +530,8 @@ actor SpeakerFinalizationCoordinator {
         _ initialJobs: [RecordingJob],
         recordingID: UUID,
         repository: RecordingRepository,
-        transcriptStore: TranscriptDocumentStore
+        transcriptStore: TranscriptDocumentStore,
+        executionAllowed: @escaping @Sendable () async -> Bool
     ) async throws {
         if let failed = initialJobs.first(where: { $0.state == .failed }) {
             throw FinalizationError.embeddingPreviouslyFailed(failed.lastError)
@@ -523,6 +539,7 @@ actor SpeakerFinalizationCoordinator {
 
         for job in initialJobs where job.state == .pending {
             try Task.checkCancellation()
+            guard await executionAllowed() else { throw SpeakerInferenceDeferred() }
             guard let running = try await repository.claimSpeakerEmbedding(
                 jobID: job.id,
                 recordingID: recordingID,
@@ -535,7 +552,8 @@ actor SpeakerFinalizationCoordinator {
                 try await Self.performEmbedding(
                     execution: running,
                     repository: repository,
-                    transcriptStore: transcriptStore
+                    transcriptStore: transcriptStore,
+                    executionAllowed: executionAllowed
                 )
                 guard try await repository.finishSpeakerEmbedding(
                     jobID: running.id,
@@ -545,13 +563,15 @@ actor SpeakerFinalizationCoordinator {
                     at: Date()
                 ) != nil else { throw FinalizationError.invalidated }
             } catch {
+                let deferred = error is CancellationError || error is SpeakerInferenceDeferred
                 _ = try? await repository.finishSpeakerEmbedding(
                     jobID: running.id,
                     recordingID: recordingID,
                     executionToken: token,
-                    state: error is CancellationError ? .pending : .failed,
-                    lastError: error.localizedDescription,
-                    terminationReason: error is CancellationError ? "cancelled" : "embeddingFailed",
+                    state: deferred ? .pending : .failed,
+                    lastError: error is SpeakerInferenceDeferred ? "deferredUntilSpeakerExecutionAllowed" : error.localizedDescription,
+                    terminationReason: error is SpeakerInferenceDeferred ? "deferredUntilSpeakerExecutionAllowed"
+                        : deferred ? "cancelled" : "embeddingFailed",
                     at: Date()
                 )
                 throw error
@@ -562,7 +582,8 @@ actor SpeakerFinalizationCoordinator {
     private static func performEmbedding(
         execution: RecordingJob,
         repository: RecordingRepository,
-        transcriptStore: TranscriptDocumentStore
+        transcriptStore: TranscriptDocumentStore,
+        executionAllowed: @escaping @Sendable () async -> Bool
     ) async throws {
         guard let sourceID = execution.chunkID ?? execution.processingRangeID,
               let token = execution.executionToken else {
@@ -578,9 +599,11 @@ actor SpeakerFinalizationCoordinator {
         let audio = try await segmentAudio(
             segments: segments,
             recordingID: execution.recordingID,
-            repository: repository
+            repository: repository,
+            executionAllowed: executionAllowed
         )
         try Task.checkCancellation()
+        guard await executionAllowed() else { throw SpeakerInferenceDeferred() }
         let anchors = SegmentSpeakerAnchorPlanner.anchors(for: audio)
         let embeddings = await CAMPlusShortWindowEmbedder.embedConcurrently(
             windows: anchors.map(\.window),
@@ -810,7 +833,7 @@ actor SpeakerFinalizationCoordinator {
     }
 
     private static func speakerEmbeddingModelURL() throws -> URL {
-        let resourceRoot = try OfflineSpeakerReclusterPass.bundledResourceRoot()
+        let resourceRoot = try OfflineSpeakerReclusterPass.downloadedResourceRoot()
         let url = resourceRoot.appendingPathComponent(
             "3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx",
             isDirectory: false
@@ -859,7 +882,8 @@ actor SpeakerFinalizationCoordinator {
     private static func segmentAudio(
         segments: [TranscriptDocumentV1.Segment],
         recordingID: UUID,
-        repository: RecordingRepository
+        repository: RecordingRepository,
+        executionAllowed: @escaping @Sendable () async -> Bool
     ) async throws -> [SegmentSpeakerAudio] {
         var samplesBySegmentID: [UUID: [Float]] = [:]
 
@@ -886,6 +910,7 @@ actor SpeakerFinalizationCoordinator {
                 $0.range.startSample < window.endSample && window.startSample < $0.range.endSample
             }) {
                 try Task.checkCancellation()
+                guard await executionAllowed() else { throw SpeakerInferenceDeferred() }
                 let decoded = try ImportAudioRangeDecoder.samples(
                     from: url,
                     startSample: window.startSample,
@@ -911,6 +936,7 @@ actor SpeakerFinalizationCoordinator {
                 )
                 guard !ranges.isEmpty else { continue }
                 try Task.checkCancellation()
+                guard await executionAllowed() else { throw SpeakerInferenceDeferred() }
                 let decoded = try ImportAudioRangeDecoder.samples(
                     from: repository.rootURL.appendingPathComponent(chunk.relativePath),
                     startSample: 0,

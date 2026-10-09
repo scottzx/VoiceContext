@@ -37,7 +37,7 @@ public final class VoiceRecordingWorkspace: ObservableObject {
     }
 
     public func startMeeting(title: String) async throws -> String {
-        guard ready, startupError == nil, !showsRecording, !model.trialEntitlement.isPurchaseLocked,
+        guard ready, startupError == nil, !showsRecording,
               UserDefaults.standard.bool(forKey: OnboardingPreferences.completedKey) else {
             throw NSError(domain: "Yima.Recording", code: 1, userInfo: [NSLocalizedDescriptionKey: "请先完成录音设置、确认录音功能可用，并确认没有其他录音进行中。"])
         }

@@ -1,5 +1,8 @@
 import TranscribeNative
 import Foundation
+#if VOICE_AGENT_FUSION
+import VoiceRecording
+#endif
 
 /// Single-utterance SenseVoice transcription through the shared TranscribeKit package.
 /// Hardware buttons delimit utterances; meeting VAD and speaker processing remain
@@ -17,7 +20,7 @@ actor HardwareVoiceTranscriber {
 
         var errorDescription: String? {
             switch self {
-            case .modelResourceMissing: return "找不到 SenseVoiceSmall-Q8_0.gguf"
+            case .modelResourceMissing: return "请先在设置中下载语音转文字模型。"
             case .openFailed(let message): return "模型加载失败：\(message)"
             case .runFailed(let message): return "转写失败：\(message)"
             case .emptyTranscript: return "转写结果为空"
@@ -118,9 +121,22 @@ actor HardwareVoiceTranscriber {
 
     private func openSessionIfNeeded() throws -> Session {
         if let session { return session }
-        guard let modelURL = Bundle.main.url(forResource: "SenseVoiceSmall-Q8_0", withExtension: "gguf") else {
+        #if VOICE_AGENT_FUSION
+        guard let modelURL = try? TranscriptionModelStore.modelURL(id: "sensevoice-q8-0") else {
+            Task { @MainActor in
+                NotificationCenter.default.post(name: Notification.Name("Yima.openTranscriptionModels"), object: nil)
+            }
             throw TranscriberError.modelResourceMissing
         }
+        #else
+        // The standalone upstream target does not own the product downloader.
+        // Keep the persistent location and report missing setup explicitly.
+        let modelURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("TranscriptionModels/SenseVoiceSmall-Q8_0.gguf")
+        guard FileManager.default.fileExists(atPath: modelURL.path) else {
+            throw TranscriberError.modelResourceMissing
+        }
+        #endif
         do {
             let model = try Model(path: modelURL.path, options: ModelOptions(backend: .metal))
             let newSession = try model.session()

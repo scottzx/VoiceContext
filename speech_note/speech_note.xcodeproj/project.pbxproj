@@ -87,6 +87,14 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				"ModelResources/SenseVoiceSmall-Q8_0.gguf",
+				ModelResources/silero_vad.onnx,
+				"ModelResources/3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx",
+				"ModelResources/pyannote-segmentation-3.0.int8.onnx",
+				"ModelResources/SenseVoiceSmall-Q8_0.gguf.partial",
+				ModelResources/silero_vad.onnx.partial,
+				"ModelResources/3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx.partial",
+				"ModelResources/pyannote-segmentation-3.0.int8.onnx.partial",
 			);
 			target = D2155AF83020A7E100F29231 /* speech_note */;
 		};
