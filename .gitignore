@@ -44,6 +44,7 @@ env/
 venv/
 
 # Agents & Tooling Temp
+/tmp/
 .gstack/
 .1agents/
 .gemini/

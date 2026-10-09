@@ -1,0 +1,311 @@
+{
+  "date": "2026-10-09",
+  "status": "verified",
+  "workspace": "yijie",
+  "project": {
+    "id": "b6458d01-ae80-4836-b0d8-d791fefd9775",
+    "name": "听记",
+    "identifier": "TINGJI",
+    "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775",
+    "descriptionUpdated": true
+  },
+  "codeCommit": "1853327fea4a58e36bc093cbf1ac666527441810",
+  "created": [
+    {
+      "number": "TINGJI-56",
+      "id": "2ffdc25a-ad6a-4b29-8e80-0fdef4b0d057",
+      "name": "Yima 自有日程、待办与会议关联",
+      "state": "In Progress",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/2ffdc25a-ad6a-4b29-8e80-0fdef4b0d057/"
+    },
+    {
+      "number": "TINGJI-57",
+      "id": "6ccddaa9-d3c1-4d10-836c-7321360c65a8",
+      "name": "完成本地事项仓库与 UI / Agent 共用操作（非运行交付）",
+      "state": "Done",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/6ccddaa9-d3c1-4d10-836c-7321360c65a8/"
+    },
+    {
+      "number": "TINGJI-58",
+      "id": "a07e63f9-a87e-404b-8112-37e665d848e1",
+      "name": "修复提醒导航、筛选缓存与“记录”入口",
+      "state": "Done",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/a07e63f9-a87e-404b-8112-37e665d848e1/"
+    },
+    {
+      "number": "TINGJI-59",
+      "id": "98638ed5-820c-4385-a7b5-08f79f0eed58",
+      "name": "验收本地事项的权限、恢复、隐私与 Agent 闭环",
+      "state": "Todo",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/98638ed5-820c-4385-a7b5-08f79f0eed58/"
+    },
+    {
+      "number": "TINGJI-60",
+      "id": "2f7fa052-7119-4b5a-b338-225347ab46a1",
+      "name": "复测已实现的录音改名、快捷启动、回听与地点",
+      "state": "Todo",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/2f7fa052-7119-4b5a-b338-225347ab46a1/"
+    },
+    {
+      "number": "TINGJI-61",
+      "id": "52d44eca-eca8-467f-b840-39f4f9b1105e",
+      "name": "Yima 本地事项的定时通知",
+      "state": "Backlog",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/52d44eca-eca8-467f-b840-39f4f9b1105e/"
+    },
+    {
+      "number": "TINGJI-62",
+      "id": "7a3590ce-68d0-419c-9494-b5342d8ff951",
+      "name": "明确系统接入范围与同步方向",
+      "state": "Todo",
+      "url": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/7a3590ce-68d0-419c-9494-b5342d8ff951/"
+    }
+  ],
+  "updated": [
+    {
+      "number": "TINGJI-5",
+      "id": "b39d715a-99e9-4eb2-b8fa-dae2ac063513",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-7",
+      "id": "f076cfd6-e095-45ae-9160-82b69086aa2d",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-10",
+      "id": "4e8997e5-0d45-420d-91cc-1fe31d03b86a",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-13",
+      "id": "28eb9706-4974-4abe-b4fb-9b9c8a0ce960",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-14",
+      "id": "b46cf321-a82f-4dd1-a049-8a456b6003f5",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-11",
+      "id": "41c11aa9-b011-4b4b-bee7-470e8a1ef5f1",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-18",
+      "id": "936ecac2-3317-4eb5-be68-9e44e2fb917d",
+      "state": "In Progress",
+      "stateChanged": false,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-21",
+      "id": "0b8a44fa-294c-4b1b-a4e3-a939a0a2b88a",
+      "state": "In Progress",
+      "stateChanged": false,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-22",
+      "id": "6d80bb3e-c0f2-4e2f-9d5c-440092b723a0",
+      "state": "In Progress",
+      "stateChanged": false,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-23",
+      "id": "a9532895-8e2c-470f-a2d4-d423c316ea86",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-24",
+      "id": "236fdd12-c8e3-4374-a41a-7b80a0580a9d",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-25",
+      "id": "5a69e1a3-c893-4f66-848c-edbdd6616a24",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-28",
+      "id": "64e8a139-bf07-486f-a211-6f4f3ad10d19",
+      "state": "Backlog",
+      "stateChanged": false,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-29",
+      "id": "c766f277-fd10-4f49-aeb7-496cd1c06dd0",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-30",
+      "id": "33b4636b-8aa1-4d98-8600-821508a49627",
+      "state": "Backlog",
+      "stateChanged": false,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-31",
+      "id": "92c14ab1-2589-4496-8670-ef77aaf40677",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-32",
+      "id": "a1dcbc35-c614-4c3c-89b1-22da9c1d77cd",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-33",
+      "id": "ef047657-4bea-4eae-ba9e-718d2735f429",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-34",
+      "id": "98cc2975-6ca8-45a2-817e-0bafb03c391c",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-35",
+      "id": "4087b698-72e7-43b4-b3bf-180ad3ce5a7e",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-36",
+      "id": "ddf94670-2224-4153-8644-02de3153fe1b",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-38",
+      "id": "f3aec09f-90c9-42e5-a642-4df55e996831",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-41",
+      "id": "f50c4415-d400-4f73-ba09-847c539742d2",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-47",
+      "id": "aae1f769-03b5-429b-a693-e2ef3aeb64e9",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-51",
+      "id": "76ab8e0e-2466-49b3-b315-4d3f09ee29b2",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    },
+    {
+      "number": "TINGJI-55",
+      "id": "f7b19597-7a9e-47c9-896e-dbc40f4ae834",
+      "state": "In Progress",
+      "stateChanged": true,
+      "verified": true
+    }
+  ],
+  "unchangedExisting": [
+    "TINGJI-54",
+    "TINGJI-53",
+    "TINGJI-52",
+    "TINGJI-50",
+    "TINGJI-49",
+    "TINGJI-48",
+    "TINGJI-46",
+    "TINGJI-45",
+    "TINGJI-44",
+    "TINGJI-43",
+    "TINGJI-42",
+    "TINGJI-40",
+    "TINGJI-39",
+    "TINGJI-37",
+    "TINGJI-27",
+    "TINGJI-26",
+    "TINGJI-20",
+    "TINGJI-19",
+    "TINGJI-17",
+    "TINGJI-16",
+    "TINGJI-15",
+    "TINGJI-12",
+    "TINGJI-9",
+    "TINGJI-8",
+    "TINGJI-6",
+    "TINGJI-4",
+    "TINGJI-3",
+    "TINGJI-2",
+    "TINGJI-1"
+  ],
+  "totals": {
+    "created": 7,
+    "updated": 26,
+    "unchanged": 29,
+    "failedWrites": 0,
+    "finalItems": 62,
+    "stateCounts": {
+      "Todo": 3,
+      "Backlog": 30,
+      "Done": 4,
+      "In Progress": 25
+    }
+  },
+  "validation": {
+    "allPagesRead": true,
+    "allAffectedReadBack": true,
+    "originalVisibleTextPreserved": true,
+    "originalUnmanagedFieldsPreserved": true,
+    "sourceKeysUnique": true,
+    "nativeDependencies": false,
+    "pagesAPI": false,
+    "transientRateLimitRecovered": true,
+    "deviceRuntimeExecuted": false,
+    "publishedSoftware": false
+  },
+  "overviewURL": "http://100.125.201.118:8082/yijie/projects/b6458d01-ae80-4836-b0d8-d791fefd9775/issues/936ecac2-3317-4eb5-be68-9e44e2fb917d/",
+  "planDocument": "docs/planning/2026-10-09-progress-and-next-steps.md",
+  "limits": [
+    "Pages API unsupported; overview work item contains the plan.",
+    "Native relation definitions action returns HTTP 404; prerequisites stored in descriptions.",
+    "Assignees, target dates, milestones and release versions remain unset."
+  ]
+}

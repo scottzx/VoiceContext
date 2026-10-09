@@ -4,6 +4,8 @@
 
 ## 产品文档
 
+- [2026-10-09 进展与下一步计划](./planning/2026-10-09-progress-and-next-steps.md)：按已推送的 `1853327` 核对本地事项、导航修复、录音反馈及 AI 闭环的实际交付；同步既有 Plane 项目，区分实现、验收与发布，按依赖排列下一步工作。
+
 - [统一界面语言与 token](./design/interface-language.md)：2026-10-02 确认，2026-10-03 核心页面已接入共享字体／间距／颜色角色及字号兼容策略；沿用项目级 [`DESIGN.md`](../DESIGN.md)。[验收记录](./testing/interface-language.md)区分编译、策略检查与真机走查。
 
 - [录音、AI 整理与行动事项闭环 PRD](./PRD-recording-ai-actions.md)：2026-10-02 需求池草案；F01–F08 覆盖文稿保护与完整性、来源版本、纪要与导图、行动确认、系统提醒关联及删除隐私。配套[交付任务清单](./design/recording-ai-actions-delivery.md)按交互设计、代码开发和测试验收拆分，Plane 沿用听记 / TINGJI 项目。
