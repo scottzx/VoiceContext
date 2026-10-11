@@ -2376,7 +2376,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// with no way to answer a "compact before sending?" prompt. A group
     /// member's thread is one: the orchestrator is mid-round waiting on it.
     var isHeadlessSession: Bool {
-        sessionSource == "shortcut" || sessionSource == "hardware" || sessionSource == "group"
+        sessionSource == "shortcut" || sessionSource == "hardware" || sessionSource == "group" || sessionSource == "meeting_assistant"
     }
 
     func send() {

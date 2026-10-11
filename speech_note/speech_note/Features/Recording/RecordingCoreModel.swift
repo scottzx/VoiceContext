@@ -2460,6 +2460,9 @@ final class RecordingCoreModel {
     }
 
     func scenePhaseChanged(to phase: ScenePhaseLike) {
+        #if VOICE_AGENT_FUSION
+        MeetingAssistantBridge.shared.setForeground(phase == .active)
+        #endif
         switch phase {
         case .background:
             coordinator.applicationEnteredBackground()
@@ -3021,6 +3024,11 @@ final class RecordingCoreModel {
     }
 
     private func applyTranscriptionOutcome(_ outcome: ForegroundTranscriptionScheduler.Outcome) async {
+        #if VOICE_AGENT_FUSION
+        if outcome.state == .completed {
+            await forwardMeetingAssistantText(outcome)
+        }
+        #endif
         do {
             switch outcome.state {
             case .failed:
@@ -3044,6 +3052,38 @@ final class RecordingCoreModel {
         }
         await refresh()
     }
+
+    #if VOICE_AGENT_FUSION
+    func setMeetingAssistantEnabled(_ enabled: Bool) {
+        var reason: String?
+        if enabled {
+            if !captureIsActive || isInBackground {
+                reason = "请在前台会议录音中开启会中助手"
+            } else if !realtimeTranscription.isEnabled {
+                reason = "请先在录音设置中开启实时转写"
+            } else if !TranscriptionModelStore.isReady {
+                reason = "请先下载并准备本地转写模型"
+            }
+        }
+        MeetingAssistantBridge.shared.setEnabled(enabled, unavailableReason: reason)
+    }
+
+    private func forwardMeetingAssistantText(_ outcome: ForegroundTranscriptionScheduler.Outcome) async {
+        guard outcome.recordingID == activeRecordingID, captureIsActive, !isInBackground,
+              let chunkID = outcome.chunkID,
+              let recording = recordings.first(where: { $0.id == outcome.recordingID }), recording.isMeeting,
+              let document = try? await transcriptStore.document(recordingID: outcome.recordingID) else { return }
+        let segments = document.segments
+            .filter { $0.sourceRanges.contains { $0.sourceKind == .audioChunk && $0.sourceID == chunkID } }
+            .sorted { $0.startSample < $1.startSample }
+            .map { MeetingWakeCommandDetector.Segment(text: $0.text, startSample: $0.startSample, endSample: $0.endSample) }
+        MeetingAssistantBridge.shared.receive(
+            recordingID: outcome.recordingID, chunkID: chunkID,
+            title: recording.title ?? "会议", segments: segments,
+            context: TranscriptMarkdownRenderer.render(document)
+        )
+    }
+    #endif
 
     /// Speaker work is intentionally a second, serial phase. The transcript is
     /// already readable while this queue runs, and historical finalizers can no
@@ -3195,6 +3235,12 @@ final class RecordingCoreModel {
         // convenience value in sync so an outcome cannot leave the UI model
         // pointing at a released capture session.
         activeRecordingID = coordinator.activeRecordingID
+        #if VOICE_AGENT_FUSION
+        MeetingAssistantBridge.shared.updateCapture(
+            recordingID: activeRecordingID, capturing: state == .recording,
+            sample: { [weak self] in self?.recorder.assistantSampleBoundary ?? 0 }
+        )
+        #endif
         switch state {
         case .recording, .stopping, .paused:
             startPolling()

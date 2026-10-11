@@ -728,6 +728,11 @@ struct RecordingDetailScreen: View {
 
     private var recordingDockContent: some View {
         VStack(spacing: 12) {
+            #if VOICE_AGENT_FUSION
+            if currentRecording.isMeeting {
+                MeetingAssistantPanel(model: model)
+            }
+            #endif
             HStack(spacing: 16) {
                 LiveWaveformView(
                     inputLevel: model.inputLevel,

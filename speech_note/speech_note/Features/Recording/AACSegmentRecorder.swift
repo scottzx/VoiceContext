@@ -77,6 +77,9 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     private var recordingFormat: AVAudioFormat?
     private var directory: URL?
     private var pendingPacketCount = 0
+    private var pendingAssistantSampleEstimate: Double = 0
+    private var assistantPacketReserveSamples: Double = 0
+    private var assistantConverterReserveSamples: Double = 0
     private var tapInstalled = false
     private var isCapturePaused = false
     private var lastClosedSegment: Segment?
@@ -92,6 +95,19 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
 
     var currentSample: Int64 {
         statusLock.withLock { masterSampleCursor }
+    }
+
+    /// Conservative input boundary for assistant enable/speech windows. Unlike
+    /// currentSample, this includes packets waiting on the writer and a buffer
+    /// plus converter priming reserve, without waiting for disk writes.
+    var assistantSampleBoundary: Int64 {
+        statusLock.withLock {
+            masterSampleCursor + Int64(ceil(
+                pendingAssistantSampleEstimate
+                    + assistantPacketReserveSamples
+                    + assistantConverterReserveSamples
+            ))
+        }
     }
 
     func start(
@@ -134,8 +150,17 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
             segmentLengthSamples = segmentLen
             audioConverter = converter
             recordingFormat = targetFormat
-            statusLock.withLock { masterSampleCursor = initialSampleOffset }
-            pendingPacketCount = 0
+            statusLock.withLock {
+                masterSampleCursor = initialSampleOffset
+                pendingPacketCount = 0
+                pendingAssistantSampleEstimate = 0
+                let ratio = targetFormat.sampleRate / inputFormat.sampleRate
+                assistantPacketReserveSamples = 1_024 * ratio
+                assistantConverterReserveSamples = (
+                    Double(converter.primeInfo.leadingFrames)
+                        + Double(converter.primeInfo.trailingFrames)
+                ) * ratio + 32
+            }
             lastClosedSegment = nil
             preRollBuffer = []
             isVoiced = false
@@ -249,9 +274,13 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
             emit(.writeFailed)
             return
         }
+        let assistantSampleEstimate = Double(packet.frameLength)
+            * Self.targetSampleRate / packet.format.sampleRate
         let accepted = statusLock.withLock { () -> Bool in
             guard pendingPacketCount < maximumPendingPackets else { return false }
             pendingPacketCount += 1
+            pendingAssistantSampleEstimate += assistantSampleEstimate
+            assistantPacketReserveSamples = max(assistantPacketReserveSamples, assistantSampleEstimate)
             return true
         }
         guard accepted else {
@@ -260,8 +289,16 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         }
 
         writerQueue.async { [weak self] in
-            defer { self?.statusLock.withLock { self?.pendingPacketCount -= 1 } }
-            self?.consume(packet)
+            guard let self else { return }
+            defer {
+                statusLock.withLock {
+                    self.pendingPacketCount -= 1
+                    self.pendingAssistantSampleEstimate = max(
+                        0, self.pendingAssistantSampleEstimate - assistantSampleEstimate
+                    )
+                }
+            }
+            consume(packet)
         }
     }
 

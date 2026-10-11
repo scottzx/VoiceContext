@@ -13,7 +13,9 @@ import UIKit
 //
 // Audio sources → intents (System TTS and cloud TTS are the SAME `replyTTS`
 // source, just different engines resolved from the Voice Output group):
-//   .capture            — mic recording (.record/.measurement)            [highest]
+//   .recording          — persistent recording + dedicated meeting speech [highest]
+//   .meetingAssistantTTS— speech lease under the recording's stable profile
+//   .capture            — chat mic recording (.record/.measurement)
 //   .mediaAttachment    — Markdown audio attachment / auto_play playback
 //   .replyTTS           — read-replies (cloud VoiceOutputPlayer OR System AVSpeech)
 //   .backgroundKeepAlive— silent keep-alive track (background only)        [lowest]
@@ -36,7 +38,8 @@ final class AudioSessionCoordinator {
         case mediaAttachment = 3
         case capture = 4
         case toolCapture = 5
-        case recording = 6
+        case meetingAssistantTTS = 6
+        case recording = 7
     }
 
     private let logger = AppLogger(category: "AudioSession")
@@ -74,7 +77,7 @@ final class AudioSessionCoordinator {
         BackgroundKeepAliveManager.shared.suspendSilentAudioForMedia(caller: "VoiceContext.recording")
         recordingOwners.insert(owner)
         FusionAudio.suspendWebAudio(true)
-        guard beginAndWait(.recording), AVAudioSession.sharedInstance().category == .record else {
+        guard beginAndWait(.recording), AVAudioSession.sharedInstance().category == .playAndRecord else {
             endRecording(owner: owner)
             throw NSError(domain: "VoiceContext.Audio", code: 1, userInfo: [NSLocalizedDescriptionKey: "录音音频会话未能就绪，请重试。 "])
         }
@@ -83,10 +86,35 @@ final class AudioSessionCoordinator {
     func endRecording(owner: UUID) {
         guard recordingOwners.remove(owner) != nil else { return }
         if recordingOwners.isEmpty {
+            active.remove(.meetingAssistantTTS)
             end(.recording)
             FusionAudio.suspendWebAudio(false)
             BackgroundKeepAliveManager.shared.resumeSilentAudioForMedia(caller: "VoiceContext.recording")
         }
+    }
+
+    /// Grants only the meeting assistant permission to speak over an existing
+    /// recording. No session mutation is allowed here: the recorder's engine
+    /// keeps the same category, mode and route throughout the utterance.
+    func beginMeetingAssistantSpeech() -> Bool {
+        let session = AVAudioSession.sharedInstance()
+        guard isRecording,
+              highest == .recording,
+              sessionActive,
+              !active.contains(.meetingAssistantTTS),
+              session.category == .playAndRecord,
+              session.mode == .default,
+              Self.pendingLock.withLock({ Self.pendingApplies == 0 && Self.lastApplySucceeded }) else {
+            return false
+        }
+        active.insert(.meetingAssistantTTS)
+        return true
+    }
+
+    func endMeetingAssistantSpeech() {
+        // Recording remains the highest intent; ending speech must not
+        // reconfigure or deactivate its audio session.
+        active.remove(.meetingAssistantTTS)
     }
 
     // MARK: - Public API
@@ -127,6 +155,7 @@ final class AudioSessionCoordinator {
     /// thread is parked for at most `timeout`, well inside the watchdog budget.
     @discardableResult
     func beginAndWait(_ intent: Intent, timeout: TimeInterval = 1.0) -> Bool {
+        guard intent != .meetingAssistantTTS else { return false }
         guard !isRecording || intent == .recording else { return false }
         if intent == .capture, active.contains(.toolCapture) { return false }
         if intent == .toolCapture, active.contains(.capture) { return false }
@@ -145,6 +174,7 @@ final class AudioSessionCoordinator {
     }
 
     private func beginInternal(_ intent: Intent) {
+        guard intent != .meetingAssistantTTS else { return }
         guard !isRecording || intent == .recording else { return }
         if intent == .capture || intent == .toolCapture { BackupKeepAlive.end() }
         // Media attachment preempts reply TTS (mutually exclusive voice content):
@@ -163,6 +193,10 @@ final class AudioSessionCoordinator {
 
     /// Declare that `intent` no longer needs the session.
     func end(_ intent: Intent) {
+        if intent == .meetingAssistantTTS {
+            endMeetingAssistantSpeech()
+            return
+        }
         guard active.contains(intent) else { return }
         active.remove(intent)
         apply(reason: "end(\(intent))")
@@ -183,8 +217,8 @@ final class AudioSessionCoordinator {
 
     private func profile(for intent: Intent) -> (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions) {
         switch intent {
-        case .recording:
-            return (.record, .default, [])
+        case .recording, .meetingAssistantTTS:
+            return (.playAndRecord, .default, [.defaultToSpeaker])
         case .capture, .toolCapture:
             return (.record, .measurement, [])
         case .mediaAttachment:

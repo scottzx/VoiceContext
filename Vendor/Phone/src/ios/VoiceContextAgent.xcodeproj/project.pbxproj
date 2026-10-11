@@ -4294,6 +4294,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>8F36FD4E2EA39C31E9723DB2</string>
 				<string>CACD121928992202767BB934</string>
 				<string>DD1CE0F8BA4C8F69C2695D44</string>
+				<string>4060CD954A93276358074598</string>
 				<string>8565954CE619F98624701FA0</string>
 				<string>D7376ED2C1ACF0C66A8E3E6B</string>
 				<string>B10C5EDB9BD4678B7DB60624</string>
@@ -4347,6 +4348,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>6AD2B41F1F121C8B58016A9F</string>
 				<string>9B065FCFC867FC8BBCDF1784</string>
 				<string>FCBB97F1A372E0A5344B82EA</string>
+				<string>F379EE6A358C0024941A57FE</string>
 				<string>6DEFBD42EAC93BB58F9A21D7</string>
 				<string>BF6E9DD9D8B91FD5AC206D3F</string>
 				<string>453AA6CB60034A553355D9A6</string>
@@ -4357,6 +4359,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>D92E352903E4E9D0CA34500E</string>
 				<string>BCD5FDD811430C31F66864CB</string>
 				<string>ED3DE82958E564978AB5E0F7</string>
+				<string>1B1551643B463DF6B48D2352</string>
 				<string>CF6F423310B87AC1B6F34466</string>
 				<string>8B138451D5A0F64885C81AE7</string>
 				<string>EB66774AD5C7C277E96F9C1B</string>
@@ -8028,6 +8031,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>2A2FA0B37DAF889DFEF38AD0</string>
 				<string>203ED43E7D29FB646255D541</string>
 				<string>452C12BED211A1B32E5FA23C</string>
+				<string>9FBFA42A32F45FB2B6282AEA</string>
 				<string>8B5A16018E4D067D7F7DDE44</string>
 				<string>D9F5CA5599ACC68DF546BB0A</string>
 				<string>5D20CC3DA3C67A7F318880CC</string>
@@ -17099,6 +17103,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>110E8454D125DC02FD1EA151</string>
 				<string>EE6239C30F0628440398FECC</string>
 				<string>5BD1BC7DEC4E899DED0AB985</string>
+				<string>5E166C01D360A2BD6656F572</string>
 				<string>3D7E0F2C7C2B39F2C2B41E6D</string>
 				<string>B580BB1661658D0EF9AA1701</string>
 				<string>FA9269517B232DD02B790C30</string>
@@ -17152,6 +17157,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>EDE79D4371C5682ECFE6A134</string>
 				<string>3D92A243A2E2F2CB857CA470</string>
 				<string>FEDEB6CEB9747917534789C6</string>
+				<string>D6CD44E99A21C6FA956CB765</string>
 				<string>2A45E1AB97FE5823722A53E3</string>
 				<string>9B8D79BE197770B81554AC43</string>
 				<string>1A204D3FD4BF8596AAFC7F56</string>
@@ -18255,6 +18261,24 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>DD1CE0F8BA4C8F69C2695D44</string>
 		</dict>
+		<key>4060CD954A93276358074598</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../speech_note/speech_note/Features/Recording/MeetingWakeCommandDetector.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>5E166C01D360A2BD6656F572</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>4060CD954A93276358074598</string>
+		</dict>
 		<key>8565954CE619F98624701FA0</key>
 		<dict>
 			<key>isa</key>
@@ -19209,6 +19233,24 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>FCBB97F1A372E0A5344B82EA</string>
 		</dict>
+		<key>F379EE6A358C0024941A57FE</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/Recording/MeetingAssistantBridge.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>D6CD44E99A21C6FA956CB765</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>F379EE6A358C0024941A57FE</string>
+		</dict>
 		<key>6DEFBD42EAC93BB58F9A21D7</key>
 		<dict>
 			<key>isa</key>
@@ -19388,6 +19430,24 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>ED3DE82958E564978AB5E0F7</string>
+		</dict>
+		<key>1B1551643B463DF6B48D2352</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/MeetingAssistantController.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>9FBFA42A32F45FB2B6282AEA</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>1B1551643B463DF6B48D2352</string>
 		</dict>
 		<key>CF6F423310B87AC1B6F34466</key>
 		<dict>

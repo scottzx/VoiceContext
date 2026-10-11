@@ -4296,6 +4296,469 @@
           }
         }
       }
+    },
+    "会中助手": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meeting assistant"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会中助手"
+          }
+        }
+      }
+    },
+    "说“小蓝同学”后交代任务": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Say “小蓝同学”, then give a task"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说“小蓝同学”后交代任务"
+          }
+        }
+      }
+    },
+    "请在前台会议录音中开启会中助手": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable the assistant while recording a meeting in the foreground"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在前台会议录音中开启会中助手"
+          }
+        }
+      }
+    },
+    "请先在录音设置中开启实时转写": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable live transcription in Recording Settings first"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在录音设置中开启实时转写"
+          }
+        }
+      }
+    },
+    "请先下载并准备本地转写模型": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download and prepare the local transcription models first"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先下载并准备本地转写模型"
+          }
+        }
+      }
+    },
+    "已识别指令，正在接单": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command recognized; preparing the task"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已识别指令，正在接单"
+          }
+        }
+      }
+    },
+    "收到，正在执行；完成后可继续唤起": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task accepted; wake the assistant again after it finishes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收到，正在执行；完成后可继续唤起"
+          }
+        }
+      }
+    },
+    "任务需要注意": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task needs attention"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务需要注意"
+          }
+        }
+      }
+    },
+    "已收到执行回复": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Execution reply received"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已收到执行回复"
+          }
+        }
+      }
+    },
+    "已暂停唤醒，返回前台后继续": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wake-up paused; return to the app to continue"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已暂停唤醒，返回前台后继续"
+          }
+        }
+      }
+    },
+    "录音已暂停，助手等待继续": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording paused; the assistant is waiting to resume"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音已暂停，助手等待继续"
+          }
+        }
+      }
+    },
+    "等待“小蓝同学”；说完稍作停顿": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for “小蓝同学”; pause briefly after your request"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待“小蓝同学”；说完稍作停顿"
+          }
+        }
+      }
+    },
+    "本场文字将交给已配置的智能体处理；外放回复可能进入录音。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This meeting’s text will be sent to your configured agent. Spoken replies may be captured in the recording."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本场文字将交给已配置的智能体处理；外放回复可能进入录音。"
+          }
+        }
+      }
+    },
+    "查看对话": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View conversation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看对话"
+          }
+        }
+      }
+    },
+    "停止播报": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop speaking"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止播报"
+          }
+        }
+      }
+    },
+    "请先在拓展中配置可用聊天模型": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure an available chat model in Extensions first"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在拓展中配置可用聊天模型"
+          }
+        }
+      }
+    },
+    "未能建立任务会话，请稍后再试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not create a task conversation. Please try again later."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未能建立任务会话，请稍后再试。"
+          }
+        }
+      }
+    },
+    "任务会话暂不可用，请在聊天中检查。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The task conversation is unavailable. Please check Chats."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务会话暂不可用，请在聊天中检查。"
+          }
+        }
+      }
+    },
+    "收到，正在执行。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Got it. I am working on it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收到，正在执行。"
+          }
+        }
+      }
+    },
+    "智能体未接下本次指令，请检查聊天模型与服务配置。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The agent did not accept this request. Please check the chat model and service settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体未接下本次指令，请检查聊天模型与服务配置。"
+          }
+        }
+      }
+    },
+    "任务仍未返回结果，可能还在执行。请查看对话确认状态，我不会重复提交。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The task has not returned a result and may still be running. Check its conversation for the status. I will not submit it again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务仍未返回结果，可能还在执行。请查看对话确认状态，我不会重复提交。"
+          }
+        }
+      }
+    },
+    "本次任务已停止，已执行的操作请在对话中核对。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This task has stopped. Check the conversation for any actions already performed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本次任务已停止，已执行的操作请在对话中核对。"
+          }
+        }
+      }
+    },
+    "任务没有返回可确认的结果，请查看对话核对。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The task returned no verifiable result. Please check its conversation."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务没有返回可确认的结果，请查看对话核对。"
+          }
+        }
+      }
+    },
+    "完整结果请查看对话。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the conversation for the full result."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完整结果请查看对话。"
+          }
+        }
+      }
+    },
+    "语音暂时静音，请查看文字结果或现有语音设置": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech is muted. Read the result or check your voice settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音暂时静音，请查看文字结果或现有语音设置"
+          }
+        }
+      }
+    },
+    "当前无法播报，请查看文字结果": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech is unavailable. Please read the result."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前无法播报，请查看文字结果"
+          }
+        }
+      }
+    },
+    "播报失败：%@，请查看文字结果": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech failed: %@. Please read the result."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播报失败：%@，请查看文字结果"
+          }
+        }
+      }
+    },
+    "播报等待超时，请查看文字结果": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech timed out. Please read the result."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播报等待超时，请查看文字结果"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

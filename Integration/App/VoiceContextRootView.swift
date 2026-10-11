@@ -58,6 +58,7 @@ struct VoiceContextRootView: View {
         }
         .onChange(of: phase, initial: true) { _, newValue in
             recordings.sceneChanged(newValue)
+            MeetingAssistantBridge.shared.setForeground(newValue == .active && !lock.appIsLocked)
             if newValue == .active { Task { await MeetingWorkspaceBridge.shared.refresh() } }
         }
         .onOpenURL { url in
@@ -91,6 +92,7 @@ struct VoiceContextRootView: View {
         .sheet(item: $results) { request in RecordingAgentResults(recordingID: request.id) }
         .protectedYimaSheet(item: $localItem, onDismiss: YimaItemSheet.didDismiss) { YimaItemSheet(store: items, request: $0).environmentObject(recordings) }
         .onChange(of: lock.appIsLocked) { _, locked in
+            MeetingAssistantBridge.shared.setForeground(!locked && phase == .active)
             if locked { items.recordingMeetingInProgress = nil }
             else { presentPendingItem() }
         }
@@ -152,6 +154,7 @@ struct VoiceContextRootView: View {
             }
         }
         .task {
+            MeetingAssistantController.shared.install()
             await recordings.prepare()
             migrateMeetings()
             MeetingWorkspaceBridge.installSkill()
