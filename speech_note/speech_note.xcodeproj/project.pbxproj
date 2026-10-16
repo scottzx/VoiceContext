@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7876EB972039B40D04690B91 /* MeetingWakeModels in Resources */ = {isa = PBXBuildFile; fileRef = 24D9BB7C239106AD5778AB9B /* MeetingWakeModels */; };
 		F339EEA80A76F82095F9B3C1 /* YimaDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 465389EF3FF256BA53E3261C /* YimaDesignTokens.swift */; };
 		A70WDG010000000000000005 /* RecordWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A70WDG010000000000000001 /* RecordWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D2155B260000000000000001 /* TranscribeCpp.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D2155B270000000000000001 /* TranscribeCpp.xcframework */; };
@@ -65,6 +66,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		24D9BB7C239106AD5778AB9B /* MeetingWakeModels */ = {isa = PBXFileReference; lastKnownFileType = folder; path = speech_note/MeetingWakeModels; sourceTree = SOURCE_ROOT; };
 		465389EF3FF256BA53E3261C /* YimaDesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Integration/Shared/YimaDesignTokens.swift; sourceTree = SOURCE_ROOT; };
 		A70WDG010000000000000001 /* RecordWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RecordWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D2155AF93020A7E100F29231 /* speech_note.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = speech_note.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -87,6 +89,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				MeetingWakeModels,
 				"ModelResources/SenseVoiceSmall-Q8_0.gguf",
 				ModelResources/silero_vad.onnx,
 				"ModelResources/3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx",
@@ -172,6 +175,7 @@
 		D2155AF03020A7E100F29231 = {
 			isa = PBXGroup;
 			children = (
+				24D9BB7C239106AD5778AB9B /* MeetingWakeModels */,
 				465389EF3FF256BA53E3261C /* YimaDesignTokens.swift */,
 				D2155AFB3020A7E100F29231 /* speech_note */,
 				A70WDG010000000000000002 /* RecordWidget */,
@@ -363,6 +367,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7876EB972039B40D04690B91 /* MeetingWakeModels in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

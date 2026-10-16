@@ -4,6 +4,10 @@
 
 ## 产品文档
 
+- [小蓝语音模式：拓展入口与 App 内导航](./design/xiaolan-fullscreen.md)：2026-10-17 修订，从拓展开启，与未结束录音互斥；取消独立小蓝前端，直接使用 App 页面和文字/图片/图表/HTML 预览。[可点击界面稿](./design/xiaolan-fullscreen-prototype/README.md)展示入口与互斥提示，不代表 iOS 实现。
+
+- [CRM 首版：单人本地客户管理](./design/crm-local-first.md)：2026-10-16 设计草案，覆盖公司、客户与通讯录、商机、任务/日历来源关联、会议纪要沟通和图片往来时间轴；message 文本/截图导入为 P2。[可点击 H5 原型](./design/crm-local-first-prototype/README.md)重点验证首页、客户详情、商机详情和往来流程。
+
 - [会议录音中的语音助手](./design/meeting-voice-assistant.md)：2026-10-11 首版范围，关键词唤起、当前会议上下文、既有 Agent 工具执行与录音期间 TTS 回复；记录显式开启、历史转写去重和真机验收边界。
 
 - [免费转写与魔搭按需模型下载](./design/free-transcription-model-download.md)：2026-10-09 产品调整方案，取消内购与试用门禁、模型安装后主动后台下载；记录四工件兼容、旧用户升级、下载流程和交付验收，尚未实施代码。

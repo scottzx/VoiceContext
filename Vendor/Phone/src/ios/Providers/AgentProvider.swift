@@ -191,6 +191,7 @@ protocol AgentProvider {
         messages: [AgentMessage],
         systemPrompt: String?,
         tools: [AgentToolDefinition],
+        requiredToolName: String?,
         maxTokens: Int,
         thinkingLevel: ThinkingLevel
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error>
@@ -201,13 +202,20 @@ extension AgentProvider {
         messages: [AgentMessage],
         systemPrompt: String?,
         tools: [AgentToolDefinition],
+        requiredToolName: String? = nil,
         maxTokens: Int,
         thinkingLevel: ThinkingLevel
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error> {
-        let clamped = min(thinkingLevel, model.catalogMaxThinkingLevel)
+        if let requiredToolName, !tools.contains(where: { $0.name == requiredToolName }) {
+            throw LLMError.providerError(message: "The required reply tool is not available in this request.")
+        }
+        // A delivery-only request needs a function call rather than another
+        // reasoning turn. This is request-local; session settings stay intact.
+        let clamped = requiredToolName == nil ? min(thinkingLevel, model.catalogMaxThinkingLevel) : .off
         return try await streamAgentMessageClamped(
             messages: messages, systemPrompt: systemPrompt,
-            tools: tools, maxTokens: maxTokens, thinkingLevel: clamped
+            tools: tools, requiredToolName: requiredToolName,
+            maxTokens: maxTokens, thinkingLevel: clamped
         )
     }
 
@@ -216,8 +224,10 @@ extension AgentProvider {
         messages: [AgentMessage],
         systemPrompt: String?,
         tools: [AgentToolDefinition],
+        requiredToolName: String? = nil,
         maxTokens: Int
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error> {
-        try await streamAgentMessage(messages: messages, systemPrompt: systemPrompt, tools: tools, maxTokens: maxTokens, thinkingLevel: .off)
+        try await streamAgentMessage(messages: messages, systemPrompt: systemPrompt, tools: tools,
+                                     requiredToolName: requiredToolName, maxTokens: maxTokens, thinkingLevel: .off)
     }
 }

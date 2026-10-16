@@ -11,7 +11,6 @@ struct VoiceContextRootView: View {
     @StateObject private var items = YimaItemsStore.shared
     @State private var localItem: YimaItemRequest?
     @State private var startingMeeting = false
-    @State private var manageSources = false
     @State private var startRecording = false
     @State private var stopRecording = false
     @State private var workspaceError: String?
@@ -30,7 +29,7 @@ struct VoiceContextRootView: View {
             recordings.meetings(start: $startRecording, stop: $stopRecording)
                 .tabItem { Label("记录", systemImage: "waveform") }
                 .tag(Tab.meetings)
-            SystemRemindersView(openFilters: $manageSources)
+            SystemRemindersView()
                 .tabItem { Label("提醒", systemImage: "checklist") }
                 .tag(Tab.reminders)
             VoiceContextExtensionsView(browserPool: browserPool)
@@ -51,11 +50,7 @@ struct VoiceContextRootView: View {
             }
         }
         .onChange(of: selection) { _, tab in savedSelection = tab }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if selection != .meetings && recordings.showsRecording {
-                recordings.recordingBar()
-            }
-        }
+        .overlay { recordings.recordingEdge() }
         .onChange(of: phase, initial: true) { _, newValue in
             recordings.sceneChanged(newValue)
             MeetingAssistantBridge.shared.setForeground(newValue == .active && !lock.appIsLocked)
@@ -108,9 +103,6 @@ struct VoiceContextRootView: View {
                     catch { throw YimaItemsError.invalid("录音已开始，但关联未保存。录音 ID：\(id)。\(error.localizedDescription)") }
                 } catch { workspaceError = error.localizedDescription }
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.manageSources"))) { _ in
-            selection = .reminders; manageSources = true
         }
         .onChange(of: items.pendingItem) { _, _ in presentPendingItem() }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.openSourceChat"))) { note in
@@ -198,7 +190,7 @@ struct VoiceContextRootView: View {
 private struct RecordingResultsRequest: Identifiable { let id: String }
 
 private struct VoiceContextExtensionsView: View {
-    private enum Destination: Hashable { case skills, providers, soul, memory, mcp, hardware, terminal, browser, calendarLists, customFunctions }
+    private enum Destination: Hashable { case skills, providers, soul, memory, mcp, hardware, terminal, browser, customFunctions }
     @State private var navigationPath: [Destination] = []
     @State private var settings = false
     @State private var terminal = false
@@ -229,7 +221,6 @@ private struct VoiceContextExtensionsView: View {
                         destinationTile(.browser, title: AppLocalized("浏览器"), symbol: "globe")
                     }
                     extensionSection("我的与设置") {
-                        destinationTile(.calendarLists, title: AppLocalized("日历与待办"), symbol: "calendar")
                         Button { settings = true } label: { tile(AppLocalized("设置"), symbol: "gearshape") }
                     }
                 }
@@ -239,6 +230,9 @@ private struct VoiceContextExtensionsView: View {
             .background(YimaDesign.Color.canvas)
             .navigationTitle("拓展")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { VoiceRecordingStatusControl() }
+            }
             .navigationDestination(for: Destination.self) { destination in
                 switch destination {
                 case .skills: SkillsManagementView()
@@ -249,7 +243,6 @@ private struct VoiceContextExtensionsView: View {
                 case .hardware: HardwareBridgeSettingsView()
                 case .terminal: terminalPage
                 case .browser: browserPage
-                case .calendarLists: YimaListSettingsView()
                 case .customFunctions: CustomExtensionsManagementView(store: customFunctions)
                 }
             }

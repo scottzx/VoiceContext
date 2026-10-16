@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="880" viewBox="0 0 720 880" role="img" aria-labelledby="title desc">
+  <title id="title">项目讨论白板，演示图片</title>
+  <desc id="desc">项目分为资料整理、方案讨论与下一步行动三个阶段。下一步为确认目标、补充资料和安排复盘。</desc>
+  <rect width="720" height="880" fill="#f7f7f5"/>
+  <g fill="#1c1c1e" font-family="-apple-system, BlinkMacSystemFont, PingFang SC, sans-serif">
+    <text x="52" y="72" font-size="20" fill="#636366">项目讨论白板 · 演示图片</text>
+    <text x="52" y="132" font-size="36" font-weight="600">从想法，到下一步。</text>
+    <text x="52" y="172" font-size="20" fill="#636366">2026 / 10 / 17</text>
+    <g fill="none" stroke="#636366" stroke-width="2">
+      <rect x="52" y="224" width="616" height="108" rx="4"/>
+      <path d="M360 332v44m-10-12 10 12 10-12"/>
+      <rect x="52" y="380" width="616" height="108" rx="4"/>
+      <path d="M360 488v44m-10-12 10 12 10-12"/>
+      <rect x="52" y="536" width="616" height="108" rx="4"/>
+      <path d="M52 704h616" stroke="#d1d1d6"/>
+    </g>
+    <text x="80" y="268" font-size="26" font-weight="500">01　资料整理</text>
+    <text x="80" y="308" font-size="20" fill="#636366">已有记录、关键数据、待确认的问题</text>
+    <text x="80" y="424" font-size="26" font-weight="500">02　方案讨论</text>
+    <text x="80" y="464" font-size="20" fill="#636366">把目标说清楚，把依据摆在眼前</text>
+    <text x="80" y="580" font-size="26" font-weight="500">03　下一步行动</text>
+    <text x="80" y="620" font-size="20" fill="#636366">确认目标 → 补充资料 → 安排复盘</text>
+    <text x="52" y="752" font-size="22">待确认：资料范围、负责人、复盘时间</text>
+    <text x="52" y="816" font-size="18" fill="#636366">此图仅用于界面评审，不代表真实任务或会议。</text>
+  </g>
+</svg>

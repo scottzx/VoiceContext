@@ -1,0 +1,57 @@
+[
+  {
+    "id": "meeting-wake-encoder",
+    "relativePath": "encoder.onnx",
+    "sha256": "2ca84d6bfe73e1ea3c9c49f600f7cad1c9ddd423c53c906b8bfe802444dd78d5",
+    "sizeBytes": 4600657,
+    "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2",
+    "licenseURL": "https://www.modelscope.cn/models/pkufool/icefall-kws-zipformer-zh-en-3M-2025-12-20",
+    "revision": "afc4a534ef85f2db4f84f05ed78eaac385b3387e",
+    "modelSetVersion": "meeting-wake-zh-en-3m-2025-12-20-chunk8",
+    "upstreamFile": "encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx"
+  },
+  {
+    "id": "meeting-wake-decoder",
+    "relativePath": "decoder.onnx",
+    "sha256": "63a22dd60f40fff082ac3e09afa507f6787da36df76ded2fbe145fa233e22c21",
+    "sizeBytes": 759829,
+    "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2",
+    "licenseURL": "https://www.modelscope.cn/models/pkufool/icefall-kws-zipformer-zh-en-3M-2025-12-20",
+    "revision": "afc4a534ef85f2db4f84f05ed78eaac385b3387e",
+    "modelSetVersion": "meeting-wake-zh-en-3m-2025-12-20-chunk8",
+    "upstreamFile": "decoder-epoch-13-avg-2-chunk-8-left-64.onnx"
+  },
+  {
+    "id": "meeting-wake-joiner",
+    "relativePath": "joiner.onnx",
+    "sha256": "190d4067b4cc20b72a42a1916e69d92052000fb7051a427ebb1bc72a69207dc1",
+    "sizeBytes": 86629,
+    "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2",
+    "licenseURL": "https://www.modelscope.cn/models/pkufool/icefall-kws-zipformer-zh-en-3M-2025-12-20",
+    "revision": "afc4a534ef85f2db4f84f05ed78eaac385b3387e",
+    "modelSetVersion": "meeting-wake-zh-en-3m-2025-12-20-chunk8",
+    "upstreamFile": "joiner-epoch-13-avg-2-chunk-8-left-64.int8.onnx"
+  },
+  {
+    "id": "meeting-wake-tokens",
+    "relativePath": "tokens.txt",
+    "sha256": "2d3f32311f9b692b964da3c90e830258d3e78e013cb0c992dbfb15cd5a1a71b0",
+    "sizeBytes": 1928,
+    "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2",
+    "licenseURL": "https://www.modelscope.cn/models/pkufool/icefall-kws-zipformer-zh-en-3M-2025-12-20",
+    "revision": "afc4a534ef85f2db4f84f05ed78eaac385b3387e",
+    "modelSetVersion": "meeting-wake-zh-en-3m-2025-12-20-chunk8",
+    "upstreamFile": "tokens.txt"
+  },
+  {
+    "id": "meeting-wake-keywords",
+    "relativePath": "keywords.txt",
+    "sha256": "1e2fa1a6faaa08038a6ac5a7555954ca405507dedf445b69f98f57dbd26bc243",
+    "sizeBytes": 40,
+    "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/blob/v1.13.4/scripts/text2token.py",
+    "licenseURL": "https://www.modelscope.cn/models/pkufool/icefall-kws-zipformer-zh-en-3M-2025-12-20",
+    "revision": "afc4a534ef85f2db4f84f05ed78eaac385b3387e",
+    "modelSetVersion": "meeting-wake-zh-en-3m-2025-12-20-chunk8",
+    "upstreamFile": "Generated from keywords_raw.txt by phone+ppinyin"
+  }
+]

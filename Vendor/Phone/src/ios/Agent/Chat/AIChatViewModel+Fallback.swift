@@ -15,6 +15,7 @@ extension AIChatViewModel {
         messages: [AgentMessage],
         systemPrompt: String?,
         tools: [AgentToolDefinition],
+        requiredToolName: String? = nil,
         maxTokens: Int,
         chatMessage: ChatMessage?
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error> {
@@ -60,6 +61,7 @@ extension AIChatViewModel {
                     messages: messages,
                     systemPrompt: systemPrompt,
                     tools: tools,
+                    requiredToolName: requiredToolName,
                     maxTokens: maxTokens,
                     thinkingLevel: thinkLvl
                 )
@@ -98,6 +100,7 @@ extension AIChatViewModel {
         baseSystemPrompt: String,
         systemPrompt initialSystemPrompt: String?,
         tools: [AgentToolDefinition],
+        requiredToolName: String? = nil,
         model: LLMModel,
         lastContextTokens: Int = 0,
         chatMessage: ChatMessage?,
@@ -138,6 +141,7 @@ extension AIChatViewModel {
                     messages: messages,
                     systemPrompt: currentSystemPrompt,
                     tools: tools,
+                    requiredToolName: requiredToolName,
                     maxTokens: maxTok,
                     thinkingLevel: thinkLvl
                 )
@@ -286,6 +290,7 @@ extension AIChatViewModel {
                         messages: messages,
                         systemPrompt: currentSystemPrompt,
                         tools: tools,
+                        requiredToolName: requiredToolName,
                         maxTokens: dynamicMaxTokens(provider: currentProvider, model: retryModel, lastContextTokens: lastContextTokens),
                         chatMessage: chatMessage
                     )
@@ -373,6 +378,7 @@ extension AIChatViewModel {
         baseSystemPrompt: String,
         systemPrompt: String?,
         tools: [AgentToolDefinition],
+        requiredToolName: String? = nil,
         model: LLMModel,
         lastContextTokens: Int,
         chatMessage: ChatMessage?,
@@ -390,6 +396,7 @@ extension AIChatViewModel {
                 baseSystemPrompt: baseSystemPrompt,
                 systemPrompt: systemPrompt,
                 tools: tools,
+                requiredToolName: requiredToolName,
                 model: model,
                 lastContextTokens: lastContextTokens,
                 chatMessage: chatMessage,
@@ -415,6 +422,15 @@ extension AIChatViewModel {
                 && result.stopReason != .maxTokens
 
             guard isEmpty else { return result }
+
+            #if VOICE_AGENT_FUSION
+            // [T-meeting-empty-fallback-delivery] Let the meeting loop deliver
+            // an answer without replaying business tools on another model.
+            if isMeetingCoordinator, result.stopReason == .endTurn,
+               MeetingAnswerUserTool.canRequestDelivery(sessionID: sessionId) {
+                return result
+            }
+            #endif
 
             // Empty response — record this entry and force-fail so the next
             // streamWithGroupFallback call advances to a different entry.

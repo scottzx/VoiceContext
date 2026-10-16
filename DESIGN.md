@@ -11,6 +11,8 @@ Cross-page implementation guide: [Unified interface language and tokens](docs/de
 
 Calendar and reminder ownership update (2026-10-06, explicit product-owner request): [Yima-owned calendar, reminders, and meeting links](docs/design/yima-owned-calendar-reminders.md) replaces the system-only source restriction for Yima items. The local-first scope and one calendar event per meeting are confirmed; synchronization direction and implementation details remain under review.
 
+Calendar and reminder navigation update (2026-10-12, explicit product-owner approval): [Entry and settings consolidation](docs/design/yima-owned-calendar-reminders.md#12-入口与设置收拢2026-10-12) keeps only 待办 and 日程 in creation, treats meetings as a schedule type, moves system integration into Settings, and limits filters to display choices. Reuse the approved native style; this change does not implement system synchronization.
+
 ## Product Context
 
 - **Name:** 一芥伙伴 (Chinese), Yima (English).
@@ -102,8 +104,8 @@ Use regular, medium/semibold, and bold intentionally. If most text is bold, hier
 - Ordinary selected dates and segmented controls use ink/white contrast rather than a brand color.
 - Complete records remain neutral by default. Green appears only when confirming a successful action matters, except for the explicitly approved Tasks calendar event dot.
 - Processing and suspected identity may use a small orange dot or orange text, never an orange card covering the whole row.
-- Blue is limited to system settings, permissions, or external/system links. In-app navigation remains monochrome.
-- Never use purple/violet tokens, decorative gradients, gradient buttons, or colored glows.
+- Blue is limited to system settings, permissions, external/system links, and the explicitly approved assistant-speaking edge below (2026-10-12). In-app navigation remains monochrome.
+- Never use purple/violet tokens, decorative gradients, gradient buttons, or decorative colored glows. The approved recording-edge exception below is a functional recording state only.
 - Dark mode is a surface redesign, not a mechanical color inversion. Preserve semantic meaning and at least WCAG AA text contrast.
 
 ## Spacing
@@ -123,6 +125,7 @@ Use regular, medium/semibold, and bold intentionally. If most text is bold, hier
 - **Navigation:** `NavigationStack`, native sheets, and value-based destinations.
 - **Integration navigation (approved 2026-09-29, label updated 2026-10-04, source scope updated 2026-10-06):** Four tabs in order: 聊天, 会议, 提醒, 拓展. Chat reuses the full phone agent capabilities; Meetings hosts meeting context and the recording workspace; Reminders shows Yima-owned items and authorized system Reminders/Calendar sources; Extensions contains 我的 and settings. See `docs/design/personal-agent-integration.md` for integration history and `docs/design/yima-owned-calendar-reminders.md` for the current source scope.
 - **Yima lists and meeting events (approved 2026-10-06):** Provide Yima日历 and Yima待办 as local sources even when system access is denied. Optional system integration binds dedicated system lists; display the bound source and items once in the app. Each meeting has one Yima event, reachable from both Meetings and the schedule area in Reminders; action tasks remain separate. Unknown dates stay in an unscheduled area. Keep local creation/editing available independently of EventKit permission. Local rows use native Forms; EventKitUI remains for system objects. Preserve flat rows, shared filters, and the approved calendar dots. Synchronization direction is pending user feedback.
+- **Creation, settings, and filters (approved 2026-10-12):** Creation offers only 待办 and 日程. New schedules choose 普通日程 or 会议 inside the native Form; existing schedules and meetings keep their type. New tasks choose 保存到: Yima待办 or iPhone提醒事项 inside the Form, with the system option available only when reminder access and a writable list are available. Preserve each destination's existing notification capabilities. Manage system calendar/reminder access at 设置 → 日历与待办; Extensions retains one Settings entry and no separate calendar/reminder tile. Shared filters control visible sources and completed tasks only. This approval covers information architecture and native controls without requiring another prototype; system synchronization remains unimplemented.
 - **Shared tab layout and preferences (2026-09-29):** Match Chat and Meetings with inline navigation titles, flat lists, system canvas backgrounds, and neutral navigation icons on Tasks and Extensions. Extensions offers one Settings entry; language and appearance are app-wide. Recording-specific preferences remain a subsection. Do not show an Agent-list shortcut in Extensions.
 - **Tab visibility (2026-10-03):** Show the main tab bar only on the four root pages. Hide it on all secondary and deeper pages, including recording details and tools; restore it with the return transition. Keep recording and playback controls available in their own pages. Sheets use native modal presentation.
 - **Task rows and date navigation (2026-10-04):** Calendar events share reminder row typography, source placement, leading icon width, and spacing. Their date is on the left and time range or All Day on the right of one metadata row; location is plain text without an icon. All Items groups visible items by date; tapping a date opens native year/month/day wheels that offer only populated dates under the current source/completion filters. Undated reminders remain in an Unscheduled section. Date selection jumps within the list.
@@ -132,6 +135,7 @@ Use regular, medium/semibold, and bold intentionally. If most text is bold, hier
 - **Chat and Extensions navigation (approved 2026-10-02):** Keep search visible above the conversation list and New Conversation in the upper-right corner. Move the list's global settings and terminal/browser menus to Extensions. Group Skills, models and services/model groups/global usage, assistant configuration, memory, tool connections (MCP/hardware), terminal and its runtime environment (Rootfs/environment variables), and browser in Extensions. The browser page offers Open Browser and Browser Settings using the same global browser pool. Extensions keeps one unified Settings entry for general, chat, recording, data, privacy/permissions, diagnostics, and about. Keep the current conversation's model, files, tools, context, and usage inside the conversation. Preserve the separate conversation browser-tab pool and global browser pool. Reuse the existing native monochrome list style; add no tab or Agent-list shortcut. This approval confirms navigation scope, not runtime acceptance.
 - **Extensions grid and custom functions (2026-10-09, explicit product-owner request):** Present Extensions entries as four square icons per row with names below. Place 自定义功能 first, followed by the existing sections and entries in their current order. Use neutral grouped surfaces, system typography, and 12 pt control corners; uploaded product logos retain their own colors. Users add a name, HTTP/HTTPS URL, and optional photo/file logo. Without a logo, show the first character or initial. Long-press a custom entry to open a native adjustment list for persistent sorting and deletion. Forms and confirmation dialogs remain native. See `docs/design/custom-extensions.md` for data, navigation, and verification details. This supersedes the flat-list requirement for the Extensions root only.
 - **Custom function browser presentation (2026-10-09, explicit product-owner request):** Open a custom function as a full-screen single web page with its name and one native Return action. Hide browser tabs, the address bar, browser history controls, and the app tab bar. Return exits the page directly. New-window links stay on that page; closing it releases the temporary browser page. Preserve native loading errors, retry, and recording priority.
+- **App voice mode (2026-10-17, explicit product-owner request):** Enable independent voice mode from Extensions. It is mutually exclusive with recording: an unfinished recording, including a paused one, blocks activation and prompts the user to finish it first. Do not create a separate Xiaolan home, frontend, or full-screen navigation shell. Voice commands navigate directly through the app's existing tabs, pages, and text/image/chart/HTML previews; retain their normal tab visibility and return behavior. Use native toolbar/menu controls, without a persistent bottom voice dock. See [voice mode design](docs/design/xiaolan-fullscreen.md); this approval establishes scope and does not confirm implementation.
 - **Records screen within Meetings:** Large title, restrained calendar strip, flat Recording rows, and a fixed bottom recording control. In the integration version, profile/settings move to Extensions. Recording state and a stop action remain reachable across tabs.
 - **Recording details:** Title and metadata, audio player, transcript, then secondary metadata/actions. Audio always precedes transcript.
 - **Settings:** Native `List` / `Form` grouping. Do not create a custom card for every setting row.
@@ -168,11 +172,12 @@ Do not apply border, fill, radius, and shadow to the same element by default. Ca
 - Starting recording changes the control into an unmistakable active/stop state with haptic feedback.
 - No gradient, glow, orange alternative, or oversized promotional dock.
 
-### Global recording bar
+### Global recording state
 
-- Visible outside the recording screen while capture is active.
-- Uses a red dot, status text, elapsed time, backlog truth, and an independently focusable stop action.
-- The bar may use a very light red surface, but it must not become a floating promotional card.
+- Outside the recorder, replace the global top recording bar with a faint system-red edge while the microphone is recording (2026-10-12, explicit product-owner request). Human speech lightly animates red; the assistant's actual TTS playback uses system blue. Synthesis, task execution, and the short wake cue do not count as assistant speech. The edge overlays no content controls, consumes no layout space, and ignores touches.
+- Use native SwiftUI shapes and short easing. A little extra brightness and width follows the existing microphone level for red, and the actual audio player's output level for blue, sampled at most ten times per second. During assistant playback, microphone echo does not drive the edge. No invented idle pulse, multicolor gradient, or private Apple Intelligence effect.
+- Keep a native recording menu in page headers with a truthful SF Symbol, accessible status, elapsed time, transcript backlog, Return to Current Recording, and Stop Recording. The assistant dialogue sheet also retains this control.
+- Paused, interrupted, and safely stopping sessions have their own symbol and wording and no active recording edge. With Reduce Motion, the recording edge remains static. Existing recorder screens keep their recording controls.
 
 ### Audio player
 
@@ -212,7 +217,7 @@ Do not apply border, fill, radius, and shadow to the same element by default. Ca
 - Every interactive target is at least 44×44 pt.
 - Support Dynamic Type through at least `.accessibility3`; rows grow vertically and metadata wraps.
 - Color never carries state alone. Pair it with wording and, when useful, an SF Symbol.
-- VoiceOver order on the records screen: navigation, active recording bar, date selection, Recording list, fixed recording control.
+- VoiceOver order on the records screen: navigation and recording menu, date selection, Recording list, fixed recording control.
 - VoiceOver order in details: title, player, transcript, metadata/actions.
 - Announce meaningful state transitions politely; stopping uses clear destructive semantics.
 - Use readable elapsed-time accessibility values such as `12 分 48 秒`, not digit-by-digit timer noise.
@@ -221,7 +226,7 @@ Do not apply border, fill, radius, and shadow to the same element by default. Ca
 
 - Purple/violet brand systems or gradients.
 - Orange gradient recording buttons.
-- Colored shadows or glows.
+- Decorative colored shadows or glows, except the explicitly approved semantic recording edge above.
 - A rounded card around every list row or content section.
 - Colored icon tiles for every setting.
 - Decorative status pills for ordinary complete states.
@@ -267,3 +272,6 @@ Do not apply border, fill, radius, and shadow to the same element by default. Ca
 | 2026-10-09 | Remove in-app purchases and make speech-to-text free; distribute models through user-initiated downloads after installation | Explicit product-owner request; implementation is pending. See docs/design/free-transcription-model-download.md; retain the existing visual system |
 | 2026-10-09 | Use a four-column Extensions grid and place configurable local/LAN/Tailscale product shortcuts at the top | Explicit product-owner request; retain existing section order, neutral surfaces, and native add/adjust flows. See docs/design/custom-extensions.md |
 | 2026-10-09 | Open custom functions as full-screen single web pages, with Return closing the page | Explicit product-owner request; hide browser tabs and controls, preserve native errors and recording priority |
+| 2026-10-12 | Replace the global recording banner with a subtle red recording/human-speech edge, blue assistant-speech edge, and native header controls | Explicit product-owner request after the banner overlapped the assistant conversation, with later clarification of red for human speech and blue for assistant answers. Scoped exception to the no-glow and blue-color restrictions; preserve truthful actual playback, Stop/Return actions, Reduce Motion, and unobstructed content |
+| 2026-10-12 | Keep 待办 and 日程 as the two creation choices, put meeting type and task destination in their Forms, move system integration to 设置 → 日历与待办, and limit filters to display choices | Explicit product-owner approval of the consolidation plan; reuse approved native Forms, navigation and list style without an additional prototype. Preserve existing types and notification capabilities; no system synchronization in this change |
+| 2026-10-17 | Enable independent voice mode from 拓展, require unfinished recording to end first, and navigate directly in the existing app | Explicit product-owner correction: voice and recording are mutually exclusive; no separate Xiaolan frontend or full-screen shell. Text, image, chart and HTML use app content previews; implementation remains pending |

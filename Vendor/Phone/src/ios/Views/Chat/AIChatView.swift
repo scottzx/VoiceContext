@@ -2015,6 +2015,9 @@ struct AIChatView: View {
             },
             trailing: {
                 HStack(spacing: 0) {
+                    #if VOICE_AGENT_FUSION
+                    VoiceRecordingStatusControl()
+                    #endif
                     if let systemImage = headerActionSystemImage,
                        let action = onHeaderAction {
                         Button(action: action) {

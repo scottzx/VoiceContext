@@ -20,6 +20,7 @@ final class GeminiAgentProvider: AgentProvider {
         messages: [AgentMessage],
         systemPrompt: String?,
         tools: [AgentToolDefinition],
+        requiredToolName: String? = nil,
         maxTokens: Int,
         thinkingLevel: ThinkingLevel
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error> {
@@ -33,6 +34,7 @@ final class GeminiAgentProvider: AgentProvider {
                 systemPrompt: systemPrompt,
                 maxTokens: maxTokens,
                 tools: geminiTools,
+                requiredToolName: requiredToolName,
                 thinkingLevel: thinkingLevel
             )
         } catch {

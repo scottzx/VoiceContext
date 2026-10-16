@@ -159,6 +159,11 @@ static int reminders_handler(int argc, char **argv,
     return NOFF_EXIT_INVALID_ARGS;
 }
 
+// Direct native entry for the meeting assistant; no guest process or shell.
+int reminders_offload_execute_direct(int argc, char **argv, int stdout_fd, int stderr_fd) {
+    return reminders_handler(argc, argv, -1, stdout_fd, stderr_fd);
+}
+
 void reminders_offload_register(void) {
     int err = native_offload_add_handler("apple-reminders", reminders_handler);
     if (err == 0) {

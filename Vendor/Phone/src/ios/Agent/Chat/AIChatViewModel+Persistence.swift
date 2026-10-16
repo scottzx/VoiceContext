@@ -211,6 +211,10 @@ extension AIChatViewModel {
         // Agent migration (or was created outside AgentStore) and keeps the
         // historical full-toolset behavior via the `.standalone` default.
         if let row = await ChatStore.shared.getSession(sessionId) {
+            // Keep meeting replies behind answer_user after cache eviction or relaunch.
+            if row.source == "meeting_assistant" {
+                sessionSource = row.source
+            }
             agentId = row.agentId
             agentRole = (row.spawnRole == "subagent") ? .executor : .main
             if let aid = row.agentId, let owner = await ChatStore.shared.getAgent(aid) {
@@ -1245,7 +1249,7 @@ extension AIChatViewModel {
     ///
     ///   1. **Default group** — if `defaultPrimaryGroupId` is set AND the
     ///      group resolves to at least one available (enabled + credentialed,
-    ///      non-hidden) member, use it. Existing behaviour — unchanged.
+    ///      non-hidden) text-output member, use it.
     ///   2. **Last-used model** — read the most recently updated session via
     ///      `ChatStore.listSessions()` (skipping the one we just created and
     ///      any whose modelId no longer maps to a usable entry on this
@@ -1274,7 +1278,8 @@ extension AIChatViewModel {
         // Tier 1 — default group (current behaviour).
         if let groupId = overrideGroupId ?? store.defaultPrimaryGroupId,
            let group = store.group(for: groupId),
-           let entryId = ModelGroupRouter.resolve(group: group, sessionId: sessionId, store: store) {
+           let entry = Self.resolveInitialPrimaryGroupEntry(group: group, sessionId: sessionId, store: store) {
+            let entryId = entry.id
             let primarySource = SessionModelSource.group(groupId: groupId, resolvedEntryId: entryId)
 
             // Resolve sub source
@@ -1347,6 +1352,23 @@ extension AIChatViewModel {
         logger.warning("[NewSessionDefault] tier=3 latest-provider MISS sid=\(sessionId.prefix(8)) — no enabled+credentialed provider with a usable text model; session left without binding (resolveCurrentEntry will fall back to global config)")
     }
 
+    /// Keep initial chat routing within a group's text models, even if a
+    /// speech/image model was accidentally added before them. Used by meeting
+    /// assistant availability checks as well as new-session binding.
+    static func resolveInitialPrimaryGroupEntry(
+        group: ModelGroup, sessionId: String, store: ProviderConfigStore
+    ) -> ModelEntry? {
+        var textGroup = group
+        textGroup.memberEntryIds = group.memberEntryIds.filter { entryId in
+            guard let entry = store.entry(for: entryId) else { return false }
+            return isTextOutputModel(entry.model)
+        }
+        guard let entryId = ModelGroupRouter.resolve(group: textGroup, sessionId: sessionId, store: store) else {
+            return nil
+        }
+        return store.entry(for: entryId)
+    }
+
     /// [T-newchat-default-model-fallback-ios] Tier-2 helper: scan the most
     /// recent sessions and return the first ModelEntry on this device that
     /// matches one of their stored `modelId`s and is currently usable
@@ -1368,7 +1390,7 @@ extension AIChatViewModel {
             // Find ALL entries on this device matching the recorded modelId,
             // then prefer one whose instance is currently usable.
             let candidates = store.modelEntries.filter { entry in
-                entry.model.id == mid && !entry.isHidden
+                entry.model.id == mid && !entry.isHidden && isTextOutputModel(entry.model)
             }
             if candidates.isEmpty { continue }
             if let usable = candidates.first(where: { entry in
@@ -1392,12 +1414,10 @@ extension AIChatViewModel {
     ///
     /// "Newest" = last position in the in-memory array (instances/entries
     /// are appended on add, so the tail is the most recent addition).
-    /// Text-output is determined by `modalityOverride`: an entry is treated
-    /// as text-capable unless its modalityOverride is explicitly one of the
-    /// pure non-text output modalities (imageOutput / audioOutput /
-    /// videoOutput) — same logic as the picker's `nonTextOutputLabel`. A
-    /// nil modalityOverride is assumed text-capable, matching the picker.
-    private static func resolveLatestProviderTextEntry(store: ProviderConfigStore) -> ModelEntry? {
+    /// Explicit modality metadata must include text output; additional output
+    /// modalities do not exclude a multimodal chat model. A nil override is
+    /// assumed text-capable for legacy/provider models without metadata.
+    static func resolveLatestProviderTextEntry(store: ProviderConfigStore) -> ModelEntry? {
         // Walk providers newest-first.
         for instance in store.instances.reversed() {
             guard instance.isEnabled, instance.hasAnyCredential else {
@@ -1417,18 +1437,12 @@ extension AIChatViewModel {
         return nil
     }
 
-    /// [T-newchat-default-model-fallback-ios] True when `model` produces text
-    /// output — i.e. NOT a pure image / audio / video generation model. Used
-    /// by the tier-3 fallback to exclude `gpt-image-2`, TTS models, etc.
-    /// from auto-selection on a fresh install. nil modalityOverride = assume
-    /// text (most models don't override, and historically text-output is the
-    /// default for chat models).
+    /// Shared by initial group routing and both new-session fallback tiers.
+    /// Explicit text output also permits multimodal output; absent metadata
+    /// keeps the historical assumption that the model supports chat.
     private static func isTextOutputModel(_ model: LLMModel) -> Bool {
         guard let modality = model.modalityOverride else { return true }
-        if modality.contains(.imageOutput) { return false }
-        if modality.contains(.audioOutput) { return false }
-        if modality.contains(.videoOutput) { return false }
-        return true
+        return modality.contains(.textOutput)
     }
 
     /// Apply a ModelGroup's session defaults (thinking level) to the given session.

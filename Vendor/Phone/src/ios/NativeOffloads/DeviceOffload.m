@@ -261,6 +261,11 @@ static int device_handler(int argc, char **argv,
     return NOFF_EXIT_INVALID_ARGS;
 }
 
+// Direct native entry for the meeting assistant; no guest process or shell.
+int device_offload_execute_direct(int argc, char **argv, int stdout_fd, int stderr_fd) {
+    return device_handler(argc, argv, -1, stdout_fd, stderr_fd);
+}
+
 void device_offload_register(void) {
     int err = native_offload_add_handler("apple-device", device_handler);
     if (err == 0) {

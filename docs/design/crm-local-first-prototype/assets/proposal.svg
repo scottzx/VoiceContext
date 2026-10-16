@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1280" viewBox="0 0 960 1280" role="img" aria-labelledby="title desc">
+  <title id="title">客户服务流程优化方案摘要 · 演示资料</title>
+  <desc id="desc">可读的方案草案摘要，包含目标、首期范围、推进方式与暂定报价六万八千元，试行时间待确认。</desc>
+  <rect width="960" height="1280" fill="#FAFAF7"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" fill="#1C1C1E">
+    <text x="80" y="104" font-size="24" fill="#636366">禾序科技 · 演示资料</text>
+    <text x="80" y="180" font-size="46" font-weight="600">客户服务流程优化</text>
+    <text x="80" y="235" font-size="30" fill="#636366">方案摘要 · 草案 v1</text>
+    <path d="M80 275H880" stroke="#CDCDCA"/>
+
+    <text x="80" y="350" font-size="32" font-weight="600">目标</text>
+    <g font-size="26" fill="#636366">
+      <text x="80" y="405">让客户诉求有入口、有责任人、</text>
+      <text x="80" y="447">有处理记录，也有清楚的下一步。</text>
+    </g>
+
+    <text x="80" y="535" font-size="32" font-weight="600">首期范围</text>
+    <g font-size="26" fill="#636366">
+      <text x="80" y="590">01 统一受理与分类</text>
+      <text x="80" y="640">02 明确分派和升级规则</text>
+      <text x="80" y="690">03 保留处理与回访记录</text>
+    </g>
+
+    <text x="80" y="780" font-size="32" font-weight="600">推进方式</text>
+    <g font-size="26" fill="#636366">
+      <text x="80" y="835">先以一个服务小组验证流程。</text>
+      <text x="80" y="877">人员、启动日期和升级条件待确认。</text>
+    </g>
+
+    <path d="M80 945H880" stroke="#CDCDCA"/>
+    <text x="80" y="1005" font-size="24" fill="#636366">暂定报价 · 待进一步核对范围</text>
+    <text x="80" y="1075" font-size="48" font-weight="600">¥68,000</text>
+    <text x="80" y="1120" font-size="24" fill="#636366">人民币 · 未签约</text>
+    <path d="M80 1175H880" stroke="#CDCDCA"/>
+    <text x="80" y="1230" font-size="20" fill="#636366">2026.10.16 · 内部草案，尚未发出</text>
+  </g>
+</svg>

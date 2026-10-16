@@ -18,6 +18,8 @@ public final class AsyncTaskNoticeManager {
     public static let shared = AsyncTaskNoticeManager()
 
     public var sessionRunner: any AgentSessionRunning = IOSAgentSessionRunner.shared
+    public var prepareMeetingReply: (@MainActor (String) async -> Bool)?
+    public var finishMeetingReply: (@MainActor (String, AgentSessionRunResult) async -> Void)?
 
     private var loopEndObserver: NSObjectProtocol?
     private var isDraining: Set<String> = []
@@ -105,7 +107,8 @@ public final class AsyncTaskNoticeManager {
     /// Check if the given session is idle and has pending notices, and inject them atomically.
     public func checkAndDrain(sessionId: String) async {
         guard !sessionId.isEmpty else { return }
-        guard !isDraining.contains(sessionId) else { return }
+        guard isDraining.insert(sessionId).inserted else { return }
+        defer { isDraining.remove(sessionId) }
 
         // If the session is currently active or processing, do not inject — wait for loop end
         if SessionActivityTracker.shared.isActive(sessionId) {
@@ -114,7 +117,7 @@ public final class AsyncTaskNoticeManager {
         }
 
         if let vm = ViewModelCache.shared.get(for: sessionId) {
-            if vm.isProcessing {
+            if vm.isProcessing || vm.isCompacting || vm.compactTask != nil || vm.postCompactDrainPending {
                 logger.debug("[Notice] VM for \(sessionId) isProcessing, deferring notice drain.")
                 return
             }
@@ -127,8 +130,14 @@ public final class AsyncTaskNoticeManager {
 
         let pending = await ChatStore.shared.pendingAsyncTaskNotices(for: sessionId)
         guard !pending.isEmpty else { return }
-
-        isDraining.insert(sessionId)
+        let isMeeting = await ChatStore.shared.getSession(sessionId)?.source == "meeting_assistant"
+        let finishReply = finishMeetingReply
+        if isMeeting {
+            // Reserve the live recording reply before results enter its history.
+            // Before the host installs these hooks, meeting notices stay pending.
+            guard let prepareMeetingReply, finishReply != nil,
+                  await prepareMeetingReply(sessionId) else { return }
+        }
 
         logger.info("[Notice] Draining \(pending.count) pending notice(s) for session \(sessionId)")
 
@@ -187,7 +196,7 @@ public final class AsyncTaskNoticeManager {
             noticeIds: pending.map(\.id)
         ) else {
             logger.error("[Notice] Failed to atomically inject notices for session \(sessionId); leaving them pending.")
-            isDraining.remove(sessionId)
+            if isMeeting { await finishReply?(sessionId, .rejected) }
             return
         }
 
@@ -195,20 +204,19 @@ public final class AsyncTaskNoticeManager {
 
         // Revive the agent loop
         let result = await sessionRunner.resumeAfterAsyncToolResults(sessionId: sessionId)
+        if isMeeting { await finishReply?(sessionId, result) }
         if !result.accepted {
             // A user turn may have won the race after the idle check. Keep the
             // notice claim pending; deterministic message ids make the retry
             // an idempotent reload-and-resume rather than a duplicate insert.
             await ChatStore.shared.markAsyncTaskNoticesPending(ids: pending.map(\.id))
-            isDraining.remove(sessionId)
             return
         }
-        isDraining.remove(sessionId)
 
         // Notices may have arrived while this notice-driven turn was active.
         // Its loop-end notification fires before awaitTurn returns, while the
         // session is still in isDraining, so explicitly perform one tail drain.
-        await checkAndDrain(sessionId: sessionId)
+        Task { await self.checkAndDrain(sessionId: sessionId) }
     }
 
     private func formatNoticeResultOutput(_ notice: AsyncTaskNotice) -> String {

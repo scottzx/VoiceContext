@@ -27,6 +27,37 @@ extension AIChatViewModel {
 
     // MARK: - Tool Definitions (Canonical)
 
+    var meetingReplyToolDefinitions: [AgentToolDefinition] {
+        #if VOICE_AGENT_FUSION
+        return isMeetingCoordinator ? [MeetingAnswerUserTool.definition] : []
+        #else
+        return []
+        #endif
+    }
+
+    var isMeetingCoordinator: Bool {
+        sessionSource == "meeting_assistant" && agentRole != .executor
+    }
+
+    static var meetingCoordinatorToolNames: Set<String> {
+        SubagentTools.names.union(["answer_user", "apple_native", "yima_items", "memory_get", "memory_write"])
+    }
+
+    /// Enforced at dispatch as well as registration: a hallucinated shell or
+    /// browser call cannot execute in the long-lived meeting conversation.
+    func meetingToolRefusal(name: String, tools: [AgentToolDefinition]) -> String? {
+        #if VOICE_AGENT_FUSION
+        if agentRole == .executor && (name == "answer_user" || name == "apple_native") {
+            return "This tool belongs to the meeting coordinator. Report your result to the parent assistant instead."
+        }
+        if isMeetingCoordinator,
+           !Self.meetingCoordinatorToolNames.contains(name) || !tools.contains(where: { $0.name == name }) {
+            return "This tool is unavailable to the meeting coordinator. Delegate execution with spawn_subagent; use native tools only for short Apple or Yima operations."
+        }
+        #endif
+        return nil
+    }
+
     /// The tool set for this turn, gated by the owning agent's policy.
     ///
     /// [T-agent-orchestrator-toolcut] An orchestrator's session is the agent's
@@ -48,7 +79,8 @@ extension AIChatViewModel {
         // whose schemas alone are larger than the entire lite prompt, and the
         // whole point of the mode is that the model has one obvious thing to
         // call. Skills survive because loading one is `cat SKILL.md`.
-        if liteModeActive { return LiteModePrompt.toolDefinitions }
+        let meetingReplyTools = meetingReplyToolDefinitions
+        if liteModeActive { return LiteModePrompt.toolDefinitions + meetingReplyTools }
 
         let policy = effectiveToolPolicy
 
@@ -70,7 +102,7 @@ extension AIChatViewModel {
         // holding the conversation and can judge what is worth keeping.
         let includeMemoryWrite = includeMemoryTools && agentRole != .executor
 
-        var tools: [AgentToolDefinition] = []
+        var tools: [AgentToolDefinition] = meetingReplyTools
 
         // Dispatch tools — orchestrators only. An executor that could spawn
         // further executors would make task trees unbounded and untraceable.
@@ -304,6 +336,10 @@ extension AIChatViewModel {
 
         #if VOICE_AGENT_FUSION
         if agentRole != .executor { tools.append(YimaItemsAgentTool.definition) }
+        if isMeetingCoordinator {
+            tools.append(MeetingAppleTool.definition)
+            tools.removeAll { !Self.meetingCoordinatorToolNames.contains($0.name) }
+        }
         #endif
         return tools
     }

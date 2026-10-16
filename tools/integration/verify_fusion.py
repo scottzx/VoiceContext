@@ -36,6 +36,15 @@ model_weight_names = {artifact['relativePath'] for artifact in model_manifest}
 excluded_model_names = model_weight_names | {name + '.partial' for name in model_weight_names}
 model_resource_names = {path.name for path in model_root.iterdir()
                         if path.is_file() and (path.name == 'ModelManifest.json' or path.suffix in {'.txt', '.md'})}
+wake_root = ROOT / 'speech_note/speech_note/MeetingWakeModels'
+wake_manifest = json.loads((wake_root / 'MeetingWakeManifest.json').read_text())
+assert {item['relativePath'] for item in wake_manifest} == {
+    'encoder.onnx', 'decoder.onnx', 'joiner.onnx', 'tokens.txt', 'keywords.txt'
+}, 'Preinstalled wake model manifest is incomplete'
+for artifact in wake_manifest:
+    path = wake_root / artifact['relativePath']
+    assert path.stat().st_size == artifact['sizeBytes'], f'Wake model size changed: {path.name}'
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact['sha256'], f'Wake model checksum changed: {path.name}'
 assert 'MODEL_ATTRIBUTIONS.md' in model_resource_names, 'Missing model attribution notice'
 assert 'pyannote-segmentation-3.0-LICENSE.txt' in model_resource_names, 'Missing bundled pyannote license'
 for artifact in model_manifest:
@@ -48,6 +57,7 @@ for artifact in model_manifest:
     query = parse_qs(download.query)
     assert download.hostname == 'modelscope.cn' and query.get('Revision') == [artifact['revision']] and query.get('FilePath') == [artifact['relativePath']], f'Model download metadata does not match the manifest: {artifact["id"]}'
 resource_paths = {fusion[fid].get('path', '') for fid in members(fusion, main, 'PBXResourcesBuildPhase')}
+assert any(Path(path).name == 'MeetingWakeModels' for path in resource_paths), 'Wake model folder is not preinstalled'
 for name in model_resource_names:
     assert any(Path(path).name == name for path in resource_paths), f'Model resource not copied to app root: {name}'
 for native_target in [value for value in fusion.values() if value.get('isa') == 'PBXNativeTarget' and value['name'] in ['VoiceContextAgent', 'VoiceRecording']]:
@@ -185,6 +195,9 @@ if args.products:
     assert json.loads((app / 'ModelManifest.json').read_text()) == model_manifest
     for name in model_resource_names - {'ModelManifest.json'}:
         assert (app / name).read_bytes() == (model_root / name).read_bytes(), f'Model attribution changed: {name}'
+    for path in wake_root.iterdir():
+        if path.is_file():
+            assert (app / 'MeetingWakeModels' / path.name).read_bytes() == path.read_bytes(), f'Preinstalled wake resource changed: {path.name}'
     # Phone's system/cloud chat voice capture uses an independent Silero v5.
     # SwiftPM 1.0.14 also includes v4 under the same basename as our smaller VAD.
     chat_vad_resources = {

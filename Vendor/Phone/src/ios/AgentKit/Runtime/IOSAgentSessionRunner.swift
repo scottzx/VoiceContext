@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// Temporary iOS adapter around the existing ViewModel-hosted engine. All
@@ -6,6 +7,7 @@ import Foundation
 @MainActor
 final class IOSAgentSessionRunner: AgentSessionRunning {
     static let shared = IOSAgentSessionRunner()
+    var meetingNoticeSystemPrompt: (@MainActor (String) -> String?)?
 
     private init() {}
 
@@ -71,6 +73,14 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
     func run(_ request: AgentSessionRunRequest) async -> AgentSessionRunResult {
         let (vm, isFresh) = ViewModelCache.shared.getOrCreate(for: request.sessionId)
         if isFresh { await vm.loadSession() }
+        let isMeeting = request.source == "meeting_assistant"
+        // A recording reuses one session. A new command must never cancel or
+        // change the prompt of a task that is still running in that session.
+        if isMeeting && (vm.isProcessing || vm.isCompacting || vm.compactTask != nil
+            || vm.postCompactDrainPending || !vm.promptQueue.isEmpty
+            || SessionActivityTracker.shared.isActive(request.sessionId)) {
+            return .rejected
+        }
         vm.groupId = request.groupId
         vm.agentId = request.agentId
         vm.agentRole = request.role == AgentRunRole.executor.rawValue ? .executor : .main
@@ -95,11 +105,35 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
 
         let countBefore = vm.messages.count
         let draft = vm.inputText
+        let queuedBefore = Set(vm.promptQueue.map(\.id))
+        var accepted = false
+        // Compaction also publishes isProcessing; only the later command
+        // drain (or a direct send) confirms acceptance of this request.
+        let acceptance: AnyCancellable? = isMeeting ? vm.$isProcessing.sink { processing in
+            if processing && !vm.isCompacting { accepted = true }
+        } : nil
+        defer { acceptance?.cancel() }
         AgentDirectoryCoordinator.shared.discardPendingGroupMessage(callerSessionId: request.sessionId)
         vm.inputText = request.prompt
         vm.send()
-        let accepted = vm.isProcessing
+        if !isMeeting { accepted = vm.isProcessing }
         vm.inputText = draft
+        if isMeeting && !accepted {
+            let queuedIDs = Set(vm.promptQueue.map(\.id)).subtracting(queuedBefore)
+            let deadline = Date().addingTimeInterval(request.timeoutSeconds > 0 ? request.timeoutSeconds : 120)
+            while !accepted, !queuedIDs.isEmpty, Date() < deadline, !Task.isCancelled {
+                guard vm.promptQueue.contains(where: { queuedIDs.contains($0.id) })
+                    || vm.isCompacting || vm.compactTask != nil || vm.postCompactDrainPending else { break }
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { break }
+            }
+            if !accepted && !queuedIDs.isEmpty {
+                // Remove our queued operation before cancelling compaction;
+                // its delayed completion must not execute a rejected request.
+                vm.promptQueue.removeAll { queuedIDs.contains($0.id) }
+                vm.messages.removeAll { $0.queuedPromptId.map(queuedIDs.contains) == true }
+                vm.compactTask?.cancel()
+            }
+        }
         guard accepted else {
             AgentDirectoryCoordinator.shared.discardPendingGroupMessage(callerSessionId: request.sessionId)
             return .rejected
@@ -115,12 +149,36 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
 
     func resumeAfterAsyncToolResults(sessionId: String) async -> AgentSessionRunResult {
         let (vm, isFresh) = ViewModelCache.shared.getOrCreate(for: sessionId)
+        guard !vm.isProcessing, !vm.isCompacting, vm.compactTask == nil,
+              !vm.postCompactDrainPending, vm.promptQueue.isEmpty,
+              vm.sessionSource != "meeting_assistant" || !vm.canResume,
+              !SessionActivityTracker.shared.isActive(sessionId) else { return .rejected }
         if isFresh {
             await vm.loadSession()
         } else {
             await vm.reloadMessagesFromDB(reason: "asyncToolResults")
         }
-        guard !vm.isProcessing else { return .rejected }
+        guard !vm.isProcessing, !vm.isCompacting, vm.compactTask == nil,
+              !vm.postCompactDrainPending, vm.promptQueue.isEmpty,
+              !SessionActivityTracker.shared.isActive(sessionId) else { return .rejected }
+        if vm.sessionSource == "meeting_assistant" {
+            // Loading the synthetic tool-result tail itself sets canResume.
+            // Resume only once that notice really reached model history.
+            guard let tail = vm.agentHistory.last, tail.role == .user, !tail.parts.isEmpty,
+                  tail.parts.allSatisfy({ part in
+                      if case .toolResult(let id, let name, _, _, _, _, _, _) = part {
+                          return id.hasPrefix(ChatPersistenceSchema.asyncTaskNoticeToolUseIdPrefix)
+                              && name == ChatPersistenceSchema.asyncTaskNoticeToolName
+                      }
+                      return false
+                  }) else { return .rejected }
+            if vm.canResume, let candidate = vm.messages.last(where: { $0.role == .assistant }),
+               candidate.blocks.count > vm.committedBlockCount { return .rejected }
+            guard let prompt = meetingNoticeSystemPrompt?(sessionId) else { return .rejected }
+            vm.agentRole = .main
+            vm.resolvedToolPolicy = .orchestrator
+            vm.groupPromptBlock = prompt
+        }
         let countBefore = vm.messages.count
         let accepted = await vm.resumeNoticeDrivenLoop()
         guard accepted else { return .rejected }

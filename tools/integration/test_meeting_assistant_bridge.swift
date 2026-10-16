@@ -1,158 +1,186 @@
 import Foundation
 import SwiftUI
 
-@main
-struct MeetingAssistantBridgeChecks {
+@MainActor final class MeetingFixture {
+    let bridge = MeetingAssistantBridge()
+    var sample: Int64 = 0
+    var recordingID = UUID()
+    var generationID: UUID?
+    var boundary: Int64 = 0
+    var requests: [MeetingAssistantBridge.Request] = []
+    var readyIDs: [UUID] = []
+    var cueCount = 0
+    var stopCount = 0
+    var openedSession: String?
+    let segmentID = UUID()
+    let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+    init() {
+        bridge.install(submit: { [unowned self] in requests.append($0) },
+                       stopSpeech: { [unowned self] in stopCount += 1 },
+                       openSession: { [unowned self] in openedSession = $0 },
+                       permissions: { AnyView(EmptyView()) }, unavailableReason: { nil },
+                       ready: { [unowned self] in readyIDs.append($0) },
+                       wakeFeedback: { [unowned self] in cueCount += 1 })
+        bridge.installWakeCapture { [unowned self] generation, afterSample in
+            generationID = generation
+            boundary = afterSample
+        }
+        capture(true)
+    }
+    func capture(_ active: Bool) {
+        bridge.updateCapture(recordingID: recordingID, capturing: active, sample: { [unowned self] in sample })
+    }
+    func enable() {
+        bridge.setEnabled(true, unavailableReason: nil)
+        ready()
+    }
+    func ready() {
+        if let generationID { bridge.wakeReady(generationID: generationID) }
+    }
+    func wake() {
+        bridge.receiveWake(recordingID: recordingID, generationID: generationID!)
+    }
+    func reserve() -> UUID {
+        let id = bridge.beginVoiceCommand(recordingID: recordingID, generationID: generationID!,
+                                         startSample: max(sample, boundary), endSample: max(sample, boundary) + 16_000)!
+        precondition(generationID == nil, "Busy ASR immediately stops wake capture")
+        return id
+    }
+    func submit(_ id: UUID, text: String = "小兰同学，查询今天的日程。") {
+        bridge.submitVoiceCommand(requestID: id, recordingID: recordingID, title: "本场会议",
+                                  text: text, transcriptSegments: [
+                                    .init(id: segmentID, startSample: 0, endSample: 16_000,
+                                          text: "已提交的本场文稿", speaker: "发言人一")
+                                  ], recordingStartedAt: startedAt,
+                                  startSample: sample, endSample: sample + 16_000)
+    }
+    func finish(_ id: UUID) {
+        bridge.finish(requestID: id)
+        ready()
+    }
+}
+
+@main struct MeetingAssistantBridgeChecks {
     @MainActor static func main() {
-        let bridge = MeetingAssistantBridge()
-        var sample: Int64 = 0
-        var activeRecordingID = UUID()
-        let recordingA = activeRecordingID
-        var requests: [MeetingAssistantBridge.Request] = []
-        var stopCount = 0
-        var openedSession: String?
-        var unavailableReason: String?
-        bridge.install(
-            submit: { requests.append($0) },
-            stopSpeech: { stopCount += 1 },
-            openSession: { openedSession = $0 },
-            permissions: { AnyView(EmptyView()) },
-            unavailableReason: { unavailableReason }
-        )
-        func receive(_ text: String, _ start: Double, _ end: Double,
-                     recordingID: UUID? = nil, chunkID: UUID = UUID()) {
-            let source = recordingID ?? activeRecordingID
-            let startSample = Int64(start * 16_000)
-            let endSample = Int64(end * 16_000)
-            if source == activeRecordingID { sample = max(sample, endSample) }
-            bridge.receive(recordingID: source, chunkID: chunkID, title: "本场会议",
-                           segments: [.init(text: text, startSample: startSample, endSample: endSample)],
-                           context: "本场已提交的会议文字")
-        }
-        func updateCapture(_ capturing: Bool) {
-            bridge.updateCapture(recordingID: activeRecordingID, capturing: capturing, sample: { sample })
-        }
-
-        updateCapture(true)
-        receive("小蓝同学，尚未开启的指令。", 0, 1)
-        precondition(requests.isEmpty)
-        bridge.setEnabled(true, unavailableReason: nil)
-        receive("小蓝同学，启用前的迟到指令。", 0, 1)
-        precondition(requests.isEmpty)
-        let firstChunk = UUID()
-        receive("小蓝同学，查今天的待办。", 1, 2, chunkID: firstChunk)
-        precondition(requests.count == 1 && bridge.isBusy)
-        let first = requests[0]
-        precondition(first.recordingID == recordingA && first.command == "查今天的待办。")
-        precondition(first.context == "本场已提交的会议文字" && first.title == "本场会议")
-        precondition(first.startSample == 16_000 && first.endSample == 32_000)
-        bridge.markAccepted(requestID: first.id, sessionID: "session-a")
-        bridge.openSession()
-        precondition(openedSession == "session-a")
-        bridge.showResult(requestID: first.id, text: "还有两件待办", isError: false)
-        precondition(bridge.result == "还有两件待办")
-        bridge.showSpeechNotice(requestID: first.id, text: "播报失败，请查看文字结果")
-        receive("小蓝同学，执行中又来一个请求。", 2, 3)
-        precondition(requests.count == 1, "Busy execution must not submit another task")
-
-        precondition(bridge.beginSpeech(requestID: first.id))
-        sample = 4 * 16_000
-        bridge.endSpeech(requestID: first.id)
-        bridge.finish(requestID: first.id)
-        precondition(!bridge.isBusy && !bridge.isSpeaking)
-        precondition(bridge.speechNotice == "播报失败，请查看文字结果", "Finishing keeps the speech failure notice visible")
-        precondition(!bridge.canRespond(to: first.id) && !bridge.beginSpeech(requestID: first.id), "A finished request cannot start a late TTS response")
-        bridge.showResult(requestID: first.id, text: "迟到的结果", isError: true)
-        precondition(bridge.result == "还有两件待办", "Finishing preserves the result and ignores late callbacks")
-        receive("小蓝同学，重复的指令。", 1, 2, chunkID: firstChunk)
-        precondition(requests.count == 1)
-        receive("小蓝同学，播报尾音。", 4, 4.4)
-        receive("小蓝同学，跨越尾音边界。", 4.4, 4.6)
-        precondition(requests.count == 1, "Finishing must preserve the extra half-second TTS suppression window")
-        receive("小蓝同学，查询明天的日程。", 4.6, 5)
-        precondition(requests.count == 2, "Accept new commands after the suppression window")
-        precondition(bridge.speechNotice.isEmpty, "A new request clears the previous speech notice")
-        let second = requests[1]
-        bridge.finish(requestID: second.id)
-
-        bridge.setForeground(false)
-        precondition(!bridge.canRespond(to: second.id) && !bridge.beginSpeech(requestID: second.id))
-        receive("小蓝同学，后台发言。", 6, 7)
-        precondition(requests.count == 2)
-        sample = 9 * 16_000
-        bridge.setForeground(true)
-        receive("小蓝同学，返回前台前的迟到转写。", 7, 8)
-        precondition(requests.count == 2)
-        receive("小蓝同学，前台的新指令。", 9, 10)
-        precondition(requests.count == 3)
-        bridge.finish(requestID: requests[2].id)
-
-        sample = 11 * 16_000
-        updateCapture(false)
-        receive("小蓝同学，暂停后的迟到转写。", 10, 11)
-        precondition(requests.count == 3)
-        sample = 13 * 16_000
-        updateCapture(true)
-        receive("小蓝同学，恢复前的迟到转写。", 12, 13)
-        precondition(requests.count == 3)
-        receive("小蓝同学，恢复后的新指令。", 13, 14)
-        precondition(requests.count == 4)
-        let fourth = requests[3]
-        precondition(bridge.beginSpeech(requestID: fourth.id))
-        sample = 15 * 16_000
-        let stopsBeforeDisable = stopCount
-        bridge.setEnabled(false, unavailableReason: nil)
-        precondition(stopCount == stopsBeforeDisable + 1 && !bridge.isSpeaking)
-        precondition(!bridge.canRespond(to: fourth.id) && !bridge.beginSpeech(requestID: fourth.id), "Disabling blocks late TTS responses")
-        bridge.finish(requestID: fourth.id)
-        receive("小蓝同学，关闭后的指令。", 15, 16)
-        precondition(requests.count == 4)
-        bridge.setEnabled(true, unavailableReason: nil)
-        receive("小蓝同学，重新开启前的指令。", 15, 16)
-        precondition(requests.count == 4)
-        receive("小蓝同学，重新开启后的指令。", 16, 17)
-        precondition(requests.count == 5)
-        let oldRequest = requests[4]
-        bridge.markAccepted(requestID: oldRequest.id, sessionID: "old-recording-session")
-        precondition(bridge.beginSpeech(requestID: oldRequest.id))
-
-        activeRecordingID = UUID()
-        sample = 0
-        updateCapture(true)
-        precondition(!bridge.enabled && !bridge.isBusy && !bridge.isSpeaking)
-        precondition(bridge.lastCommand.isEmpty && bridge.result.isEmpty && bridge.sessionID == nil)
-        precondition(!bridge.canRespond(to: oldRequest.id) && !bridge.beginSpeech(requestID: oldRequest.id))
-        bridge.markAccepted(requestID: oldRequest.id, sessionID: "late-old-session")
-        bridge.showStatus(requestID: oldRequest.id, text: "旧任务状态")
-        bridge.showResult(requestID: oldRequest.id, text: "旧任务结果", isError: false)
-        bridge.finish(requestID: oldRequest.id)
-        precondition(bridge.result.isEmpty && bridge.sessionID == nil)
-        bridge.setEnabled(true, unavailableReason: nil)
-        receive("小蓝同学，另一场会议的迟到结果。", 20, 21, recordingID: recordingA)
-        precondition(requests.count == 5)
-        receive("小蓝同学，新会议的指令。", 0, 1)
-        precondition(requests.count == 6, "A new recording must clear the previous recording's sample baseline and suppression")
-        let current = requests[5]
-        precondition(current.recordingID == activeRecordingID)
-        bridge.finish(requestID: oldRequest.id)
-        precondition(bridge.isBusy, "An old request cannot finish a newer recording's task")
-        bridge.showResult(requestID: oldRequest.id, text: "旧任务晚到结果", isError: true)
-        precondition(bridge.result.isEmpty)
-        precondition(bridge.beginSpeech(requestID: current.id))
-        sample = 2 * 16_000
-        bridge.endSpeech(requestID: current.id)
-        bridge.finish(requestID: current.id)
-
-        receive("小蓝同学", 3, 4)
-        updateCapture(false)
-        sample = 6 * 16_000
-        updateCapture(true)
-        receive("恢复后的普通会议发言。", 6, 7)
-        precondition(requests.count == 6, "Pausing clears a standalone wake word")
-        bridge.setEnabled(false, unavailableReason: nil)
-        unavailableReason = "请先配置智能体模型"
-        bridge.setEnabled(true, unavailableReason: nil)
-        precondition(!bridge.enabled && bridge.status == unavailableReason)
-        print("Meeting assistant enablement, lifecycle, late results, TTS tail and recording isolation checks passed")
+        let f = MeetingFixture()
+        let b = f.bridge
+        precondition(f.generationID == nil)
+        b.setEnabled(true, unavailableReason: nil)
+        let loadingGeneration = f.generationID!
+        precondition(b.status == "正在准备唤醒模型")
+        precondition(b.beginVoiceCommand(recordingID: f.recordingID, generationID: loadingGeneration,
+                                        startSample: 0, endSample: 16_000) == nil)
+        f.ready()
+        let readyID = f.readyIDs[0]
+        precondition(b.canSpeak(to: readyID) && !b.canRespond(to: readyID))
+        precondition(!b.isSpeaking && f.generationID != nil, "Synthesis waiting leaves wake capture available")
+        b.setEnabled(true, unavailableReason: nil)
+        precondition(f.readyIDs.count == 1)
+        f.wake()
+        precondition(f.cueCount == 1 && !b.canSpeak(to: readyID))
+        precondition(b.messages.last?.text == "已唤醒，正在听；请说出任务")
+        let first = f.reserve()
+        f.submit(first)
+        precondition(f.requests.count == 1 && f.requests[0].command == "查询今天的日程。")
+        precondition(f.requests[0].transcriptSegments?.first?.text == "已提交的本场文稿")
+        precondition(f.requests[0].transcriptSegments?.first?.id == f.segmentID)
+        precondition(f.requests[0].recordingStartedAt == f.startedAt)
+        f.submit(first)
+        precondition(f.requests.count == 1, "Repeated ASR delivery cannot execute twice")
+        b.markAccepted(requestID: first, sessionID: "session-a")
+        b.openSession()
+        precondition(f.openedSession == "session-a")
+        b.showResult(requestID: first, text: "有两项日程", isError: false)
+        let count = b.messages.count
+        b.showResult(requestID: first, text: "有两项日程", isError: false)
+        precondition(b.messages.count == count)
+        precondition(b.beginSpeech(requestID: first))
+        b.updateSpeechOutputLevel(0.7, requestID: first)
+        precondition(b.speechOutputLevel == 0.7)
+        b.updateSpeechOutputLevel(1, requestID: UUID())
+        precondition(b.speechOutputLevel == 0.7, "Stale output meters cannot animate a newer reply")
+        b.updateSpeechOutputLevel(.infinity, requestID: first)
+        precondition(b.speechOutputLevel == 0)
+        b.updateSpeechOutputLevel(2, requestID: first)
+        precondition(b.speechOutputLevel == 1)
+        precondition(!b.beginSpeech(requestID: first) && f.generationID == nil)
+        b.endSpeech(requestID: UUID())
+        precondition(b.isSpeaking)
+        f.sample = 32_000
+        b.endSpeech(requestID: first)
+        precondition(b.speechOutputLevel == 0)
+        b.updateSpeechOutputLevel(0.5, requestID: first)
+        precondition(b.speechOutputLevel == 0)
+        f.finish(first)
+        precondition(f.boundary == 40_000, "Half-second playback tail remains suppressed")
+        precondition(!b.canRespond(to: first) && !b.beginSpeech(requestID: first))
+        let nextGeneration = f.generationID!
+        b.receiveWake(recordingID: f.recordingID, generationID: loadingGeneration)
+        precondition(f.cueCount == 1, "Old generation wake callbacks are ignored")
+        precondition(b.beginVoiceCommand(recordingID: f.recordingID, generationID: nextGeneration,
+                                        startSample: 39_999, endSample: 50_000) == nil)
+        f.wake()
+        let empty = f.reserve()
+        f.submit(empty, text: "小，兰 同学。")
+        precondition(f.requests.count == 1 && !b.isBusy, "An isolated keyword is never a task")
+        f.ready()
+        f.wake()
+        let second = f.reserve()
+        f.submit(second, text: "查一下待办")
+        precondition(f.requests.count == 2 && f.requests[1].command == "查一下待办")
+        precondition(b.sessionID == "session-a", "Submitting another command keeps this recording's chat link")
+        b.setForeground(false)
+        precondition(!b.canRespond(to: second) && f.generationID == nil && !b.isBusy)
+        f.sample = 64_000
+        b.setForeground(true)
+        f.ready()
+        f.submit(second, text: "迟到的旧指令")
+        precondition(f.requests.count == 2 && !b.canSpeak(to: second))
+        f.wake()
+        let paused = f.reserve()
+        f.capture(false)
+        f.capture(true)
+        f.ready()
+        precondition(b.sessionID == "session-a", "Pause/resume keeps this recording's chat link")
+        f.submit(paused)
+        precondition(f.requests.count == 2 && !b.canRespond(to: paused))
+        f.wake()
+        let disabled = f.reserve()
+        b.setEnabled(false, unavailableReason: nil)
+        f.enable()
+        precondition(b.sessionID == "session-a", "Disabling/re-enabling keeps this recording's chat link")
+        f.submit(disabled)
+        precondition(f.requests.count == 2 && f.readyIDs.count == 2)
+        f.wake()
+        let oldRecording = f.reserve()
+        let oldID = f.recordingID
+        f.recordingID = UUID()
+        f.sample = 0
+        f.capture(true)
+        precondition(!b.enabled && b.messages.isEmpty && b.sessionID == nil)
+        f.enable()
+        b.submitVoiceCommand(requestID: oldRecording, recordingID: oldID, title: "旧会议",
+                             text: "旧命令", transcriptSegments: nil, recordingStartedAt: nil,
+                             startSample: 0, endSample: 1)
+        precondition(f.requests.count == 2)
+        f.wake()
+        let current = f.reserve()
+        f.submit(current)
+        b.finish(requestID: oldRecording)
+        precondition(b.isBusy && b.canRespond(to: current))
+        f.finish(current)
+        precondition(f.boundary == 0, "A different recording clears playback tail")
+        let liveGeneration = f.generationID!
+        f.wake()
+        b.wakeTimedOut(generationID: liveGeneration)
+        precondition(b.status.contains("等待"))
+        b.setEnabled(false, unavailableReason: nil)
+        b.setEnabled(true, unavailableReason: "预装唤醒模型缺失或损坏，请重新安装应用")
+        precondition(!b.enabled && b.messages.last?.isError == true)
+        b.setEnabled(true, unavailableReason: nil)
+        b.wakeFailed(generationID: f.generationID!, text: "无法加载预装唤醒词模型。")
+        precondition(!b.enabled && f.generationID == nil)
+        print("Acoustic authorization, homophones, single delivery, readiness, lifecycle and TTS tail passed")
     }
 }

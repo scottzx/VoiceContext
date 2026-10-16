@@ -4552,18 +4552,18 @@
         }
       }
     },
-    "请先在拓展中配置可用聊天模型": {
+    "请先在拓展中配置可用聊天模型（MiniMax Speech 仅用于播报）": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Configure an available chat model in Extensions first"
+            "value": "Configure an available chat model in Extensions first (MiniMax Speech is for spoken replies only)"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请先在拓展中配置可用聊天模型"
+            "value": "请先在拓展中配置可用聊天模型（MiniMax Speech 仅用于播报）"
           }
         }
       }
@@ -4756,6 +4756,771 @@
           "stringUnit": {
             "state": "translated",
             "value": "播报等待超时，请查看文字结果"
+          }
+        }
+      }
+    },
+    "我已入会，有事叫小蓝同学": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I’m in the meeting. Call “小蓝同学” when you need me."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我已入会，有事叫小蓝同学"
+          }
+        }
+      }
+    },
+    "小蓝同学": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小蓝同学"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小蓝同学"
+          }
+        }
+      }
+    },
+    "开启会中助手后，这里显示收到的指令和回复。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable the meeting assistant to see received commands and replies here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启会中助手后，这里显示收到的指令和回复。"
+          }
+        }
+      }
+    },
+    "需要注意": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs attention"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要注意"
+          }
+        }
+      }
+    },
+    "你": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你"
+          }
+        }
+      }
+    },
+    "状态": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状态"
+          }
+        }
+      }
+    },
+    "完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成"
+          }
+        }
+      }
+    },
+    "本次没有收到专用回复工具的答复，请查看对话核对执行状态。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No reply was received through the reply tool. Open the conversation to check the task status."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本次没有收到专用回复工具的答复，请查看对话核对执行状态。"
+          }
+        }
+      }
+    },
+    "正在准备唤醒模型": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing wake-word detection"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备唤醒模型"
+          }
+        }
+      }
+    },
+    "已唤醒，正在听；请说出任务": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Awake and listening. Please say your request."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已唤醒，正在听；请说出任务"
+          }
+        }
+      }
+    },
+    "正在识别指令": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcribing your request"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在识别指令"
+          }
+        }
+      }
+    },
+    "正在播报；结束后可唤醒": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speaking. You can wake me when playback ends."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在播报；结束后可唤醒"
+          }
+        }
+      }
+    },
+    "没有听到任务，请叫“小蓝同学”后再说一次": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No request heard. Say “小蓝同学” and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有听到任务，请叫“小蓝同学”后再说一次"
+          }
+        }
+      }
+    },
+    "预装唤醒模型缺失或损坏，请重新安装应用": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The preinstalled wake-word model is missing or damaged. Reinstall the app."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预装唤醒模型缺失或损坏，请重新安装应用"
+          }
+        }
+      }
+    },
+    "唤醒音频处理暂时落后，请再叫一次小蓝同学。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wake-word audio processing fell behind. Say “小蓝同学” again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "唤醒音频处理暂时落后，请再叫一次小蓝同学。"
+          }
+        }
+      }
+    },
+    "这次指令没有完整收好，请再叫一次小蓝同学。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request could not be captured completely. Say “小蓝同学” again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这次指令没有完整收好，请再叫一次小蓝同学。"
+          }
+        }
+      }
+    },
+    "无法加载预装唤醒词模型。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to load the preinstalled wake-word model."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载预装唤醒词模型。"
+          }
+        }
+      }
+    },
+    "无法加载语音活动检测模型，请先完成语音转文字模型准备。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to load voice activity detection. Prepare the transcription models first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载语音活动检测模型，请先完成语音转文字模型准备。"
+          }
+        }
+      }
+    },
+    "返回当前录音": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Return to Current Recording"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回当前录音"
+          }
+        }
+      }
+    },
+    "打开录音控制，可查看当前录音或停止": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open recording controls to view or stop the current recording"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开录音控制，可查看当前录音或停止"
+          }
+        }
+      }
+    },
+    "已录制 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recorded %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已录制 %@"
+          }
+        }
+      }
+    },
+    "已录制 %@，%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recorded %@, %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已录制 %@，%@"
+          }
+        }
+      }
+    },
+    "分钟级增量转写": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incremental transcription by minute"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分钟级增量转写"
+          }
+        }
+      }
+    },
+    "录音已暂停": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording Paused"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音已暂停"
+          }
+        }
+      }
+    },
+    "可点继续恢复": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap Resume to continue"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可点继续恢复"
+          }
+        }
+      }
+    },
+    "正在安全保存": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving safely"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在安全保存"
+          }
+        }
+      }
+    },
+    "录音已结束": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording Ended"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音已结束"
+          }
+        }
+      }
+    },
+    "日程类型": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Event Type"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日程类型"
+          }
+        }
+      }
+    },
+    "普通日程": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regular Event"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "普通日程"
+          }
+        }
+      }
+    },
+    "保存到": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save To"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存到"
+          }
+        }
+      }
+    },
+    "iPhone 提醒事项": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone Reminders"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 提醒事项"
+          }
+        }
+      }
+    },
+    "显示内容": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display Options"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示内容"
+          }
+        }
+      }
+    },
+    "日历来源": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendar Sources"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历来源"
+          }
+        }
+      }
+    },
+    "选择系统日历": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose System Calendars"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择系统日历"
+          }
+        }
+      }
+    },
+    "选择系统待办列表": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose System Reminder Lists"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择系统待办列表"
+          }
+        }
+      }
+    },
+    "系统日历可在设置中的“日历与待办”接入。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect system calendars in Settings → Calendar and To-dos."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统日历可在设置中的“日历与待办”接入。"
+          }
+        }
+      }
+    },
+    "iPhone 提醒事项可在设置中的“日历与待办”接入。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect iPhone Reminders in Settings → Calendar and To-dos."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 提醒事项可在设置中的“日历与待办”接入。"
+          }
+        }
+      }
+    },
+    "系统日历": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System Calendar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统日历"
+          }
+        }
+      }
+    },
+    "接入后，在提醒页筛选要显示的系统日历。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Once connected, choose which system calendars to show in Reminders."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接入后，在提醒页筛选要显示的系统日历。"
+          }
+        }
+      }
+    },
+    "接入后，可查看和管理系统待办，并在新增待办时选择保存位置。本地事项与系统事项分别保存，目前不会自动同步。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Once connected, you can view and manage system tasks and choose where to save new tasks. Local and system items are saved separately and do not currently sync automatically."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接入后，可查看和管理系统待办，并在新增待办时选择保存位置。本地事项与系统事项分别保存，目前不会自动同步。"
+          }
+        }
+      }
+    },
+    "未能接入系统": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to Connect"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未能接入系统"
+          }
+        }
+      }
+    },
+    "已允许访问": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access Allowed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已允许访问"
+          }
+        }
+      }
+    },
+    "接入后，可在提醒页查看系统日程。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Once connected, you can view system events in Reminders."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接入后，可在提醒页查看系统日程。"
+          }
+        }
+      }
+    },
+    "接入后，可在提醒页管理 iPhone 提醒事项中的待办。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Once connected, you can manage tasks from iPhone Reminders in the Reminders tab."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接入后，可在提醒页管理 iPhone 提醒事项中的待办。"
+          }
+        }
+      }
+    },
+    "到期时间仅用于排列待办，目前不设置定时通知。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Due dates help organize tasks. Timed notifications are not currently set."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到期时间仅用于排列待办，目前不设置定时通知。"
           }
         }
       }

@@ -1721,6 +1721,11 @@ static int calendar_handler(int argc, char **argv,
     return NOFF_EXIT_INVALID_ARGS;
 }
 
+// Direct native entry for the meeting assistant; no guest process or shell.
+int calendar_offload_execute_direct(int argc, char **argv, int stdout_fd, int stderr_fd) {
+    return calendar_handler(argc, argv, -1, stdout_fd, stderr_fd);
+}
+
 void calendar_offload_register(void) {
     int err = native_offload_add_handler("apple-calendar", calendar_handler);
     if (err == 0) {

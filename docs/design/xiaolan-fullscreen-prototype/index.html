@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>小蓝语音模式 · 拓展入口设计</title>
+  <link rel="icon" href="assets/whiteboard.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="review-layout">
+    <section class="phone" id="phone" data-theme="light" aria-label="App 内语音模式界面稿">
+      <div class="app-shell" id="app-shell">
+        <div class="statusbar" aria-hidden="true"><span>9:41</span><span>▂▄▆ &nbsp; ▰</span></div>
+        <header class="navigation">
+          <button id="back" class="icon-button" aria-label="返回上一页"></button>
+          <h1 id="page-title">拓展</h1>
+          <button id="session-control" class="icon-button" hidden></button>
+        </header>
+        <main id="screen" tabindex="-1" aria-label="App 当前页面">
+          <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+          <div id="ready-notice" class="ready-notice" hidden><span>此前的总结已准备好</span><button data-action="view-ready">查看</button></div>
+          <div id="page-content"></div>
+        </main>
+        <nav id="tabbar" class="tabbar" aria-label="底部导航"></nav>
+        <div class="home-indicator" aria-hidden="true"></div>
+      </div>
+      <div class="sheet-layer" id="sheet-layer" hidden>
+        <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+          <div class="sheet-heading"><h2 id="sheet-title"></h2><button class="icon-button" id="sheet-close" aria-label="关闭面板"></button></div>
+          <div id="sheet-content"></div>
+        </section>
+      </div>
+    </section>
+    <aside class="review-panel" aria-label="原型评审控制，不属于 App 页面">
+      <p class="review-eyebrow">YIMA · 修订设计 / 2026.10.17</p>
+      <h2>从拓展开启，<br>直接操作 App。</h2>
+      <p class="review-intro">点底部「拓展」中的「语音模式」。开启后留在当前页，语音直接打开 App 页面和内容预览。</p>
+      <p class="demo-note">无独立小蓝首页。全部为演示数据，不启用真实麦克风或录音，不调用模型。</p>
+      <form id="command-form"><label for="command">模拟语音指令</label><div class="command-row"><input id="command" placeholder="小蓝同学，打开今天的日程" autocomplete="off"><button class="primary-button" type="submit">执行</button></div></form>
+      <div class="review-section"><h3>先开启语音，再试一试</h3><div class="review-options">
+        <button data-command="打开今天的日程">今天的日程</button><button data-command="打开待办">我的待办</button><button data-command="打开我的记录">记录列表</button><button data-command="展示文字总结">文字</button><button data-command="展示方案图片">图片</button><button data-command="把数据画成图">图表</button><button data-command="换成折线图">换折线图</button><button data-command="打开 HTML 报告">HTML</button><button data-command="返回上一页">返回</button>
+      </div></div>
+      <div class="review-section"><h3>互斥与恢复</h3><div class="review-options">
+        <button data-scenario="recording">已有录音</button><button data-scenario="paused-recording">录音暂停未结束</button><button data-scenario="permission">麦克风未授权</button><button data-scenario="background">进入后台</button><button data-scenario="speaking">播报中</button><button data-scenario="late">旧任务完成</button><button data-scenario="normal">恢复正常</button>
+      </div></div>
+      <div class="review-preferences"><button id="theme">切换深色</button><button id="text-size">放大字号</button><button id="reset">重置演示</button></div>
+      <p class="review-feedback" id="review-feedback" role="status" aria-live="polite">入口在拓展的工具组；已开启后可在页头管理语音。</p>
+      <a class="design-link" href="../xiaolan-fullscreen.md">阅读修订后的设计文档 ↗</a>
+    </aside>
+  </div>
+</body>
+</html>

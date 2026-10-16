@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1280" viewBox="0 0 960 1280" role="img" aria-labelledby="title desc">
+  <title id="title">培训需求梳理 · 演示资料</title>
+  <desc id="desc">纸面整理资料，记录试行操作、交接和周复盘三个主题，并标注人数、时长与日期待确认。</desc>
+  <rect width="960" height="1280" fill="#FAFAF7"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" fill="#1C1C1E">
+    <text x="80" y="104" font-size="24" fill="#636366">禾序科技 · 演示资料</text>
+    <text x="80" y="180" font-size="50" font-weight="600">培训需求梳理</text>
+    <text x="80" y="230" font-size="25" fill="#636366">先围绕小组试行，不急于全员展开</text>
+    <path d="M80 265H880" stroke="#CDCDCA"/>
+
+    <rect x="80" y="310" width="800" height="170" fill="#F0F0EC"/>
+    <path d="M112 340V450" stroke="#636366" stroke-width="3"/>
+    <text x="142" y="370" font-size="33" font-weight="600">01 试行操作</text>
+    <text x="142" y="418" font-size="25" fill="#636366">如何受理、记录与查看下一步</text>
+
+    <rect x="80" y="510" width="800" height="170" fill="#F0F0EC"/>
+    <path d="M112 540V650" stroke="#636366" stroke-width="3"/>
+    <text x="142" y="570" font-size="33" font-weight="600">02 交接方式</text>
+    <text x="142" y="618" font-size="25" fill="#636366">责任人变化时，资料怎样接得上</text>
+
+    <rect x="80" y="710" width="800" height="170" fill="#F0F0EC"/>
+    <path d="M112 740V850" stroke="#636366" stroke-width="3"/>
+    <text x="142" y="770" font-size="33" font-weight="600">03 周复盘</text>
+    <text x="142" y="818" font-size="25" fill="#636366">从真实案例中发现流程阻塞</text>
+
+    <text x="80" y="960" font-size="30" font-weight="600">还需要一起确认</text>
+    <g fill="none" stroke="#777774" stroke-width="2">
+      <rect x="82" y="1001" width="22" height="22"/><rect x="82" y="1051" width="22" height="22"/><rect x="82" y="1101" width="22" height="22"/>
+    </g>
+    <g font-size="25" fill="#636366">
+      <text x="128" y="1022">哪些人参与试行</text><text x="128" y="1072">一次培训需要多长时间</text><text x="128" y="1122">流程方案确认后再安排日期</text>
+    </g>
+    <path d="M80 1175H880" stroke="#CDCDCA"/>
+    <text x="80" y="1230" font-size="20" fill="#636366">2026.10.08 · 需求整理，范围尚未确认</text>
+  </g>
+</svg>

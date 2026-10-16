@@ -116,6 +116,7 @@ struct YimaItemSheet: View {
     @State private var notes = ""
     @State private var location = ""
     @State private var notice = ""
+    @State private var asMeeting: Bool
     @State private var dated = false
     @State private var start = Date()
     @State private var end = Date().addingTimeInterval(3600)
@@ -132,6 +133,13 @@ struct YimaItemSheet: View {
     private var meeting: YimaMeeting? { event?.meetingID.flatMap { store.meeting($0) } }
     private var sourceSessionID: String? { isEvent ? event?.sourceSessionID : todo?.sourceSessionID }
 
+    init(store: YimaItemsStore, request: YimaItemRequest, allowsRecording: Bool = true) {
+        self.store = store
+        self.request = request
+        self.allowsRecording = allowsRecording
+        _asMeeting = State(initialValue: request.asMeeting)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -142,6 +150,12 @@ struct YimaItemSheet: View {
                     Section { Text("此列表已在提醒页隐藏；事项仍保存在本机。可在提醒页筛选中重新勾选。").foregroundStyle(.secondary) }
                 }
                 Section(isEvent ? "Yima日历 · 仅本机" : "Yima待办 · 仅本机") {
+                    if isEvent && request.isNew {
+                        Picker("日程类型", selection: $asMeeting) {
+                            Text("普通日程").tag(false)
+                            Text("会议").tag(true)
+                        }
+                    }
                     TextField("标题", text: $title, axis: .vertical)
                     if isEvent { TextField("地点", text: $location, axis: .vertical) }
                     TextField("备注", text: $notes, axis: .vertical)
@@ -154,7 +168,7 @@ struct YimaItemSheet: View {
                         if isEvent { DatePicker("结束", selection: $end, in: start...) }
                     }
                 } footer: { Text(isEvent ? "时间待确认的日程保存在未安排中。时间按设备当前时区保存。" : "到期时间仅用于排列待办，本轮不设置定时通知。") }
-                if request.isNew && request.asMeeting { Section("会议通知") { TextField("原通知", text: $notice, axis: .vertical) } }
+                if isEvent && request.isNew && asMeeting { Section("会议通知") { TextField("原通知", text: $notice, axis: .vertical) } }
                 if let meeting {
                     Section("会议资料") {
                         if !meeting.notice.isEmpty { Text(meeting.notice).textSelection(.enabled) }
@@ -194,7 +208,7 @@ struct YimaItemSheet: View {
                     }
                 }
             }
-            .navigationTitle(isEvent ? (meeting != nil || request.asMeeting ? "会议安排" : "日程") : "待办")
+            .navigationTitle(isEvent ? (meeting != nil || (request.isNew && asMeeting) ? "会议安排" : "日程") : "待办")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
@@ -251,7 +265,7 @@ struct YimaItemSheet: View {
                 let originalStart = draft.start; let originalEnd = draft.end
                 draft.start = dated ? start : nil; draft.end = dated ? end : nil
                 if request.isNew || draft.start != originalStart || draft.end != originalEnd { draft.timeZone = TimeZone.current.identifier }
-                if request.isNew { try store.createEvent(draft, notice: request.asMeeting ? notice : nil, requestID: request.id) }
+                if request.isNew { try store.createEvent(draft, notice: asMeeting ? notice : nil, requestID: request.id) }
                 else { try store.updateEvent(draft, expectedRevision: revision) }
             } else {
                 var draft = todo ?? YimaTodo(id: request.id, title: title, meetingID: request.meetingID)
@@ -266,25 +280,3 @@ struct YimaItemSheet: View {
 }
 
 private struct RecordingLink: Identifiable { let id: String }
-
-struct YimaListSettingsView: View {
-    @ObservedObject private var store = YimaItemsStore.shared
-    var body: some View {
-        List {
-            Section("本地列表") {
-                Label("Yima日历", systemImage: "calendar")
-                Label("Yima待办", systemImage: "checklist")
-                if let failure = store.failure { Text(failure).foregroundStyle(.secondary) }
-                else { Text("日程和待办保存在本机，无需读取系统列表。").foregroundStyle(.secondary) }
-            }
-            Section("系统来源") {
-                Button("管理列表与筛选") {
-                    NotificationCenter.default.post(name: Notification.Name("Yima.manageSources"), object: nil)
-                }.frame(minHeight: 44)
-                Text("可以分别允许读取系统日历和提醒事项；未授权时，本地列表继续可用。").foregroundStyle(.secondary)
-            }
-        }.listStyle(.plain).scrollContentBackground(.hidden).background(YimaDesign.Color.canvas)
-            .navigationTitle("日历与待办").navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .tabBar)
-    }
-}

@@ -145,6 +145,12 @@ final class RecordingCoreModel {
 
     let repository: RecordingRepository
     private let recorder = AACSegmentRecorder()
+    #if VOICE_AGENT_FUSION
+    private let meetingWakeWorker = MeetingWakeAudioWorker()
+    private var meetingWakeGenerationID: UUID?
+    private var meetingVoiceTask: Task<Void, Never>?
+    private var meetingVoiceRequestID: UUID?
+    #endif
     private let coordinator: RecordingSessionCoordinator
     private let inferenceService: SenseVoiceInferenceService
     private let transcriptStore: TranscriptDocumentStore
@@ -481,6 +487,15 @@ final class RecordingCoreModel {
             guard self.realtimeTranscription.isEnabled else { return }
             await self.enqueueChunkTranscription(recordingID: recordingID, chunkID: chunkID)
         }
+        #if VOICE_AGENT_FUSION
+        let wakeWorker = meetingWakeWorker
+        recorder.setAssistantPCMHandler { samples, startSample in
+            wakeWorker.enqueue(samples: samples, startSample: startSample)
+        }
+        MeetingAssistantBridge.shared.installWakeCapture { [weak self] generationID, afterSample in
+            self?.updateMeetingWakeCapture(generationID: generationID, afterSample: afterSample)
+        }
+        #endif
 
         // Best-effort: local Documents always gets Skill/Templates for Codex.
         Task { [skillPackSeeder] in
@@ -3024,11 +3039,6 @@ final class RecordingCoreModel {
     }
 
     private func applyTranscriptionOutcome(_ outcome: ForegroundTranscriptionScheduler.Outcome) async {
-        #if VOICE_AGENT_FUSION
-        if outcome.state == .completed {
-            await forwardMeetingAssistantText(outcome)
-        }
-        #endif
         do {
             switch outcome.state {
             case .failed:
@@ -3063,25 +3073,107 @@ final class RecordingCoreModel {
                 reason = "请先在录音设置中开启实时转写"
             } else if !TranscriptionModelStore.isReady {
                 reason = "请先下载并准备本地转写模型"
+            } else if !MeetingWakeModelResources.isReady {
+                reason = "预装唤醒模型缺失或损坏，请重新安装应用"
             }
         }
         MeetingAssistantBridge.shared.setEnabled(enabled, unavailableReason: reason)
     }
 
-    private func forwardMeetingAssistantText(_ outcome: ForegroundTranscriptionScheduler.Outcome) async {
-        guard outcome.recordingID == activeRecordingID, captureIsActive, !isInBackground,
-              let chunkID = outcome.chunkID,
-              let recording = recordings.first(where: { $0.id == outcome.recordingID }), recording.isMeeting,
-              let document = try? await transcriptStore.document(recordingID: outcome.recordingID) else { return }
-        let segments = document.segments
-            .filter { $0.sourceRanges.contains { $0.sourceKind == .audioChunk && $0.sourceID == chunkID } }
-            .sorted { $0.startSample < $1.startSample }
-            .map { MeetingWakeCommandDetector.Segment(text: $0.text, startSample: $0.startSample, endSample: $0.endSample) }
-        MeetingAssistantBridge.shared.receive(
-            recordingID: outcome.recordingID, chunkID: chunkID,
-            title: recording.title ?? "会议", segments: segments,
-            context: TranscriptMarkdownRenderer.render(document)
+    private func updateMeetingWakeCapture(generationID: UUID?, afterSample: Int64) {
+        meetingWakeGenerationID = generationID
+        if let requestID = meetingVoiceRequestID,
+           !MeetingAssistantBridge.shared.canRespond(to: requestID) {
+            meetingVoiceTask?.cancel()
+        }
+        guard let generationID, let recordingID = activeRecordingID else {
+            meetingWakeWorker.deactivate()
+            return
+        }
+        meetingWakeWorker.activate(
+            generationID: generationID, afterSample: afterSample,
+            onReady: { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard self?.meetingWakeGenerationID == generationID else { return }
+                    MeetingAssistantBridge.shared.wakeReady(generationID: generationID)
+                }
+            },
+            onWake: { [weak self] wake in
+                Task { @MainActor [weak self] in
+                    guard self?.meetingWakeGenerationID == wake.generationID else { return }
+                    MeetingAssistantBridge.shared.receiveWake(recordingID: recordingID,
+                                                              generationID: wake.generationID)
+                }
+            },
+            onCommand: { [weak self] command in
+                Task { @MainActor [weak self] in
+                    self?.transcribeMeetingCommand(command, recordingID: recordingID)
+                }
+            },
+            onTimeout: { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard self?.meetingWakeGenerationID == generationID else { return }
+                    MeetingAssistantBridge.shared.wakeTimedOut(generationID: generationID)
+                }
+            },
+            onError: { [weak self] text, fatal in
+                Task { @MainActor [weak self] in
+                    guard self?.meetingWakeGenerationID == generationID else { return }
+                    MeetingAssistantBridge.shared.wakeFailed(generationID: generationID, text: text, fatal: fatal)
+                }
+            }
         )
+    }
+
+    private func transcribeMeetingCommand(_ command: MeetingWakeAudioWorker.Command, recordingID: UUID) {
+        let bridge = MeetingAssistantBridge.shared
+        guard meetingWakeGenerationID == command.generationID,
+              recordingID == activeRecordingID, captureIsActive, !isInBackground,
+              let recording = recordings.first(where: { $0.id == recordingID }), recording.isMeeting,
+              let requestID = bridge.beginVoiceCommand(
+                recordingID: recordingID, generationID: command.generationID,
+                startSample: command.startSample, endSample: command.endSample
+              ) else { return }
+        meetingVoiceTask?.cancel()
+        meetingVoiceRequestID = requestID
+        meetingVoiceTask = Task { [weak self, inferenceService, transcriptStore] in
+            defer {
+                if self?.meetingVoiceRequestID == requestID {
+                    self?.meetingVoiceRequestID = nil
+                    self?.meetingVoiceTask = nil
+                }
+            }
+            do {
+                let result = try await inferenceService.transcribe(
+                    samples: command.samples, startingAt: command.startSample,
+                    languageMode: recording.languageMode, waitForMetal: true
+                )
+                try Task.checkCancellation()
+                guard bridge.canRespond(to: requestID) else { return }
+                let document = try? await transcriptStore.document(recordingID: recordingID)
+                guard bridge.canRespond(to: requestID) else { return }
+                let transcriptSegments = document.map { document in
+                    document.segments.map { segment in
+                        MeetingAssistantBridge.TranscriptSegment(
+                            id: segment.id, startSample: segment.startSample, endSample: segment.endSample,
+                            text: segment.text,
+                            speaker: TranscriptPlainTextRenderer.speakerLabel(for: segment, in: document)
+                        )
+                    }
+                }
+                bridge.submitVoiceCommand(
+                    requestID: requestID, recordingID: recordingID, title: recording.title ?? "会议",
+                    text: result.text, transcriptSegments: transcriptSegments,
+                    recordingStartedAt: recording.startedAt,
+                    startSample: command.startSample, endSample: command.endSample
+                )
+            } catch {
+                guard bridge.canRespond(to: requestID) else { return }
+                bridge.showResult(requestID: requestID,
+                                  text: "指令识别失败，请重新唤醒后再说：\(error.localizedDescription)", isError: true)
+                bridge.finish(requestID: requestID)
+            }
+        }
     }
     #endif
 

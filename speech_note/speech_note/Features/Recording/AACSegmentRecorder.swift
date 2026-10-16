@@ -68,6 +68,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     private let session = AVAudioSession.sharedInstance()
     private let writerQueue = DispatchQueue(label: "VoiceContext.AACSegmentWriter", qos: .userInitiated)
     private let statusLock = NSLock()
+    private var assistantPCMHandler: (@Sendable ([Float], Int64) -> Void)?
     private var activeFile: AVAudioFile?
     private var activeID: UUID?
     private var activeURL: URL?
@@ -95,6 +96,12 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
 
     var currentSample: Int64 {
         statusLock.withLock { masterSampleCursor }
+    }
+
+    /// Receives the existing 16 kHz mono stream on the writer queue. The
+    /// handler must only enqueue work; inference must not delay recording.
+    func setAssistantPCMHandler(_ handler: (@Sendable ([Float], Int64) -> Void)?) {
+        statusLock.withLock { assistantPCMHandler = handler }
     }
 
     /// Conservative input boundary for assistant enable/speech windows. Unlike
@@ -321,7 +328,11 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
 
             let bufferStartSample = statusLock.withLock { masterSampleCursor }
             let bufferEndSample = bufferStartSample + Int64(frameCount)
-            statusLock.withLock { masterSampleCursor = bufferEndSample }
+            let assistantHandler = statusLock.withLock {
+                masterSampleCursor = bufferEndSample
+                return assistantPCMHandler
+            }
+            assistantHandler?(samples, bufferStartSample)
 
             if isCurrentVoiced {
                 if !isVoiced {

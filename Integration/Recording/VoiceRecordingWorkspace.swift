@@ -52,8 +52,12 @@ public final class VoiceRecordingWorkspace: ObservableObject {
         AnyView(AppLanguageGate { SettingsScreen(model: model, reduceMotion: UIAccessibility.isReduceMotionEnabled) })
     }
 
-    public func recordingBar() -> AnyView {
-        AnyView(AppLanguageGate { RecordingBar(model: model, reduceMotion: UIAccessibility.isReduceMotionEnabled) })
+    public func recordingEdge() -> AnyView {
+        AnyView(RecordingEdgePresentation(model: model))
+    }
+
+    public func recordingControl() -> AnyView {
+        AnyView(AppLanguageGate { RecordingSessionMenu(model: model) })
     }
 
     public func sceneChanged(_ phase: ScenePhase) {

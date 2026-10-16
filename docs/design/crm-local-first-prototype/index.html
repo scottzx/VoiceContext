@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="一芥伙伴 CRM 可点击原型：客户、商机与往来。">
+  <title>一芥伙伴 · CRM 原型</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script src="seed.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="review-workspace">
+    <div class="phone" id="phone" data-theme="light">
+      <div class="statusbar" aria-hidden="true">
+        <span>9:41</span>
+        <span class="status-symbols">
+          <svg viewBox="0 0 24 16"><path d="M2 13V11M7 13V8M12 13V5M17 13V2" stroke="currentColor" stroke-width="3"/></svg>
+          <svg viewBox="0 0 20 16"><path d="M2 5Q10-2 18 5M5 8Q10 4 15 8M8 11Q10 9 12 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="13" r="1" fill="currentColor"/></svg>
+          <svg viewBox="0 0 28 16"><rect x="1" y="2" width="22" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3.5" y="4.5" width="17" height="7" rx="1" fill="currentColor"/><path d="M25 6v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </span>
+      </div>
+      <header id="navigation" aria-label="页面导航"></header>
+      <main id="screen" tabindex="-1"></main>
+      <div class="home-indicator" aria-hidden="true"></div>
+    </div>
+    <aside class="review-panel" aria-label="原型评审工具">
+      <p class="review-kicker"><span class="review-mark">芥</span>一芥伙伴 <span class="review-divider">/</span> CRM</p>
+      <h1>从一次沟通，<br>接上下一步。</h1>
+      <p class="review-lead">围绕一个客户，把公司、商机、沟通和跟进连起来。沿用一芥伙伴安静、清楚的原生风格。</p>
+      <nav class="review-routes" aria-label="重点页面">
+        <button data-preview-route="home"><span class="review-index">01</span><span>CRM 首页<small>先找到人，再继续工作</small></span><span aria-hidden="true">↗</span></button>
+        <button data-preview-route="customer:lin"><span class="review-index">02</span><span>客户详情<small>资料、商机与下一步</small></span><span aria-hidden="true">↗</span></button>
+        <button data-preview-route="opportunity:opp-service"><span class="review-index">03</span><span>商机详情<small>看进展，也看来龙去脉</small></span><span aria-hidden="true">↗</span></button>
+        <button data-preview-route="timeline:customer:lin"><span class="review-index">04</span><span>往来时间轴<small>沟通、纪要和图片资料</small></span><span aria-hidden="true">↗</span></button>
+      </nav>
+      <div class="review-comparisons">
+        <p>对照查看同一份资料</p>
+        <button data-preview-route="tasks:all">全部个人待办 <span aria-hidden="true">↗</span></button>
+        <button data-preview-route="meetings">会议资料 <span aria-hidden="true">↗</span></button>
+      </div>
+      <div class="review-tools">
+        <button id="theme-toggle">切换深色</button>
+        <button id="reset-demo">重置演示</button>
+      </div>
+      <div class="review-current">正在查看 <span id="review-current">CRM 首页</span></div>
+      <p class="review-note">可点击 H5 原型 · 虚构演示资料<br>以 2026 年 10 月 16 日为演示当天。修改仅用于此次预览，刷新后重置，不连接真实通讯录、待办或日历。</p>
+      <a class="review-doc" href="../crm-local-first.md">查看设计文档 <span aria-hidden="true">↗</span></a>
+    </aside>
+  </div>
+  <dialog id="sheet" aria-label="详情与编辑">
+    <div id="sheet-content"></div>
+  </dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

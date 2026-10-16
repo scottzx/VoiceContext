@@ -43,13 +43,14 @@ final class OpenAIAgentProvider: AgentProvider {
         messages: [AgentMessage],
         systemPrompt: String?,
         tools: [AgentToolDefinition],
+        requiredToolName: String? = nil,
         maxTokens: Int,
         thinkingLevel: ThinkingLevel
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error> {
         if provider.usesChatCompletionsAPI {
-            return try await streamChatCompletions(messages: messages, systemPrompt: systemPrompt, tools: tools, maxTokens: maxTokens, thinkingLevel: thinkingLevel)
+            return try await streamChatCompletions(messages: messages, systemPrompt: systemPrompt, tools: tools, requiredToolName: requiredToolName, maxTokens: maxTokens, thinkingLevel: thinkingLevel)
         } else {
-            return try await streamResponsesAPI(messages: messages, systemPrompt: systemPrompt, tools: tools, maxTokens: maxTokens, thinkingLevel: thinkingLevel)
+            return try await streamResponsesAPI(messages: messages, systemPrompt: systemPrompt, tools: tools, requiredToolName: requiredToolName, maxTokens: maxTokens, thinkingLevel: thinkingLevel)
         }
     }
 
@@ -59,6 +60,7 @@ final class OpenAIAgentProvider: AgentProvider {
         messages: [AgentMessage],
         systemPrompt: String?,
         tools: [AgentToolDefinition],
+        requiredToolName: String? = nil,
         maxTokens: Int,
         thinkingLevel: ThinkingLevel = .off
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error> {
@@ -163,6 +165,16 @@ final class OpenAIAgentProvider: AgentProvider {
             // (which is exactly how the Responses API path ended up ungated, 37bab14c).
             let offEffort = Self.explicitOffEffort(for: provider, model: model, level: thinkingLevel)
             Self.injectThinkingParams(into: &body, model: model, level: thinkingLevel, isOpenRouter: provider.useOpenRouterCompat, maxTokens: maxTokens, offEffort: offEffort, unifiedReasoningEffort: provider.usesUnifiedReasoningEffort, isMistral: provider.isMistral, isXAI: provider.isXAI, isDashScope: provider.isDashScope, providerInstanceId: provider.providerInstanceId)
+        }
+
+        // Apply last so provider-specific request parameters cannot loosen a
+        // delivery-only turn back to automatic tool selection.
+        if let requiredToolName {
+            if tools.count == 1, tools[0].name == requiredToolName {
+                body["tool_choice"] = "required"
+            } else {
+                body["tool_choice"] = ["type": "function", "function": ["name": requiredToolName]]
+            }
         }
 
         let (lineStream, _) = try await provider.streamRaw(body: body, isResponsesAPI: false)
@@ -422,6 +434,7 @@ final class OpenAIAgentProvider: AgentProvider {
         messages: [AgentMessage],
         systemPrompt: String?,
         tools: [AgentToolDefinition],
+        requiredToolName: String? = nil,
         maxTokens: Int,
         thinkingLevel: ThinkingLevel = .off
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error> {
@@ -539,6 +552,11 @@ final class OpenAIAgentProvider: AgentProvider {
         if UserDefaults.standard.bool(forKey: OpenAIProvider.fastModeDefaultsKey),
            model.id.lowercased().contains("gpt") {
             body["service_tier"] = "priority"
+        }
+
+        if let requiredToolName {
+            body["tool_choice"] = ["type": "function", "name": requiredToolName]
+            body["parallel_tool_calls"] = false
         }
 
         let (lineStream, _) = try await provider.streamRaw(body: body, isResponsesAPI: true)

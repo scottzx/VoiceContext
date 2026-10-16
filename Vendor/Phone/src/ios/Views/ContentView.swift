@@ -3170,6 +3170,9 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var sidebarToolbarContent: some ToolbarContent {
+        #if VOICE_AGENT_FUSION
+        ToolbarItem(placement: .topBarTrailing) { VoiceRecordingStatusControl() }
+        #endif
         ToolbarItem(placement: .principal) {
             if isSelecting {
                 Text(selectedIds.isEmpty ? "Select Sessions" : "\(selectedIds.count) Selected")
@@ -7327,6 +7330,11 @@ struct SettingsSheet: View {
                     } label: {
                         Label("语言与外观", systemImage: "paintbrush")
                     }
+                    #if VOICE_AGENT_FUSION
+                    NavigationLink { YimaListSettingsView() } label: {
+                        Label("日历与待办", systemImage: "calendar")
+                    }
+                    #endif
                 }
                 #if VOICE_AGENT_FUSION
                 Section("聊天") {

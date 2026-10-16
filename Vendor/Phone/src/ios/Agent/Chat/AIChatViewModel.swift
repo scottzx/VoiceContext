@@ -140,6 +140,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// ones actually doing the work.
     var effectiveToolPolicy: AgentToolPolicy {
         if agentRole == .executor { return .standalone }
+        #if VOICE_AGENT_FUSION
+        if sessionSource == "meeting_assistant" { return .orchestrator }
+        #endif
         return resolvedToolPolicy
     }
 
@@ -990,7 +993,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     ///
     /// The mode is a property of the conversation the USER is having, so it is
     /// deliberately confined to that conversation. A dispatched executor, a
-    /// group member's turn and a hardware voice session all run their own
+    /// group member's turn and a hardware/meeting voice session all run their own
     /// sessions created by code the user never sees; each of those would
     /// otherwise inherit the global default and be silently stripped of the
     /// tools its caller expects it to have.
@@ -999,6 +1002,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             && agentRole == .main
             && groupId == nil
             && sessionSource != "hardware"
+            && sessionSource != "meeting_assistant"
     }
 
     // MARK: - Session Stats
@@ -1727,7 +1731,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     private var canSpeakNow: Bool {
         // Enabled AND not muted AND not capturing. `canPlay` folds in the temporary
         // mute (capsule speaker) on top of the full on/off `isEnabled`.
-        VoiceOutputState.shared.canPlay && !VoiceModePreference.shared.isCapturing && !AudioSessionCoordinator.shared.isRecording
+        sessionSource != "meeting_assistant" && VoiceOutputState.shared.canPlay
+            && !VoiceModePreference.shared.isCapturing && !AudioSessionCoordinator.shared.isRecording
     }
 
     /// True when a configured cloud TTS model is selected (not the offline System
@@ -1933,7 +1938,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             return groupBlock + OrchestratorPrompt.render(
                 agentId: agentId,
                 memoryEnabled: memoryEnabled,
-                includeAgentDirectory: groupId == nil
+                includeAgentDirectory: groupId == nil,
+                meetingVoiceMode: isMeetingCoordinator
             ) + hardwareBlock
         case .standalone:
             // Executors get the full operator prompt below — it was always
@@ -5106,7 +5112,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 activeGroupId = gid
             }
         }
-        let tools = makeAgentTools()
+        var tools = makeAgentTools()
         // This keeps the existing streaming/concurrent implementation in
         // charge for now, while the exact provider-independent tool contract
         // used by a future shared-engine path is built on every real run.
@@ -5321,6 +5327,39 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // that keeps hitting the threshold can't compact forever; when the cap
         // is reached and we're still near capacity, the loop stops as exhausted.
         var compactionsThisLoop = 0
+        var meetingAnswerDeliveryRound = false
+
+        // [T-meeting-answer-user-recovery] A clean stop is not a public
+        // meeting answer until answer_user is called. Recover once with a
+        // delivery-only tool surface, using the results already in history.
+        func requestMeetingAnswerDelivery(after stopReason: AgentStopReason?, allowEmptyEndTurn: Bool = false) async -> Bool {
+            #if VOICE_AGENT_FUSION
+            guard isMeetingCoordinator else { return false }
+            guard !meetingAnswerDeliveryRound,
+                  stopReason == .endTurn, (!canResume || allowEmptyEndTurn), !userDidCancel,
+                  promptQueue.isEmpty,
+                  MeetingAnswerUserTool.canRequestDelivery(sessionID: sessionId) else {
+                logger.info("[MeetingAnswer] No recovery: recoveryRound=\(meetingAnswerDeliveryRound) stop=\(String(describing: stopReason)) resumable=\(canResume) cancelled=\(userDidCancel) queued=\(promptQueue.count) replyOpen=\(MeetingAnswerUserTool.canRequestDelivery(sessionID: sessionId))")
+                return false
+            }
+            meetingAnswerDeliveryRound = true
+            var reminder = AgentMessage(role: .user, parts: [.text(MeetingAnswerUserTool.deliveryReminder)])
+            guard let persistedID = await persistAgentMessage(reminder) else { return false }
+            reminder.dbMessageId = persistedID
+            agentHistory.append(reminder)
+            guard !Task.isCancelled, !userDidCancel,
+                  MeetingAnswerUserTool.canRequestDelivery(sessionID: sessionId) else { return false }
+            // Dispatch validates against this same list, so even hallucinated
+            // Apple/write/spawn calls cannot repeat business work in recovery.
+            tools.removeAll { $0.name != "answer_user" }
+            if allowEmptyEndTurn { canResume = false }
+            logger.info("[MeetingAnswer] Missing answer_user at clean stop; requesting one delivery-only round")
+            return true
+            #else
+            return false
+            #endif
+        }
+
         loopLabel: while turnCount < Self.maxAgentTurns {
             defer { turnCount += 1 }
             // [LoopHeartbeat] (#181) One line per loop iteration. If the loop
@@ -5490,6 +5529,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // preflight keep the full `tools`, because those validate arguments
             // against a schema and must not be affected by visibility.
             let roundTools = hooks.tools(tools)
+            let requiredToolName = meetingAnswerDeliveryRound ? "answer_user" : nil
+            if isMeetingCoordinator {
+                logger.info("[MeetingAnswer] Request round=\(turnCount) requiredTool=\(requiredToolName ?? "auto") tools=\(roundTools.map(\.name).joined(separator: ","))")
+            }
 
             CrashReporter.shared.setLastAPI(provider: provider.name, model: activeModelForOffload.id)
             logger.info("Calling \(provider.name) API (streaming) with \(self.agentHistory.count) messages")
@@ -5588,6 +5631,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 baseSystemPrompt: baseSystemPrompt,
                 systemPrompt: userSystemPrompt,
                 tools: roundTools,
+                requiredToolName: requiredToolName,
                 model: activeModel,
                 lastContextTokens: turnUsage.latestContextTokens,
                 chatMessage: messages[msgIdx],
@@ -5679,6 +5723,15 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // HTTP 200) and the endTurn-with-zero-output path (OpenAI gpt-5.5
             // on long contexts: `finish_reason=stop` with no text/tool/reasoning).
             func isEmptyResponse(_ r: StreamResult) -> Bool {
+                #if VOICE_AGENT_FUSION
+                // [T-meeting-empty-answer-delivery] A clean empty meeting stop
+                // goes straight to the bounded reply-only round below. Retrying
+                // it here would re-offer business tools and delay that delivery.
+                if isMeetingCoordinator, r.stopReason == .endTurn, !r.isStreamInterrupted,
+                   MeetingAnswerUserTool.canRequestDelivery(sessionID: sessionId) {
+                    return false
+                }
+                #endif
                 let hasReasoning = !(r.reasoningContent ?? "").isEmpty
                 return r.assistantText.isEmpty && r.toolEntries.isEmpty
                     && !hasReasoning && !r.isStreamInterrupted
@@ -5748,6 +5801,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         messages: applyRequestImageBudget(historyWithEmptyToolResultReminder()),
                         systemPrompt: userSystemPrompt,
                         tools: roundTools,
+                        requiredToolName: requiredToolName,
                         maxTokens: dynamicMaxTokens(provider: provider, model: activeModel, lastContextTokens: turnUsage.latestContextTokens),
                         chatMessage: messages[msgIdx]
                     )
@@ -5820,6 +5874,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         baseSystemPrompt: baseSystemPrompt,
                         systemPrompt: userSystemPrompt,
                         tools: roundTools,
+                        requiredToolName: requiredToolName,
                         model: activeModel,
                         lastContextTokens: turnUsage.latestContextTokens,
                         chatMessage: messages[msgIdx],
@@ -5842,6 +5897,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                             messages: applyRequestImageBudget(effectiveAgentHistory()),
                             systemPrompt: userSystemPrompt,
                             tools: roundTools,
+                            requiredToolName: requiredToolName,
                             maxTokens: dynamicMaxTokens(provider: provider, model: activeModel, lastContextTokens: turnUsage.latestContextTokens),
                             chatMessage: messages[msgIdx]
                         )
@@ -5894,6 +5950,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                             baseSystemPrompt: baseSystemPrompt,
                             systemPrompt: userSystemPrompt,
                             tools: roundTools,
+                            requiredToolName: requiredToolName,
                             model: activeModel,
                             lastContextTokens: turnUsage.latestContextTokens,
                             chatMessage: messages[msgIdx],
@@ -6177,6 +6234,22 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 }
                 hitTurnLimit = false
 
+                // [T-meeting-answer-user-recovery-no-tool] Persist the model's
+                // existing result before asking for explicit public delivery.
+                // A normal empty stop after a successful query also owes an
+                // answer; its empty-response banner alone must not veto repair.
+                let cleanEmptyEndTurn = stopReason == .endTurn && !streamResult.isStreamInterrupted
+                    && assistantText.isEmpty && (streamResult.reasoningContent ?? "").isEmpty
+                if !streamResult.isStreamInterrupted,
+                   await requestMeetingAnswerDelivery(after: stopReason, allowEmptyEndTurn: cleanEmptyEndTurn) {
+                    messages[msgIdx].error = nil
+                    if assistantAgentIdx < agentHistory.count, let persistedID = agentHistory[assistantAgentIdx].dbMessageId {
+                        await ChatStore.shared.updateMessageErrorInfo(messageId: persistedID, errorInfo: nil)
+                    }
+                    continue
+                }
+                if meetingAnswerDeliveryRound { break }
+
                 // [T-ios-queued-message-continues-prev-turn] The current turn's
                 // tool loop has fully converged (no tool calls this iteration) and
                 // its final assistant reply is now persisted. If the user queued a
@@ -6418,6 +6491,22 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 committedBlockCount = messages[msgIdx].blocks.count
                 self.committedBlockCount = committedBlockCount
                 messages[msgIdx].usage = turnUsage
+                hitTurnLimit = false
+                break
+            }
+
+            // [T-meeting-answer-user-recovery-tool-close] One recovery request
+            // ends after its tool receipts are durable, even if the model asks
+            // for other tools. Leave queued user turns to the fresh-run drain.
+            if meetingAnswerDeliveryRound {
+                messages[msgIdx].isAwaitingModelResponse = false
+                hitTurnLimit = false
+                break
+            }
+            if !streamResult.isStreamInterrupted,
+               await requestMeetingAnswerDelivery(after: stopReason) { continue }
+            if meetingAnswerDeliveryRound {
+                messages[msgIdx].isAwaitingModelResponse = false
                 hitTurnLimit = false
                 break
             }

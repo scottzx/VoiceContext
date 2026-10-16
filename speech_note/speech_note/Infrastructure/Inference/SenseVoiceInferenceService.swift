@@ -154,7 +154,8 @@ actor SenseVoiceInferenceService {
     func transcribe(
         samples: [Float],
         startingAt: Int64,
-        languageMode: TranscriptionLanguageMode = .default
+        languageMode: TranscriptionLanguageMode = .default,
+        waitForMetal: Bool = false
     ) async throws -> Result {
         let inputMetrics = AudioInputMetrics.from(samples: samples)
         let resourceRoot = try TranscriptionModelStore.requiredResourceRoot()
@@ -194,7 +195,22 @@ actor SenseVoiceInferenceService {
             for utterance in analysis.utterances {
                 guard !utterance.samples.isEmpty else { continue }
 
-                try await lifecycleGate.beginMetalWork()
+                let metalWaitDeadline = Date().addingTimeInterval(30)
+                while true {
+                    try Task.checkCancellation()
+                    do {
+                        try await lifecycleGate.beginMetalWork()
+                        break
+                    } catch InferenceLifecycleGate.Rejection.metalBusy where waitForMetal {
+                        // A meeting command shares the one-work GPU budget
+                        // with persisted transcript jobs; it never opens a
+                        // second model concurrently or interrupts capture.
+                        guard Date() < metalWaitDeadline else {
+                            throw InferenceError.runtime("转写队列繁忙，请稍后重新唤醒")
+                        }
+                        try await Task.sleep(for: .milliseconds(100))
+                    }
+                }
                 let result: NativeResult
                 do {
                     result = try await Task.detached(priority: .userInitiated) { [cancellation] in

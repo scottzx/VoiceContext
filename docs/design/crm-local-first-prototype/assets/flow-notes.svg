@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1280" viewBox="0 0 960 1280" role="img" aria-labelledby="title desc">
+  <title id="title">服务流程草图 · 演示资料</title>
+  <desc id="desc">纸白背景上的四步服务流程：统一受理、分类分派、处理留痕、结果回访。升级规则待确认。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M1 1 6 4 1 7" fill="none" stroke="#636366" stroke-width="1.5"/></marker>
+  </defs>
+  <rect width="960" height="1280" fill="#FAFAF7"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" fill="#1C1C1E">
+    <text x="80" y="104" font-size="24" fill="#636366">禾序科技 · 演示资料</text>
+    <text x="80" y="180" font-size="50" font-weight="600">服务流程草图</text>
+    <text x="80" y="230" font-size="25" fill="#636366">先把一条流程走清楚</text>
+    <path d="M80 265H880" stroke="#CDCDCA"/>
+
+    <g fill="#FFFFFF" stroke="#777774" stroke-width="2">
+      <rect x="190" y="315" width="610" height="130" rx="10"/>
+      <rect x="190" y="505" width="610" height="130" rx="10"/>
+      <rect x="190" y="695" width="610" height="130" rx="10"/>
+      <rect x="190" y="885" width="610" height="130" rx="10"/>
+    </g>
+    <g font-size="26" fill="#636366">
+      <text x="90" y="380">01</text><text x="90" y="570">02</text>
+      <text x="90" y="760">03</text><text x="90" y="950">04</text>
+    </g>
+    <g font-size="34" font-weight="600">
+      <text x="230" y="370">统一受理</text><text x="230" y="560">分类分派</text>
+      <text x="230" y="750">处理留痕</text><text x="230" y="940">结果回访</text>
+    </g>
+    <g font-size="24" fill="#636366">
+      <text x="230" y="412">记录诉求、来源与联系人</text>
+      <text x="230" y="602">明确责任人和处理期限</text>
+      <text x="230" y="792">保留进展、结论与下一步</text>
+      <text x="230" y="982">核对结果，关闭或继续处理</text>
+    </g>
+    <g stroke="#636366" stroke-width="2" marker-end="url(#arrow)">
+      <path d="M495 451V489"/><path d="M495 641V679"/><path d="M495 831V869"/>
+    </g>
+    <path d="M80 1070H880" stroke="#CDCDCA"/>
+    <text x="80" y="1125" font-size="25" font-weight="600">待确认</text>
+    <text x="80" y="1165" font-size="24" fill="#636366">超时如何升级 · 谁来确认关闭</text>
+    <text x="80" y="1230" font-size="20" fill="#636366">2026.10.15 · 流程示意，不代表最终方案</text>
+  </g>
+</svg>

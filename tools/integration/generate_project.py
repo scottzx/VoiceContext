@@ -180,6 +180,8 @@ for path,kind in [(ROOT/'Integration/Resources/Localizable.xcstrings','text.json
 for path in sorted((ROOT/'speech_note/speech_note/ModelResources').iterdir()):
     if path.is_file() and (path.name == 'ModelManifest.json' or path.suffix in {'.txt', '.md'}):
         add(main,'PBXResourcesBuildPhase',ref(path, 'text.json' if path.suffix == '.json' else 'file'))
+# KWS is preinstalled and keeps its own directory/manifest, outside the ASR download gate.
+add(main, 'PBXResourcesBuildPhase', ref(ROOT/'speech_note/speech_note/MeetingWakeModels', 'folder'))
 add(main,'PBXResourcesBuildPhase',ref(ROOT/'speech_note/speech_note/SenseVoiceFixture.m4a', 'file'))
 # Preserve the full platform plist but use the released product's identity and privacy text.
 with (PHONE/'Info.plist').open('rb') as f: info=plistlib.load(f)
