@@ -93,7 +93,7 @@ extension AIChatViewModel {
         tools: [AgentToolDefinition],
         batchBudget: BatchImageBudget
     ) async -> ToolExecOutcome {
-        if let reason = meetingToolRefusal(name: tu.name, tools: tools) {
+        if let reason = runtimeToolRefusal(name: tu.name, tools: tools) {
             return await hookBlockedOutcome(tu: tu, msgIdx: msgIdx, reason: reason, isPolicyBlock: true)
         }
         let argsJSON: String? = {
@@ -132,7 +132,7 @@ extension AIChatViewModel {
             "[Hooks] BLOCKED tool=\(tu.name) id=\(tu.id) reason=\"\(reason)\""
         )
         let blockIdx = tu.blockIdx
-        let uiMessage = isPolicyBlock ? AppLocalized("会中助手需将此任务交给后台执行") : String(localized: "Blocked by a hook")
+        let uiMessage = isPolicyBlock ? AppLocalized("此助手当前不可调用该工具") : String(localized: "Blocked by a hook")
         let modelMessage = "Error: This call was NOT executed. \(reason)"
         if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
             messages[msgIdx].blocks[blockIdx].content = uiMessage
@@ -590,6 +590,26 @@ extension AIChatViewModel {
         case "apple_native":
             let result = await MeetingAppleTool.execute(
                 toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource
+            )
+            toolOutput = result.output
+            toolSuccess = result.success
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+        case "app_navigation":
+            let result = await AppNavigationTool.execute(
+                toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource,
+                isExecutor: self.agentRole == .executor, voiceGeneration: self.appNavigationVoiceGeneration
+            )
+            toolOutput = result.output
+            toolSuccess = result.success
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+        case "app_present":
+            let result = await AppPresentationTool.execute(
+                toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource,
+                voiceGeneration: self.appNavigationVoiceGeneration
             )
             toolOutput = result.output
             toolSuccess = result.success

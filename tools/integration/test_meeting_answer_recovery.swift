@@ -1,5 +1,14 @@
 import Foundation
 
+// Boundary fixture for the canonical peer-directory tools.
+enum AgentDirectoryTools {
+    static var definitions: [AgentToolDefinition] {
+        ["list_agents", "send_agent_message", "create_agent"].map {
+            AgentToolDefinition(name: $0, description: $0, parameters: [:], required: [])
+        }
+    }
+}
+
 // Host boundaries only. The recovery branches, tool policy/dispatch wrapper,
 // speech gate and answer_user implementation are extracted from product code.
 struct AgentMessage {
@@ -26,6 +35,7 @@ struct HostLogger {
 let logger = HostLogger()
 func AppLocalized(_ text: String) -> String { text }
 struct HostModel {}
+enum AgentToolPolicy { case standalone, orchestrator }
 struct HostModelEntry { var id = "host-model"; var model = HostModel() }
 @MainActor final class ProviderConfigStore {
     static let shared = ProviderConfigStore()
@@ -127,8 +137,7 @@ struct ScriptTurn {
     func effectiveContextWindow(for model: HostModel) -> Int { 0 }
     func estimateContextTokens() -> Int { 0 }
     func makeAgentTools() -> [AgentToolDefinition] {
-        [MeetingAnswerUserTool.definition,
-         .init(name: "apple_native", description: "Host business boundary", parameters: [:], required: [])]
+        runtimeHostToolDefinitions
     }
     func persistAgentMessage(_ message: AgentMessage) async -> String? {
         guard !failPersistence else { return nil }
@@ -189,6 +198,17 @@ enum GroupMentionRouter {
 
 @main struct MeetingAnswerRecoveryChecks {
     @MainActor static func main() async {
+        for source in ["meeting_assistant", "xiaolan_voice", "fixture_interaction"] {
+            AgentRuntimePolicies.register(source: source, policy: .init(
+                allowedTools: ["answer_user", "apple_native"], noticeAllowedTools: ["answer_user"],
+                additionalTools: [.init(name: "apple_native", description: "Host business boundary", parameters: [:], required: [])],
+                replyDelivery: .init(definition: MeetingAnswerUserTool.definition,
+                                     canRequest: { MeetingAnswerUserTool.canRequestDelivery(sessionID: $0) },
+                                     reminder: MeetingAnswerUserTool.deliveryReminder),
+                allowsAutomaticSpeech: false
+            ))
+        }
+
         let plain = "PLAIN_ANSWER_MUST_NOT_BE_AUTOMATICALLY_SPOKEN"
         let answer = "今天有一项系统日程。"
         let reply = StreamResult.ToolEntry(name: "answer_user", args: ["text": answer])
@@ -203,6 +223,26 @@ enum GroupMentionRouter {
             precondition(provider.requiredToolNames.count == 1 && provider.requiredToolNames[0] == nil,
                          "Ordinary or rejected recovery must never force a tool choice")
         }
+
+        let third = AIChatViewModel()
+        third.sessionSource = "fixture_interaction"
+        _ = third.bind()
+        await third.seedExecutedBusiness()
+        let thirdProvider = twoTurns()
+        await third.runRecoveryScript(thirdProvider)
+        precondition(thirdProvider.requests.count == 2 && thirdProvider.requests[1] == ["answer_user"]
+                     && third.publicTexts == [answer] && third.businessExecutions == 1,
+                     "An arbitrary registered interaction gets bounded reply recovery without engine branches")
+
+        let voice = AIChatViewModel()
+        voice.sessionSource = "xiaolan_voice"
+        _ = voice.bind()
+        await voice.seedExecutedBusiness()
+        let voiceProvider = twoTurns()
+        await voice.runRecoveryScript(voiceProvider)
+        precondition(voiceProvider.requests.count == 2 && voiceProvider.requests[1] == ["answer_user"])
+        precondition(voice.publicTexts == [answer] && voice.spoken == [answer] && voice.businessExecutions == 1,
+                     "Independent voice also needs explicit once-only public delivery, with no ordinary or reasoning speech")
 
         let vm = AIChatViewModel()
         _ = vm.bind()
@@ -505,5 +545,6 @@ enum GroupMentionRouter {
         print("PASS: clean empty endTurn skips generic retries and forces one answer without replay; interrupted/nil/token/refusal/claimed cases retain their original boundaries")
         print("PASS: actual model-group empty fallback returns authorized meeting stops for delivery; ordinary/child/unbound/claimed/nil/refusal fallback and nonempty exits remain unchanged")
         print("PASS: real dispatch blocks forged business calls; claimed/in-flight/stale/cancelled/interrupted/error/pass/ordinary turns never request recovery")
+        print("PASS: independent voice reuses bounded answer-only recovery without ordinary/reasoning speech or replayed business operations")
     }
 }

@@ -112,6 +112,10 @@ final class SystemRemindersModel: ObservableObject {
 }
 
 struct SystemRemindersView: View {
+    @ObservedObject private var navigation = AppNavigationCenter.shared
+    @Environment(\.appNavigationIsActive) private var isActive
+    @State private var scheduleRoute = false
+    @State private var taskRoute = false
     @StateObject private var model = SystemRemindersModel()
     @ObservedObject private var local = YimaItemsStore.shared
     @State private var localEditor: YimaItemRequest?
@@ -204,6 +208,8 @@ struct SystemRemindersView: View {
     var body: some View {
         NavigationStack {
             home
+                .appNavigationPage(scheduleRoute ? "schedule.day" : "reminders",
+                                   params: scheduleRoute ? ["date": routeDate(selected)] : [:], canGoBack: false)
                 .navigationTitle("提醒").navigationBarTitleDisplayMode(.inline)
                 .toolbar(.visible, for: .tabBar)
                 .toolbar {
@@ -214,12 +220,12 @@ struct SystemRemindersView: View {
                     }
                 }
                 .navigationDestination(isPresented: $showAll) { allItems }
-                .sheet(isPresented: $homeFiltersOpen) { sourceFilters }
+                .sheet(isPresented: $homeFiltersOpen, onDismiss: navigationPresentationDidDismiss) { sourceFilters }
                 .protectedYimaSheet(item: $localEditor, onDismiss: YimaItemSheet.didDismiss) { YimaItemSheet(store: local, request: $0) }
                 .protectedYimaSheet(item: $editor, onDismiss: YimaItemSheet.didDismiss) { item in
                     ReminderEditor(model: model, existing: item.reminder, preferredCalendarID: nil, suggestedDate: item.suggestedDate)
                 }
-                .sheet(item: $eventDetail, onDismiss: { Task { await refresh() } }) { event in TaskEventDetail(event: event) }
+                .sheet(item: $eventDetail, onDismiss: { navigationPresentationDidDismiss(); Task { await refresh() } }) { event in TaskEventDetail(event: event) }
                 .confirmationDialog("删除此系统提醒事项？", isPresented: Binding(
                     get: { deleteCandidate != nil }, set: { if !$0 { deleteCandidate = nil } }
                 ), titleVisibility: .visible) {
@@ -241,6 +247,54 @@ struct SystemRemindersView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange)) { _ in Task { await refresh() } }
         .onChange(of: model.loading) { _, loading in if !loading { reconcileSources() } }
         .onChange(of: calendarModel.loading) { _, loading in if !loading { reconcileSources() } }
+        .onAppear { handleNavigation(navigation.command) }
+        .onChange(of: navigation.command) { _, command in handleNavigation(command) }
+        .onChange(of: isActive) { _, active in if active { handleNavigation(navigation.command) } }
+        .onChange(of: showAll) { _, showing in if !showing { taskRoute = false } }
+        .pausesXiaolanVoice(while: localEditor != nil || editor != nil || eventDetail != nil || filtersOpen || homeFiltersOpen || dateJump != nil)
+    }
+
+    private func routeDate(_ date: Date) -> String {
+        let format = DateFormatter()
+        format.calendar = Calendar(identifier: .gregorian)
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.timeZone = .current
+        format.dateFormat = "yyyy-MM-dd"
+        return format.string(from: date)
+    }
+
+    private func navigationPresentationDidDismiss() {
+        NotificationCenter.default.post(name: Notification.Name("Yima.navigationPresentationDismissed"), object: nil)
+    }
+
+    private func handleNavigation(_ command: AppNavigationCommand?) {
+        guard isActive, let command, navigation.isCurrent(command), command.action == .navigate,
+              ["reminders", "reminders.all", "schedule.day", "tasks.list"].contains(command.routeID) else { return }
+        guard localEditor == nil, editor == nil, eventDetail == nil, !filtersOpen, !homeFiltersOpen, dateJump == nil else {
+            navigation.fail(commandID: command.id, message: "请先关闭当前事项或筛选页面，再跳转。")
+            return
+        }
+        if command.routeID == "schedule.day" {
+            let format = DateFormatter()
+            format.calendar = Calendar(identifier: .gregorian)
+            format.locale = Locale(identifier: "en_US_POSIX")
+            format.timeZone = .current
+            format.dateFormat = "yyyy-MM-dd"
+            format.isLenient = false
+            guard let value = command.params["date"], let date = format.date(from: value), format.string(from: date) == value else {
+                navigation.fail(commandID: command.id, message: "日程日期无效。")
+                return
+            }
+            selected = date; month = date; scheduleRoute = true; showAll = false
+        } else if command.routeID == "tasks.list" {
+            showCompleted = command.params["filter"] == "all"
+            taskRoute = true
+            showAll = true
+        } else if command.routeID == "reminders.all" {
+            taskRoute = false; showAll = true
+        } else {
+            scheduleRoute = false; showAll = false
+        }
     }
 
     private var home: some View {
@@ -381,14 +435,14 @@ struct SystemRemindersView: View {
     }
 
     private var allItems: some View {
-        let entries = allEntries
+        let entries = taskRoute ? allEntries.filter { $0.localTodo != nil || $0.reminder != nil } : allEntries
         let dated = Dictionary(grouping: entries.filter { $0.date != nil }, by: { calendar.startOfDay(for: $0.date!) })
         let dateIndex = TaskDateIndex(dates: Array(dated.keys), calendar: calendar)
         let unscheduled = entries.filter { $0.date == nil }
         return ScrollViewReader { proxy in
             List {
                 if model.authorized { reminderStatus }
-                if calendarModel.authorized { calendarStatus }
+                if !taskRoute && calendarModel.authorized { calendarStatus }
                 if let failure = local.failure { quietText(LocalizedStringKey(failure)) }
                 if sourceNotice {
                     VStack(alignment: .leading) {
@@ -432,7 +486,7 @@ struct SystemRemindersView: View {
                     if entries.isEmpty {
                         quietText("当前已读取的所选列表没有事项。")
                     }
-                    if calendarReady && !TaskSourceSelection(encoded: eventSources).selected.isEmpty {
+                    if !taskRoute && calendarReady && !TaskSourceSelection(encoded: eventSources).selected.isEmpty {
                         Section {
                             if let interval = calendarModel.loadedFuture {
                                 Text("日程已读取至 \(interval.end, format: .dateTime.year().month().day())")
@@ -448,7 +502,9 @@ struct SystemRemindersView: View {
             }
             .listStyle(.plain).scrollContentBackground(.hidden)
             .background(Color(uiColor: .systemBackground))
-            .navigationTitle("全部事项").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(taskRoute ? "待办" : "全部事项").navigationBarTitleDisplayMode(.inline)
+            .appNavigationPage(taskRoute ? "tasks.list" : "reminders.all",
+                               params: taskRoute ? ["filter": showCompleted ? "all" : "incomplete"] : [:], onBack: { showAll = false })
             .toolbar(.hidden, for: .tabBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -457,8 +513,9 @@ struct SystemRemindersView: View {
                 }
             }
             .refreshable { await refresh() }
-            .sheet(isPresented: $filtersOpen) { sourceFilters }
+            .sheet(isPresented: $filtersOpen, onDismiss: navigationPresentationDidDismiss) { sourceFilters }
             .sheet(item: $dateJump, onDismiss: {
+                navigationPresentationDidDismiss()
                 guard let target = jumpTargetDate else { return }
                 jumpTargetDate = nil
                 guard dateIndex.dates.contains(target) else { return }

@@ -27,34 +27,27 @@ extension AIChatViewModel {
 
     // MARK: - Tool Definitions (Canonical)
 
-    var meetingReplyToolDefinitions: [AgentToolDefinition] {
-        #if VOICE_AGENT_FUSION
-        return isMeetingCoordinator ? [MeetingAnswerUserTool.definition] : []
-        #else
-        return []
-        #endif
+    var runtimeHostToolDefinitions: [AgentToolDefinition] {
+        guard agentRole != .executor else { return [] }
+        var tools = AgentRuntimePolicies.hostTools + runtimePolicy.additionalTools
+        if let delivery = runtimePolicy.replyDelivery { tools.append(delivery.definition) }
+        return runtimePolicy.filter(tools, noticeDriven: isNoticeDriven)
     }
 
-    var isMeetingCoordinator: Bool {
-        sessionSource == "meeting_assistant" && agentRole != .executor
-    }
-
-    static var meetingCoordinatorToolNames: Set<String> {
-        SubagentTools.names.union(["answer_user", "apple_native", "yima_items", "memory_get", "memory_write"])
-    }
-
-    /// Enforced at dispatch as well as registration: a hallucinated shell or
-    /// browser call cannot execute in the long-lived meeting conversation.
-    func meetingToolRefusal(name: String, tools: [AgentToolDefinition]) -> String? {
-        #if VOICE_AGENT_FUSION
-        if agentRole == .executor && (name == "answer_user" || name == "apple_native") {
-            return "This tool belongs to the meeting coordinator. Report your result to the parent assistant instead."
+    /// Registration and dispatch share the configured ceiling, including calls
+    /// forged by a model or widened by a tool-visibility hook.
+    func runtimeToolRefusal(name: String, tools: [AgentToolDefinition]) -> String? {
+        guard tools.contains(where: { $0.name == name }) else {
+            return "This tool is not registered for the current round."
         }
-        if isMeetingCoordinator,
-           !Self.meetingCoordinatorToolNames.contains(name) || !tools.contains(where: { $0.name == name }) {
-            return "This tool is unavailable to the meeting coordinator. Delegate execution with spawn_subagent; use native tools only for short Apple or Yima operations."
+        if agentRole != .executor, let allowed = runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven),
+           !allowed.contains(name) {
+            return "This tool is unavailable under the current interaction policy. Use only the tools registered for this round."
         }
-        #endif
+        if AgentRuntimePolicies.managedToolNames.contains(name),
+           !runtimeHostToolDefinitions.contains(where: { $0.name == name }) {
+            return "This host capability is not registered for the current session or role."
+        }
         return nil
     }
 
@@ -79,8 +72,9 @@ extension AIChatViewModel {
         // whose schemas alone are larger than the entire lite prompt, and the
         // whole point of the mode is that the model has one obvious thing to
         // call. Skills survive because loading one is `cat SKILL.md`.
-        let meetingReplyTools = meetingReplyToolDefinitions
-        if liteModeActive { return LiteModePrompt.toolDefinitions + meetingReplyTools }
+        if liteModeActive {
+            return runtimePolicy.filter(LiteModePrompt.toolDefinitions, noticeDriven: isNoticeDriven)
+        }
 
         let policy = effectiveToolPolicy
 
@@ -102,7 +96,7 @@ extension AIChatViewModel {
         // holding the conversation and can judge what is worth keeping.
         let includeMemoryWrite = includeMemoryTools && agentRole != .executor
 
-        var tools: [AgentToolDefinition] = meetingReplyTools
+        var tools: [AgentToolDefinition] = []
 
         // Dispatch tools — orchestrators only. An executor that could spawn
         // further executors would make task trees unbounded and untraceable.
@@ -334,14 +328,8 @@ extension AIChatViewModel {
             ))
         }
 
-        #if VOICE_AGENT_FUSION
-        if agentRole != .executor { tools.append(YimaItemsAgentTool.definition) }
-        if isMeetingCoordinator {
-            tools.append(MeetingAppleTool.definition)
-            tools.removeAll { !Self.meetingCoordinatorToolNames.contains($0.name) }
-        }
-        #endif
-        return tools
+        tools.append(contentsOf: runtimeHostToolDefinitions)
+        return agentRole == .executor ? tools : runtimePolicy.filter(tools, noticeDriven: isNoticeDriven)
     }
 
 }

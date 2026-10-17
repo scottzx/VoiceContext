@@ -19,41 +19,134 @@ struct VoiceContextRootView: View {
     @State private var modelSettings = false
     @State private var transcriptionModelDownload = false
     @StateObject private var browserPool = BrowserTabPool()
+    @ObservedObject private var navigation = AppNavigationCenter.shared
+    @ObservedObject private var offloadPermission = OffloadPermissionManager.shared
+    @ObservedObject private var voice = XiaolanVoiceController.shared
+    @State private var chatDetailVisible = false
+    @State private var permissionSource: AppNavigationState?
+    @State private var routingTab: Tab?
+    @State private var previewArtifact: AppArtifact?
+    @State private var artifactCommandID: UUID?
+    @State private var extensionPresentation = false
+    @State private var extensionEditing = false
+    @State private var awaitingExtensionDismiss = false
+    @State private var awaitingArtifactDismiss = false
+    @State private var voiceForms: Set<UUID> = []
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
         TabView(selection: $selection) {
             ContentView(browserPool: browserPool)
+                .environment(\.appNavigationIsActive, selection == .chat)
                 .tabItem { Label("聊天", systemImage: "bubble.left.and.bubble.right") }
                 .tag(Tab.chat)
             recordings.meetings(start: $startRecording, stop: $stopRecording)
                 .tabItem { Label("记录", systemImage: "waveform") }
                 .tag(Tab.meetings)
             SystemRemindersView()
+                .environment(\.appNavigationIsActive, selection == .reminders)
                 .tabItem { Label("提醒", systemImage: "checklist") }
                 .tag(Tab.reminders)
             VoiceContextExtensionsView(browserPool: browserPool)
+                .environment(\.appNavigationIsActive, selection == .extensions)
                 .tabItem { Label("拓展", systemImage: "square.grid.2x2") }
                 .tag(Tab.extensions)
         }
         .environmentObject(recordings)
+        .background {
+            XiaolanFloatingControl(recordings: recordings,
+                                   visible: phase == .active && !lock.appIsLocked && offloadPermission.pendingRequest == nil && permissionSource == nil,
+                                   controlsEnabled: voiceForms.isEmpty && !extensionEditing && localItem == nil && !modelSettings && !transcriptionModelDownload && results == nil)
+                .frame(width: 0, height: 0)
+        }
         .tint(YimaDesign.Color.ink)
+        .offloadPermissionDialog(enabled: rootPermissionPresenterEnabled)
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.chatDetailVisibilityChanged"))) { note in
+            chatDetailVisible = note.userInfo?["visible"] as? Bool ?? false
+        }
         .onAppear {
             if !restoredSelection {
                 selection = savedSelection
                 restoredSelection = true
             }
             presentPendingItem()
+            RecordingNavigationBridge.shared.isActive = selection == .meetings
             if UserDefaults.standard.string(forKey: "pendingSettingsReopen") != nil,
                UserDefaults.standard.string(forKey: "settingsPresentationOwner") == "meeting-model-setup" {
                 DispatchQueue.main.async { modelSettings = true }
             }
         }
-        .onChange(of: selection) { _, tab in savedSelection = tab }
+        .onChange(of: selection) { _, tab in
+            savedSelection = tab
+            if routingTab != tab { navigation.userNavigationBegan() }
+            routingTab = nil
+            RecordingNavigationBridge.shared.isActive = tab == .meetings
+        }
+        .onChange(of: navigation.command) { _, command in
+            if command == nil { RecordingNavigationBridge.shared.clearCommand() }
+            handleNavigation(command)
+        }
+        .onChange(of: offloadPermission.pendingRequest?.id, initial: true) { _, requestID in
+            guard requestID != nil else { return }
+            if permissionSource == nil { permissionSource = navigation.state }
+            if let route = navigation.state.routeID { navigation.unmount(routeID: route, params: navigation.state.params) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.offloadPermissionDismissed"))) { _ in
+            guard offloadPermission.pendingRequest == nil else { return }
+            if let source = permissionSource, let route = source.routeID {
+                navigation.mount(routeID: route, params: source.params, canGoBack: source.canGoBack)
+            } else if previewArtifact == nil, !extensionPresentation {
+                navigationPresentationDidDismiss()
+            }
+            permissionSource = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.recordingRouteMounted"))) { note in
+            guard selection == .meetings, let route = note.userInfo?["routeID"] as? String else { return }
+            navigation.mount(routeID: route, params: note.userInfo?["params"] as? [String: String] ?? [:],
+                             canGoBack: note.userInfo?["canGoBack"] as? Bool ?? false,
+                             commandID: note.userInfo?["commandID"] as? UUID)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.recordingRouteUnmounted"))) { note in
+            guard let route = note.userInfo?["routeID"] as? String else { return }
+            navigation.unmount(routeID: route, params: note.userInfo?["params"] as? [String: String] ?? [:])
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.recordingRouteFailed"))) { note in
+            guard let id = note.userInfo?["commandID"] as? UUID else { return }
+            navigation.fail(commandID: id, message: note.userInfo?["message"] as? String ?? "无法打开录音。")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.openCurrentRecording"))) { note in
+            guard let id = note.userInfo?["recordingID"] as? String else { return }
+            navigation.userNavigationBegan()
+            selection = .meetings
+            RecordingNavigationBridge.shared.isActive = true
+            DispatchQueue.main.async {
+                RecordingNavigationBridge.shared.perform(id: UUID(), routeID: "recording.detail", params: ["recording_id": id], requiresReceipt: false)
+            }
+        }
+        .sheet(item: $previewArtifact, onDismiss: {
+            if awaitingArtifactDismiss { awaitingArtifactDismiss = false; handleNavigation(navigation.command) }
+            NotificationCenter.default.post(name: Notification.Name("Yima.navigationPresentationDismissed"), object: nil)
+        }) { AppArtifactPreview(artifact: $0, commandID: artifactCommandID) }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.extensionPresentationChanged"))) { note in
+            extensionPresentation = note.userInfo?["active"] as? Bool ?? false
+            extensionEditing = note.userInfo?["editing"] as? Bool ?? false
+            if !extensionPresentation, awaitingExtensionDismiss {
+                awaitingExtensionDismiss = false
+                handleNavigation(navigation.command)
+            }
+        }
+        .pausesXiaolanVoice(while: localItem != nil || modelSettings || transcriptionModelDownload || results != nil)
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.voiceFormChanged"))) { note in
+            guard let token = note.userInfo?["token"] as? UUID else { return }
+            if note.userInfo?["active"] as? Bool == true { voiceForms.insert(token) }
+            else { voiceForms.remove(token) }
+        }
         .overlay { recordings.recordingEdge() }
         .onChange(of: phase, initial: true) { _, newValue in
             recordings.sceneChanged(newValue)
             MeetingAssistantBridge.shared.setForeground(newValue == .active && !lock.appIsLocked)
+            XiaolanVoiceController.shared.setForeground(newValue == .active && !lock.appIsLocked)
+            navigation.setAvailability(foreground: newValue == .active, unlocked: !lock.appIsLocked)
             if newValue == .active { Task { await MeetingWorkspaceBridge.shared.refresh() } }
         }
         .onOpenURL { url in
@@ -70,7 +163,7 @@ struct VoiceContextRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.openTranscriptionModels"))) { _ in
             transcriptionModelDownload = true
         }
-        .sheet(isPresented: $transcriptionModelDownload) {
+        .sheet(isPresented: $transcriptionModelDownload, onDismiss: navigationPresentationDidDismiss) {
             NavigationStack {
                 TranscriptionModelDownloadView()
                     .toolbar {
@@ -84,14 +177,17 @@ struct VoiceContextRootView: View {
             guard let id = note.userInfo?["recordingID"] as? String, UUID(uuidString: id) != nil else { return }
             results = RecordingResultsRequest(id: id)
         }
-        .sheet(item: $results) { request in RecordingAgentResults(recordingID: request.id) }
+        .sheet(item: $results, onDismiss: navigationPresentationDidDismiss) { request in RecordingAgentResults(recordingID: request.id) }
         .protectedYimaSheet(item: $localItem, onDismiss: YimaItemSheet.didDismiss) { YimaItemSheet(store: items, request: $0).environmentObject(recordings) }
         .onChange(of: lock.appIsLocked) { _, locked in
             MeetingAssistantBridge.shared.setForeground(!locked && phase == .active)
+            XiaolanVoiceController.shared.setForeground(!locked && phase == .active)
+            navigation.setAvailability(foreground: phase == .active, unlocked: !locked)
             if locked { items.recordingMeetingInProgress = nil }
             else { presentPendingItem() }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.itemSheetDismissed"))) { _ in
+            navigationPresentationDidDismiss()
             guard !lock.appIsLocked, !startingMeeting, let meetingID = items.recordingMeetingInProgress,
                   let meeting = items.meeting(meetingID), let event = items.event(meeting.eventID) else { return }
             startingMeeting = true; selection = .meetings
@@ -112,7 +208,7 @@ struct VoiceContextRootView: View {
                 NotificationCenter.default.post(name: .openSessionFromIntent, object: nil, userInfo: ["sessionId": id])
             }
         }
-        .sheet(isPresented: $modelSettings) {
+        .sheet(isPresented: $modelSettings, onDismiss: navigationPresentationDidDismiss) {
             NavigationStack {
                 ModelsAndServicesView()
                     .toolbar {
@@ -147,6 +243,13 @@ struct VoiceContextRootView: View {
         }
         .task {
             MeetingAssistantController.shared.install()
+            XiaolanVoiceController.shared.install()
+            navigation.registerSupportedRoutes([
+                "chat", "chat.session", "recordings.list", "recording.detail", "reminders", "reminders.all", "schedule.day", "tasks.list",
+                "extensions", "extension.settings", "extension.skills", "extension.models", "extension.soul", "extension.memory",
+                "extension.mcp", "extension.hardware", "extension.terminal", "extension.browser", "extension.custom", "extension.custom_functions", "artifact.preview"
+            ])
+            if offloadPermission.pendingRequest == nil { navigationPresentationDidDismiss() }
             await recordings.prepare()
             migrateMeetings()
             MeetingWorkspaceBridge.installSkill()
@@ -161,6 +264,73 @@ struct VoiceContextRootView: View {
         .alert("会议资料暂不可用", isPresented: Binding(get: { workspaceError != nil }, set: { if !$0 { workspaceError = nil } })) {
             Button("好", role: .cancel) { workspaceError = nil }
         } message: { Text(workspaceError ?? "") }
+    }
+
+    private var rootPermissionPresenterEnabled: Bool {
+        guard previewArtifact == nil, !extensionPresentation, localItem == nil, !modelSettings,
+              !transcriptionModelDownload, results == nil, voiceForms.isEmpty else { return false }
+        if selection == .chat { return !chatDetailVisible }
+        if selection == .meetings { return voice.isEnabled }
+        return true
+    }
+
+    private func handleNavigation(_ command: AppNavigationCommand?) {
+        guard let command, navigation.isCurrent(command) else { return }
+        guard localItem == nil, !modelSettings, !transcriptionModelDownload, results == nil,
+              voiceForms.isEmpty, offloadPermission.pendingRequest == nil, permissionSource == nil else {
+            navigation.fail(commandID: command.id, message: "请先关闭当前弹窗，再跳转页面。")
+            return
+        }
+        if command.action == .back {
+            if selection == .meetings {
+                RecordingNavigationBridge.shared.perform(id: command.id, routeID: command.routeID, params: command.params, isBack: true)
+            }
+            return
+        }
+        guard !awaitingExtensionDismiss, !awaitingArtifactDismiss else { return }
+        if navigation.state.routeID == command.routeID, navigation.state.params == command.params,
+           !["recordings.list", "recording.detail"].contains(command.routeID) { return }
+        if extensionPresentation {
+            guard !extensionEditing else {
+                navigation.fail(commandID: command.id, message: "请先保存或关闭当前设置或编辑页面，再跳转。")
+                return
+            }
+            awaitingExtensionDismiss = true
+            NotificationCenter.default.post(name: Notification.Name("Yima.dismissExtensionPresentation"), object: nil)
+            return
+        }
+        if previewArtifact != nil {
+            awaitingArtifactDismiss = true
+            previewArtifact = nil
+            return
+        }
+        if command.routeID == "artifact.preview" {
+            Task { @MainActor in
+                do {
+                    let artifact = try AppArtifactStore.shared.load(id: command.params["artifact_id"] ?? "")
+                    try await AppArtifactStore.shared.validateSource(artifact)
+                    guard navigation.isCurrent(command) else { return }
+                    artifactCommandID = command.id
+                    previewArtifact = artifact
+                } catch { navigation.fail(commandID: command.id, message: error.localizedDescription) }
+            }
+            return
+        }
+        let tab: Tab
+        switch command.routeID {
+        case "chat", "chat.session": tab = .chat
+        case "recordings.list", "recording.detail": tab = .meetings
+        case "reminders", "reminders.all", "schedule.day", "tasks.list": tab = .reminders
+        default: tab = .extensions
+        }
+        if selection != tab { routingTab = tab; selection = tab }
+        if tab == .meetings {
+            RecordingNavigationBridge.shared.isActive = true
+            RecordingNavigationBridge.shared.perform(id: command.id, routeID: command.routeID, params: command.params)
+        }
+    }
+    private func navigationPresentationDidDismiss() {
+        NotificationCenter.default.post(name: Notification.Name("Yima.navigationPresentationDismissed"), object: nil)
     }
     private func presentPendingItem() {
         guard !lock.appIsLocked, let item = items.pendingItem else { return }
@@ -199,6 +369,9 @@ private struct VoiceContextExtensionsView: View {
     @State private var openedCustomFunction: CustomExtensionItem?
     @StateObject private var customFunctions = CustomExtensionsStore.shared
     @ObservedObject var browserPool: BrowserTabPool
+    @ObservedObject private var voice = XiaolanVoiceController.shared
+    @ObservedObject private var navigation = AppNavigationCenter.shared
+    @Environment(\.appNavigationIsActive) private var isActive
     private let columns = Array(repeating: GridItem(.flexible(), spacing: YimaDesign.Space.sm, alignment: .top), count: 4)
 
     var body: some View {
@@ -219,50 +392,133 @@ private struct VoiceContextExtensionsView: View {
                     extensionSection("工具") {
                         destinationTile(.terminal, title: AppLocalized("终端"), symbol: "terminal")
                         destinationTile(.browser, title: AppLocalized("浏览器"), symbol: "globe")
+                        XiaolanVoiceMenu {
+                            tile(AppLocalized("语音模式"), symbol: voice.isEnabled ? (voice.isPaused ? "mic.slash" : "mic.fill") : "mic")
+                        }
+                        .accessibilityValue(voice.isEnabled ? voice.status : "未开启")
+                        .accessibilityIdentifier("extensions-voice-mode")
                     }
                     extensionSection("我的与设置") {
-                        Button { settings = true } label: { tile(AppLocalized("设置"), symbol: "gearshape") }
+                        Button { navigation.userNavigationBegan(); settings = true } label: { tile(AppLocalized("设置"), symbol: "gearshape") }
                     }
                 }
                 .padding(YimaDesign.Layout.pageInset)
             }
             .buttonStyle(.plain)
             .background(YimaDesign.Color.canvas)
+            .appNavigationPage("extensions", canGoBack: false)
             .navigationTitle("拓展")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { VoiceRecordingStatusControl() }
             }
             .navigationDestination(for: Destination.self) { destination in
-                switch destination {
-                case .skills: SkillsManagementView()
-                case .providers: ModelsAndServicesView()
-                case .soul: SoulSettingsView()
-                case .memory: MemoryManagementView()
-                case .mcp: MCPIntegrationsView()
-                case .hardware: HardwareBridgeSettingsView()
-                case .terminal: terminalPage
-                case .browser: browserPage
-                case .customFunctions: CustomExtensionsManagementView(store: customFunctions)
+                Group {
+                    switch destination {
+                    case .skills: SkillsManagementView()
+                    case .providers: ModelsAndServicesView()
+                    case .soul: SoulSettingsView()
+                    case .memory: MemoryManagementView()
+                    case .mcp: MCPIntegrationsView()
+                    case .hardware: HardwareBridgeSettingsView()
+                    case .terminal: terminalPage
+                    case .browser: browserPage
+                    case .customFunctions: CustomExtensionsManagementView(store: customFunctions)
+                    }
                 }
+                .appNavigationPage(route(for: destination), onBack: { if !navigationPath.isEmpty { navigationPath.removeLast() } })
             }
         }
         .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
         .onAppear {
+            handleNavigation(navigation.command)
             if UserDefaults.standard.string(forKey: "pendingSettingsReopen") != nil,
                UserDefaults.standard.string(forKey: "settingsPresentationOwner") == "extensions" {
                 DispatchQueue.main.async { settings = true }
             }
         }
-        .sheet(isPresented: $settings) {
+        .onChange(of: navigation.command) { _, command in handleNavigation(command) }
+        .onChange(of: isActive) { _, active in if active { handleNavigation(navigation.command) } }
+        .sheet(isPresented: $settings, onDismiss: extensionPresentationDidDismiss) {
             SettingsSheet(showTerminal: $terminal, presentationOwner: "extensions")
+                .appNavigationPage("extension.settings")
+                .offloadPermissionDialog()
         }
-        .fullScreenCover(isPresented: $terminal) {
-            NavigationStack { ISHTerminalView(showCloseButton: true) }
+        .fullScreenCover(isPresented: $terminal, onDismiss: extensionPresentationDidDismiss) {
+            NavigationStack { ISHTerminalView(showCloseButton: true) }.offloadPermissionDialog()
         }
-        .sheet(isPresented: $browser) { BrowserSheetView(pool: browserPool) }
-        .fullScreenCover(item: $openedCustomFunction) { CustomExtensionBrowserView(item: $0) }
-        .sheet(isPresented: $addCustomFunction) { CustomExtensionEditor(store: customFunctions) }
+        .sheet(isPresented: $browser, onDismiss: extensionPresentationDidDismiss) { BrowserSheetView(pool: browserPool).offloadPermissionDialog() }
+        .fullScreenCover(item: $openedCustomFunction, onDismiss: extensionPresentationDidDismiss) { CustomExtensionBrowserView(item: $0).id($0.id) }
+        .sheet(isPresented: $addCustomFunction, onDismiss: extensionPresentationDidDismiss) { CustomExtensionEditor(store: customFunctions) }
+        .pausesXiaolanVoice(while: addCustomFunction)
+        .onChange(of: hasPresentation) { _, active in if active { publishPresentation() } }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.dismissExtensionPresentation"))) { _ in
+            settings = false; terminal = false; browser = false; openedCustomFunction = nil; addCustomFunction = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.extensionPresentationChanged"))) { note in
+            if note.userInfo?["active"] as? Bool == false { handleNavigation(navigation.command) }
+        }
+    }
+
+    private var hasPresentation: Bool { settings || terminal || browser || openedCustomFunction != nil || addCustomFunction }
+
+    private func publishPresentation() {
+        if hasPresentation, let route = navigation.state.routeID,
+           terminal || browser || addCustomFunction || !["extension.custom", "extension.settings"].contains(route) {
+            navigation.unmount(routeID: route, params: navigation.state.params)
+        }
+        NotificationCenter.default.post(name: Notification.Name("Yima.extensionPresentationChanged"), object: nil,
+                                        userInfo: ["active": hasPresentation, "editing": settings || addCustomFunction])
+    }
+
+    private func extensionPresentationDidDismiss() {
+        publishPresentation()
+        if !hasPresentation {
+            NotificationCenter.default.post(name: Notification.Name("Yima.navigationPresentationDismissed"), object: nil)
+        }
+    }
+
+    private func route(for destination: Destination) -> String {
+        switch destination {
+        case .skills: "extension.skills"
+        case .providers: "extension.models"
+        case .soul: "extension.soul"
+        case .memory: "extension.memory"
+        case .mcp: "extension.mcp"
+        case .hardware: "extension.hardware"
+        case .terminal: "extension.terminal"
+        case .browser: "extension.browser"
+        case .customFunctions: "extension.custom_functions"
+        }
+    }
+
+    private func handleNavigation(_ command: AppNavigationCommand?) {
+        guard isActive, let command, navigation.isCurrent(command), command.action == .navigate else { return }
+        guard !hasPresentation else { return }
+        let destinations: [String: Destination] = [
+            "extension.skills": .skills, "extension.models": .providers, "extension.soul": .soul,
+            "extension.memory": .memory, "extension.mcp": .mcp, "extension.hardware": .hardware,
+            "extension.terminal": .terminal, "extension.browser": .browser, "extension.custom_functions": .customFunctions
+        ]
+        guard command.routeID == "extensions" || command.routeID == "extension.settings" ||
+                command.routeID == "extension.custom" || destinations[command.routeID] != nil else { return }
+        guard !addCustomFunction else {
+            navigation.fail(commandID: command.id, message: "请先保存或取消自定义功能编辑，再跳转。")
+            return
+        }
+        if command.routeID == "extension.custom" {
+            guard let rawID = command.params["id"], let id = UUID(uuidString: rawID),
+                  let item = customFunctions.items.first(where: { $0.id == id }) else {
+                navigation.fail(commandID: command.id, message: "自定义功能已删除或不存在。")
+                return
+            }
+            openedCustomFunction = item
+        } else {
+            openedCustomFunction = nil
+        }
+        terminal = false; browser = false; addCustomFunction = false
+        settings = command.routeID == "extension.settings"
+        navigationPath = destinations[command.routeID].map { [$0] } ?? []
     }
 
     private var customFunctionsSection: some View {
@@ -309,6 +565,7 @@ private struct VoiceContextExtensionsView: View {
 
     private func destinationTile(_ destination: Destination, title: String, symbol: String) -> some View {
         NavigationLink(value: destination) { tile(title, symbol: symbol) }
+            .simultaneousGesture(TapGesture().onEnded { navigation.userNavigationBegan() })
     }
 
     private func tile(_ title: String, symbol: String) -> some View {

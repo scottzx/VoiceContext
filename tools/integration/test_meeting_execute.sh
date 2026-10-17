@@ -35,6 +35,7 @@ extension MeetingAssistantController {
 PY
 xcrun swiftc -default-isolation MainActor \
     "$MEETING_EXECUTE_CHECK_DIR/AgentToolTypes.swift" \
+    Vendor/Phone/src/ios/AgentKit/AgentRuntimePolicy.swift \
     Integration/App/MeetingAnswerUserTool.swift \
     Integration/App/MeetingTranscriptContext.swift \
     "$MEETING_EXECUTE_CHECK_DIR/Execute.swift" \

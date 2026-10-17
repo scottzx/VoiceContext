@@ -211,8 +211,8 @@ extension AIChatViewModel {
         // Agent migration (or was created outside AgentStore) and keeps the
         // historical full-toolset behavior via the `.standalone` default.
         if let row = await ChatStore.shared.getSession(sessionId) {
-            // Keep meeting replies behind answer_user after cache eviction or relaunch.
-            if row.source == "meeting_assistant" {
+            // Restore the interaction policy after cache eviction or relaunch.
+            if AgentRuntimePolicies.policy(for: row.source).restoresSourceOnLoad {
                 sessionSource = row.source
             }
             agentId = row.agentId

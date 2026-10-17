@@ -7,11 +7,18 @@ import Foundation
 @MainActor
 final class IOSAgentSessionRunner: AgentSessionRunning {
     static let shared = IOSAgentSessionRunner()
-    var meetingNoticeSystemPrompt: (@MainActor (String) -> String?)?
+    var noticeSystemPrompts: [String: @MainActor (String) -> String?] = [:]
 
     private init() {}
 
     func createSession(_ request: AgentSessionCreateRequest) async -> String? {
+        let profile: AgentProfile?
+        if let agentID = request.agentId {
+            guard let saved = await ChatStore.shared.getAgent(agentID), !saved.isArchived else { return nil }
+            profile = saved
+        } else {
+            profile = nil
+        }
         let vm = ViewModelCache.shared.createDraft()
         vm.sessionSource = request.source
         vm.agentId = request.agentId
@@ -20,6 +27,8 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
         vm.agentRole = request.role == "subagent" ? .executor : .main
         if let rawPolicy = request.toolPolicy, let policy = AgentToolPolicy(rawValue: rawPolicy) {
             vm.resolvedToolPolicy = policy
+        } else if let profile {
+            vm.resolvedToolPolicy = profile.toolPolicy
         }
 
         let sessionId = await vm.ensureSessionReturningId()
@@ -36,13 +45,20 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
             )
         }
 
+        var defaultModelEntryId = request.defaultModelEntryId
+        if let profile {
+            await ChatStore.shared.setMemoryEnabled(sessionId: sessionId, enabled: profile.memoryEnabled)
+            vm.memoryEnabled = profile.memoryEnabled
+            if defaultModelEntryId == nil { defaultModelEntryId = profile.defaultModelEntryId }
+        }
+
         if let inheritedSessionId = request.inheritModelFromSessionId,
            let binding = ProviderConfigStore.shared.binding(for: inheritedSessionId) {
             ProviderConfigStore.shared.setBinding(
                 SessionModelBinding(sessionId: sessionId, primarySource: binding.primarySource),
                 for: sessionId
             )
-        } else if let entryId = request.defaultModelEntryId,
+        } else if let entryId = defaultModelEntryId,
                   ProviderConfigStore.shared.entry(for: entryId) != nil {
             ProviderConfigStore.shared.setBinding(
                 SessionModelBinding(sessionId: sessionId, primarySource: .directEntry(modelEntryId: entryId)),
@@ -73,16 +89,22 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
     func run(_ request: AgentSessionRunRequest) async -> AgentSessionRunResult {
         let (vm, isFresh) = ViewModelCache.shared.getOrCreate(for: request.sessionId)
         if isFresh { await vm.loadSession() }
-        let isMeeting = request.source == "meeting_assistant"
-        // A recording reuses one session. A new command must never cancel or
-        // change the prompt of a task that is still running in that session.
-        if isMeeting && (vm.isProcessing || vm.isCompacting || vm.compactTask != nil
-            || vm.postCompactDrainPending || !vm.promptQueue.isEmpty
+        let runtimePolicy = AgentRuntimePolicies.policy(for: request.source)
+        let requiresIdle = runtimePolicy.requiresIdle
+        // An interaction adapter may require an idle session instead of
+        // interrupting an existing user turn or changing its prompt.
+        if requiresIdle && (vm.isProcessing || vm.isCompacting || vm.compactTask != nil
+            || vm.isTruncatingForRetry || vm.postCompactDrainPending || !vm.promptQueue.isEmpty
             || SessionActivityTracker.shared.isActive(request.sessionId)) {
             return .rejected
         }
+        #if VOICE_AGENT_FUSION
+        if runtimePolicy.requiresNavigationBinding {
+            vm.appNavigationVoiceGeneration = AppNavigationCenter.shared.voiceGeneration(sessionID: request.sessionId)
+        }
+        #endif
         vm.groupId = request.groupId
-        vm.agentId = request.agentId
+        if let agentID = request.agentId { vm.agentId = agentID }
         vm.agentRole = request.role == AgentRunRole.executor.rawValue ? .executor : .main
         vm.sessionSource = request.source
         vm.groupPromptBlock = request.systemPromptBlock
@@ -105,20 +127,23 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
 
         let countBefore = vm.messages.count
         let draft = vm.inputText
+        let draftAttachments = vm.attachments
         let queuedBefore = Set(vm.promptQueue.map(\.id))
         var accepted = false
         // Compaction also publishes isProcessing; only the later command
         // drain (or a direct send) confirms acceptance of this request.
-        let acceptance: AnyCancellable? = isMeeting ? vm.$isProcessing.sink { processing in
+        let acceptance: AnyCancellable? = requiresIdle ? vm.$isProcessing.sink { processing in
             if processing && !vm.isCompacting { accepted = true }
         } : nil
         defer { acceptance?.cancel() }
         AgentDirectoryCoordinator.shared.discardPendingGroupMessage(callerSessionId: request.sessionId)
         vm.inputText = request.prompt
+        vm.attachments = []
         vm.send()
-        if !isMeeting { accepted = vm.isProcessing }
+        if !requiresIdle { accepted = vm.isProcessing }
         vm.inputText = draft
-        if isMeeting && !accepted {
+        vm.attachments = draftAttachments
+        if requiresIdle && !accepted {
             let queuedIDs = Set(vm.promptQueue.map(\.id)).subtracting(queuedBefore)
             let deadline = Date().addingTimeInterval(request.timeoutSeconds > 0 ? request.timeoutSeconds : 120)
             while !accepted, !queuedIDs.isEmpty, Date() < deadline, !Task.isCancelled {
@@ -138,7 +163,7 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
             AgentDirectoryCoordinator.shared.discardPendingGroupMessage(callerSessionId: request.sessionId)
             return .rejected
         }
-        guard await AgentTurnAwaiter.awaitTurn(vm: vm, seconds: request.timeoutSeconds) else {
+        if !(await AgentTurnAwaiter.awaitTurn(vm: vm, seconds: request.timeoutSeconds)) {
             AgentDirectoryCoordinator.shared.discardPendingGroupMessage(callerSessionId: request.sessionId)
             return AgentSessionRunResult(text: nil, accepted: true, timedOut: true, cancelled: false)
         }
@@ -149,19 +174,21 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
 
     func resumeAfterAsyncToolResults(sessionId: String) async -> AgentSessionRunResult {
         let (vm, isFresh) = ViewModelCache.shared.getOrCreate(for: sessionId)
-        guard !vm.isProcessing, !vm.isCompacting, vm.compactTask == nil,
+        let runtimePolicy = AgentRuntimePolicies.policy(for: vm.sessionSource)
+        guard !vm.isProcessing, !vm.isCompacting, !vm.isTruncatingForRetry, vm.compactTask == nil,
               !vm.postCompactDrainPending, vm.promptQueue.isEmpty,
-              vm.sessionSource != "meeting_assistant" || !vm.canResume,
+              !runtimePolicy.requiresNoticeReplyBinding || !vm.canResume,
               !SessionActivityTracker.shared.isActive(sessionId) else { return .rejected }
         if isFresh {
             await vm.loadSession()
         } else {
             await vm.reloadMessagesFromDB(reason: "asyncToolResults")
         }
-        guard !vm.isProcessing, !vm.isCompacting, vm.compactTask == nil,
+        guard !vm.isProcessing, !vm.isCompacting, !vm.isTruncatingForRetry, vm.compactTask == nil,
               !vm.postCompactDrainPending, vm.promptQueue.isEmpty,
               !SessionActivityTracker.shared.isActive(sessionId) else { return .rejected }
-        if vm.sessionSource == "meeting_assistant" {
+        let restoredPolicy = AgentRuntimePolicies.policy(for: vm.sessionSource)
+        if restoredPolicy.requiresNoticeReplyBinding {
             // Loading the synthetic tool-result tail itself sets canResume.
             // Resume only once that notice really reached model history.
             guard let tail = vm.agentHistory.last, tail.role == .user, !tail.parts.isEmpty,
@@ -174,9 +201,16 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
                   }) else { return .rejected }
             if vm.canResume, let candidate = vm.messages.last(where: { $0.role == .assistant }),
                candidate.blocks.count > vm.committedBlockCount { return .rejected }
-            guard let prompt = meetingNoticeSystemPrompt?(sessionId) else { return .rejected }
+            guard let source = vm.sessionSource, let prompt = noticeSystemPrompts[source]?(sessionId) else { return .rejected }
+            #if VOICE_AGENT_FUSION
+            if restoredPolicy.requiresNavigationBinding {
+                // Completion can deliver its result, but has no new authority
+                // to replace the page the user is currently viewing.
+                vm.appNavigationVoiceGeneration = nil
+            }
+            #endif
             vm.agentRole = .main
-            vm.resolvedToolPolicy = .orchestrator
+            if let policy = restoredPolicy.toolPolicyOverride { vm.resolvedToolPolicy = policy }
             vm.groupPromptBlock = prompt
         }
         let countBefore = vm.messages.count

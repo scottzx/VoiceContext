@@ -202,6 +202,9 @@ struct MinisApp: App {
         AttributeQueryRecorder.install()
         // Enable in-app language override for String(localized:) and UIKit strings
         FusionPreferences.migrateLanguage()
+        #if VOICE_AGENT_FUSION
+        VoiceAgentConfiguration.install()
+        #endif
         Bundle.enableLanguageOverride()
         let lang = UserDefaults.standard.string(forKey: "appLanguage") ?? ""
         Bundle.setLanguage(lang.isEmpty ? nil : lang)

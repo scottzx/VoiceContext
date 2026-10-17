@@ -1,5 +1,7 @@
 import Foundation
 
+enum AgentToolPolicy { case standalone, orchestrator }
+
 // The production schema, argument validation, permission sequence and
 // cancellation handler are compiled unchanged; native iOS calls are faked.
 enum PermissionResult { case allowed, denied(String) }
@@ -31,6 +33,20 @@ enum PermissionResult { case allowed, denied(String) }
 
 @main struct MeetingAppleNativeChecks {
     @MainActor static func main() async {
+        for source in ["meeting_assistant", "xiaolan_voice", "third_voice"] {
+            AgentRuntimePolicies.register(source: source, policy: .init(
+                allowedTools: ["apple_native", "answer_user"], additionalTools: [MeetingAppleTool.definition],
+                replyDelivery: .init(definition: MeetingAnswerUserTool.definition,
+                    canRequest: { MeetingAnswerUserTool.canRequestDelivery(sessionID: $0) },
+                    reminder: MeetingAnswerUserTool.deliveryReminder)))
+        }
+        var requestID = UUID()
+        func bind(_ sid: String, id: UUID = UUID()) {
+            MeetingAnswerUserTool.bind(sessionID: sid, requestID: id) { _ in true }
+        }
+        bind("meeting-test", id: requestID)
+        bind("voice-test")
+        bind("third-test")
         func args(_ command: String = "apple-calendar", _ action: String = "list", _ values: [String] = []) -> [String: Any] {
             ["tool_title": "查日程", "command": command, "action": action, "arguments": values]
         }
@@ -117,6 +133,40 @@ enum PermissionResult { case allowed, denied(String) }
         queued.cancel(); MeetingAppleNativeBridge.pending!(); MeetingAppleNativeBridge.pending = nil
         let queuedResult = await queued.value
         precondition(!queuedResult.success && MeetingAppleNativeBridge.calls.count == 1)
+        MeetingAppleNativeBridge.hold = false
+        let independentVoice = await invoke(args(), source: "xiaolan_voice", sid: "voice-test")
+        precondition(independentVoice.success && permissions.checks.last!.1 == "voice-test" && MeetingAppleNativeBridge.calls.count == 2,
+                     "Independent voice may use the same native capabilities and permissions without requiring a recording")
+        let third = await invoke(args(), source: "third_voice", sid: "third-test")
+        precondition(third.success, "A registered adapter uses the same capability and binding without engine name checks")
+        let missingBinding = await invoke(args(), source: "third_voice", sid: "unbound")
+        precondition(!missingBinding.success)
+
+        // A late permission grant cannot revive an unbound request even if the
+        // caller's Task itself was never cancelled.
+        let beforeClosedRequest = MeetingAppleNativeBridge.calls.count
+        permissions.hold = true
+        let closedWhileAuthorizing = Task { await invoke(args()) }
+        for _ in 0..<1_000 { if permissions.pending != nil { break }; await Task.yield() }
+        precondition(permissions.pending != nil)
+        MeetingAnswerUserTool.unbind(sessionID: "meeting-test", requestID: requestID)
+        permissions.pending!.resume(returning: .allowed); permissions.pending = nil
+        let closedAuthResult = await closedWhileAuthorizing.value
+        precondition(!closedAuthResult.success)
+        precondition(MeetingAppleNativeBridge.calls.count == beforeClosedRequest)
+        permissions.hold = false
+        requestID = UUID(); bind("meeting-test", id: requestID)
+
+        MeetingAppleNativeBridge.hold = true
+        let closedWhileQueued = Task { await invoke(args()) }
+        for _ in 0..<1_000 { if MeetingAppleNativeBridge.pending != nil { break }; await Task.yield() }
+        precondition(MeetingAppleNativeBridge.pending != nil)
+        MeetingAnswerUserTool.unbind(sessionID: "meeting-test", requestID: requestID)
+        MeetingAppleNativeBridge.pending!(); MeetingAppleNativeBridge.pending = nil
+        let closedQueueResult = await closedWhileQueued.value
+        precondition(!closedQueueResult.success)
+        precondition(MeetingAppleNativeBridge.calls.count == beforeClosedRequest)
+        MeetingAppleNativeBridge.hold = false
         print("Meeting native Apple checks passed: strict dispatch builder, literal tokens, six native capabilities, permissions, wrong-session denial and cancellation before dispatch")
     }
 }

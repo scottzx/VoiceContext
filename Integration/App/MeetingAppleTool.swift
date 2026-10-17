@@ -5,7 +5,7 @@ import Foundation
 enum MeetingAppleTool {
     static let definition = AgentToolDefinition(
         name: "apple_native",
-        description: "Use Apple system calendar/reminders, location, maps, weather or device information directly during the meeting. Commands/actions: apple-calendar list/freebusy/calendars/create/update/delete; apple-reminders list/create/update/complete/delete; apple-location current/geocode/forward; apple-maps search/route/eta; apple-weather current/hourly/minute/daily/alerts/report; apple-device info/battery/storage. Preserve user permissions. Query before changing existing items; only mutate a specifically authorized item. Use exact IDs/list names from results and verified dates. A reminder due date alone is not an alarm. No terminal, browser, URL opening, microphone, audio playback or speech synthesis. Speak to the user only with answer_user.",
+        description: "Use Apple system calendar/reminders, location, maps, weather or device information directly during the active voice turn. Commands/actions: apple-calendar list/freebusy/calendars/create/update/delete; apple-reminders list/create/update/complete/delete; apple-location current/geocode/forward; apple-maps search/route/eta; apple-weather current/hourly/minute/daily/alerts/report; apple-device info/battery/storage. Preserve user permissions. Query before changing existing items; only mutate a specifically authorized item. Use exact IDs/list names from results and verified dates. A reminder due date alone is not an alarm. No terminal, browser, URL opening, microphone, audio playback or speech synthesis. Speak to the user only with answer_user.",
         parameters: [
             "tool_title": AgentToolParam(type: .string, description: "Short action summary in the user's language"),
             "command": AgentToolParam(type: .string, description: "Native Apple capability", enumValues: ["apple-calendar", "apple-reminders", "apple-location", "apple-maps", "apple-weather", "apple-device"]),
@@ -113,21 +113,29 @@ enum MeetingAppleTool {
     }
 
     static func execute(_ args: [String: Any], sessionID: String?, sessionSource: String?) async -> (output: String, success: Bool) {
-        guard sessionSource == "meeting_assistant", let sessionID, !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return ("Native Apple tools require an active meeting assistant session.", false)
+        let policy = AgentRuntimePolicies.policy(for: sessionSource)
+        guard policy.additionalTools.contains(where: { $0.name == definition.name }),
+              policy.allowedToolNames(noticeDriven: false)?.contains(definition.name) != false,
+              let sessionID, !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let requestID = MeetingAnswerUserTool.activeRequestID(sessionID: sessionID) else {
+            return ("Native Apple tools require a configured capability and active reply request.", false)
         }
         do {
             let request = try invocation(args)
             for command in request.permissions {
-                guard !Task.isCancelled else { return ("Meeting request cancelled; nothing executed.", false) }
+                guard !Task.isCancelled else { return ("Voice request cancelled; nothing executed.", false) }
                 let result = await OffloadPermissionManager.shared.checkPermission(for: command, sessionId: sessionID, fullCommand: ([request.command] + request.arguments).joined(separator: " "))
                 if case .denied(let reason) = result { return (reason, false) }
             }
-            guard !Task.isCancelled else { return ("Meeting request cancelled; nothing executed.", false) }
+            guard !Task.isCancelled, MeetingAnswerUserTool.activeRequestID(sessionID: sessionID) == requestID else {
+                return ("Request is no longer active; nothing executed.", false)
+            }
             let cancellation = MeetingAppleCancellation()
             let result: (output: String, success: Bool) = await withTaskCancellationHandler {
                 await withCheckedContinuation { continuation in
-                    MeetingAppleNativeBridge.executeCommand(request.command, arguments: request.arguments, shouldExecute: { !cancellation.isCancelled }) { output, exitCode in
+                    MeetingAppleNativeBridge.executeCommand(request.command, arguments: request.arguments, shouldExecute: {
+                        !cancellation.isCancelled && requestIsActive(sessionID: sessionID, requestID: requestID)
+                    }) { output, exitCode in
                         continuation.resume(returning: (output, exitCode == 0))
                     }
                 }
@@ -135,10 +143,19 @@ enum MeetingAppleTool {
                 cancellation.cancel()
             }
             if Task.isCancelled {
-                return ("Meeting request cancelled. A native operation already started may have completed; check its result before repeating a mutation.", false)
+                return ("Voice request cancelled. A native operation already started may have completed; check its result before repeating a mutation.", false)
             }
             return result
         } catch { return (error.localizedDescription, false) }
+    }
+
+    nonisolated private static func requestIsActive(sessionID: String, requestID: UUID) -> Bool {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { MeetingAnswerUserTool.activeRequestID(sessionID: sessionID) == requestID }
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated { MeetingAnswerUserTool.activeRequestID(sessionID: sessionID) == requestID }
+        }
     }
 }
 

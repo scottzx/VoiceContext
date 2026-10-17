@@ -30,6 +30,9 @@ nonisolated struct MeetingWakeCommandCapture: Sendable {
         var speechSamples: Int64 = 0
         var lastSpeechEnd: Int64?
         var hasCommand = false
+        let finishOnSilence: Bool
+        let acousticWake: Bool
+        var lastUtteranceSpeechEnd: Int64?
     }
 
     private static let sampleRate: Int64 = 16_000
@@ -60,6 +63,14 @@ nonisolated struct MeetingWakeCommandCapture: Sendable {
         pendingEvent = nil
     }
 
+    /// A deliberate tap authorizes one command without an acoustic keyword.
+    /// Use the same bounded VAD collection, retaining audio from the tap onward.
+    mutating func beginCommand(at sample: Int64, finishOnSilence: Bool = false) {
+        reset()
+        capture = Capture(wakeEnd: sample - Self.wakeTail, start: sample,
+                          finishOnSilence: finishOnSilence, acousticWake: false)
+    }
+
     mutating func append(samples: [Float], startingAt startSample: Int64, isSpeech: Bool) -> Event? {
         guard !samples.isEmpty else { return nil }
         let interrupted = expectedSample.map { $0 != startSample } ?? false
@@ -78,11 +89,12 @@ nonisolated struct MeetingWakeCommandCapture: Sendable {
 
     /// Replays the recent audio so decoder latency cannot discard a same-sentence command.
     @discardableResult
-    mutating func wake(startSample: Int64, endSample: Int64) -> Bool {
+    mutating func wake(startSample: Int64, endSample: Int64, finishOnSilence: Bool = false) -> Bool {
         guard !isActive, let first = recent.first, let latest = expectedSample,
               startSample >= first.start, endSample > startSample, endSample <= latest else { return false }
         let audioStart = max(first.start, startSample - 1_280)
-        capture = Capture(wakeEnd: endSample, start: audioStart)
+        capture = Capture(wakeEnd: endSample, start: audioStart,
+                          finishOnSilence: finishOnSilence, acousticWake: true)
         for frame in recent where frame.end > audioStart {
             let start = max(audioStart, frame.start)
             let replay = Frame(samples: Array(frame.samples[Int(start - frame.start)...]),
@@ -116,6 +128,7 @@ nonisolated struct MeetingWakeCommandCapture: Sendable {
     private mutating func consume(_ frame: Frame) -> Event? {
         guard var current = capture else { return nil }
         capture = nil // Transfer ownership before appending; do not copy the growing PCM buffer each window.
+        if frame.isSpeech { current.lastUtteranceSpeechEnd = frame.end }
         let eligibleStart = max(frame.start, current.wakeEnd + Self.wakeTail)
         let hasSpeech = frame.isSpeech && frame.end > eligibleStart
         if hasSpeech {
@@ -131,8 +144,16 @@ nonisolated struct MeetingWakeCommandCapture: Sendable {
             current.hasCommand = current.speechSamples >= Self.minimumSpeech
         }
 
-        let quietEnd = (current.lastSpeechEnd ?? current.wakeEnd) + Self.quietLimit
-        let finished = current.hasCommand && !hasSpeech && frame.end >= quietEnd
+        let quietEnd = current.finishOnSilence
+            ? max(current.lastUtteranceSpeechEnd ?? current.wakeEnd, current.wakeEnd) + Self.quietLimit
+            : (current.lastSpeechEnd ?? current.wakeEnd) + Self.quietLimit
+        // Independent voice transcribes the entire wake utterance, including
+        // the keyword alone and commands shorter than the post-keyword tail.
+        // A silent direct tap has no acoustic authorization and still times out.
+        let canFinishUtterance = current.finishOnSilence
+            && (current.acousticWake || current.lastUtteranceSpeechEnd != nil)
+        let finished = (canFinishUtterance ? !frame.isSpeech : current.hasCommand && !hasSpeech)
+            && frame.end >= quietEnd
         if let speechStart = current.speechStart,
            frame.end >= speechStart + Self.commandLimit,
            !finished || quietEnd > speechStart + Self.commandLimit {

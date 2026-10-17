@@ -19,6 +19,12 @@ public final class VoiceRecordingWorkspace: ObservableObject {
     }
 
     public var showsRecording: Bool { model.showsSessionChrome }
+    public var hasUnfinishedRecording: Bool { model.showsSessionChrome || model.isStartingRecording }
+    public var activeRecordingID: UUID? { model.activeRecordingID }
+
+    public func makeIndependentVoiceInput() -> IndependentVoiceInput {
+        model.makeIndependentVoiceInput()
+    }
 
     public func meetings(start: Binding<Bool>, stop: Binding<Bool>) -> AnyView {
         AnyView(WorkspaceMeetings(model: model, error: startupError, ready: ready, start: start, stop: stop))

@@ -592,6 +592,10 @@ final class RecordingCoreModel {
 
     func start(title: String? = nil, isMeeting: Bool = false) async {
         guard !isStartingRecording, !showsSessionChrome else { return }
+        if let reason = RecordingAudioBridge.recordingStartBlockReason {
+            notice = reason
+            return
+        }
         isStartingRecording = true
         defer { isStartingRecording = false }
         notice = nil
@@ -601,6 +605,10 @@ final class RecordingCoreModel {
         guard permission == .granted else {
             notice = MicrophoneAccess.deniedStartMessage
             await refresh()
+            return
+        }
+        if let reason = RecordingAudioBridge.recordingStartBlockReason {
+            notice = reason
             return
         }
         do {
@@ -631,6 +639,10 @@ final class RecordingCoreModel {
 
     func append(recordingID: UUID) async {
         guard !isStartingRecording, !showsSessionChrome else { return }
+        if let reason = RecordingAudioBridge.recordingStartBlockReason {
+            notice = reason
+            return
+        }
         isStartingRecording = true
         defer { isStartingRecording = false }
         notice = nil
@@ -638,6 +650,10 @@ final class RecordingCoreModel {
         guard permission == .granted else {
             notice = MicrophoneAccess.deniedStartMessage
             await refresh()
+            return
+        }
+        if let reason = RecordingAudioBridge.recordingStartBlockReason {
+            notice = reason
             return
         }
         do {
@@ -657,6 +673,10 @@ final class RecordingCoreModel {
     func pauseOrResume() async {
         do {
             if presentation == .paused || presentation == .interrupted {
+                if let reason = RecordingAudioBridge.recordingStartBlockReason {
+                    notice = reason
+                    return
+                }
                 try await coordinator.resume()
             } else {
                 try await coordinator.pause()
@@ -3064,6 +3084,10 @@ final class RecordingCoreModel {
     }
 
     #if VOICE_AGENT_FUSION
+    func makeIndependentVoiceInput() -> IndependentVoiceInput {
+        IndependentVoiceInput(inferenceService: inferenceService)
+    }
+
     func setMeetingAssistantEnabled(_ enabled: Bool) {
         var reason: String?
         if enabled {

@@ -6,7 +6,7 @@ import Foundation
 enum MeetingAnswerUserTool {
     static let definition = AgentToolDefinition(
         name: "answer_user",
-        description: "Deliver one public response for the current meeting turn: a brief acknowledgement of a verified task-start receipt, a verified completion result, or a necessary question. Starting a task is not completing it; later background completion gets a separate delivery turn. Only the explicit text argument is displayed and spoken by the host; ordinary assistant text and reasoning are not delivered. Keep it brief, factual and in the user's language. A delivered/already_delivered/in_progress receipt must not trigger another answer or repeat business operations. A stale receipt means the meeting request is no longer available; do not retry its actions.",
+        description: "Deliver one public response for the current voice turn: a brief acknowledgement of a verified task-start receipt, a verified completion result, or a necessary question. Starting a task is not completing it; later background completion gets a separate delivery turn. Only the explicit text argument is displayed and spoken by the host; ordinary assistant text and reasoning are not delivered. Keep it brief, factual and in the user's language. A delivered/already_delivered/in_progress receipt must not trigger another answer or repeat business operations. A stale receipt means the voice request is no longer available; do not retry its actions.",
         parameters: [
             "text": AgentToolParam(type: .string, description: "The public answer only: 1–2000 characters, usually one to three brief sentences. No internal reasoning or tool plans.")
         ],
@@ -39,6 +39,12 @@ enum MeetingAnswerUserTool {
         return binding.delivered
     }
 
+    /// Business tools must belong to the live request and finish before its answer.
+    static func activeRequestID(sessionID: String) -> UUID? {
+        guard !Task.isCancelled, let binding = bindings[sessionID], !binding.claimed else { return nil }
+        return binding.requestID
+    }
+
     /// A missing tool call may get one delivery-only round. Never retry a
     /// claimed answer, including an in-flight or rejected/stale delivery.
     static func canRequestDelivery(sessionID: String?) -> Bool {
@@ -49,7 +55,7 @@ enum MeetingAnswerUserTool {
     static let deliveryReminder = """
         <system-reminder>
         [meeting-answer-delivery]
-        本回合尚未通过 answer_user 交付公开答复，普通文字不算交付。这是唯一一次补交付机会，不是新任务。
+        本回合尚未实际调用 answer_user 工具交付公开答复，普通文字或写出工具名都不算交付。这是唯一一次补交付机会，不是新任务。
         只根据本回合已有的已验证工具结果，调用一次 answer_user，参数只传 text。简短告知真实结果、已确认的任务启动状态或必要的问题，不包含思考过程。
         不得重新查询、重复创建/修改事项、重派子任务或调用其他工具。未确认的结果不能声称成功；如任务失败或资料不足，直接用 answer_user 如实告知。
         </system-reminder>
@@ -57,8 +63,8 @@ enum MeetingAnswerUserTool {
 
     static func execute(_ args: [String: Any], sessionID: String?, sessionSource: String?) async
         -> (output: String, success: Bool) {
-        guard sessionSource == "meeting_assistant", let sessionID else {
-            return receipt("wrong_session", success: false, message: "answer_user is only available to meeting_assistant sessions.")
+        guard AgentRuntimePolicies.policy(for: sessionSource).replyDelivery?.definition.name == definition.name, let sessionID else {
+            return receipt("wrong_session", success: false, message: "This interaction has no configured public-answer delivery capability.")
         }
         guard args.count == 1, let raw = args["text"] as? String,
               raw.count <= 2_000 else {
@@ -69,7 +75,7 @@ enum MeetingAnswerUserTool {
             return receipt("invalid_arguments", success: false, message: "text must not be empty or whitespace.")
         }
         guard !Task.isCancelled, var binding = bindings[sessionID] else {
-            return receipt("stale", success: false, message: "No active meeting request. Do not repeat its business operations.")
+            return receipt("stale", success: false, message: "No active voice request. Do not repeat its business operations.")
         }
         if binding.claimed {
             if binding.delivered {

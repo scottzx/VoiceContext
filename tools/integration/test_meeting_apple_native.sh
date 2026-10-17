@@ -6,6 +6,8 @@ trap 'rm -rf "$MEETING_APPLE_CHECK_DIR"' EXIT
 sed -n '1,/\/\/ MARK: - Agent Messages/p' Vendor/Phone/src/ios/Providers/AgentProvider.swift > "$MEETING_APPLE_CHECK_DIR/AgentToolTypes.swift"
 xcrun swiftc -default-isolation MainActor \
     "$MEETING_APPLE_CHECK_DIR/AgentToolTypes.swift" \
+    Vendor/Phone/src/ios/AgentKit/AgentRuntimePolicy.swift \
+    Integration/App/MeetingAnswerUserTool.swift \
     Integration/App/MeetingAppleTool.swift tools/integration/test_meeting_apple_native.swift \
     -o "$MEETING_APPLE_CHECK_DIR/check"
 "$MEETING_APPLE_CHECK_DIR/check"

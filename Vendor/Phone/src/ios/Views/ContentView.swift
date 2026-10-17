@@ -831,6 +831,10 @@ enum ToolSheet: String, Identifiable {
 }
 
 struct ContentView: View {
+    #if VOICE_AGENT_FUSION
+    @ObservedObject private var appNavigation = AppNavigationCenter.shared
+    @Environment(\.appNavigationIsActive) private var appNavigationIsActive
+    #endif
     /// When set, this screen shows only the given agent's sessions and acts as
     /// that agent's history list rather than the app's root. Left nil at the
     /// root (and for the flavor packs that still use the chat list as home),
@@ -1237,7 +1241,44 @@ struct ContentView: View {
     /// override where the user just chose to be.
     private static let pendingBackgroundNavigationTTL: TimeInterval = 90
 
-    var body: some View { workspaceLifecycle }
+    var body: some View {
+        workspaceLifecycle
+            #if VOICE_AGENT_FUSION
+            .onChange(of: appNavigation.command) { _, command in handleAppNavigation(command) }
+            .onChange(of: appNavigationIsActive) { _, active in if active { handleAppNavigation(appNavigation.command) } }
+            .onAppear { handleAppNavigation(appNavigation.command) }
+            .onChange(of: isWideLayout ? selectedSessionId != nil : !navigationPath.isEmpty, initial: true) { _, visible in
+                if agentFilter == nil {
+                    NotificationCenter.default.post(name: Notification.Name("Yima.chatDetailVisibilityChanged"), object: nil,
+                                                    userInfo: ["visible": visible])
+                }
+            }
+            #endif
+    }
+
+    #if VOICE_AGENT_FUSION
+    private func handleAppNavigation(_ command: AppNavigationCommand?) {
+        guard agentFilter == nil, appNavigationIsActive, let command, appNavigation.isCurrent(command), command.action == .navigate else { return }
+        if command.routeID == "chat" {
+            if isWideLayout { selectedSessionId = nil }
+            else { commitNavigationPath(NavigationPath()) }
+        } else if command.routeID == "chat.session", let sessionID = command.params["session_id"] {
+            Task { @MainActor in
+                guard await ChatStore.shared.sessionExists(id: sessionID) else {
+                    appNavigation.fail(commandID: command.id, message: "对话已删除或不存在。")
+                    return
+                }
+                guard appNavigation.isCurrent(command), appNavigationIsActive else { return }
+                guard !SessionLockStore.shared.isLocked(sessionID) else {
+                    appNavigation.fail(commandID: command.id, message: "请先手动解锁此对话。")
+                    return
+                }
+                if isWideLayout { openSession(sessionID) }
+                else { switchToSession(sessionID) }
+            }
+        }
+    }
+    #endif
 
     private var workspaceLayout: some View {
         GeometryReader { geo in
@@ -1960,6 +2001,9 @@ struct ContentView: View {
     private var stackLayout: some View {
         NavigationStack(path: $navigationPath) {
             sessionList(useNavigationLinks: true)
+                #if VOICE_AGENT_FUSION
+                .appNavigationPage("chat", canGoBack: false)
+                #endif
                 .navigationDestination(for: String.self) { id in
                     // `.id(id)` mirrors detailView (iPad): navigationDestination
                     // views are identified by stack depth, not path value, so
@@ -1981,6 +2025,9 @@ struct ContentView: View {
                             initialSession: isDraft ? nil : sessionForRow(id),
                             initialPrompt: meetingPrompts[id]
                         )
+                            #if VOICE_AGENT_FUSION
+                            .appNavigationPage("chat.session", params: ["session_id": id], onBack: { commitNavigationPath(NavigationPath()) })
+                            #endif
                             .id(id)
                             .onAppear {
                                 if currentStackSessionId != id {

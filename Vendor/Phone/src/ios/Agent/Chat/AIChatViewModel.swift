@@ -129,6 +129,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// have changed.
     var groupPromptBlock: String?
 
+    var runtimePolicy: AgentRuntimePolicy { AgentRuntimePolicies.policy(for: sessionSource) }
+
     /// Whether GLOBAL.md and the recent daily logs get injected into this
     /// turn's system prompt. Lite mode drops them for the same reason it drops
     /// the memory tools: the injection is unbounded user prose, and the point
@@ -140,15 +142,18 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// ones actually doing the work.
     var effectiveToolPolicy: AgentToolPolicy {
         if agentRole == .executor { return .standalone }
-        #if VOICE_AGENT_FUSION
-        if sessionSource == "meeting_assistant" { return .orchestrator }
-        #endif
-        return resolvedToolPolicy
+        return runtimePolicy.toolPolicyOverride ?? resolvedToolPolicy
     }
 
     /// Cached copy of the owning agent's policy, refreshed by `loadSession()`.
     /// Defaults to `.standalone` so an unresolved VM keeps historical behavior.
     var resolvedToolPolicy: AgentToolPolicy = .standalone
+
+    #if VOICE_AGENT_FUSION
+    /// Captured once by the runner when accepting an explicit voice request.
+    /// Tool dispatch must not obtain a fresh generation for an older turn.
+    var appNavigationVoiceGeneration: UInt64?
+    #endif
 
     /// Short unique ID for this ViewModel instance (for debugging lifecycle).
     let vmInstanceId = UUID().uuidString.prefix(6)
@@ -1001,8 +1006,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         chatMode == .lite
             && agentRole == .main
             && groupId == nil
-            && sessionSource != "hardware"
-            && sessionSource != "meeting_assistant"
+            && runtimePolicy.allowsLiteMode
     }
 
     // MARK: - Session Stats
@@ -1731,7 +1735,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     private var canSpeakNow: Bool {
         // Enabled AND not muted AND not capturing. `canPlay` folds in the temporary
         // mute (capsule speaker) on top of the full on/off `isEnabled`.
-        sessionSource != "meeting_assistant" && VoiceOutputState.shared.canPlay
+        runtimePolicy.allowsAutomaticSpeech && VoiceOutputState.shared.canPlay
             && !VoiceModePreference.shared.isCapturing && !AudioSessionCoordinator.shared.isRecording
     }
 
@@ -1913,6 +1917,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// orchestrator/executor split lands everywhere (including the provider-
     /// fallback re-assembly) without touching those sites.
     private var baseSystemPrompt: String {
+        if agentRole != .executor, let prompt = runtimePolicy.prompt {
+            let context = isNoticeDriven ? "" : groupPromptBlock.map { $0 + "\n" } ?? ""
+            return context + prompt(agentId, memoryEnabled, isNoticeDriven)
+        }
         // [T-lite-mode-small-local-models] Lite mode replaces the whole
         // prompt rather than trimming it: the operator prompt's value is that
         // its parts reinforce each other, and half of it is instructions for
@@ -1938,8 +1946,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             return groupBlock + OrchestratorPrompt.render(
                 agentId: agentId,
                 memoryEnabled: memoryEnabled,
-                includeAgentDirectory: groupId == nil,
-                meetingVoiceMode: isMeetingCoordinator
+                includeAgentDirectory: groupId == nil
             ) + hardwareBlock
         case .standalone:
             // Executors get the full operator prompt below — it was always
@@ -2154,12 +2161,22 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// we land an authoritative override at the end of the prompt so the
     /// model knows the tools won't be registered, the memory files won't
     /// be injected, and what to tell the user if they ask about memory.
-    private var memoryStatusFragment: String {
+    func memoryStatusFragment(tools: [AgentToolDefinition]) -> String {
         // [T-lite-mode-small-local-models] Nothing to override in lite mode —
         // its prompt never mentions memory_get / memory_write, so a paragraph
         // explaining which of them are registered is pure noise in a context
         // deliberately kept short.
         if liteModeActive { return "" }
+        let allowed = agentRole == .executor ? nil : runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven)
+        let memoryTools = Set(tools.map(\.name)).intersection(["memory_get", "memory_write"])
+            .intersection(allowed ?? ["memory_get", "memory_write"])
+        let policyDisablesMemory = allowed.map { $0.isDisjoint(with: ["memory_get", "memory_write"]) } ?? false
+        if policyDisablesMemory || (memoryEnabled && memoryTools.isEmpty) {
+            return "\n\nMemory tools are unavailable for this round. Use the existing context and verified results; do not start memory operations."
+        }
+        if memoryEnabled && memoryTools != ["memory_get", "memory_write"] && agentRole != .executor {
+            return "\n\nMemory tools available for this round: \(memoryTools.sorted().joined(separator: ", ")). Other memory operations are not registered."
+        }
         if memoryEnabled {
             // [T-agent-subagent-memory-readonly] This footer is authoritative —
             // it overrides anything said earlier in the prompt — so it must not
@@ -2382,7 +2399,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// with no way to answer a "compact before sending?" prompt. A group
     /// member's thread is one: the orchestrator is mid-round waiting on it.
     var isHeadlessSession: Bool {
-        sessionSource == "shortcut" || sessionSource == "hardware" || sessionSource == "group" || sessionSource == "meeting_assistant"
+        runtimePolicy.headless
     }
 
     func send() {
@@ -5158,9 +5175,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 userSystemPrompt += "\n\n" + dailyFragment
             }
         }
-        // Authoritative memory-status footer (overrides any earlier
-        // baseSystemPrompt mentions when memory is disabled).
-        userSystemPrompt += memoryStatusFragment
+        // The authoritative memory footer is added per provider request using
+        // that round's actual tool list, including delivery-only repair.
 
         let promptBuildMs = (CFAbsoluteTimeGetCurrent() - loopSetupStart) * 1000
         logger.info("⏱️ [runAgentLoop] prompt build elapsed=\(String(format: "%.1f", promptBuildMs))ms history=\(self.agentHistory.count)")
@@ -5327,37 +5343,33 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // that keeps hitting the threshold can't compact forever; when the cap
         // is reached and we're still near capacity, the loop stops as exhausted.
         var compactionsThisLoop = 0
-        var meetingAnswerDeliveryRound = false
+        var replyDeliveryRound = false
 
-        // [T-meeting-answer-user-recovery] A clean stop is not a public
-        // meeting answer until answer_user is called. Recover once with a
+        // [T-meeting-answer-user-recovery] A configured explicit delivery
+        // remains incomplete at a clean stop until its tool is called. Recover once with a
         // delivery-only tool surface, using the results already in history.
-        func requestMeetingAnswerDelivery(after stopReason: AgentStopReason?, allowEmptyEndTurn: Bool = false) async -> Bool {
-            #if VOICE_AGENT_FUSION
-            guard isMeetingCoordinator else { return false }
-            guard !meetingAnswerDeliveryRound,
+        func requestReplyDelivery(after stopReason: AgentStopReason?, allowEmptyEndTurn: Bool = false) async -> Bool {
+            guard agentRole != .executor, let delivery = runtimePolicy.replyDelivery else { return false }
+            guard !replyDeliveryRound,
                   stopReason == .endTurn, (!canResume || allowEmptyEndTurn), !userDidCancel,
                   promptQueue.isEmpty,
-                  MeetingAnswerUserTool.canRequestDelivery(sessionID: sessionId) else {
-                logger.info("[MeetingAnswer] No recovery: recoveryRound=\(meetingAnswerDeliveryRound) stop=\(String(describing: stopReason)) resumable=\(canResume) cancelled=\(userDidCancel) queued=\(promptQueue.count) replyOpen=\(MeetingAnswerUserTool.canRequestDelivery(sessionID: sessionId))")
+                  runtimePolicy.replyDelivery?.canRequest(sessionId) == true else {
+                logger.info("[ReplyDelivery] No recovery: recoveryRound=\(replyDeliveryRound) stop=\(String(describing: stopReason)) resumable=\(canResume) cancelled=\(userDidCancel) queued=\(promptQueue.count) replyOpen=\(runtimePolicy.replyDelivery?.canRequest(sessionId) == true)")
                 return false
             }
-            meetingAnswerDeliveryRound = true
-            var reminder = AgentMessage(role: .user, parts: [.text(MeetingAnswerUserTool.deliveryReminder)])
+            replyDeliveryRound = true
+            var reminder = AgentMessage(role: .user, parts: [.text(delivery.reminder)])
             guard let persistedID = await persistAgentMessage(reminder) else { return false }
             reminder.dbMessageId = persistedID
             agentHistory.append(reminder)
             guard !Task.isCancelled, !userDidCancel,
-                  MeetingAnswerUserTool.canRequestDelivery(sessionID: sessionId) else { return false }
+                  runtimePolicy.replyDelivery?.canRequest(sessionId) == true else { return false }
             // Dispatch validates against this same list, so even hallucinated
             // Apple/write/spawn calls cannot repeat business work in recovery.
-            tools.removeAll { $0.name != "answer_user" }
+            tools = [delivery.definition]
             if allowEmptyEndTurn { canResume = false }
-            logger.info("[MeetingAnswer] Missing answer_user at clean stop; requesting one delivery-only round")
+            logger.info("[ReplyDelivery] Missing configured reply delivery at clean stop; requesting one delivery-only round")
             return true
-            #else
-            return false
-            #endif
         }
 
         loopLabel: while turnCount < Self.maxAgentTurns {
@@ -5529,9 +5541,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // preflight keep the full `tools`, because those validate arguments
             // against a schema and must not be affected by visibility.
             let roundTools = hooks.tools(tools)
-            let requiredToolName = meetingAnswerDeliveryRound ? "answer_user" : nil
-            if isMeetingCoordinator {
-                logger.info("[MeetingAnswer] Request round=\(turnCount) requiredTool=\(requiredToolName ?? "auto") tools=\(roundTools.map(\.name).joined(separator: ","))")
+            let requiredToolName = replyDeliveryRound ? runtimePolicy.replyDelivery?.definition.name : nil
+            if runtimePolicy.replyDelivery != nil {
+                logger.info("[ReplyDelivery] Request round=\(turnCount) requiredTool=\(requiredToolName ?? "auto") tools=\(roundTools.map(\.name).joined(separator: ","))")
             }
 
             CrashReporter.shared.setLastAPI(provider: provider.name, model: activeModelForOffload.id)
@@ -5629,7 +5641,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 provider: provider,
                 messages: contextHistory,
                 baseSystemPrompt: baseSystemPrompt,
-                systemPrompt: userSystemPrompt,
+                systemPrompt: userSystemPrompt + memoryStatusFragment(tools: roundTools),
                 tools: roundTools,
                 requiredToolName: requiredToolName,
                 model: activeModel,
@@ -5684,7 +5696,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         userSystemPrompt += "\n\n" + dailyFragment
                     }
                 }
-                userSystemPrompt += memoryStatusFragment
                 fallbackTrigger += 1
                 if !fallbackReasons.isEmpty {
                     // Resync the assistant message index by its stable id before
@@ -5723,15 +5734,13 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // HTTP 200) and the endTurn-with-zero-output path (OpenAI gpt-5.5
             // on long contexts: `finish_reason=stop` with no text/tool/reasoning).
             func isEmptyResponse(_ r: StreamResult) -> Bool {
-                #if VOICE_AGENT_FUSION
-                // [T-meeting-empty-answer-delivery] A clean empty meeting stop
+                // [T-meeting-empty-answer-delivery] A clean empty stop with pending delivery
                 // goes straight to the bounded reply-only round below. Retrying
                 // it here would re-offer business tools and delay that delivery.
-                if isMeetingCoordinator, r.stopReason == .endTurn, !r.isStreamInterrupted,
-                   MeetingAnswerUserTool.canRequestDelivery(sessionID: sessionId) {
+                if agentRole != .executor, r.stopReason == .endTurn, !r.isStreamInterrupted,
+                   runtimePolicy.replyDelivery?.canRequest(sessionId) == true {
                     return false
                 }
-                #endif
                 let hasReasoning = !(r.reasoningContent ?? "").isEmpty
                 return r.assistantText.isEmpty && r.toolEntries.isEmpty
                     && !hasReasoning && !r.isStreamInterrupted
@@ -5799,7 +5808,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     let reminderStream = try await streamWithAutoRetry(
                         provider: provider,
                         messages: applyRequestImageBudget(historyWithEmptyToolResultReminder()),
-                        systemPrompt: userSystemPrompt,
+                        systemPrompt: userSystemPrompt + memoryStatusFragment(tools: roundTools),
                         tools: roundTools,
                         requiredToolName: requiredToolName,
                         maxTokens: dynamicMaxTokens(provider: provider, model: activeModel, lastContextTokens: turnUsage.latestContextTokens),
@@ -5872,7 +5881,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         provider: provider,
                         messages: applyRequestImageBudget(effectiveAgentHistory()),
                         baseSystemPrompt: baseSystemPrompt,
-                        systemPrompt: userSystemPrompt,
+                        systemPrompt: userSystemPrompt + memoryStatusFragment(tools: roundTools),
                         tools: roundTools,
                         requiredToolName: requiredToolName,
                         model: activeModel,
@@ -5895,7 +5904,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         let retryStream = try await streamWithAutoRetry(
                             provider: provider,
                             messages: applyRequestImageBudget(effectiveAgentHistory()),
-                            systemPrompt: userSystemPrompt,
+                            systemPrompt: userSystemPrompt + memoryStatusFragment(tools: roundTools),
                             tools: roundTools,
                             requiredToolName: requiredToolName,
                             maxTokens: dynamicMaxTokens(provider: provider, model: activeModel, lastContextTokens: turnUsage.latestContextTokens),
@@ -5948,7 +5957,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                             provider: provider,
                             messages: applyRequestImageBudget(effectiveAgentHistory()),
                             baseSystemPrompt: baseSystemPrompt,
-                            systemPrompt: userSystemPrompt,
+                            systemPrompt: userSystemPrompt + memoryStatusFragment(tools: roundTools),
                             tools: roundTools,
                             requiredToolName: requiredToolName,
                             model: activeModel,
@@ -6089,7 +6098,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // what we actually send to Anthropic (summary-prepended view).
             if provider is AnthropicAgentProvider, let sid = sessionId {
                 keepAliveHistory = effectiveAgentHistory()
-                keepAliveSystemPrompt = userSystemPrompt
+                keepAliveSystemPrompt = userSystemPrompt + memoryStatusFragment(tools: roundTools)
                 keepAliveTools = tools
                 keepAliveEntry = ProviderConfigStore.shared.entry(for: activeEntryId ?? "")
                 logger.info("🔥 cache keep-alive: snapshot updated — session=\(sid.prefix(8)) history=\(self.agentHistory.count) tools=\(tools.count) sysPromptLen=\(userSystemPrompt.count) enhancedCache=\(self.enhancedCacheEnabled) cacheRead=\(turnUsage.cacheReadTokens) cacheCreate=\(turnUsage.cacheCreationTokens)")
@@ -6241,14 +6250,14 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 let cleanEmptyEndTurn = stopReason == .endTurn && !streamResult.isStreamInterrupted
                     && assistantText.isEmpty && (streamResult.reasoningContent ?? "").isEmpty
                 if !streamResult.isStreamInterrupted,
-                   await requestMeetingAnswerDelivery(after: stopReason, allowEmptyEndTurn: cleanEmptyEndTurn) {
+                   await requestReplyDelivery(after: stopReason, allowEmptyEndTurn: cleanEmptyEndTurn) {
                     messages[msgIdx].error = nil
                     if assistantAgentIdx < agentHistory.count, let persistedID = agentHistory[assistantAgentIdx].dbMessageId {
                         await ChatStore.shared.updateMessageErrorInfo(messageId: persistedID, errorInfo: nil)
                     }
                     continue
                 }
-                if meetingAnswerDeliveryRound { break }
+                if replyDeliveryRound { break }
 
                 // [T-ios-queued-message-continues-prev-turn] The current turn's
                 // tool loop has fully converged (no tool calls this iteration) and
@@ -6498,14 +6507,14 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // [T-meeting-answer-user-recovery-tool-close] One recovery request
             // ends after its tool receipts are durable, even if the model asks
             // for other tools. Leave queued user turns to the fresh-run drain.
-            if meetingAnswerDeliveryRound {
+            if replyDeliveryRound {
                 messages[msgIdx].isAwaitingModelResponse = false
                 hitTurnLimit = false
                 break
             }
             if !streamResult.isStreamInterrupted,
-               await requestMeetingAnswerDelivery(after: stopReason) { continue }
-            if meetingAnswerDeliveryRound {
+               await requestReplyDelivery(after: stopReason) { continue }
+            if replyDeliveryRound {
                 messages[msgIdx].isAwaitingModelResponse = false
                 hitTurnLimit = false
                 break

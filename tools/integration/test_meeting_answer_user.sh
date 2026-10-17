@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 out = Path(sys.argv[1])
 definitions = Path('Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift').read_text()
-start = definitions.index('    var meetingReplyToolDefinitions:')
+start = definitions.index('    var runtimeHostToolDefinitions:')
 end = definitions.index('\n    /// The tool set', start)
 dispatch = Path('Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift').read_text()
 start_case = dispatch.index('        case "answer_user":')
@@ -33,6 +33,7 @@ extension AIChatViewModel {
 PY
 xcrun swiftc -default-isolation MainActor -D VOICE_AGENT_FUSION \
     "$MEETING_ANSWER_CHECK_DIR/AgentToolTypes.swift" \
+    Vendor/Phone/src/ios/AgentKit/AgentRuntimePolicy.swift \
     Integration/App/MeetingAnswerUserTool.swift \
     Vendor/Phone/src/ios/AgentKit/SubagentTools.swift \
     "$MEETING_ANSWER_CHECK_DIR/MeetingAnswerWiring.swift" \

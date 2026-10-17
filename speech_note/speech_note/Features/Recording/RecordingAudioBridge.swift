@@ -8,15 +8,18 @@ nonisolated public enum RecordingAudioBridge {
         public let release: @Sendable (UUID) -> Void
         public let playback: @Sendable () -> Bool
         public let releasePlayback: @Sendable () -> Void
+        public let recordingStartBlockReason: @Sendable () -> String?
 
         public init(capture: @escaping @Sendable (UUID) throws -> Void,
                     release: @escaping @Sendable (UUID) -> Void,
                     playback: @escaping @Sendable () -> Bool,
-                    releasePlayback: @escaping @Sendable () -> Void) {
+                    releasePlayback: @escaping @Sendable () -> Void,
+                    recordingStartBlockReason: @escaping @Sendable () -> String? = { nil }) {
             self.capture = capture
             self.release = release
             self.playback = playback
             self.releasePlayback = releasePlayback
+            self.recordingStartBlockReason = recordingStartBlockReason
         }
     }
 
@@ -28,4 +31,6 @@ nonisolated public enum RecordingAudioBridge {
     }
 
     static var handlers: Handlers? { lock.withLock { installed } }
+
+    static var recordingStartBlockReason: String? { handlers?.recordingStartBlockReason() }
 }

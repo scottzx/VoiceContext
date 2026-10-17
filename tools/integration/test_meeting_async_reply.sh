@@ -37,6 +37,7 @@ root.joinpath('Manager.swift').write_text('import Foundation\nextension AsyncTas
 PY
 xcrun swiftc -default-isolation MainActor -swift-version 5 \
     "$MEETING_ASYNC_CHECK_DIR/ToolTypes.swift" \
+    Vendor/Phone/src/ios/AgentKit/AgentRuntimePolicy.swift \
     Vendor/Phone/src/ios/AgentKit/Runtime/AgentSessionRunner.swift \
     Integration/App/MeetingAnswerUserTool.swift \
     speech_note/speech_note/Features/Recording/MeetingWakeCommandText.swift \

@@ -20,6 +20,7 @@ nonisolated final class MeetingWakeAudioWorker: @unchecked Sendable {
     private struct Activation: Sendable {
         let generationID: UUID
         let afterSample: Int64
+        let finishOnSilence: Bool
         let onReady: @Sendable () -> Void
         let onWake: @Sendable (Wake) -> Void
         let onCommand: @Sendable (Command) -> Void
@@ -47,6 +48,8 @@ nonisolated final class MeetingWakeAudioWorker: @unchecked Sendable {
     func activate(
         generationID: UUID,
         afterSample: Int64,
+        requiresWakeWord: Bool = true,
+        finishOnSilence: Bool = false,
         onReady: @escaping @Sendable () -> Void,
         onWake: @escaping @Sendable (Wake) -> Void,
         onCommand: @escaping @Sendable (Command) -> Void,
@@ -54,7 +57,7 @@ nonisolated final class MeetingWakeAudioWorker: @unchecked Sendable {
         onError: @escaping @Sendable (String, Bool) -> Void
     ) {
         let activation = Activation(
-            generationID: generationID, afterSample: afterSample,
+            generationID: generationID, afterSample: afterSample, finishOnSilence: finishOnSilence,
             onReady: onReady, onWake: onWake, onCommand: onCommand,
             onTimeout: onTimeout, onError: onError
         )
@@ -69,6 +72,10 @@ nonisolated final class MeetingWakeAudioWorker: @unchecked Sendable {
                     if runtime == nil { runtime = try Runtime() }
                     try resetCapture()
                     self.activation = activation
+                    if !requiresWakeWord {
+                        collector.beginCommand(at: afterSample, finishOnSilence: finishOnSilence)
+                        hasWake = true
+                    }
                     if isCurrent(generationID) { activation.onReady() }
                 } catch {
                     guard finish(generationID) else { return }
@@ -188,7 +195,8 @@ nonisolated final class MeetingWakeAudioWorker: @unchecked Sendable {
                 // an instruction spoken immediately after the wake word.
                 let wakeEnd = max(activation.afterSample, end - 2_560)
                 let wakeStart = max(audioStartSample, max(end - 48_000, wakeEnd - duration - 3_200))
-                if collector.wake(startSample: wakeStart, endSample: wakeEnd) {
+                if collector.wake(startSample: wakeStart, endSample: wakeEnd,
+                                  finishOnSilence: activation.finishOnSilence) {
                     hasWake = true
                     activation.onWake(Wake(
                         generationID: generationID,

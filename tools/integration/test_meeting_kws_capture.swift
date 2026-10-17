@@ -55,6 +55,62 @@ struct MeetingKWSCaptureChecks {
         var capture = MeetingWakeCommandCapture()
         var cursor: Int64 = 0
 
+        // An explicit tap captures a full bounded command without fabricating
+        // an acoustic keyword or dropping the first sound.
+        capture.beginCommand(at: 0)
+        feed(&capture, &cursor, samples: rate / 2, speech: true)
+        let tapped = command(feed(&capture, &cursor, samples: rate, speech: false))
+        precondition(tapped.startSample == 0 && tapped.endSample == rate / 2 + 11_200)
+        capture.beginCommand(at: cursor)
+        let directTimeout = feed(&capture, &cursor, samples: 9 * rate, speech: false)
+        guard case .timedOut = directTimeout.first else { preconditionFailure("A silent tap must time out") }
+        capture.reset(); cursor = 0
+
+        // Independent voice opts into an utterance endpoint. A keyword alone
+        // finishes after VAD quiet, preserving its PCM so ASR can say wake-only.
+        feed(&capture, &cursor, samples: rate, speech: true)
+        precondition(capture.wake(startSample: 0, endSample: 12_800, finishOnSilence: true))
+        let keywordOnly = command(feed(&capture, &cursor, samples: rate, speech: false))
+        precondition(keywordOnly.startSample == 0 && keywordOnly.endSample == rate + 11_200)
+
+        // A very short command may fit entirely in the KWS estimate's tail.
+        // Independent capture must preserve it rather than wait eight seconds.
+        capture.reset(); cursor = 0
+        feed(&capture, &cursor, samples: rate + 1_600, speech: true)
+        precondition(capture.wake(startSample: 0, endSample: rate, finishOnSilence: true))
+        let shortWakeCommand = command(feed(&capture, &cursor, samples: rate, speech: false))
+        precondition(shortWakeCommand.startSample == 0 && shortWakeCommand.endSample == rate + 1_600 + 11_200)
+
+        // Decoder latency can report the wake after its VAD endpoint. Replay
+        // still delivers exactly one intact utterance on the next PCM frame.
+        capture.reset(); cursor = 0
+        feed(&capture, &cursor, samples: rate, speech: true)
+        feed(&capture, &cursor, samples: rate, speech: false)
+        precondition(capture.wake(startSample: 0, endSample: 12_800, finishOnSilence: true))
+        let replayedWake = command(feed(&capture, &cursor, samples: 512, speech: false))
+        precondition(replayedWake.startSample == 0 && replayedWake.endSample == rate + 11_200)
+
+        // A deliberate tap has no acoustic wake authorization. Silence must
+        // time out, while even a short recognized command reaches ASR intact.
+        capture.reset(); cursor = 0
+        capture.beginCommand(at: 0, finishOnSilence: true)
+        let silentIndependentTap = feed(&capture, &cursor, samples: 9 * rate, speech: false)
+        guard case .timedOut = silentIndependentTap.first else { preconditionFailure("Silence cannot become a wake-only reply") }
+        capture.beginCommand(at: cursor, finishOnSilence: true)
+        let tapStart = cursor
+        feed(&capture, &cursor, samples: 1_600, speech: true)
+        let shortTap = command(feed(&capture, &cursor, samples: rate, speech: false))
+        precondition(shortTap.startSample == tapStart && shortTap.endSample == tapStart + 1_600 + 11_200)
+
+        // A gap invalidates independent wake authorization too, and reset
+        // discards a completed replay before it can become a local reply.
+        capture.reset(); cursor = 0
+        feed(&capture, &cursor, samples: rate, speech: true)
+        precondition(capture.wake(startSample: 0, endSample: rate, finishOnSilence: true))
+        let lostWake = capture.append(samples: [0], startingAt: cursor + 1, isSpeech: false)
+        guard case .discontinuity = lostWake else { preconditionFailure("Wake-only capture must reject audio gaps") }
+        capture.reset(); cursor = 0
+
         // Decoder reports a hit after the user has already begun the same-sentence command.
         feed(&capture, &cursor, samples: 20_800, speech: true, packetSize: 317)
         precondition(capture.wake(startSample: 0, endSample: 12_800))

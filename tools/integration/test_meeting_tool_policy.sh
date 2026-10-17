@@ -21,15 +21,20 @@ def extract(source, declaration):
 vm = Path('Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel.swift').read_text()
 dispatch = Path('Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift').read_text()
 (out / 'PolicyWiring.swift').write_text('import Foundation\nextension AIChatViewModel {\n' +
+    extract(vm, '    var runtimePolicy:') + '\n' +
     extract(vm, '    var effectiveToolPolicy:') + '\n' +
     extract(vm, '    var liteModeActive:') + '\n' +
     extract(vm, '    private var baseSystemPrompt:') + '\n' +
+    extract(vm, '    func memoryStatusFragment(') + '\n' +
     extract(dispatch, '    func executeSingleToolUse(') + '\n' +
-    '    func promptForCheck() -> String { baseSystemPrompt }\n}\n')
+    '    func promptForCheck() -> String { baseSystemPrompt + memoryStatusFragment(tools: makeAgentTools()) }\n}\n')
 PY
 xcrun swiftc -default-isolation MainActor -D VOICE_AGENT_FUSION \
     "$MEETING_POLICY_CHECK_DIR/AgentToolTypes.swift" \
+    Vendor/Phone/src/ios/AgentKit/AgentRuntimePolicy.swift \
     Vendor/Phone/src/ios/AgentKit/SubagentTools.swift \
+    Integration/App/VoiceAgentConfiguration.swift \
+    Integration/App/VoiceAgentPrompt.swift \
     Vendor/Phone/src/ios/AgentKit/OrchestratorPrompt.swift \
     Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift \
     "$MEETING_POLICY_CHECK_DIR/PolicyWiring.swift" \

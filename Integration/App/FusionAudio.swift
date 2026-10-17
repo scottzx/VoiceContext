@@ -11,7 +11,7 @@ enum FusionAudio {
 
     @MainActor static func registerWebView(_ webView: WKWebView) {
         webViews.add(webView)
-        if AudioSessionCoordinator.shared.isRecording {
+        if AudioSessionCoordinator.shared.isRecording || AudioSessionCoordinator.shared.isIndependentVoiceEnabled {
             webView.setAllMediaPlaybackSuspended(true, completionHandler: nil)
             webView.setMicrophoneCaptureState(.muted, completionHandler: nil)
         }
@@ -29,7 +29,10 @@ enum FusionAudio {
             capture: { owner in try onMain { try AudioSessionCoordinator.shared.beginRecording(owner: owner) } },
             release: { owner in onMain { AudioSessionCoordinator.shared.endRecording(owner: owner) } },
             playback: { onMain { AudioSessionCoordinator.shared.beginAndWait(.mediaAttachment) } },
-            releasePlayback: { onMain { AudioSessionCoordinator.shared.end(.mediaAttachment) } }
+            releasePlayback: { onMain { AudioSessionCoordinator.shared.end(.mediaAttachment) } },
+            recordingStartBlockReason: {
+                onMain { AudioSessionCoordinator.shared.isIndependentVoiceEnabled ? "请先关闭语音模式，再开始录音。" : nil }
+            }
         ))
     }
 

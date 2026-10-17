@@ -1,6 +1,8 @@
 import Combine
 import Foundation
 
+enum AgentToolPolicy { case standalone, orchestrator }
+
 func AppLocalized(_ value: String) -> String { value }
 
 // Minimal host boundaries; the execute method's observer, tool binding,
@@ -88,8 +90,14 @@ struct AgentMessage {
 @MainActor final class ChatStore {
     static let shared = ChatStore()
     var histories: [String: [AgentMessage]] = [:]
+    var owners: [String: String] = [:]
     func sessionExists(id: String) async -> Bool { histories[id] != nil }
     func updateSessionTitle(_ id: String, title: String) async {}
+}
+@MainActor enum XiaolanAgent {
+    static let id = "agent-xiaolan"
+    static func ensure() async throws {}
+    static func ownsSession(_ sessionID: String) async -> Bool { ChatStore.shared.owners[sessionID] == id }
 }
 @MainActor final class SessionActivityTracker {
     static let shared = SessionActivityTracker()
@@ -100,10 +108,11 @@ struct AgentMessage {
     static let shared = AsyncTaskNoticeManager()
     func checkAndDrain(sessionId: String) async {}
 }
-struct AgentSessionCreateRequest { let source: String; let role: String; let toolPolicy: String }
+struct AgentSessionCreateRequest { let agentId: String; let source: String; let role: String; let toolPolicy: String }
 struct AgentSessionRunRequest {
     let sessionId: String
     let prompt: String
+    let agentId: String
     let source: String
     let systemPromptBlock: String
     let role: String
@@ -122,16 +131,18 @@ struct AgentSessionRunResult {
     var runs: [AgentSessionRunRequest] = []
     var perform: (AgentSessionRunRequest) async -> AgentSessionRunResult = { _ in .init(text: nil) }
     func createSession(_ request: AgentSessionCreateRequest) async -> String? {
-        precondition(request.source == "meeting_assistant" && request.role == "main" && request.toolPolicy == "orchestrator")
+        precondition(request.source == "meeting_assistant" && request.agentId == XiaolanAgent.id && request.role == "main" && request.toolPolicy == "orchestrator")
         let cache = ViewModelCache.shared
         cache.sessionID = UUID().uuidString
         created += 1
         cache.models[cache.sessionID] = HostViewModel(sessionID: cache.sessionID)
         ChatStore.shared.histories[cache.sessionID] = []
+        ChatStore.shared.owners[cache.sessionID] = request.agentId
         return cache.sessionID
     }
     func run(_ request: AgentSessionRunRequest) async -> AgentSessionRunResult {
         precondition(request.source == "meeting_assistant")
+        precondition(request.agentId == XiaolanAgent.id && ChatStore.shared.owners[request.sessionId] == XiaolanAgent.id)
         runs.append(request)
         ViewModelCache.shared.sessionID = request.sessionId
         let vm = ViewModelCache.shared.models[request.sessionId]!
@@ -165,6 +176,10 @@ struct AgentSessionRunResult {
 
 @main struct MeetingExecuteChecks {
     @MainActor static func main() async {
+        AgentRuntimePolicies.register(source: "meeting_assistant", policy: .init(replyDelivery: .init(
+            definition: MeetingAnswerUserTool.definition,
+            canRequest: { MeetingAnswerUserTool.canRequestDelivery(sessionID: $0) },
+            reminder: MeetingAnswerUserTool.deliveryReminder)))
         let controller = MeetingAssistantController()
         let bridge = controller.bridge
         let runner = controller.runner
@@ -294,9 +309,28 @@ struct AgentSessionRunResult {
         await controller.runForCheck(.init())
         precondition(runner.runs.last!.sessionId != sessionID && runner.created == createdBefore + 2,
                      "A different recording creates a separate conversation")
+
+        let legacyRecording = UUID(), legacySession = UUID().uuidString
+        let legacyKey = "meetingAssistant.session.\(legacyRecording.uuidString)"
+        ChatStore.shared.histories[legacySession] = [.init(role: .user, parts: [.text("历史一芥会话")])]
+        ChatStore.shared.owners[legacySession] = "agent-default"
+        UserDefaults.standard.set(legacySession, forKey: legacyKey)
+        let createdBeforeLegacy = runner.created
+        await controller.runForCheck(.init(recordingID: legacyRecording))
+        let replacement = runner.runs.last!.sessionId
+        precondition(replacement != legacySession && runner.created == createdBeforeLegacy + 1)
+        precondition(ChatStore.shared.owners[legacySession] == "agent-default"
+                     && ChatStore.shared.histories[legacySession]!.count == 1,
+                     "Historical Yima ownership and transcript must never be reassigned or rewritten")
+        precondition(ChatStore.shared.owners[replacement] == XiaolanAgent.id
+                     && UserDefaults.standard.string(forKey: legacyKey) == replacement)
+        await controller.runForCheck(.init(recordingID: legacyRecording))
+        precondition(runner.runs.last!.sessionId == replacement && runner.created == createdBeforeLegacy + 1)
+
+        let createdBeforeDeletion = runner.created
         ChatStore.shared.histories.removeValue(forKey: sessionID)
         await controller.runForCheck(.init(recordingID: recording))
-        precondition(runner.created == createdBefore + 2 && bridge.results.last!.text.contains("已删除本场会话"),
+        precondition(runner.created == createdBeforeDeletion && bridge.results.last!.text.contains("已删除本场会话"),
                      "A deleted linked session cannot silently replace the recording's memory")
         for request in runner.runs {
             // Test recording IDs are random; remove only keys created by this host check.

@@ -222,6 +222,9 @@ extension AIChatViewModel {
                 if let behaviorFragment = nextEntry.model.agentBehaviorPromptFragment {
                     rebuiltPrompt += "\n\n" + behaviorFragment
                 }
+                if runtimePolicy.replyDelivery != nil || runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven) != nil {
+                    rebuiltPrompt += memoryStatusFragment(tools: tools)
+                }
                 currentSystemPrompt = rebuiltPrompt
                 // continue loop — will try next entry immediately
             } catch {
@@ -274,6 +277,9 @@ extension AIChatViewModel {
                     }
                     if let behaviorFragment = nextEntry.model.agentBehaviorPromptFragment {
                         rebuiltPrompt += "\n\n" + behaviorFragment
+                    }
+                    if runtimePolicy.replyDelivery != nil || runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven) != nil {
+                        rebuiltPrompt += memoryStatusFragment(tools: tools)
                     }
                     currentSystemPrompt = rebuiltPrompt
                     continue
@@ -358,6 +364,9 @@ extension AIChatViewModel {
                     if let behaviorFragment = nextEntry.model.agentBehaviorPromptFragment {
                         rebuiltPrompt += "\n\n" + behaviorFragment
                     }
+                    if runtimePolicy.replyDelivery != nil || runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven) != nil {
+                        rebuiltPrompt += memoryStatusFragment(tools: tools)
+                    }
                     currentSystemPrompt = rebuiltPrompt
                     // continue loop — will try next entry
                 }
@@ -423,14 +432,12 @@ extension AIChatViewModel {
 
             guard isEmpty else { return result }
 
-            #if VOICE_AGENT_FUSION
-            // [T-meeting-empty-fallback-delivery] Let the meeting loop deliver
+            // [T-meeting-empty-fallback-delivery] Let the configured reply loop deliver
             // an answer without replaying business tools on another model.
-            if isMeetingCoordinator, result.stopReason == .endTurn,
-               MeetingAnswerUserTool.canRequestDelivery(sessionID: sessionId) {
+            if agentRole != .executor, result.stopReason == .endTurn,
+               runtimePolicy.replyDelivery?.canRequest(sessionId) == true {
                 return result
             }
-            #endif
 
             // Empty response — record this entry and force-fail so the next
             // streamWithGroupFallback call advances to a different entry.

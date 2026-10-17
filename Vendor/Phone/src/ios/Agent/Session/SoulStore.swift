@@ -985,16 +985,25 @@ enum SystemPromptBuilder {
     private static func displayName(from file: SoulFile?) -> String {
         let n = (file?.metadata.name ?? SoulMetadata.default.name)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return n.isEmpty ? "Yima" : n
+        return n.isEmpty ? SoulMetadata.default.name : n
     }
 
-    static func identitySection(for agentId: String? = nil) -> String {
-        let file = SoulStore.load(for: agentId)
-        let name = displayName(from: file)
+    struct IdentityPolicy {
+        var fallbackName: String? = nil
+        var identityTemplate: String? = nil
+        var usesDefaultPersona = true
+        var includesPersonaEditHint = true
+    }
+
+    static func identitySection(for agentId: String? = nil, policy: IdentityPolicy = .init()) -> String {
+        let file = !policy.usesDefaultPersona && (agentId == nil || agentId == AgentProfile.defaultAgentId)
+            ? nil : SoulStore.load(for: agentId)
+        let storedName = file?.metadata.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let name = storedName.isEmpty ? (policy.fallbackName ?? displayName(from: file)) : storedName
         let style: String = (file?.metadata.style ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let identity = identityTemplate.replacingOccurrences(of: "{name}", with: name)
+        let identity = (policy.identityTemplate ?? identityTemplate).replacingOccurrences(of: "{name}", with: name)
         let identityTrimmed = identity.trimmingCharacters(in: .whitespaces)
 
         // [T-soul-hint] Fixed hint telling the model how SOUL fields can be
@@ -1002,7 +1011,7 @@ enum SystemPromptBuilder {
         // the model never says "I can't change my personality". This hint
         // is system-owned text and is NOT counted against the user-facing
         // SOUL body length limit (#356 / 500 EN words / 800 CN chars).
-        let soulEditHint =
+        let soulEditHint = !policy.includesPersonaEditHint ? "" :
             "---\n" +
             "SOUL.md fields (name / icon / style / lang / body) can be edited two ways:\n" +
             "1. Tool: call `minis-config` to propose changes (user must approve).\n" +

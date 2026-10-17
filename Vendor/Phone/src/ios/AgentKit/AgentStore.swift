@@ -94,6 +94,7 @@ final class AgentStore: ObservableObject {
 
     func refresh() async {
         agents = await ChatStore.shared.listAgents()
+        agents.removeAll { AgentRuntimePolicies.hiddenAgentIDs.contains($0.id) }
     }
 
     func agent(_ id: String) -> AgentProfile? {

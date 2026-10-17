@@ -22,6 +22,8 @@ final class LocalSubagentExecutor: SubagentExecutor {
     private let sessionRunner: any AgentSessionRunning
     private var runTasks: [String: Task<Void, Never>] = [:]
     private var runGenerations: [String: UUID] = [:]
+    private var noticeGenerations: [String: UUID] = [:]
+    private var terminalPublications: Set<String> = []
     private var tasks: [String: SubagentTask] = [:]
 
     /// Dispatch times, used to tell "not started yet" from "finished".
@@ -63,6 +65,7 @@ final class LocalSubagentExecutor: SubagentExecutor {
     }
 
     func status(taskId: String) async -> SubagentStatus {
+        let generation = noticeGenerations[taskId]
         guard let session = await ChatStore.shared.getSession(taskId) else {
             return SubagentStatus(taskId: taskId, title: "", state: .unknown,
                                   currentActivity: "", iteration: 0, result: nil)
@@ -70,6 +73,21 @@ final class LocalSubagentExecutor: SubagentExecutor {
 
         let title = session.spawnTitle ?? session.title ?? ""
         let persisted = session.spawnStatus ?? "running"
+        guard noticeGenerations[taskId] == generation else { return await status(taskId: taskId) }
+        if runGenerations[taskId] != nil {
+            if persisted != "running" {
+                return SubagentStatus(taskId: taskId, title: title,
+                                      state: SubagentStatus.State(rawValue: persisted) ?? .unknown,
+                                      currentActivity: "", iteration: 0, result: session.spawnResult)
+            }
+            let live = await sessionRunner.status(sessionId: taskId)
+            guard noticeGenerations[taskId] == generation, runGenerations[taskId] != nil else {
+                return await status(taskId: taskId)
+            }
+            // The local owner also owns terminal persistence/publication.
+            return SubagentStatus(taskId: taskId, title: title, state: .running,
+                                  currentActivity: live.currentActivity, iteration: live.iteration, result: nil)
+        }
 
         // A terminal state is a claim, not proof. A run whose wait ran out was
         // written `failed` while its loop went right on working, and the old
@@ -80,10 +98,12 @@ final class LocalSubagentExecutor: SubagentExecutor {
         if persisted != "running" {
             if persisted != "stopped" {
                 let live = await sessionRunner.status(sessionId: taskId)
+                guard noticeGenerations[taskId] == generation else { return await status(taskId: taskId) }
                 if live.isRunning {
                     // `updateSpawnOutcome` COALESCEs its result argument, so ""
                     // — not nil — is what clears the stale timeout text.
                     await ChatStore.shared.updateSpawnOutcome(taskId, status: "running", result: "")
+                    guard noticeGenerations[taskId] == generation else { return await status(taskId: taskId) }
                     logger.info("reopened task=\(taskId.prefix(8)): marked \(persisted) but its loop is still running")
                     return SubagentStatus(taskId: taskId, title: title, state: .running,
                                           currentActivity: live.currentActivity,
@@ -99,6 +119,7 @@ final class LocalSubagentExecutor: SubagentExecutor {
         }
 
         let runtimeStatus = await sessionRunner.status(sessionId: taskId)
+        guard noticeGenerations[taskId] == generation else { return await status(taskId: taskId) }
         let activity = runtimeStatus.currentActivity
         let iteration = runtimeStatus.iteration
 
@@ -112,15 +133,15 @@ final class LocalSubagentExecutor: SubagentExecutor {
         // the app was backgrounded) or it never got off the ground.
         let answer = runtimeStatus.lastAssistantText ?? session.lastMessage
         if let answer, !answer.isEmpty {
-            await ChatStore.shared.updateSpawnOutcome(taskId, status: "done", result: answer)
-            dispatchedAt[taskId] = nil
             // The run Task that would normally announce this is gone — the
             // process was killed mid-task, or the finish landed with nobody
             // listening. Reconciling here without posting left tasks that had
             // completed perfectly well never mentioned to their parent at all.
             await postTerminalNotice(taskId: taskId, session: session,
-                                     generation: runGenerations[taskId],
-                                     status: "done", result: answer)
+                                     generation: generation,
+                                     status: "done", result: answer, persistedStatus: "done")
+            guard noticeGenerations[taskId] == generation else { return await status(taskId: taskId) }
+            dispatchedAt[taskId] = nil
             return SubagentStatus(taskId: taskId, title: title, state: .done,
                                   currentActivity: "", iteration: iteration, result: answer)
         }
@@ -128,11 +149,11 @@ final class LocalSubagentExecutor: SubagentExecutor {
         let started = dispatchedAt[taskId] ?? session.createdAt
         if Date().timeIntervalSince(started) > Self.startupGrace {
             let reason = String(localized: "子任务没有产生任何结果就结束了。")
-            await ChatStore.shared.updateSpawnOutcome(taskId, status: "failed", result: reason)
-            dispatchedAt[taskId] = nil
             await postTerminalNotice(taskId: taskId, session: session,
-                                     generation: runGenerations[taskId],
-                                     status: "failed", result: reason)
+                                     generation: generation,
+                                     status: "failed", result: reason, persistedStatus: "failed")
+            guard noticeGenerations[taskId] == generation else { return await status(taskId: taskId) }
+            dispatchedAt[taskId] = nil
             return SubagentStatus(taskId: taskId, title: title, state: .failed,
                                   currentActivity: "", iteration: iteration, result: reason)
         }
@@ -154,17 +175,25 @@ final class LocalSubagentExecutor: SubagentExecutor {
         guard session.spawnStatus != "stopped" else {
             throw SubagentError.notRunning(taskId)
         }
+        let generation = UUID()
+        runTasks.removeValue(forKey: taskId)?.cancel()
+        runGenerations[taskId] = generation
+        noticeGenerations[taskId] = generation
         sessionRunner.cancel(sessionId: taskId)
         await ChatStore.shared.updateSpawnOutcome(taskId, status: "running", result: "")
+        guard runGenerations[taskId] == generation else { return }
         dispatchedAt[taskId] = Date()
-        startRun(sessionId: taskId, prompt: text)
+        startRun(sessionId: taskId, prompt: text, generation: generation)
     }
 
     @discardableResult
     func stop(taskId: String) async -> Bool {
+        let generation = noticeGenerations[taskId]
         guard let session = await ChatStore.shared.getSession(taskId) else { return false }
         let persisted = session.spawnStatus ?? "running"
         let live = await sessionRunner.status(sessionId: taskId)
+        guard noticeGenerations[taskId] == generation,
+              !terminalPublications.contains(Self.noticeId(taskId: taskId, generation: generation)) else { return false }
         // The old guard was `spawn_status == "running"`, which made a task that
         // had been wrongly written off unkillable — the one case where stopping
         // matters most, since it is still burning tokens and touching files.
@@ -172,47 +201,56 @@ final class LocalSubagentExecutor: SubagentExecutor {
         // task that is genuinely over keeps the outcome it earned.
         guard persisted == "running" || live.isRunning else { return false }
 
-        let generation = runGenerations[taskId]
         sessionRunner.cancel(sessionId: taskId)
         runTasks.removeValue(forKey: taskId)?.cancel()
         runGenerations.removeValue(forKey: taskId)
         let partial = live.lastAssistantText
-        await ChatStore.shared.updateSpawnOutcome(taskId, status: "stopped", result: partial)
         await postTerminalNotice(taskId: taskId, session: session, generation: generation,
                                  status: "stopped",
-                                 result: partial ?? String(localized: "任务已被终止。"))
+                                 result: partial ?? String(localized: "任务已被终止。"), persistedStatus: "stopped")
+        guard noticeGenerations[taskId] == generation else { return true }
         dispatchedAt[taskId] = nil
         return true
     }
 
-    private func startRun(sessionId: String, prompt: String) {
+    private func startRun(sessionId: String, prompt: String, generation: UUID = UUID()) {
         runTasks.removeValue(forKey: sessionId)?.cancel()
-        let generation = UUID()
         runGenerations[sessionId] = generation
+        noticeGenerations[sessionId] = generation
         runTasks[sessionId] = Task { [weak self] in
             guard let self else { return }
+            defer {
+                if runGenerations[sessionId] == generation {
+                    runTasks[sessionId] = nil
+                    runGenerations[sessionId] = nil
+                    dispatchedAt[sessionId] = nil
+                }
+            }
+            let savedAgentID = await ChatStore.shared.getSession(sessionId)?.agentId
+            guard !Task.isCancelled, runGenerations[sessionId] == generation else { return }
             let result = await sessionRunner.run(AgentSessionRunRequest(
                 sessionId: sessionId,
                 prompt: prompt,
+                agentId: tasks[sessionId]?.agentId ?? savedAgentID,
                 source: "subagent",
                 role: AgentRunRole.executor.rawValue,
                 toolPolicy: AgentToolPolicy.standalone.rawValue,
                 timeoutSeconds: TimeInterval(SubagentTools.maxRunSeconds)
             ))
             guard runGenerations[sessionId] == generation else { return }
-            runTasks[sessionId] = nil
-            runGenerations[sessionId] = nil
-            dispatchedAt[sessionId] = nil
             if result.cancelled { return }
 
             // `result.timedOut` says the awaiter stopped waiting, nothing more.
             // Taking it for death is what buried finished tasks under "failed".
             let session = await ChatStore.shared.getSession(sessionId)
+            guard runGenerations[sessionId] == generation else { return }
             let persistedStatus: String
             let noticeStatus: String
             let resultText: String
 
-            switch await classifyBackgroundRun(result: result, runner: sessionRunner, sessionId: sessionId) {
+            let outcome = await classifyBackgroundRun(result: result, runner: sessionRunner, sessionId: sessionId)
+            guard runGenerations[sessionId] == generation else { return }
+            switch outcome {
             case .done(let text):
                 persistedStatus = "done"
                 noticeStatus = "done"
@@ -224,6 +262,7 @@ final class LocalSubagentExecutor: SubagentExecutor {
                 // and keep whatever it managed to produce.
                 sessionRunner.cancel(sessionId: sessionId)
                 let partial = await sessionRunner.status(sessionId: sessionId).lastAssistantText
+                guard runGenerations[sessionId] == generation else { return }
                 persistedStatus = "failed"
                 noticeStatus = "timed_out"
                 resultText = partial ?? String(localized: "子任务执行超时。")
@@ -237,9 +276,8 @@ final class LocalSubagentExecutor: SubagentExecutor {
                 resultText = String(localized: "子任务没有产生任何结果就结束了。")
             }
 
-            await ChatStore.shared.updateSpawnOutcome(sessionId, status: persistedStatus, result: resultText)
             await postTerminalNotice(taskId: sessionId, session: session, generation: generation,
-                                     status: noticeStatus, result: resultText)
+                                     status: noticeStatus, result: resultText, persistedStatus: persistedStatus)
         }
     }
 
@@ -251,16 +289,23 @@ final class LocalSubagentExecutor: SubagentExecutor {
     /// a restart used to find no parent and post nothing at all — the task
     /// finished, and nobody was ever told.
     ///
-    /// Re-posting is safe: `AsyncTaskNoticeManager` drops a notice id it has
-    /// already delivered, so whichever path gets there first wins and the
-    /// others are no-ops.
+    /// One publisher claims each generation before persistence. The stable
+    /// notice id also lets the notice store deduplicate across a restart.
     private func postTerminalNotice(
         taskId: String,
         session: ChatSession?,
         generation: UUID?,
         status: String,
-        result: String
+        result: String,
+        persistedStatus: String
     ) async {
+        guard noticeGenerations[taskId] == generation else { return }
+        let noticeID = Self.noticeId(taskId: taskId, generation: generation)
+        // Claim before any await: duplicate publishers must never race the
+        // notice store's hasDelivered/save pair or reset a delivered row.
+        guard terminalPublications.insert(noticeID).inserted else { return }
+        await ChatStore.shared.updateSpawnOutcome(taskId, status: persistedStatus, result: result)
+        guard noticeGenerations[taskId] == generation else { return }
         let info = tasks[taskId]
         let parentSessionId = info?.parentSessionId ?? session?.parentSessionId ?? ""
         guard !parentSessionId.isEmpty else {
@@ -276,7 +321,7 @@ final class LocalSubagentExecutor: SubagentExecutor {
             status: status,
             result: result,
             filesPath: OrchestratorPrompt.taskDeliveryDir(taskId: taskId),
-            noticeId: Self.noticeId(taskId: taskId, generation: generation)
+            noticeId: noticeID
         )
     }
 

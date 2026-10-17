@@ -18,8 +18,17 @@ public final class AsyncTaskNoticeManager {
     public static let shared = AsyncTaskNoticeManager()
 
     public var sessionRunner: any AgentSessionRunning = IOSAgentSessionRunner.shared
-    public var prepareMeetingReply: (@MainActor (String) async -> Bool)?
-    public var finishMeetingReply: (@MainActor (String, AgentSessionRunResult) async -> Void)?
+    public struct ReplyHooks {
+        public let prepare: @MainActor (String) async -> Bool
+        public let finish: @MainActor (String, AgentSessionRunResult) async -> Void
+
+        public init(prepare: @escaping @MainActor (String) async -> Bool,
+                    finish: @escaping @MainActor (String, AgentSessionRunResult) async -> Void) {
+            self.prepare = prepare
+            self.finish = finish
+        }
+    }
+    public var replyHooks: [String: ReplyHooks] = [:]
 
     private var loopEndObserver: NSObjectProtocol?
     private var isDraining: Set<String> = []
@@ -109,6 +118,12 @@ public final class AsyncTaskNoticeManager {
         guard !sessionId.isEmpty else { return }
         guard isDraining.insert(sessionId).inserted else { return }
         defer { isDraining.remove(sessionId) }
+        func isBusy() -> Bool {
+            if SessionActivityTracker.shared.isActive(sessionId) { return true }
+            guard let vm = ViewModelCache.shared.get(for: sessionId) else { return false }
+            return vm.isProcessing || vm.isCompacting || vm.compactTask != nil
+                || vm.isTruncatingForRetry || vm.postCompactDrainPending || !vm.promptQueue.isEmpty
+        }
 
         // If the session is currently active or processing, do not inject — wait for loop end
         if SessionActivityTracker.shared.isActive(sessionId) {
@@ -130,13 +145,18 @@ public final class AsyncTaskNoticeManager {
 
         let pending = await ChatStore.shared.pendingAsyncTaskNotices(for: sessionId)
         guard !pending.isEmpty else { return }
-        let isMeeting = await ChatStore.shared.getSession(sessionId)?.source == "meeting_assistant"
-        let finishReply = finishMeetingReply
-        if isMeeting {
-            // Reserve the live recording reply before results enter its history.
-            // Before the host installs these hooks, meeting notices stay pending.
-            guard let prepareMeetingReply, finishReply != nil,
-                  await prepareMeetingReply(sessionId) else { return }
+        let source = await ChatStore.shared.getSession(sessionId)?.source
+        guard !isBusy() else { return }
+        let requiresReply = AgentRuntimePolicies.policy(for: source).requiresNoticeReplyBinding
+        let hooks = source.flatMap { replyHooks[$0] }
+        if requiresReply {
+            // Reserve host delivery before results enter session history.
+            // Unregistered or unavailable adapters leave notices pending.
+            guard let hooks, await hooks.prepare(sessionId) else { return }
+            guard !isBusy() else {
+                await hooks.finish(sessionId, .rejected)
+                return
+            }
         }
 
         logger.info("[Notice] Draining \(pending.count) pending notice(s) for session \(sessionId)")
@@ -196,7 +216,7 @@ public final class AsyncTaskNoticeManager {
             noticeIds: pending.map(\.id)
         ) else {
             logger.error("[Notice] Failed to atomically inject notices for session \(sessionId); leaving them pending.")
-            if isMeeting { await finishReply?(sessionId, .rejected) }
+            if requiresReply { await hooks?.finish(sessionId, .rejected) }
             return
         }
 
@@ -204,7 +224,7 @@ public final class AsyncTaskNoticeManager {
 
         // Revive the agent loop
         let result = await sessionRunner.resumeAfterAsyncToolResults(sessionId: sessionId)
-        if isMeeting { await finishReply?(sessionId, result) }
+        if requiresReply { await hooks?.finish(sessionId, result) }
         if !result.accepted {
             // A user turn may have won the race after the idle check. Keep the
             // notice claim pending; deterministic message ids make the retry

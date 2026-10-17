@@ -338,6 +338,9 @@ struct ContentView: View {
     @State private var model: RecordingCoreModel
     @State private var modelError: String?
     @State private var navigationPath: [RecordingDestination] = []
+    #if VOICE_AGENT_FUSION
+    @ObservedObject private var appNavigation = RecordingNavigationBridge.shared
+    #endif
     @State private var filterCriteria = RecordingFilterCriteria()
     @State private var isFilterSheetPresented = false
     @State private var isTranscriptionCenterPresented = false
@@ -422,6 +425,23 @@ struct ContentView: View {
         .onChange(of: scenePhase, initial: true) { _, phase in
             if !isHostedWorkspace { model.scenePhaseChanged(to: ScenePhaseLike(phase)) }
         }
+        #if VOICE_AGENT_FUSION
+        .onChange(of: appNavigation.command, initial: true) { _, command in
+            guard appNavigation.isActive, let command, !command.isBack else { return }
+            if command.routeID == "recordings.list" {
+                isRecordingScreenPresented = false
+                navigationPath = []
+            } else if command.routeID == "recording.detail" {
+                guard let rawID = command.params["recording_id"], let id = UUID(uuidString: rawID),
+                      model.recordings.contains(where: { $0.id == id }) else {
+                    appNavigation.fail(command, message: "录音已删除或不存在。")
+                    return
+                }
+                isRecordingScreenPresented = false
+                navigationPath = [RecordingDestination(recordingID: id)]
+            }
+        }
+        #endif
         .onChange(of: model.captureIsActive) { _, isActive in
             if isActive {
                 isRecordingScreenPresented = true
@@ -487,6 +507,9 @@ struct ContentView: View {
     private var workspace: some View {
         NavigationStack(path: $navigationPath) {
             recordsScreen
+                #if VOICE_AGENT_FUSION
+                .recordingNavigationPage("recordings.list", canGoBack: false)
+                #endif
                 .navigationDestination(for: RecordingDestination.self) { destination in
                     RecordingDetailScreen(
                         model: model,

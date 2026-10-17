@@ -25,7 +25,7 @@ definitions = Path('Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel+ToolDefiniti
 dispatch = Path('Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift').read_text()
 fallback = Path('Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel+Fallback.swift').read_text()
 store = Path('Vendor/Phone/src/ios/Agent/Chat/ChatStore.swift').read_text()
-helper = block(vm, '        func requestMeetingAnswerDelivery(')
+helper = block(vm, '        func requestReplyDelivery(')
 no_start = vm.index('                // [T-meeting-answer-user-recovery-no-tool]')
 no_end = vm.index('                // [T-ios-queued-message-continues-prev-turn]', no_start)
 no_tool = vm[no_start:no_end]
@@ -48,8 +48,8 @@ assert fallback_empty_decision.count('return result') == 2
 assert 'guard isEmpty else { return result }' in fallback_empty_decision
 assert '&& !hasReasoning && !result.isStreamInterrupted' in fallback_empty_decision
 assert '&& result.stopReason != .maxTokens' in fallback_empty_decision
-assert 'if isMeetingCoordinator, result.stopReason == .endTurn,' in fallback_empty_decision
-assert 'MeetingAnswerUserTool.canRequestDelivery(sessionID: sessionId)' in fallback_empty_decision
+assert 'if agentRole != .executor, result.stopReason == .endTurn,' in fallback_empty_decision
+assert 'runtimePolicy.replyDelivery?.canRequest(sessionId) == true' in fallback_empty_decision
 assert fallback_empty_end < fallback.index('            let entryKey = activeEntryId ?? "unknown"', fallback_empty_end)
 round_tools = re.search(r'^\s*let roundTools = hooks\.tools\(tools\)$', vm, re.M).group().strip()
 required_tool = re.search(r'^\s*let requiredToolName = .+$', vm, re.M).group().strip()
@@ -57,14 +57,14 @@ required_tool = re.search(r'^\s*let requiredToolName = .+$', vm, re.M).group().s
 # Verify real-loop insertion points and that shrinking the captured `tools`
 # actually changes the next provider request and both execution adapters.
 assert 'var tools = makeAgentTools()' in vm
-assert 'var meetingAnswerDeliveryRound = false' in vm
+assert 'var replyDeliveryRound = false' in vm
 final_persist = vm.index('if let persistedId = await persistAgentMessage(assistantMessage, tokenUsage:')
 assert pass_start < final_persist < no_start < no_end
 batch_persist = vm.index('await ChatStore.shared.appendMessages(batch)', no_end)
 cancel = vm.index('if cancelledDuringToolExecution || self.userDidCancel {', batch_persist)
 assert batch_persist < cancel < tool_start < tool_end
 assert 'let roundTools = hooks.tools(tools)' in vm
-assert required_tool == 'let requiredToolName = meetingAnswerDeliveryRound ? "answer_user" : nil'
+assert required_tool == 'let requiredToolName = replyDeliveryRound ? runtimePolicy.replyDelivery?.definition.name : nil'
 # Check every initial/retry/fallback request in the production loop. A fake
 # provider recording the desired value alone would miss a dropped call argument.
 requests = []
@@ -78,11 +78,15 @@ for match in re.finditer(r'\b(streamWithGroupFallback(?:UntilContent)?|streamWit
         end += 1
     request = loop_requests[match.start():end]
     assert 'tools: roundTools,' in request, match.group(1)
+    assert 'systemPrompt: userSystemPrompt + memoryStatusFragment(tools: roundTools),' in request, match.group(1)
     assert 'requiredToolName: requiredToolName,' in request, match.group(1)
     requests.append(match.group(1))
 assert requests == ['streamWithGroupFallback', 'streamWithAutoRetry',
                     'streamWithGroupFallbackUntilContent', 'streamWithAutoRetry',
                     'streamWithGroupFallbackUntilContent'], requests
+assert fallback.count('rebuiltPrompt += memoryStatusFragment(tools: tools)') == 3
+assert vm.count('userSystemPrompt += memoryStatusFragment') == 0
+assert 'keepAliveSystemPrompt = userSystemPrompt + memoryStatusFragment(tools: roundTools)' in vm
 assert 'tools: tools,' in vm[vm.index('if shouldUseSharedAgentRunEngine(for: toolEntries)'):]
 assert 'let toolsSnapshot = tools' in vm[no_end:]
 assert 'tu: tu, msgIdx: msgIdx, tools: toolsSnapshot' in vm[no_end:]
@@ -90,9 +94,9 @@ assert 'displayStr = Self.stripSystemReminders(displayStr)' in store
 
 wiring = 'import Foundation\nextension AIChatViewModel {\n'
 for source, declaration in [
-    (definitions, '    var isMeetingCoordinator:'),
-    (definitions, '    static var meetingCoordinatorToolNames:'),
-    (definitions, '    func meetingToolRefusal('),
+    (vm, '    var runtimePolicy:'),
+    (definitions, '    var runtimeHostToolDefinitions:'),
+    (definitions, '    func runtimeToolRefusal('),
     (dispatch, '    func executeSingleToolUse('),
     (vm, '    private var canSpeakNow: Bool {')
 ]:
@@ -108,7 +112,7 @@ wiring += '''
     func runRecoveryScript(_ provider: ScriptProvider) async {
         let hooks = self.hooks ?? HostHooks()
         var tools = makeAgentTools()
-        var meetingAnswerDeliveryRound = false
+        var replyDeliveryRound = false
 ''' + helper + '''
         let msgIdx = 0
         let entry = HostModelEntry()
@@ -164,6 +168,7 @@ Path(sys.argv[1], 'RecoveryWiring.swift').write_text(wiring)
 PY
 xcrun swiftc -default-isolation MainActor -D VOICE_AGENT_FUSION \
     "$MEETING_RECOVERY_CHECK_DIR/AgentToolTypes.swift" \
+    Vendor/Phone/src/ios/AgentKit/AgentRuntimePolicy.swift \
     Integration/App/MeetingAnswerUserTool.swift \
     "$MEETING_RECOVERY_CHECK_DIR/RecoveryWiring.swift" \
     tools/integration/test_meeting_answer_recovery.swift \

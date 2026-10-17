@@ -221,6 +221,9 @@ struct RecordingDetailScreen: View {
         ScrollViewReader { proxy in
             readingScroll(using: proxy)
             .navigationTitle(currentRecording.isMeeting ? "会议详情" : "录音详情")
+            #if VOICE_AGENT_FUSION
+            .recordingNavigationPage("recording.detail", params: ["recording_id": recordingID.uuidString])
+            #endif
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

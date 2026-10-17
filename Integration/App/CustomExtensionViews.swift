@@ -13,10 +13,7 @@ struct CustomExtensionBrowserView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if let manager = pool.activeManager {
-                    ZStack {
-                        BrowserWebView(manager: manager)
-                        BrowserLoadErrorOverlay(manager: manager)
-                    }
+                    CustomExtensionWebPage(manager: manager, item: item)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: YimaDesign.Space.md) {
@@ -52,15 +49,41 @@ struct CustomExtensionBrowserView: View {
             }
         }
         .tint(YimaDesign.Color.ink)
+        .offloadPermissionDialog()
     }
 
     private func open() {
-        guard pool.tabs.isEmpty, pool.newTab().success, let manager = pool.activeManager else { return }
+        guard pool.tabs.isEmpty else { return }
+        guard pool.newTab().success, let manager = pool.activeManager else {
+            if let command = AppNavigationCenter.shared.command, command.routeID == "extension.custom" {
+                AppNavigationCenter.shared.fail(commandID: command.id, message: "浏览器暂不可用，请关闭部分标签页后重试。")
+            }
+            return
+        }
         // Keep new-window links on this page, without creating hidden tabs.
         manager.newWindowHandler = nil
         manager.closeHandler = { [dismiss] _ in dismiss() }
         manager.webView.allowsBackForwardNavigationGestures = false
         manager.loadURL(item.url.absoluteString)
+    }
+}
+
+private struct CustomExtensionWebPage: View {
+    @ObservedObject var manager: BrowserUseManager
+    let item: CustomExtensionItem
+
+    var body: some View {
+        ZStack {
+            BrowserWebView(manager: manager)
+            BrowserLoadErrorOverlay(manager: manager)
+        }
+        .appNavigationPage("extension.custom", params: ["id": item.id.uuidString],
+                           isReady: !manager.isLoading && manager.loadError == nil && !manager.currentURL.isEmpty && manager.currentURL != "about:blank")
+        .onChange(of: manager.loadError != nil) { _, failed in
+            guard failed, let command = AppNavigationCenter.shared.command,
+                  command.routeID == "extension.custom", command.params["id"] == item.id.uuidString else { return }
+            AppNavigationCenter.shared.fail(commandID: command.id, message: "网页未能加载，请检查网络或服务状态。")
+        }
     }
 }
 

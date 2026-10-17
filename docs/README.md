@@ -4,7 +4,9 @@
 
 ## 产品文档
 
-- [小蓝语音模式：拓展入口与 App 内导航](./design/xiaolan-fullscreen.md)：2026-10-17 修订，从拓展开启，与未结束录音互斥；取消独立小蓝前端，直接使用 App 页面和文字/图片/图表/HTML 预览。[可点击界面稿](./design/xiaolan-fullscreen-prototype/README.md)展示入口与互斥提示，不代表 iOS 实现。
+- [共用 Agent 运行时与策略](./architecture/agent-runtime-policies.md)：配置、执行与语音适配边界，既有 spawn/notice 复用及架构验收。
+- [小蓝与 Yima 的智能体分工](./design/xiaolan-yima-agent-roles.md)：独立身份、提示词、会话及 `answer_user` 交付约束，共用运行时与独立策略，复杂任务由子任务 notice 唤醒原会话。
+- [小蓝语音模式：拓展入口与 App 内导航](./design/xiaolan-fullscreen.md)：2026-10-17 已实现拓展入口、录音互斥、全局路由及四类内容预览；见[开发交付记录](./testing/xiaolan-voice-delivery.md)。[可点击界面稿](./design/xiaolan-fullscreen-prototype/README.md)仅用于入口与提示设计参考。
 
 - [CRM 首版：单人本地客户管理](./design/crm-local-first.md)：2026-10-16 设计草案，覆盖公司、客户与通讯录、商机、任务/日历来源关联、会议纪要沟通和图片往来时间轴；message 文本/截图导入为 P2。[可点击 H5 原型](./design/crm-local-first-prototype/README.md)重点验证首页、客户详情、商机详情和往来流程。
 

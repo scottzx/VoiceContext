@@ -98,6 +98,8 @@ enum ChatPersistenceSchema {
     var postCompactDrainPending = false
     var promptQueue: [String] = []
     var sessionSource: String?
+    var isTruncatingForRetry = false
+    var onLoad: (@MainActor (HostViewModel) -> Void)?
     var agentRole = AgentRole.executor
     var resolvedToolPolicy = AgentToolPolicy.standalone
     var groupPromptBlock: String?
@@ -112,6 +114,7 @@ enum ChatPersistenceSchema {
     init(sessionID: String) { self.sessionID = sessionID }
     func loadSession() async {
         await Task.yield()
+        onLoad?(self)
         sessionSource = ChatStore.shared.sources[sessionID]
         resolvedToolPolicy = .standalone
         groupPromptBlock = nil // Simulate an evicted/rebuilt VM.
@@ -149,14 +152,17 @@ enum ChatPersistenceSchema {
 }
 @MainActor final class IOSAgentSessionRunner {
     static let shared = IOSAgentSessionRunner()
-    var meetingNoticeSystemPrompt: (@MainActor (String) -> String?)?
+    var noticeSystemPrompts: [String: @MainActor (String) -> String?] = [:]
     var perform: (HostViewModel) async -> String? = { _ in nil }
 }
 @MainActor final class AsyncTaskNoticeManager {
     static let shared = AsyncTaskNoticeManager()
     var sessionRunner = IOSAgentSessionRunner.shared
-    var prepareMeetingReply: (@MainActor (String) async -> Bool)?
-    var finishMeetingReply: (@MainActor (String, AgentSessionRunResult) async -> Void)?
+    struct ReplyHooks {
+        let prepare: @MainActor (String) async -> Bool
+        let finish: @MainActor (String, AgentSessionRunResult) async -> Void
+    }
+    var replyHooks: [String: ReplyHooks] = [:]
     var isDraining: Set<String> = []
     func formatNoticeResultOutput(_ notice: HostNotice) -> String { notice.result }
 }
@@ -180,6 +186,12 @@ enum ChatPersistenceSchema {
 
 @main struct MeetingAsyncReplyChecks {
     @MainActor static func main() async {
+        let reply = AgentReplyDeliveryPolicy(definition: MeetingAnswerUserTool.definition,
+            canRequest: { MeetingAnswerUserTool.canRequestDelivery(sessionID: $0) }, reminder: MeetingAnswerUserTool.deliveryReminder)
+        for source in ["meeting_assistant", "xiaolan_voice", "arbitrary_adapter"] {
+            AgentRuntimePolicies.register(source: source, policy: .init(toolPolicyOverride: .orchestrator,
+                replyDelivery: reply, requiresIdle: true, requiresNoticeReplyBinding: true, restoresSourceOnLoad: true))
+        }
         let manager = AsyncTaskNoticeManager.shared
         let store = ChatStore.shared
         let runner = IOSAgentSessionRunner.shared
@@ -209,8 +221,7 @@ enum ChatPersistenceSchema {
         let uninstalled = UUID().uuidString
         store.sources[uninstalled] = "meeting_assistant"
         _ = post(uninstalled)
-        manager.prepareMeetingReply = nil
-        manager.finishMeetingReply = nil
+        manager.replyHooks["meeting_assistant"] = nil
         await manager.checkAndDrain(sessionId: uninstalled)
         precondition(store.injections == 0 && cache.models[uninstalled] == nil,
                      "Meeting notices must wait until the host has installed its reply lifecycle")
@@ -404,13 +415,111 @@ enum ChatPersistenceSchema {
         precondition(closedController.spoken.isEmpty && !closedFixture.bridge.isBusy,
                      "Invalidating during resumed execution makes its late answer silent")
 
+        // Busy state must be checked before and after the history-load await.
+        let racedSession = UUID().uuidString
+        store.sources[racedSession] = "chat"
+        let (racedVM, _) = cache.getOrCreate(for: racedSession)
+        await racedVM.loadSession()
+        racedVM.isTruncatingForRetry = true
+        let reloadsBeforeRace = racedVM.reloads
+        let refusedBeforeReload = await runner.resumeAfterAsyncToolResults(sessionId: racedSession)
+        precondition(!refusedBeforeReload.accepted && racedVM.resumes == 0 && racedVM.reloads == reloadsBeforeRace)
+        racedVM.isTruncatingForRetry = false
+        racedVM.onLoad = { $0.isProcessing = true }
+        let duringReload = await runner.resumeAfterAsyncToolResults(sessionId: racedSession)
+        precondition(!duringReload.accepted && racedVM.resumes == 0 && racedVM.reloads == reloadsBeforeRace + 1)
+        racedVM.onLoad = nil; racedVM.isProcessing = false
+        runner.perform = { _ in "普通任务结果" }
+        let afterRace = await runner.resumeAfterAsyncToolResults(sessionId: racedSession)
+        precondition(afterRace.accepted && racedVM.resumes == 1)
+
         let ordinary = UUID().uuidString
         store.sources[ordinary] = "chat"
         _ = post(ordinary)
-        manager.prepareMeetingReply = { _ in preconditionFailure("Non-meeting notices must not use the meeting hook") }
+        manager.replyHooks["chat"] = .init(prepare: { _ in preconditionFailure("Ordinary notices must not require a host reply hook") }, finish: { _, _ in preconditionFailure("Unrequired hook must not run") })
         runner.perform = { _ in "普通对话结果" }
         await manager.checkAndDrain(sessionId: ordinary)
         precondition(cache.models[ordinary]?.resumes == 1)
+
+        // Independent voice has its own reservation hooks. A paused/closed
+        // mode leaves the notice pending before any model history is revived.
+        let voice = UUID().uuidString
+        store.sources[voice] = "xiaolan_voice"
+        let voiceNotice = post(voice)
+        var voiceReady = false, voiceFinished = false, voiceDelivered = false
+        let voiceRequest = UUID()
+        manager.replyHooks["xiaolan_voice"] = .init(prepare: { sessionID in
+            precondition(sessionID == voice)
+            guard voiceReady else { return false }
+            MeetingAnswerUserTool.bind(sessionID: voice, requestID: voiceRequest) { text in
+                voiceDelivered = text == "独立语音任务已完成。"
+                return true
+            }
+            return true
+        }, finish: { sessionID, result in
+            precondition(sessionID == voice && result.accepted)
+            voiceFinished = true
+            MeetingAnswerUserTool.unbind(sessionID: voice, requestID: voiceRequest)
+        })
+        runner.noticeSystemPrompts["xiaolan_voice"] = { sessionID in sessionID == voice ? "只交付结果，不跳转页面。" : nil }
+        runner.perform = { vm in
+            let delivered = await MeetingAnswerUserTool.execute(["text": "独立语音任务已完成。"],
+                                                                 sessionID: vm.sessionID, sessionSource: vm.sessionSource)
+            precondition(delivered.success)
+            return "PRIVATE_REASONING_IS_NOT_SPEECH"
+        }
+        let injectionsBeforeVoice = store.injections
+        await manager.checkAndDrain(sessionId: voice)
+        precondition(store.injections == injectionsBeforeVoice && !store.delivered.contains(voiceNotice))
+        voiceReady = true
+        await manager.checkAndDrain(sessionId: voice)
+        precondition(voiceFinished && voiceDelivered && store.delivered.contains(voiceNotice))
+        // A third adapter uses the exact same host reservation and resume path.
+        let custom = UUID().uuidString
+        store.sources[custom] = "arbitrary_adapter"
+        let customNotice = post(custom)
+        let beforeCustom = store.injections
+        await manager.checkAndDrain(sessionId: custom)
+        precondition(store.injections == beforeCustom && !store.delivered.contains(customNotice))
+        var customPrepared = 0, customFinished = 0
+        let (customVM, _) = cache.getOrCreate(for: custom)
+        manager.replyHooks["arbitrary_adapter"] = .init(prepare: { _ in
+            customVM.isProcessing = true
+            await Task.yield()
+            return true
+        }, finish: { _, result in
+            precondition(!result.accepted)
+            customFinished += 1
+        })
+        await manager.checkAndDrain(sessionId: custom)
+        precondition(customFinished == 1 && store.injections == beforeCustom && !store.delivered.contains(customNotice),
+                     "A user turn winning during host reservation leaves notices pending and releases the reply hook")
+        customVM.isProcessing = false
+        customFinished = 0
+        let customRequest = UUID()
+        var customDelivered = false
+        manager.replyHooks["arbitrary_adapter"] = .init(prepare: { _ in
+            customPrepared += 1
+            MeetingAnswerUserTool.bind(sessionID: custom, requestID: customRequest) { text in
+                customDelivered = text == "third adapter result"
+                return true
+            }
+            return true
+        }, finish: { sessionID, result in
+            precondition(sessionID == custom && result.accepted && result.text == "third adapter result")
+            customFinished += 1
+            MeetingAnswerUserTool.unbind(sessionID: custom, requestID: customRequest)
+        })
+        runner.noticeSystemPrompts["arbitrary_adapter"] = { _ in "third adapter notice rules" }
+        runner.perform = { vm in
+            precondition(vm.sessionSource == "arbitrary_adapter" && vm.groupPromptBlock == "third adapter notice rules"
+                         && vm.agentRole == .main && vm.resolvedToolPolicy == .orchestrator)
+            let delivered = await MeetingAnswerUserTool.execute(["text": "third adapter result"], sessionID: custom, sessionSource: vm.sessionSource)
+            precondition(delivered.success)
+            return "third adapter result"
+        }
+        await manager.checkAndDrain(sessionId: custom)
+        precondition(customPrepared == 1 && customFinished == 1 && customDelivered && store.delivered.contains(customNotice))
         print("PASS: actual async notice/runner/controller/bridge delivers fresh tool-only TTS, gates before injection, preserves epochs, restores VM policy, serializes drains and leaves ordinary sessions unchanged")
     }
 }
