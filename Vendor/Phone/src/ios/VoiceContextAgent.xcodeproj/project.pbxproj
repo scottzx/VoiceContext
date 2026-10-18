@@ -4380,6 +4380,10 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>CF6F423310B87AC1B6F34466</string>
 				<string>8B138451D5A0F64885C81AE7</string>
 				<string>EB66774AD5C7C277E96F9C1B</string>
+				<string>10BB6A509E6A1EFAAE4F36B5</string>
+				<string>B219788C8DE6255555E9DDD2</string>
+				<string>A9CD87D0C141FCB55A71624C</string>
+				<string>32D208EEC2A3883FEDB0CC00</string>
 				<string>67F208ADD810EFDA6C649E58</string>
 				<string>6B1EAA8355D504713660B8CA</string>
 				<string>7954FC7013FEC5D24ECA0D1E</string>
@@ -8072,6 +8076,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>8B5A16018E4D067D7F7DDE44</string>
 				<string>D9F5CA5599ACC68DF546BB0A</string>
 				<string>5D20CC3DA3C67A7F318880CC</string>
+				<string>D683E363D9F68737AE0B462B</string>
+				<string>86FAA73AED555193035EA548</string>
+				<string>48580A5A428DD58DB7E50AFD</string>
+				<string>335FAE548E1EE8EAE049C7C1</string>
 				<string>31652B9FB34700411899B7EE</string>
 				<string>8BEE81873C005E304C127BA1</string>
 				<string>2EBE2250C94A8190EBE26795</string>
@@ -19883,6 +19891,78 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>EB66774AD5C7C277E96F9C1B</string>
+		</dict>
+		<key>10BB6A509E6A1EFAAE4F36B5</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/StoryLibraryStore.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>D683E363D9F68737AE0B462B</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>10BB6A509E6A1EFAAE4F36B5</string>
+		</dict>
+		<key>B219788C8DE6255555E9DDD2</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/StoryPlaybackController.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>86FAA73AED555193035EA548</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>B219788C8DE6255555E9DDD2</string>
+		</dict>
+		<key>A9CD87D0C141FCB55A71624C</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/StoryPlayerTool.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>48580A5A428DD58DB7E50AFD</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A9CD87D0C141FCB55A71624C</string>
+		</dict>
+		<key>32D208EEC2A3883FEDB0CC00</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/StoryPlayerView.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>335FAE548E1EE8EAE049C7C1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>32D208EEC2A3883FEDB0CC00</string>
 		</dict>
 		<key>67F208ADD810EFDA6C649E58</key>
 		<dict>

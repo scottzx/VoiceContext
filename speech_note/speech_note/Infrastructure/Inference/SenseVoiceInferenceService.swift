@@ -10,6 +10,11 @@ import Foundation
 actor SenseVoiceInferenceService {
     nonisolated static let analysisPurpose = SpeechAnalysisService.AnalysisPurpose.transcription
 
+    enum Execution: Sendable {
+        case recording
+        case independentVoiceCommand
+    }
+
     struct SentenceResult: Sendable {
         let text: String
         let rawText: String
@@ -80,11 +85,14 @@ actor SenseVoiceInferenceService {
     }
 
     private let lifecycleGate: InferenceLifecycleGate
+    private let execution: Execution
     private let cancellation = InferenceCancellationFlag()
     private let speechAnalysis = SpeechAnalysisService()
+    nonisolated private static let commandQueue = DispatchQueue(label: "Yima.VoiceCommandASR", qos: .userInitiated)
 
-    init(lifecycleGate: InferenceLifecycleGate = InferenceLifecycleGate()) {
+    init(lifecycleGate: InferenceLifecycleGate = InferenceLifecycleGate(), execution: Execution = .recording) {
         self.lifecycleGate = lifecycleGate
+        self.execution = execution
     }
 
     struct BackgroundGateProbe: Sendable {
@@ -159,7 +167,7 @@ actor SenseVoiceInferenceService {
     ) async throws -> Result {
         let inputMetrics = AudioInputMetrics.from(samples: samples)
         let resourceRoot = try TranscriptionModelStore.requiredResourceRoot()
-        cancellation.clearAbort()
+        if execution == .recording { cancellation.clearAbort() }
         var nativeResults: [NativeResult] = []
         var utteranceDuration: TimeInterval = 0
         var voicedDuration: TimeInterval = 0
@@ -195,37 +203,43 @@ actor SenseVoiceInferenceService {
             for utterance in analysis.utterances {
                 guard !utterance.samples.isEmpty else { continue }
 
-                let metalWaitDeadline = Date().addingTimeInterval(30)
-                while true {
-                    try Task.checkCancellation()
-                    do {
-                        try await lifecycleGate.beginMetalWork()
-                        break
-                    } catch InferenceLifecycleGate.Rejection.metalBusy where waitForMetal {
-                        // A meeting command shares the one-work GPU budget
-                        // with persisted transcript jobs; it never opens a
-                        // second model concurrently or interrupts capture.
-                        guard Date() < metalWaitDeadline else {
-                            throw InferenceError.runtime("转写队列繁忙，请稍后重新唤醒")
-                        }
-                        try await Task.sleep(for: .milliseconds(100))
-                    }
-                }
                 let result: NativeResult
-                do {
-                    result = try await Task.detached(priority: .userInitiated) { [cancellation] in
-                        try Self.run(
-                            samples: utterance.samples,
-                            resourceRoot: resourceRoot,
-                            cancellation: cancellation,
-                            languageMode: languageMode
-                        )
-                    }.value
-                } catch {
+                if execution == .independentVoiceCommand {
+                    result = try await Self.runCommandOnCPU(
+                        samples: utterance.samples, resourceRoot: resourceRoot, languageMode: languageMode
+                    )
+                } else {
+                    let metalWaitDeadline = Date().addingTimeInterval(30)
+                    while true {
+                        try Task.checkCancellation()
+                        do {
+                            try await lifecycleGate.beginMetalWork()
+                            break
+                        } catch InferenceLifecycleGate.Rejection.metalBusy where waitForMetal {
+                            // A meeting command shares the one-work GPU budget
+                            // with persisted transcript jobs; it never opens a
+                            // second model concurrently or interrupts capture.
+                            guard Date() < metalWaitDeadline else {
+                                throw InferenceError.runtime("转写队列繁忙，请稍后重新唤醒")
+                            }
+                            try await Task.sleep(for: .milliseconds(100))
+                        }
+                    }
+                    do {
+                        result = try await Task.detached(priority: .userInitiated) { [cancellation] in
+                            try Self.run(
+                                samples: utterance.samples,
+                                resourceRoot: resourceRoot,
+                                cancellation: cancellation,
+                                languageMode: languageMode
+                            )
+                        }.value
+                    } catch {
+                        await lifecycleGate.endMetalWork()
+                        throw error
+                    }
                     await lifecycleGate.endMetalWork()
-                    throw error
                 }
-                await lifecycleGate.endMetalWork()
                 nativeResults.append(result)
                 let nativeSentences = ASRSentenceSegmenter.split(
                     tokens: result.tokens,
@@ -336,17 +350,47 @@ actor SenseVoiceInferenceService {
         await lifecycleGate.metrics()
     }
 
+    /// An explicitly enabled voice input can remain alive while locked. Its
+    /// short commands use a separate CPU lane and per-request cancellation;
+    /// recording/background transitions never reopen the Metal lifecycle gate.
+    nonisolated private static func runCommandOnCPU(
+        samples: [Float], resourceRoot: URL, languageMode: TranscriptionLanguageMode
+    ) async throws -> NativeResult {
+        let cancellation = InferenceCancellationFlag()
+        let result: NativeResult = try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                commandQueue.async {
+                    do {
+                        guard !cancellation.shouldAbort else { throw CancellationError() }
+                        let result = try run(samples: samples, resourceRoot: resourceRoot,
+                                             cancellation: cancellation, languageMode: languageMode, useCPU: true)
+                        guard !cancellation.shouldAbort else { throw CancellationError() }
+                        continuation.resume(returning: result)
+                    } catch {
+                        continuation.resume(throwing: cancellation.shouldAbort ? CancellationError() : error)
+                    }
+                }
+            }
+        } onCancel: {
+            cancellation.requestAbort()
+        }
+        try Task.checkCancellation()
+        return result
+    }
+
     #if VOICE_AGENT_FUSION
     nonisolated private static func run(
         samples: [Float],
         resourceRoot: URL,
         cancellation: InferenceCancellationFlag,
-        languageMode: TranscriptionLanguageMode
+        languageMode: TranscriptionLanguageMode,
+        useCPU: Bool = false
     ) throws -> NativeResult {
         guard !cancellation.shouldAbort else { throw InferenceError.abortedForBackground }
         do {
             let modelURL = resourceRoot.appending(path: "SenseVoiceSmall-Q8_0.gguf")
-            let model = try Model(path: modelURL.path, options: ModelOptions(backend: .metal))
+            let model = try Model(path: modelURL.path, options: ModelOptions(backend: useCPU ? .cpu : .metal))
             let session = try model.session()
             session.setCancellationToken(cancellation.nativeToken)
             guard !cancellation.shouldAbort else { throw InferenceError.abortedForBackground }
@@ -393,12 +437,13 @@ actor SenseVoiceInferenceService {
         samples: [Float],
         resourceRoot: URL,
         cancellation: InferenceCancellationFlag,
-        languageMode: TranscriptionLanguageMode
+        languageMode: TranscriptionLanguageMode,
+        useCPU: Bool = false
     ) throws -> NativeResult {
         let modelURL = resourceRoot.appending(path: "SenseVoiceSmall-Q8_0.gguf")
         var loadParams = transcribe_model_load_params()
         transcribe_model_load_params_init(&loadParams)
-        loadParams.backend = TRANSCRIBE_BACKEND_METAL
+        loadParams.backend = useCPU ? TRANSCRIBE_BACKEND_CPU : TRANSCRIBE_BACKEND_METAL
 
         var session: OpaquePointer?
         let openStatus = modelURL.path.withCString {

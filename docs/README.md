@@ -4,6 +4,8 @@
 
 ## 产品文档
 
+- [儿童故事机与锁屏小蓝](./design/children-story-player.md)：2026-10-18 用户确认本轮功能测试通过，涵盖故事库/播放、优先唤醒、完播回传、锁屏完整智能体及录音互斥；见第 17 节收尾记录。
+
 - [共用 Agent 运行时与策略](./architecture/agent-runtime-policies.md)：配置、执行与语音适配边界，既有 spawn/notice 复用及架构验收。
 - [小蓝与 Yima 的智能体分工](./design/xiaolan-yima-agent-roles.md)：独立身份、提示词、会话及 `answer_user` 交付约束，共用运行时与独立策略，复杂任务由子任务 notice 唤醒原会话。
 - [小蓝语音模式：拓展入口与 App 内导航](./design/xiaolan-fullscreen.md)：2026-10-17 已实现拓展入口、录音互斥、全局路由及四类内容预览；见[开发交付记录](./testing/xiaolan-voice-delivery.md)。[可点击界面稿](./design/xiaolan-fullscreen-prototype/README.md)仅用于入口与提示设计参考。

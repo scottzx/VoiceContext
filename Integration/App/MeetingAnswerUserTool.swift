@@ -39,6 +39,11 @@ enum MeetingAnswerUserTool {
         return binding.delivered
     }
 
+    static func didDeliver(sessionID: String?) -> Bool {
+        guard !Task.isCancelled, let sessionID else { return false }
+        return bindings[sessionID]?.delivered == true
+    }
+
     /// Business tools must belong to the live request and finish before its answer.
     static func activeRequestID(sessionID: String) -> UUID? {
         guard !Task.isCancelled, let binding = bindings[sessionID], !binding.claimed else { return nil }

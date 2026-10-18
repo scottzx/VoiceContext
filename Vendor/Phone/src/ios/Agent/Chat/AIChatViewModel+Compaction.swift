@@ -643,7 +643,10 @@ extension AIChatViewModel {
 
         defer {
             isCompacting = false
-            isProcessing = wasProcessingOnEntry
+            // cancel() owns the running state after an in-loop handoff.
+            if !wasProcessingOnEntry || !Task.isCancelled {
+                isProcessing = wasProcessingOnEntry
+            }
             compactTask = nil
         }
 

@@ -3085,7 +3085,7 @@ final class RecordingCoreModel {
 
     #if VOICE_AGENT_FUSION
     func makeIndependentVoiceInput() -> IndependentVoiceInput {
-        IndependentVoiceInput(inferenceService: inferenceService)
+        IndependentVoiceInput(inferenceService: SenseVoiceInferenceService(execution: .independentVoiceCommand))
     }
 
     func setMeetingAssistantEnabled(_ enabled: Bool) {

@@ -247,7 +247,7 @@ struct VoiceContextRootView: View {
             navigation.registerSupportedRoutes([
                 "chat", "chat.session", "recordings.list", "recording.detail", "reminders", "reminders.all", "schedule.day", "tasks.list",
                 "extensions", "extension.settings", "extension.skills", "extension.models", "extension.soul", "extension.memory",
-                "extension.mcp", "extension.hardware", "extension.terminal", "extension.browser", "extension.custom", "extension.custom_functions", "artifact.preview"
+                "extension.mcp", "extension.hardware", "extension.terminal", "extension.browser", "extension.stories", "extension.custom", "extension.custom_functions", "artifact.preview"
             ])
             if offloadPermission.pendingRequest == nil { navigationPresentationDidDismiss() }
             await recordings.prepare()
@@ -360,7 +360,7 @@ struct VoiceContextRootView: View {
 private struct RecordingResultsRequest: Identifiable { let id: String }
 
 private struct VoiceContextExtensionsView: View {
-    private enum Destination: Hashable { case skills, providers, soul, memory, mcp, hardware, terminal, browser, customFunctions }
+    private enum Destination: Hashable { case skills, providers, soul, memory, mcp, hardware, terminal, browser, stories, customFunctions }
     @State private var navigationPath: [Destination] = []
     @State private var settings = false
     @State private var terminal = false
@@ -392,6 +392,7 @@ private struct VoiceContextExtensionsView: View {
                     extensionSection("工具") {
                         destinationTile(.terminal, title: AppLocalized("终端"), symbol: "terminal")
                         destinationTile(.browser, title: AppLocalized("浏览器"), symbol: "globe")
+                        destinationTile(.stories, title: AppLocalized("儿童故事机"), symbol: "headphones")
                         XiaolanVoiceMenu {
                             tile(AppLocalized("语音模式"), symbol: voice.isEnabled ? (voice.isPaused ? "mic.slash" : "mic.fill") : "mic")
                         }
@@ -423,6 +424,7 @@ private struct VoiceContextExtensionsView: View {
                     case .hardware: HardwareBridgeSettingsView()
                     case .terminal: terminalPage
                     case .browser: browserPage
+                    case .stories: StoryPlayerView()
                     case .customFunctions: CustomExtensionsManagementView(store: customFunctions)
                     }
                 }
@@ -488,6 +490,7 @@ private struct VoiceContextExtensionsView: View {
         case .hardware: "extension.hardware"
         case .terminal: "extension.terminal"
         case .browser: "extension.browser"
+        case .stories: "extension.stories"
         case .customFunctions: "extension.custom_functions"
         }
     }
@@ -498,7 +501,8 @@ private struct VoiceContextExtensionsView: View {
         let destinations: [String: Destination] = [
             "extension.skills": .skills, "extension.models": .providers, "extension.soul": .soul,
             "extension.memory": .memory, "extension.mcp": .mcp, "extension.hardware": .hardware,
-            "extension.terminal": .terminal, "extension.browser": .browser, "extension.custom_functions": .customFunctions
+            "extension.terminal": .terminal, "extension.browser": .browser, "extension.stories": .stories,
+            "extension.custom_functions": .customFunctions
         ]
         guard command.routeID == "extensions" || command.routeID == "extension.settings" ||
                 command.routeID == "extension.custom" || destinations[command.routeID] != nil else { return }

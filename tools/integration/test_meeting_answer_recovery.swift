@@ -24,6 +24,8 @@ enum AgentContentPart {
                     imageData: Data? = nil, imageMimeType: String? = nil,
                     pageURL: String? = nil, imageLinuxPath: String? = nil)
 }
+typealias MessageRole = AgentMessage.Role
+typealias ContentPart = AgentContentPart
 enum AgentStopReason { case endTurn, toolUse, maxTokens, refusal }
 enum SubagentTools {
     static let names: Set<String> = ["spawn_subagent", "spawn_cloud_subagent", "check_subagent", "message_subagent", "stop_subagent"]
@@ -56,6 +58,10 @@ struct HostModelEntry { var id = "host-model"; var model = HostModel() }
 @MainActor final class VoiceModePreference {
     static let shared = VoiceModePreference()
     var isCapturing = false
+}
+@MainActor final class SessionActivityTracker {
+    static let shared = SessionActivityTracker()
+    func isActive(_ sessionID: String) -> Bool { false }
 }
 @MainActor final class AudioSessionCoordinator {
     static let shared = AudioSessionCoordinator()
@@ -113,12 +119,19 @@ struct ScriptTurn {
     enum Role { case main, executor }
     struct BatchImageBudget {}
     struct ToolExecOutcome { var cancelled = false; let resultPart: AgentContentPart }
-    struct Message { var blocks: [Int] = []; var error: String?; var isAwaitingModelResponse = true }
+    struct Message {
+        var role: AgentMessage.Role = .assistant
+        var blocks: [Int] = []
+        var error: String?
+        var isAwaitingModelResponse = true
+    }
     var sessionId: String? = UUID().uuidString
     var sessionSource: String? = "meeting_assistant"
     var agentRole: Role = .main
     var hooks: HostHooks? = HostHooks()
     var canResume = false
+    var isProcessing = false
+    var isRedetectingInterruptedTail = false
     var userDidCancel = false
     var promptQueue: [String] = []
     var isNoticeDriven = false
@@ -141,7 +154,7 @@ struct ScriptTurn {
     }
     func persistAgentMessage(_ message: AgentMessage) async -> String? {
         guard !failPersistence else { return nil }
-        if message.parts.contains(where: { if case .text(let text) = $0 { return text.hasPrefix("<system-reminder>") }; return false }),
+        if message.parts.contains(where: { if case .text(let text) = $0 { return text == MeetingAnswerUserTool.deliveryReminder }; return false }),
            let onReminderPersist, !(await onReminderPersist()) { return nil }
         persisted.append(message)
         trace.append("persist:\(message.role)")
@@ -188,7 +201,12 @@ struct ScriptTurn {
     }
     var reminderCount: Int {
         persisted.filter { message in
-            message.parts.contains { if case .text(let text) = $0 { return text.hasPrefix("<system-reminder>") }; return false }
+            message.parts.contains { if case .text(let text) = $0 { return text == MeetingAnswerUserTool.deliveryReminder }; return false }
+        }.count
+    }
+    var completionCount: Int {
+        persisted.filter { message in
+            message.parts.contains { if case .text(let text) = $0 { return text == RawMessage.publicReplyCompletionText }; return false }
         }.count
     }
 }
@@ -204,7 +222,8 @@ enum GroupMentionRouter {
                 additionalTools: [.init(name: "apple_native", description: "Host business boundary", parameters: [:], required: [])],
                 replyDelivery: .init(definition: MeetingAnswerUserTool.definition,
                                      canRequest: { MeetingAnswerUserTool.canRequestDelivery(sessionID: $0) },
-                                     reminder: MeetingAnswerUserTool.deliveryReminder),
+                                     reminder: MeetingAnswerUserTool.deliveryReminder,
+                                     didDeliver: { MeetingAnswerUserTool.didDeliver(sessionID: $0) }),
                 allowsAutomaticSpeech: false
             ))
         }
@@ -255,8 +274,8 @@ enum GroupMentionRouter {
                      && provider.requiredToolNames[1] == "answer_user",
                      "Ordinary round keeps automatic choice; delivery round requires the tool at request scope")
         precondition(vm.businessExecutions == 1 && vm.publicTexts == [answer] && vm.spoken == [answer])
-        precondition(vm.reminderCount == 1 && vm.persisted.count == 5,
-                     "Business result, original answer, hidden reminder and paired delivery results must persist")
+        precondition(vm.reminderCount == 1 && vm.persisted.count == 6 && vm.completionCount == 1,
+                     "Business result, original answer, hidden reminder, paired delivery results and completion must persist")
         precondition(vm.persisted[1].role == .assistant && vm.persisted[2].role == .user)
         precondition(!vm.spoken.contains(plain) && !vm.spoken.contains(where: { $0.contains("PRIVATE_REASONING") }))
         let reminder = vm.persisted[2].parts.compactMap { if case .text(let text) = $0 { return text }; return nil }.joined()
@@ -546,5 +565,79 @@ enum GroupMentionRouter {
         print("PASS: actual model-group empty fallback returns authorized meeting stops for delivery; ordinary/child/unbound/claimed/nil/refusal fallback and nonempty exits remain unchanged")
         print("PASS: real dispatch blocks forged business calls; claimed/in-flight/stale/cancelled/interrupted/error/pass/ordinary turns never request recovery")
         print("PASS: independent voice reuses bounded answer-only recovery without ordinary/reasoning speech or replayed business operations")
+
+        for reason in [AgentStopReason.endTurn, .toolUse] {
+            let direct = AIChatViewModel()
+            _ = direct.bind()
+            let directProvider = ScriptProvider([.init(calls: [reply], stopReason: reason)])
+            await direct.runRecoveryScript(directProvider)
+            precondition(directProvider.requests.count == 1 && direct.reminderCount == 0
+                         && direct.completionCount == 1 && direct.publicTexts == [answer] && direct.spoken == [answer],
+                         "Direct public delivery must finish once, without another model request or duplicate speech")
+            let reloaded = AIChatViewModel()
+            reloaded.agentHistory = direct.persisted
+            reloaded.testRecheckCanResumeFromHistory()
+            let tail = reloaded.agentHistory.last!
+            precondition(!reloaded.canResume && !ChatStore.isInterruptedTail(role: tail.role, parts: tail.parts))
+        }
+        let failedDelivery = AIChatViewModel()
+        _ = failedDelivery.bind(deliver: { _ in false })
+        await failedDelivery.runRecoveryScript(twoTurns())
+        precondition(failedDelivery.completionCount == 0 && !MeetingAnswerUserTool.didDeliver(sessionID: failedDelivery.sessionId),
+                     "Claiming a failed public delivery must not mark the turn complete")
+        let cancelledDelivery = AIChatViewModel()
+        _ = cancelledDelivery.bind(deliver: { _ in cancelledDelivery.userDidCancel = true; return true })
+        await cancelledDelivery.runRecoveryScript(twoTurns())
+        precondition(cancelledDelivery.completionCount == 0 && cancelledDelivery.userDidCancel,
+                     "A cancelled delivery round must not append a normal completion")
+        for incomplete in [failedDelivery, cancelledDelivery] {
+            let reloaded = AIChatViewModel()
+            reloaded.agentHistory = incomplete.persisted
+            reloaded.testRecheckCanResumeFromHistory()
+            let tail = reloaded.agentHistory.last!
+            precondition(reloaded.canResume && ChatStore.isInterruptedTail(role: tail.role, parts: tail.parts),
+                         "Failed or cancelled delivery must retain its recovery after persistence reload")
+        }
+        precondition(bounded.completionCount == 0 && unbound.completionCount == 0 && inFlight.completionCount == 0)
+        precondition(RawMessage.isInternalBridgeText(RawMessage.publicReplyCompletionText)
+                     && ContextDisplayCheck.stripSystemReminders(RawMessage.publicReplyCompletionText).isEmpty,
+                     "The durable completion must be hidden by real bridge and text display filters")
+
+        // Keep genuinely unfinished business and cancelled public delivery
+        // resumable in both the reloaded detail view and the session list.
+        let unfinishedTails: [AgentMessage] = [
+            .init(role: .assistant, parts: [.toolUse(id: "unfinished-business", name: "apple_native", input: [:])]),
+            .init(role: .user, parts: [.toolResult(id: "unfinished-business", name: "apple_native",
+                                               content: "Verified calendar result", isError: false)]),
+            .init(role: .user, parts: [.toolResult(id: "cancelled-answer", name: "answer_user",
+                                               content: "{\"status\":\"stale\"}", isError: true)])
+        ]
+        for tail in unfinishedTails {
+            let reloaded = AIChatViewModel()
+            reloaded.agentHistory = [tail]
+            reloaded.testRecheckCanResumeFromHistory()
+            precondition(reloaded.canResume && ChatStore.isInterruptedTail(role: tail.role, parts: tail.parts),
+                         "Unfinished business or cancelled delivery must remain resumable after reload")
+        }
+
+        // Recovery has already delivered its public answer and returned
+        // normally. Rebuild from the actual persisted recovery records, then
+        // run both production interruption classifiers without a wake/cancel.
+        // A successful reply must not turn into Interrupted while host TTS is
+        // still playing or when the user opens this conversation later.
+        for completed in [voice, vm, emptyStop] {
+            precondition(!completed.userDidCancel && !completed.canResume && completed.publicTexts == [answer]
+                         && completed.completionCount == 1)
+            let reloaded = AIChatViewModel()
+            reloaded.sessionId = completed.sessionId
+            reloaded.agentHistory = completed.persisted
+            reloaded.testRecheckCanResumeFromHistory()
+            let tail = reloaded.agentHistory.last!
+            let listInterrupted = ChatStore.isInterruptedTail(role: tail.role, parts: tail.parts)
+            print("Recovery reload: source=\(completed.sessionSource ?? "nil") detailInterrupted=\(reloaded.canResume) listInterrupted=\(listInterrupted)")
+            precondition(!reloaded.canResume && !listInterrupted,
+                         "A normally delivered public answer must remain completed after persistence reload")
+        }
+        print("PASS: completed public delivery remains completed after real detail/list tail checks; unfinished and cancelled tool turns remain resumable")
     }
 }

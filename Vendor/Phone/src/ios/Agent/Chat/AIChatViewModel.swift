@@ -153,6 +153,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Captured once by the runner when accepting an explicit voice request.
     /// Tool dispatch must not obtain a fresh generation for an older turn.
     var appNavigationVoiceGeneration: UInt64?
+    /// Execution authority is independent of a visible navigation binding.
+    var toolExecutionGeneration: UInt64?
     #endif
 
     /// Short unique ID for this ViewModel instance (for debugging lifecycle).
@@ -561,7 +563,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     func markLongBackgroundBrowserTasks() {
         defer { bgHintBackgroundEntryDate = nil }
         guard let _ = bgHintBackgroundEntryDate else { return }
-        guard !BackgroundKeepAliveManager.shared.enhancedBackgroundEffective else { return }
+        guard !BackgroundKeepAliveManager.shared.canContinueBackgroundExecution else { return }
         let now = Date()
         for msg in messages where msg.role == .assistant {
             for block in msg.blocks {
@@ -6507,6 +6509,23 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // [T-meeting-answer-user-recovery-tool-close] One recovery request
             // ends after its tool receipts are durable, even if the model asks
             // for other tools. Leave queued user turns to the fresh-run drain.
+            if !Task.isCancelled, let delivery = runtimePolicy.replyDelivery,
+               delivery.didDeliver(sessionId), toolResultParts.contains(where: {
+                   if case .toolResult(_, let name, _, let failed, _, _, _, _) = $0 {
+                       return name == delivery.definition.name && !failed
+                   }
+                   return false
+               }) {
+                var completion = AgentMessage(role: .assistant, parts: [.text(RawMessage.publicReplyCompletionText)])
+                if let persistedID = await persistAgentMessage(completion) {
+                    completion.dbMessageId = persistedID
+                    agentHistory.append(completion)
+                }
+                canResume = false
+                if msgIdx < messages.count { messages[msgIdx].isAwaitingModelResponse = false }
+                hitTurnLimit = false
+                break
+            }
             if replyDeliveryRound {
                 messages[msgIdx].isAwaitingModelResponse = false
                 hitTurnLimit = false

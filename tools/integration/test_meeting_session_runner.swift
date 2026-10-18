@@ -4,7 +4,8 @@ import Foundation
 @MainActor final class IOSAgentSessionRunner {}
 @MainActor final class AppNavigationCenter {
     static let shared = AppNavigationCenter()
-    func voiceGeneration(sessionID: String) -> UInt64? { 42 }
+    var available = true
+    func voiceGeneration(sessionID: String) -> UInt64? { available ? 42 : nil }
 }
 enum AgentRole { case main, executor }
 enum AgentRunRole: String { case main, executor }
@@ -54,6 +55,7 @@ struct HostMessage { let queuedPromptId: UUID? }
     var currentTask: Task<Void, Never>?
     var compactTask: Task<Void, Never>?
     var appNavigationVoiceGeneration: UInt64?
+    var toolExecutionGeneration: UInt64? = 999
     var executionGate: CheckedContinuation<Void, Never>?
     var postCompactDrainPending = false
     var promptQueue: [QueuedPrompt] = []
@@ -130,9 +132,11 @@ struct HostMessage { let queuedPromptId: UUID? }
         let runner = IOSAgentSessionRunner()
         let cache = ViewModelCache.shared
         let configuredSources = ["meeting_assistant", "xiaolan_voice", "arbitrary_adapter"]
+        let executionGeneration: @MainActor (String) -> UInt64? = { _ in 77 }
         for source in configuredSources {
             AgentRuntimePolicies.register(source: source, policy: .init(
-                requiresIdle: true, requiresNoticeReplyBinding: true, requiresNavigationBinding: source != "meeting_assistant"))
+                requiresIdle: true, requiresNoticeReplyBinding: true, requiresNavigationBinding: source != "meeting_assistant",
+                executionGeneration: source == "meeting_assistant" ? nil : executionGeneration))
         }
         func request(_ source: String = "meeting_assistant", timeout: TimeInterval = 1, owner: String? = "configured-owner") -> AgentSessionRunRequest {
             .init(sessionId: "configured-session", prompt: "查日程", agentId: owner, source: source,
@@ -153,6 +157,7 @@ struct HostMessage { let queuedPromptId: UUID? }
             }
             let result = await runner.run(request(source))
             precondition(!result.accepted && vm.sent == 0 && vm.cancelled == 0)
+            precondition(vm.toolExecutionGeneration == 999, "Busy rejection cannot erase an active turn's execution authority")
             precondition(vm.groupId == "existing-group" && vm.agentId == "existing-agent"
                          && vm.sessionSource == "existing-source" && vm.groupPromptBlock == "existing-system-rules",
                          "Busy rejection must precede session and prompt mutation")
@@ -174,8 +179,19 @@ struct HostMessage { let queuedPromptId: UUID? }
                          "Programmatic prompt-only runs preserve staged composer text/files for every source")
             precondition(vm.appNavigationVoiceGeneration == (source == "meeting_assistant" ? nil : 42),
                          "Navigation generation capture follows registered policy, including an arbitrary source")
+            precondition(vm.toolExecutionGeneration == (source == "meeting_assistant" ? nil : 77),
+                         "Execution generation capture follows the host policy and clears stale authority for ordinary sources")
         }
         }
+
+        AppNavigationCenter.shared.available = false
+        let background = AIChatViewModel()
+        cache.vm = background
+        let backgroundResult = await runner.run(request("xiaolan_voice"))
+        precondition(backgroundResult.accepted && background.appNavigationVoiceGeneration == nil
+                     && background.toolExecutionGeneration == 77,
+                     "A background request captures execution authority without granting foreground navigation")
+        AppNavigationCenter.shared.available = true
 
         let stalled = AIChatViewModel()
         stalled.behavior = .stalledCompaction

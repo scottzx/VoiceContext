@@ -146,3 +146,13 @@ xcodebuild -workspace VoiceContextAgent.xcworkspace \
 本轮最终二进制 SHA-256：`e6d111f3bdef8a38eda1d319e4f91eb91554439325a54fc4e1ef924ab496e357`。证据保存在 `build/xiaolan-voice/runtime-policy-notice-final-build.log`、`runtime-policy-signing.json`、`runtime-policy-fusion-audit.json`、`runtime-policy-install.json`、`runtime-policy-dev-after.json` 与 `runtime-policy-production-after.json`。
 
 本轮未使用 Simulator；真实模型选工具、端到端语音、长任务二次唤醒与产物打开仍需设备交互验收。主机生产逻辑检查、签名构建和成功安装分别记录。PM 服务 `127.0.0.1:38080` 仍不可用，设计与验收已保存在仓库，未伪造项目项或功能树状态。
+
+## 儿童故事机与锁屏完整智能体收尾（2026-10-18）
+
+已交付本地故事库与原生播放器、受控 `story_player`、唤醒优先、自然完播回传及公开答复完成标记。持续监听使用同一麦克风和独立 CPU 命令识别；锁屏仍可运行与前台相同的智能体、业务工具及子任务，并播报真实公开结果。录音互斥、旧回合清理与页面解锁门禁保留。
+
+本轮 15 组宿主回归通过，覆盖持续语音生命周期、提示语、录音互斥、两种构建的后台执行守护、真实 Runner/工具策略、公开答复恢复、子任务通知、故事完播与工具、事项后台 CRUD 及导航/预览门禁。最终 `VoiceContextAgentDev / Debug-Dev` 通用 iPhoneOS 签名构建与融合装配通过，开发包已增量安装为 `Yima Dev 1.0 (7)`。正式版信息及开发版 6 个故事 MP3 和清单的文件名、大小、修改时间保持一致，未对内容逐字节校验。
+
+用户随后明确反馈「各项功能通过测试，进行收尾。git需要提交」，本轮功能验收通过。验收来自用户手动测试，Agent 没有启动设备 App 或使用 Simulator；没有逐项提供数据的性能、路由、首次解锁前恢复及无障碍专项不作已测声明。详细范围和验收来源见[故事机收尾记录](../design/children-story-player.md#17-用户验收与收尾2026-10-18)。
+
+本机忽略目录 `build/xiaolan-background-agent/` 保留 `deployment.json`、`verification.json`、签名、装配与安装回执。该处 `deviceRuntimePerformed=false` 记录 Agent 未代为运行，不否定用户本次反馈。PM 本地服务仍未启动，仓库归档与 Git 提交照常完成，未编造看板关闭状态。

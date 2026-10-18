@@ -7,6 +7,7 @@ struct AgentReplyDeliveryPolicy {
     let definition: AgentToolDefinition
     let canRequest: @MainActor (String?) -> Bool
     let reminder: String
+    var didDeliver: @MainActor (String?) -> Bool = { _ in false }
 }
 
 @MainActor
@@ -23,6 +24,8 @@ struct AgentRuntimePolicy {
     var requiresNoticeReplyBinding = false
     var requiresNavigationBinding = false
     var restoresSourceOnLoad = false
+    var allowsItemPresentation = true
+    var executionGeneration: (@MainActor (String) -> UInt64?)?
     var prompt: (@MainActor (String?, Bool, Bool) -> String)?
 
     func allowedToolNames(noticeDriven: Bool) -> Set<String>? {

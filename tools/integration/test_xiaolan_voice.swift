@@ -12,13 +12,15 @@ enum AVAudioSession {
 }
 @MainActor final class AVAudioPlayer {
     static var played = 0
+    static var playbackMilliseconds = 10
     var isPlaying = false
     init(data: Data) throws {}
     func prepareToPlay() {}
     func play() -> Bool {
         Self.played += 1
         isPlaying = true
-        Task { try? await Task.sleep(for: .milliseconds(10)); isPlaying = false }
+        let duration = Self.playbackMilliseconds
+        Task { try? await Task.sleep(for: .milliseconds(duration)); isPlaying = false }
         return true
     }
     func stop() { isPlaying = false }
@@ -53,7 +55,7 @@ enum VoiceTextSanitizer { static func sanitize(_ text: String) -> String { text 
     var onSpeakingChanged: (@MainActor (Bool) -> Void)?
     private var token: UUID?
     func say(_ text: String) async -> Bool {
-        precondition(!AudioSessionCoordinator.shared.capture, "Fixed feedback must not enter microphone input")
+        precondition(AudioSessionCoordinator.shared.capture, "Wake input must remain active during fixed feedback")
         inputs.append(text)
         let id = UUID(); token = id
         onSpeakingChanged?(true)
@@ -72,6 +74,7 @@ enum VoiceTextSanitizer { static func sanitize(_ text: String) -> String { text 
     static var starts = 0
     static var directStarts = 0
     var handler: (@MainActor (Event) -> Void)?
+    var isRunning = false
     static func requestMicrophonePermission() async -> Bool {
         permissionRequests += 1
         return await grantPermission()
@@ -80,11 +83,14 @@ enum VoiceTextSanitizer { static func sanitize(_ text: String) -> String { text 
         Self.starts += 1
         if direct { Self.directStarts += 1 }
         Self.latest = self
+        isRunning = true
         handler = onEvent
         onEvent(direct ? .listening : .ready)
     }
-    func stop() { handler = nil }
+    func stop() { handler = nil; isRunning = false }
+    func beginCommand() { Self.directStarts += 1; handler?(.listening) }
     func command(_ text: String) { handler?(.transcribing); handler?(.command(text)) }
+    func wake() { handler?(.listening) }
     func wakeOnly() { handler?(.transcribing); handler?(.wakeOnly) }
 }
 @MainActor final class VoiceRecordingWorkspace {
@@ -107,8 +113,8 @@ enum VoiceTextSanitizer { static func sanitize(_ text: String) -> String { text 
     }
     func releaseIndependentVoice() { isIndependentVoiceEnabled = false; capture = false; ttsReserved = false }
     func beginAndWait(_ intent: Intent) -> Bool {
-        if intent == .xiaolanTTS { ttsReserved = true; capture = false; return isIndependentVoiceEnabled && !rejectTTS }
-        capture = isIndependentVoiceEnabled && !ttsReserved
+        if intent == .xiaolanTTS { ttsReserved = true; return isIndependentVoiceEnabled && !rejectTTS }
+        capture = isIndependentVoiceEnabled
         return capture
     }
     func end(_ intent: Intent) {
@@ -117,6 +123,20 @@ enum VoiceTextSanitizer { static func sanitize(_ text: String) -> String { text 
     }
 }
 enum MeetingAssistantController { static var reason: String?; static func modelUnavailableReason() -> String? { reason } }
+@MainActor final class StoryLibraryStore {
+    static let shared = StoryLibraryStore()
+    func prepareForBackgroundPlayback() throws {}
+}
+@MainActor final class StoryPlaybackController {
+    static let shared = StoryPlaybackController()
+    var held = false
+    var requested = false
+    var playing = false
+    func bindCompletionSessionIfUnowned(_ sessionID: String) {}
+    func beginVoiceInteraction() { held = true; playing = false }
+    func finishVoiceInteraction() { held = false; playing = requested }
+    func cancelVoiceInteraction() { if held { held = false; requested = false; playing = false } }
+}
 @MainActor final class ChatStore {
     static let shared = ChatStore()
     var sessions: Set<String> = []
@@ -131,14 +151,21 @@ enum MeetingAssistantController { static var reason: String?; static func modelU
     static func ownsSession(_ sessionID: String) async -> Bool { ChatStore.shared.owners[sessionID] == id }
 }
 @MainActor final class HostVM {
+    var agentId: String? = XiaolanAgent.id
+    var sessionSource: String? = "xiaolan_voice"
     var isProcessing = false, isCompacting = false, postCompactDrainPending = false
+    var currentTask: Task<Void, Never>?
     var compactTask: Task<Void, Never>?
-    var promptQueue: [String] = []
+    struct Prompt { let id: String }
+    struct Message { let queuedPromptId: String? }
+    var promptQueue: [Prompt] = []
+    var messages: [Message] = []
     func loadSession() async {}
 }
 @MainActor final class ViewModelCache {
     static let shared = ViewModelCache()
     var models: [String: HostVM] = [:]
+    func get(for id: String) -> HostVM? { models[id] }
     func getOrCreate(for id: String) -> (HostVM, Bool) {
         if let vm = models[id] { return (vm, false) }
         let vm = HostVM(); models[id] = vm; return (vm, false)
@@ -172,6 +199,7 @@ enum MeetingAssistantController { static var reason: String?; static func modelU
     static let shared = IOSAgentSessionRunner()
     var noticeSystemPrompts: [String: @MainActor (String) -> String?] = [:]
     var requests: [AgentSessionRunRequest] = []
+    var cancellations: [String] = []
     var behavior: (AgentSessionRunRequest) async -> AgentSessionRunResult = { _ in .init(text: "PRIVATE", accepted: true, timedOut: false, cancelled: false) }
     func createSession(_ request: AgentSessionCreateRequest) async -> String? {
         precondition(request.agentId == XiaolanAgent.id)
@@ -185,9 +213,26 @@ enum MeetingAssistantController { static var reason: String?; static func modelU
         requests.append(request)
         return await behavior(request)
     }
+    func cancel(sessionId: String) {
+        cancellations.append(sessionId)
+        if let vm = ViewModelCache.shared.get(for: sessionId) {
+            vm.currentTask?.cancel()
+            if vm.isCompacting { vm.compactTask?.cancel(); vm.compactTask = nil }
+            vm.currentTask = nil
+            vm.isProcessing = false
+            vm.isCompacting = false
+        }
+    }
 }
 
 @main struct XiaolanVoiceChecks {
+    @MainActor final class Gate {
+        private var continuation: CheckedContinuation<Void, Never>?
+        var waiting: Bool { continuation != nil }
+        func wait() async { await withCheckedContinuation { continuation = $0 } }
+        func open() { let pending = continuation; continuation = nil; pending?.resume() }
+    }
+
     @MainActor static func main() async {
         AgentRuntimePolicies.register(source: "xiaolan_voice", policy: .init(replyDelivery: .init(
             definition: MeetingAnswerUserTool.definition,
@@ -201,6 +246,13 @@ enum MeetingAssistantController { static var reason: String?; static func modelU
             while voice.isBusy && Date() < deadline { try? await Task.sleep(for: .milliseconds(10)) }
             try? await Task.sleep(for: .milliseconds(150))
         }
+        func waitUntil(_ condition: () -> Bool) async {
+            for _ in 0..<2_000 {
+                if condition() { return }
+                try? await Task.sleep(for: .milliseconds(1))
+            }
+            preconditionFailure("Voice test did not reach its expected state")
+        }
         func reset() {
             voice.disable(); voice.setForeground(true)
             workspace.hasUnfinishedRecording = false
@@ -208,12 +260,17 @@ enum MeetingAssistantController { static var reason: String?; static func modelU
             SystemVoiceProvider.delay = 0
             SystemVoiceProvider.inputs = []
             AVAudioPlayer.played = 0
+            AVAudioPlayer.playbackMilliseconds = 10
             VoiceOutputPreferences.isMuted = false
             runner.requests = []
+            runner.cancellations = []
             XiaolanAgent.failure = nil
             XiaolanVoiceAcknowledgement.shared.inputs = []
             XiaolanVoiceAcknowledgement.shared.delay = 10
             AudioSessionCoordinator.shared.rejectTTS = false
+            StoryPlaybackController.shared.held = false
+            StoryPlaybackController.shared.requested = false
+            StoryPlaybackController.shared.playing = false
         }
         reset()
         workspace.hasUnfinishedRecording = true // Paused/stopping is also unfinished.
@@ -402,6 +459,419 @@ enum MeetingAssistantController { static var reason: String?; static func modelU
         precondition(ChatStore.shared.owners[oldVoiceSession] == "agent-default"
                      && ChatStore.shared.owners[voice.sessionID!] == XiaolanAgent.id)
         voice.disable()
-        print("PASS: independent voice gates unfinished recordings and permission races, reuses sessions, speaks only public tool answers, and rejects late mic/model/TTS callbacks after pause/close")
+        reset()
+        let story = StoryPlaybackController.shared
+        story.requested = true
+        story.playing = true
+        try! await voice.enable(recordings: workspace)
+        precondition(story.playing && !story.held, "Enabling wake input preserves the existing story")
+        runner.behavior = { request in
+            precondition(story.held && !story.playing, "A voice request pauses stories before executing tools")
+            story.requested = true
+            _ = await MeetingAnswerUserTool.execute(["text": "将在回复结束后播放"], sessionID: request.sessionId, sessionSource: request.source)
+            precondition(!story.playing, "Public reply must precede story playback")
+            return .init(text: "PRIVATE", accepted: true, timedOut: false, cancelled: false)
+        }
+        voice.beginCommand()
+        precondition(story.held && !story.playing)
+        IndependentVoiceInput.latest!.command("继续故事")
+        await settle()
+        precondition(story.playing && !story.held, "Story resumes after the public reply and wake input are ready")
+        voice.beginCommand()
+        voice.pause()
+        precondition(!story.playing && !story.requested && !story.held, "Voice cancellation must discard queued playback")
+        voice.disable()
+        // A wake is admitted during model work. Capture keeps running while
+        // old model cleanup is joined and the new command is collected.
+        reset()
+        try! await voice.enable(recordings: workspace)
+        let oldGate = Gate(), cleanupGate = Gate()
+        var cleanupFinished = false
+        var oldAnswerAccepted: Bool?
+        runner.behavior = { request in
+            if request.prompt == "旧任务" {
+                let vm = ViewModelCache.shared.get(for: request.sessionId)!
+                vm.isProcessing = true
+                vm.promptQueue = [.init(id: "queued-old-voice")]
+                vm.messages = [.init(queuedPromptId: nil), .init(queuedPromptId: "queued-old-voice")]
+                vm.currentTask = Task { await cleanupGate.wait(); cleanupFinished = true }
+                await oldGate.wait() // Deliberately ignores caller cancellation.
+                oldAnswerAccepted = await MeetingAnswerUserTool.execute(["text": "旧任务迟到结果"], sessionID: request.sessionId, sessionSource: request.source).success
+                return .init(text: "PRIVATE_OLD", accepted: true, timedOut: false, cancelled: true)
+            }
+            precondition(cleanupFinished, "The next run must await actual old model cleanup")
+            _ = await MeetingAnswerUserTool.execute(["text": "新指令已完成"], sessionID: request.sessionId, sessionSource: request.source)
+            return .init(text: "PRIVATE_NEW", accepted: true, timedOut: false, cancelled: false)
+        }
+        IndependentVoiceInput.latest!.command("旧任务")
+        await waitUntil { oldGate.waiting && cleanupGate.waiting }
+        let busySession = voice.sessionID!
+        let inputStarts = IndependentVoiceInput.starts
+        let busyGeneration = voice.responseGeneration
+        precondition(voice.isBusy && IndependentVoiceInput.latest!.isRunning && AudioSessionCoordinator.shared.capture)
+        IndependentVoiceInput.latest!.handler?(.ready)
+        precondition(voice.isBusy && StoryPlaybackController.shared.held, "A KWS readiness callback cannot finish a busy voice interaction")
+        IndependentVoiceInput.latest!.wake()
+        precondition(voice.responseGeneration != busyGeneration && !voice.isBusy && voice.status == "正在听指令")
+        precondition(AudioSessionCoordinator.shared.capture && IndependentVoiceInput.starts == inputStarts)
+        precondition(runner.cancellations.contains(busySession))
+        let interruptedVM = ViewModelCache.shared.get(for: busySession)!
+        precondition(interruptedVM.promptQueue.isEmpty && interruptedVM.messages.count == 1)
+        IndependentVoiceInput.latest!.command("新指令")
+        try? await Task.sleep(for: .milliseconds(30))
+        precondition(runner.requests.map(\.prompt) == ["旧任务"])
+        oldGate.open()
+        await waitUntil { oldAnswerAccepted != nil }
+        precondition(oldAnswerAccepted == false && runner.requests.count == 1)
+        cleanupGate.open()
+        await settle()
+        precondition(runner.requests.map(\.prompt) == ["旧任务", "新指令"] && voice.lastAnswer == "新指令已完成")
+        precondition(voice.sessionID == busySession && IndependentVoiceInput.starts == inputStarts)
+
+        // A runner timeout ends the voice request while model cleanup can still
+        // be alive. The next wake must cancel and join that orphaned work too.
+        reset()
+        try! await voice.enable(recordings: workspace)
+        let timedOutCleanup = Gate()
+        var timedOutCleanupFinished = false
+        runner.behavior = { request in
+            if request.prompt == "超时任务" {
+                let vm = ViewModelCache.shared.get(for: request.sessionId)!
+                vm.isProcessing = true
+                vm.currentTask = Task { await timedOutCleanup.wait(); timedOutCleanupFinished = true }
+                return .init(text: nil, accepted: true, timedOut: true, cancelled: false)
+            }
+            precondition(timedOutCleanupFinished)
+            _ = await MeetingAnswerUserTool.execute(["text": "超时后新指令"], sessionID: request.sessionId, sessionSource: request.source)
+            return .init(text: nil, accepted: true, timedOut: false, cancelled: false)
+        }
+        IndependentVoiceInput.latest!.command("超时任务")
+        await settle()
+        await waitUntil { timedOutCleanup.waiting }
+        precondition(!voice.isBusy && ViewModelCache.shared.get(for: voice.sessionID!)!.isProcessing)
+        let timedOutSession = voice.sessionID!
+        IndependentVoiceInput.latest!.wake()
+        precondition(runner.cancellations.contains(timedOutSession))
+        IndependentVoiceInput.latest!.command("超时后新指令")
+        try? await Task.sleep(for: .milliseconds(30))
+        precondition(runner.requests.count == 1)
+        timedOutCleanup.open()
+        await settle()
+        precondition(runner.requests.map(\.prompt) == ["超时任务", "超时后新指令"] && voice.lastAnswer == "超时后新指令")
+
+        // Compaction can be scheduled before its busy flag is set. Cancel its
+        // saved handle explicitly and clear it before the new model admission.
+        let compactVM = ViewModelCache.shared.get(for: timedOutSession)!
+        var compactStarted = false, compactCancelled = false
+        compactVM.compactTask = Task {
+            compactStarted = true
+            do { try await Task.sleep(for: .seconds(30)) }
+            catch { compactCancelled = Task.isCancelled }
+        }
+        await waitUntil { compactStarted }
+        precondition(!compactVM.isCompacting)
+        IndependentVoiceInput.latest!.wake()
+        IndependentVoiceInput.latest!.command("压缩后新指令")
+        await settle()
+        precondition(compactCancelled && compactVM.compactTask == nil)
+        precondition(runner.requests.map(\.prompt) == ["超时任务", "超时后新指令", "压缩后新指令"])
+
+        // In-loop compaction restores a running state only while it still owns
+        // that state. Its real production defer must preserve cancel()'s idle
+        // state and also leave a replacement queue's running state intact.
+        for (runningOnEntry, cancelled, replacementRunning, expectedRunning) in [
+            (false, false, false, false),
+            (true, false, false, true),
+            (false, true, false, false),
+            (true, true, false, false),
+            (true, true, true, true)
+        ] {
+            let vm = HostVM(), cleanup = Gate()
+            let task = Task {
+                await vm.runCompactionCleanup(wasProcessingOnEntry: runningOnEntry) { await cleanup.wait() }
+            }
+            await waitUntil { cleanup.waiting }
+            if cancelled {
+                task.cancel()
+                vm.isProcessing = replacementRunning
+            }
+            cleanup.open()
+            await task.value
+            precondition(vm.isProcessing == expectedRunning,
+                         "Compaction cleanup overwrote its cancellation/replacement owner's state")
+            precondition(!vm.isCompacting && vm.compactTask == nil)
+        }
+
+        // Exercise the same production defer inside a task interrupted by the
+        // real voice controller, then admit the next command after cleanup.
+        let inLoopCleanup = Gate()
+        compactVM.currentTask = Task {
+            await compactVM.runCompactionCleanup(wasProcessingOnEntry: true) { await inLoopCleanup.wait() }
+        }
+        await waitUntil { inLoopCleanup.waiting }
+        IndependentVoiceInput.latest!.wake()
+        IndependentVoiceInput.latest!.command("执行中压缩后新指令")
+        inLoopCleanup.open()
+        await settle()
+        precondition(runner.requests.map(\.prompt) == ["超时任务", "超时后新指令", "压缩后新指令", "执行中压缩后新指令"])
+
+        // The acoustic wake also cuts an already audible reply immediately.
+        reset()
+        try! await voice.enable(recordings: workspace)
+        AVAudioPlayer.playbackMilliseconds = 500
+        runner.behavior = { request in
+            _ = await MeetingAnswerUserTool.execute(["text": request.prompt], sessionID: request.sessionId, sessionSource: request.source)
+            return .init(text: "PRIVATE", accepted: true, timedOut: false, cancelled: false)
+        }
+        IndependentVoiceInput.latest!.command("旧播报")
+        await waitUntil { voice.isSpeaking && AVAudioPlayer.played == 1 }
+        precondition(AudioSessionCoordinator.shared.capture && IndependentVoiceInput.latest!.isRunning)
+        let speechGeneration = voice.responseGeneration
+        IndependentVoiceInput.latest!.wake()
+        precondition(!voice.isSpeaking && voice.responseGeneration != speechGeneration && AudioSessionCoordinator.shared.capture)
+        AVAudioPlayer.playbackMilliseconds = 10
+        IndependentVoiceInput.latest!.command("新播报")
+        await settle()
+        precondition(voice.lastAnswer == "新播报" && runner.requests.map(\.prompt) == ["旧播报", "新播报"])
+
+        // Clicking to speak while the immediate acknowledgement is running
+        // has the same priority; the old command never reaches the runner.
+        reset()
+        try! await voice.enable(recordings: workspace)
+        XiaolanVoiceAcknowledgement.shared.delay = 120
+        IndependentVoiceInput.latest!.command("旧接单")
+        await waitUntil { !XiaolanVoiceAcknowledgement.shared.inputs.isEmpty }
+        voice.beginCommand()
+        precondition(!voice.isSpeaking && AudioSessionCoordinator.shared.capture)
+        IndependentVoiceInput.latest!.command("新接单")
+        await settle()
+        precondition(runner.requests.map(\.prompt) == ["新接单"] && voice.lastAnswer == "新接单")
+
+        // Locked requests use the same real Agent path, source and session as
+        // foreground requests, including non-story work and public-only TTS.
+        reset()
+        try! await voice.enable(recordings: workspace)
+        let unlockedStarts = IndependentVoiceInput.starts
+        voice.setForeground(false)
+        precondition(!voice.isPaused && voice.isCapturingVoice && AudioSessionCoordinator.shared.capture)
+        IndependentVoiceInput.latest!.wakeOnly()
+        await settle()
+        precondition(XiaolanVoiceAcknowledgement.shared.inputs == ["我在"] && runner.requests.isEmpty)
+        precondition(IndependentVoiceInput.starts == unlockedStarts)
+        var lockedGenerations: [UInt64] = []
+        runner.behavior = { request in
+            precondition(request.agentId == XiaolanAgent.id && request.source == "xiaolan_voice")
+            precondition(request.role == "main" && request.toolPolicy == "orchestrator")
+            precondition(request.systemPromptBlock?.contains("完整智能体任务") == true)
+            let generation = voice.executionGeneration(sessionID: request.sessionId)!
+            lockedGenerations.append(generation)
+            precondition(voice.isVoiceGenerationCurrent(sessionID: request.sessionId, generation: generation))
+            precondition(voice.navigationGeneration(sessionID: request.sessionId) == nil && AppNavigationCenter.shared.binding == nil)
+            let answer = await MeetingAnswerUserTool.execute(["text": "已核实：" + request.prompt],
+                                                             sessionID: request.sessionId, sessionSource: request.source)
+            precondition(answer.success)
+            return .init(text: "PRIVATE_LOCKED_REASONING", accepted: true, timedOut: false, cancelled: false)
+        }
+        IndependentVoiceInput.latest!.command("查今天的待办")
+        await settle()
+        let lockedSession = voice.sessionID!
+        IndependentVoiceInput.latest!.wake()
+        IndependentVoiceInput.latest!.command("查天气并安排子任务")
+        await settle()
+        precondition(runner.requests.map(\.prompt) == ["查今天的待办", "查天气并安排子任务"])
+        precondition(runner.requests.allSatisfy { $0.sessionId == lockedSession })
+        precondition(voice.lastAnswer == "已核实：查天气并安排子任务")
+        precondition(SystemVoiceProvider.inputs == ["已核实：查今天的待办", "已核实：查天气并安排子任务"] && AVAudioPlayer.played == 2)
+        precondition(voice.executionGeneration(sessionID: lockedSession) == nil,
+                     "A completed turn cannot grant execution to a later stale tool")
+        precondition(IndependentVoiceInput.starts == unlockedStarts && voice.isCapturingVoice)
+
+        // A delegated result is delivered and spoken while locked even when
+        // the UI's availability revision changed. It never gains navigation.
+        AppNavigationCenter.shared.state.revision += 1
+        let lockedNoticePrepared = await manager.replyHooks["xiaolan_voice"]!.prepare(lockedSession)
+        precondition(lockedNoticePrepared && AppNavigationCenter.shared.binding == nil)
+        let lockedNoticeAnswer = await MeetingAnswerUserTool.execute(["text": "子任务已完成并核实。"],
+                                                                     sessionID: lockedSession, sessionSource: "xiaolan_voice")
+        precondition(lockedNoticeAnswer.success)
+        await manager.replyHooks["xiaolan_voice"]!.finish(lockedSession, .init(text: "PRIVATE", accepted: true, timedOut: false, cancelled: false))
+        precondition(SystemVoiceProvider.inputs.last == "子任务已完成并核实。" && AVAudioPlayer.played == 3)
+        precondition(!voice.isBusy && voice.isCapturingVoice && AppNavigationCenter.shared.binding == nil)
+
+        // Unlocking during capture/ASR keeps full execution, while the captured
+        // background utterance still cannot acquire UI authority on return.
+        for unlockDuringASR in [false, true] {
+            reset()
+            try! await voice.enable(recordings: workspace)
+            if unlockDuringASR {
+                voice.setForeground(false)
+                IndependentVoiceInput.latest!.wake()
+                IndependentVoiceInput.latest!.handler?(.transcribing)
+                voice.setForeground(true)
+            } else {
+                IndependentVoiceInput.latest!.wake()
+                voice.setForeground(false)
+                voice.setForeground(true)
+            }
+            var executionWasCurrent = false
+            runner.behavior = { request in
+                executionWasCurrent = voice.executionGeneration(sessionID: request.sessionId) != nil
+                precondition(voice.navigationGeneration(sessionID: request.sessionId) == nil)
+                precondition(AppNavigationCenter.shared.binding == nil)
+                return .init(text: nil, accepted: true, timedOut: false, cancelled: false)
+            }
+            IndependentVoiceInput.latest!.command("查我的安排")
+            await settle()
+            precondition(executionWasCurrent && runner.requests.map(\.prompt) == ["查我的安排"])
+            runner.behavior = { request in
+                precondition(voice.navigationGeneration(sessionID: request.sessionId) != nil)
+                precondition(AppNavigationCenter.shared.binding != nil)
+                return .init(text: nil, accepted: true, timedOut: false, cancelled: false)
+            }
+            IndependentVoiceInput.latest!.wake()
+            IndependentVoiceInput.latest!.command("新的前台指令")
+            await settle()
+            precondition(runner.requests.count == 2)
+        }
+
+        // A background wake-only grants direct follow-up execution, but its UI
+        // restriction survives unlocking before the acknowledgement finishes.
+        reset()
+        try! await voice.enable(recordings: workspace)
+        voice.setForeground(false)
+        XiaolanVoiceAcknowledgement.shared.delay = 120
+        IndependentVoiceInput.latest!.wake()
+        IndependentVoiceInput.latest!.wakeOnly()
+        await waitUntil { !XiaolanVoiceAcknowledgement.shared.inputs.isEmpty }
+        voice.setForeground(true)
+        await settle()
+        XiaolanVoiceAcknowledgement.shared.delay = 10
+        runner.behavior = { request in
+            precondition(voice.executionGeneration(sessionID: request.sessionId) != nil)
+            precondition(voice.navigationGeneration(sessionID: request.sessionId) == nil)
+            return .init(text: nil, accepted: true, timedOut: false, cancelled: false)
+        }
+        IndependentVoiceInput.latest!.command("查天气")
+        await settle()
+        precondition(runner.requests.map(\.prompt) == ["查天气"])
+        runner.behavior = { request in
+            precondition(voice.navigationGeneration(sessionID: request.sessionId) != nil)
+            return .init(text: nil, accepted: true, timedOut: false, cancelled: false)
+        }
+        voice.beginCommand()
+        IndependentVoiceInput.latest!.command("点击发起的前台指令")
+        await settle()
+        precondition(runner.requests.count == 2)
+
+        // Locking an executing foreground Agent preserves its task, generation
+        // and reply, while immediately revoking the old navigation binding.
+        reset()
+        try! await voice.enable(recordings: workspace)
+        let foregroundGate = Gate()
+        var continuedReplyAccepted: Bool?
+        runner.behavior = { request in
+            await foregroundGate.wait()
+            precondition(voice.executionGeneration(sessionID: request.sessionId) != nil)
+            precondition(voice.navigationGeneration(sessionID: request.sessionId) == nil)
+            continuedReplyAccepted = await MeetingAnswerUserTool.execute(["text": "熄屏后任务已完成。"],
+                                                                         sessionID: request.sessionId, sessionSource: request.source).success
+            return .init(text: nil, accepted: true, timedOut: false, cancelled: false)
+        }
+        IndependentVoiceInput.latest!.command("前台开始的任务")
+        await waitUntil { foregroundGate.waiting }
+        let transitionGeneration = voice.responseGeneration
+        let transitionStarts = IndependentVoiceInput.starts
+        voice.setForeground(false)
+        AppNavigationCenter.shared.state.revision += 1
+        precondition(voice.isBusy && voice.responseGeneration == transitionGeneration && runner.cancellations.isEmpty)
+        precondition(AppNavigationCenter.shared.binding == nil && voice.isCapturingVoice)
+        foregroundGate.open()
+        await settle()
+        precondition(continuedReplyAccepted == true && voice.lastAnswer == "熄屏后任务已完成。")
+        precondition(SystemVoiceProvider.inputs == ["熄屏后任务已完成。"] && AVAudioPlayer.played == 1)
+        precondition(IndependentVoiceInput.starts == transitionStarts)
+
+        // A timed-out model is not cancelled simply by locking. The next
+        // actual wake still cancels and joins its real cleanup before admission.
+        reset()
+        try! await voice.enable(recordings: workspace)
+        let orphanCleanup = Gate()
+        runner.behavior = { request in
+            let vm = ViewModelCache.shared.get(for: request.sessionId)!
+            vm.isProcessing = true
+            vm.currentTask = Task { await orphanCleanup.wait() }
+            return .init(text: nil, accepted: true, timedOut: true, cancelled: false)
+        }
+        IndependentVoiceInput.latest!.command("切后台前已超时")
+        await settle()
+        await waitUntil { orphanCleanup.waiting }
+        let orphanSession = voice.sessionID!
+        voice.setForeground(false)
+        precondition(runner.cancellations.isEmpty && voice.isCapturingVoice)
+        IndependentVoiceInput.latest!.wake()
+        precondition(runner.cancellations.contains(orphanSession))
+        runner.behavior = { request in
+            _ = await MeetingAnswerUserTool.execute(["text": "新任务完成。"], sessionID: request.sessionId, sessionSource: request.source)
+            return .init(text: nil, accepted: true, timedOut: false, cancelled: false)
+        }
+        IndependentVoiceInput.latest!.command("锁屏时的新任务")
+        try? await Task.sleep(for: .milliseconds(30))
+        precondition(runner.requests.count == 1)
+        orphanCleanup.open()
+        await settle()
+        precondition(runner.requests.map(\.prompt) == ["切后台前已超时", "锁屏时的新任务"] && voice.lastAnswer == "新任务完成。")
+
+        // Background wake interrupts an in-flight full Agent and rejects its
+        // late answer. No new run starts until actual old cleanup is finished.
+        reset()
+        try! await voice.enable(recordings: workspace)
+        voice.setForeground(false)
+        let backgroundGate = Gate()
+        var supersededReplyAccepted: Bool?
+        runner.behavior = { request in
+            if request.prompt == "旧后台任务" {
+                await backgroundGate.wait()
+                supersededReplyAccepted = await MeetingAnswerUserTool.execute(["text": "过期后台结果"],
+                                                                             sessionID: request.sessionId, sessionSource: request.source).success
+                return .init(text: nil, accepted: true, timedOut: false, cancelled: true)
+            }
+            _ = await MeetingAnswerUserTool.execute(["text": "新后台结果"], sessionID: request.sessionId, sessionSource: request.source)
+            return .init(text: nil, accepted: true, timedOut: false, cancelled: false)
+        }
+        IndependentVoiceInput.latest!.command("旧后台任务")
+        await waitUntil { backgroundGate.waiting }
+        let oldBackgroundGeneration = voice.responseGeneration
+        IndependentVoiceInput.latest!.wake()
+        IndependentVoiceInput.latest!.command("新后台任务")
+        try? await Task.sleep(for: .milliseconds(30))
+        precondition(voice.responseGeneration != oldBackgroundGeneration && runner.requests.count == 1)
+        backgroundGate.open()
+        await settle()
+        precondition(supersededReplyAccepted == false && voice.lastAnswer == "新后台结果")
+        precondition(runner.requests.map(\.prompt) == ["旧后台任务", "新后台任务"] && voice.isCapturingVoice)
+        let pausedSession = voice.sessionID!
+        voice.pause()
+        precondition(voice.isPaused && !voice.isCapturingVoice && !AudioSessionCoordinator.shared.capture)
+        precondition(AudioSessionCoordinator.shared.isIndependentVoiceEnabled)
+        precondition(voice.executionGeneration(sessionID: pausedSession) == nil)
+        let pausedNotice = await manager.replyHooks["xiaolan_voice"]!.prepare(pausedSession)
+        precondition(!pausedNotice)
+        IndependentVoiceInput.latest!.command("暂停后不能接收")
+        await settle()
+        precondition(runner.requests.count == 2)
+        do { try await voice.resume(recordings: workspace); preconditionFailure("Background resume must remain explicit foreground action") }
+        catch {}
+        precondition(voice.isPaused)
+        voice.setForeground(true)
+        precondition(voice.isPaused)
+        try! await voice.resume(recordings: workspace)
+        voice.setForeground(false)
+        NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: nil,
+                                        userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue])
+        await waitUntil { voice.isPaused }
+        precondition(!voice.isCapturingVoice && !AudioSessionCoordinator.shared.capture
+                     && AudioSessionCoordinator.shared.isIndependentVoiceEnabled)
+        voice.disable()
+        print("PASS: full Agent execution, public answers and delegated replies work across lock/background with one microphone; UI authority, recording exclusion, wake priority and stale-callback rejection remain enforced")
     }
 }

@@ -36,6 +36,7 @@ enum AppRouteCatalog {
         .init(id: "extension.hardware", title: "硬件设备", parent: "extensions"),
         .init(id: "extension.terminal", title: "终端", parent: "extensions"),
         .init(id: "extension.browser", title: "浏览器", parent: "extensions"),
+        .init(id: "extension.stories", title: "儿童故事机", parent: "extensions"),
         .init(id: "extension.custom_functions", title: "管理自定义功能", parent: "extensions"),
         .init(id: "extension.custom", title: "自定义功能", parent: "extensions", parameters: ["id": ["uuid"]]),
         .init(id: "artifact.preview", title: "内容预览", parent: "chat", parameters: ["artifact_id": ["session_id:artifact_uuid"]])

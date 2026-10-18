@@ -581,7 +581,15 @@ extension AIChatViewModel {
                 messages[msgIdx].blocks[blockIdx].content = result.output
             }
         case "yima_items":
-            let result = await MainActor.run { YimaItemsAgentTool.execute(toolArgs, sessionID: self.sessionId) }
+            let result = await MainActor.run {
+                let policy = AgentRuntimePolicies.policy(for: self.sessionSource)
+                let navigation = AppNavigationCenter.shared
+                let allowsPresentation = policy.allowsItemPresentation && navigation.available
+                    && (!policy.requiresNavigationBinding || navigation.isVoiceBindingCurrent(
+                        sessionID: self.sessionId, generation: self.appNavigationVoiceGeneration))
+                return YimaItemsAgentTool.execute(toolArgs, sessionID: self.sessionId,
+                    allowsPresentation: allowsPresentation)
+            }
             toolOutput = result.output
             toolSuccess = result.success
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
@@ -610,6 +618,17 @@ extension AIChatViewModel {
             let result = await AppPresentationTool.execute(
                 toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource,
                 voiceGeneration: self.appNavigationVoiceGeneration
+            )
+            toolOutput = result.output
+            toolSuccess = result.success
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+        case "story_player":
+            let result = StoryPlayerTool.execute(
+                toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource,
+                isExecutor: self.agentRole == .executor, noticeDriven: self.isNoticeDriven,
+                voiceGeneration: self.toolExecutionGeneration
             )
             toolOutput = result.output
             toolSuccess = result.success

@@ -11,7 +11,8 @@ enum FusionAudio {
 
     @MainActor static func registerWebView(_ webView: WKWebView) {
         webViews.add(webView)
-        if AudioSessionCoordinator.shared.isRecording || AudioSessionCoordinator.shared.isIndependentVoiceEnabled {
+        if AudioSessionCoordinator.shared.isRecording || AudioSessionCoordinator.shared.isIndependentVoiceEnabled
+            || AudioSessionCoordinator.shared.isStoryPlaybackActive {
             webView.setAllMediaPlaybackSuspended(true, completionHandler: nil)
             webView.setMicrophoneCaptureState(.muted, completionHandler: nil)
         }

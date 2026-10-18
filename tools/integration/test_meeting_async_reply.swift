@@ -14,6 +14,16 @@ struct HostSession { let source: String }
 struct HostMessage {
     let role: AgentMessage.Role
     let blocks: [Int]
+    init(role: AgentMessage.Role, blocks: [Int]) { self.role = role; self.blocks = blocks }
+    init(role: AgentMessage.Role, content: String, blocks: [AssistantBlock]) {
+        self.role = role; self.blocks = Array(blocks.indices)
+    }
+}
+typealias ChatMessage = HostMessage
+struct AssistantBlock {
+    enum Kind { case text }
+    let kind: Kind
+    let content: String
 }
 struct HostNotice {
     let id: String
@@ -27,7 +37,7 @@ struct HostNotice {
 }
 struct ToolUse { let toolUseId: String; let name: String; let input: String; let description: String }
 struct ToolResult { let toolUseId: String; let output: String; let success: Bool; let status: String }
-enum ContentPart { case toolUse(ToolUse), toolResult(ToolResult) }
+enum ContentPart { case toolUse(ToolUse), toolResult(ToolResult), text(String) }
 struct RawMessage {
     enum Role { case user, assistant }
     let id: String; let sessionId: String; let role: Role
@@ -63,6 +73,7 @@ enum ChatPersistenceSchema {
                 case .toolResult(let result):
                     return .toolResult(id: result.toolUseId, name: ChatPersistenceSchema.asyncTaskNoticeToolName,
                                        content: result.output, isError: !result.success)
+                case .text(let value): return .text(value)
                 }
             }
             histories[message.sessionId, default: []].append(AgentMessage(
@@ -163,6 +174,7 @@ enum ChatPersistenceSchema {
         let finish: @MainActor (String, AgentSessionRunResult) async -> Void
     }
     var replyHooks: [String: ReplyHooks] = [:]
+    var historyOnlyTaskTypes: Set<String> = []
     var isDraining: Set<String> = []
     func formatNoticeResultOutput(_ notice: HostNotice) -> String { notice.result }
 }

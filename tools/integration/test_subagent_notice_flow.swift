@@ -35,7 +35,18 @@ struct AsyncTaskNotice {
 }
 struct ToolUse { let toolUseId: String; let name: String; let input: String; let description: String }
 struct ToolResult { let toolUseId: String; let output: String; let success: Bool; let status: String }
-enum ContentPart { case toolUse(ToolUse), toolResult(ToolResult) }
+enum ContentPart { case toolUse(ToolUse), toolResult(ToolResult), text(String) }
+struct AssistantBlock {
+    enum Kind { case text }
+    let kind: Kind
+    let content: String
+}
+struct ChatMessage {
+    enum Role { case assistant }
+    let role: Role
+    let content: String
+    let blocks: [AssistantBlock]
+}
 struct RawMessage {
     enum Role { case assistant, user }
     let id: String; let sessionId: String; let role: Role; let parts: [ContentPart]; let createdAt: Date
@@ -100,6 +111,8 @@ enum ChatPersistenceSchema {
     func isActive(_ id: String) -> Bool { active.contains(id) }
 }
 @MainActor final class HostViewModel {
+    var agentHistory: [AgentMessage] = []
+    var messages: [ChatMessage] = []
     var isProcessing = false
     var isCompacting = false
     var isTruncatingForRetry = false

@@ -413,8 +413,11 @@ public struct RawMessage: Identifiable, Codable, Hashable, Sendable {
 
     public static let internalBridgeText =
         "(Interrupted mid-task by a new user message. Decide based on the new message and overall context whether the prior task should continue — do not forget or abandon it unless the user explicitly says to stop, or the new message makes clear it is no longer needed.)"
+    public static let publicReplyCompletionText =
+        "<system-reminder>[reply-delivery-complete] The public reply was delivered successfully. This turn is complete.</system-reminder>"
     public static let internalBridgeTexts = [
         internalBridgeText,
+        publicReplyCompletionText,
         "(Interrupted mid-task to handle your new message. Will return to the prior task after.)"
     ]
 

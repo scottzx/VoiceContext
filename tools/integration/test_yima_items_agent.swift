@@ -2,10 +2,11 @@ import Foundation
 
 // Canonical tool types are supplied by AgentProvider.swift by the test command.
 enum AgentBuildIdentity { static let recordingURLScheme = "voicecontext-check" }
+enum AgentToolPolicy { case standalone, orchestrator }
 
 @main
 struct YimaAgentChecks {
-    @MainActor static func main() throws {
+    @MainActor static func main() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("yima-agent-check-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = YimaItemsStore(url: directory.appendingPathComponent("items.sqlite"))
@@ -76,6 +77,59 @@ struct YimaAgentChecks {
         precondition(listing.success && !listing.output.contains("requests") && !listing.output.contains("无年份"))
         precondition(run(["action": "delete", "kind": "event", "id": id, "revision": 1]).success)
         precondition(!run(request).success && store.todo(todoID)?.meetingID == nil)
-        print("Yima agent dates, source links, intent retries, revision guards and meeting actions passed")
+
+        // Compile and exercise the production dispatch, with real navigation authority.
+        let dispatch = YimaDispatchHost(store: store)
+        let navigation = AppNavigationCenter.shared
+        AgentRuntimePolicies.register(source: "bound-items", policy: .init(requiresNavigationBinding: true))
+        let open: [String: Any] = ["action": "open", "kind": "todo", "id": todoID]
+        func checkOpen(_ allowed: Bool) async {
+            let result = await dispatch.execute(open)
+            precondition(result.success == allowed)
+            precondition(store.pendingItem == (allowed ? YimaItemLink(id: todoID, kind: .todo) : nil))
+            store.pendingItem = nil
+        }
+        for availability in [(false, true), (true, false)] {
+            navigation.setAvailability(foreground: availability.0, unlocked: availability.1)
+            navigation.bindVoiceSession(sessionID: "items-session", generation: 9)
+            await checkOpen(false)
+        }
+        navigation.setAvailability(foreground: true, unlocked: true)
+        navigation.bindVoiceSession(sessionID: "items-session", generation: 9)
+        dispatch.appNavigationVoiceGeneration = 8
+        await checkOpen(false)
+        dispatch.appNavigationVoiceGeneration = nil
+        await checkOpen(false)
+        dispatch.appNavigationVoiceGeneration = 9
+        dispatch.sessionId = "other-session"
+        await checkOpen(false)
+        dispatch.sessionId = "items-session"
+        await checkOpen(true)
+        AgentRuntimePolicies.register(source: "no-presentation", policy: .init(allowsItemPresentation: false))
+        dispatch.sessionSource = "no-presentation"
+        await checkOpen(false)
+        dispatch.sessionSource = nil
+        dispatch.appNavigationVoiceGeneration = nil
+        await checkOpen(true)
+
+        navigation.setAvailability(foreground: false, unlocked: false)
+        await checkOpen(false)
+        dispatch.sessionSource = "bound-items"
+        let backgroundID = UUID().uuidString
+        let backgroundActions: [[String: Any]] = [
+            ["action": "create", "kind": "todo", "request_id": backgroundID, "title": "后台事项"],
+            ["action": "list", "kind": "todo"],
+            ["action": "get", "kind": "todo", "id": backgroundID],
+            ["action": "update", "kind": "todo", "id": backgroundID, "revision": 1, "title": "后台更新"],
+            ["action": "complete", "kind": "todo", "id": backgroundID, "revision": 2, "completed": true],
+            ["action": "delete", "kind": "todo", "id": backgroundID, "revision": 3]
+        ]
+        for args in backgroundActions {
+            let result = await dispatch.execute(args)
+            precondition(result.success, "Background data operation failed: \(args["action"]!)")
+            precondition(store.pendingItem == nil)
+        }
+        precondition(store.todo(backgroundID) == nil)
+        print("Yima agent dates, revisions and production open authority passed; locked/stale opens denied and background CRUD retained")
     }
 }

@@ -29,6 +29,9 @@ public final class AsyncTaskNoticeManager {
         }
     }
     public var replyHooks: [String: ReplyHooks] = [:]
+    /// Host-owned terminal state events are saved in conversation history
+    /// without requesting a new model turn or a public/voice reply.
+    public var historyOnlyTaskTypes: Set<String> = []
 
     private var loopEndObserver: NSObjectProtocol?
     private var isDraining: Set<String> = []
@@ -143,11 +146,16 @@ public final class AsyncTaskNoticeManager {
             }
         }
 
-        let pending = await ChatStore.shared.pendingAsyncTaskNotices(for: sessionId)
+        var pending = await ChatStore.shared.pendingAsyncTaskNotices(for: sessionId)
         guard !pending.isEmpty else { return }
         let source = await ChatStore.shared.getSession(sessionId)?.source
         guard !isBusy() else { return }
-        let requiresReply = AgentRuntimePolicies.policy(for: source).requiresNoticeReplyBinding
+        let historyOnly = pending.filter { historyOnlyTaskTypes.contains($0.taskType) }
+        let isHistoryOnly = !historyOnly.isEmpty
+        // State events must reach history even when the voice adapter is
+        // paused or unavailable. Other notices retain their reply binding.
+        if isHistoryOnly { pending = historyOnly }
+        let requiresReply = !isHistoryOnly && AgentRuntimePolicies.policy(for: source).requiresNoticeReplyBinding
         let hooks = source.flatMap { replyHooks[$0] }
         if requiresReply {
             // Reserve host delivery before results enter session history.
@@ -162,6 +170,7 @@ public final class AsyncTaskNoticeManager {
         logger.info("[Notice] Draining \(pending.count) pending notice(s) for session \(sessionId)")
 
         var messages: [RawMessage] = []
+        var history: [AgentMessage] = []
         let now = Date()
 
         for (index, notice) in pending.enumerated() {
@@ -194,7 +203,7 @@ public final class AsyncTaskNoticeManager {
                 success: notice.status == "done" || notice.status == "escalate",
                 status: notice.status
             ))
-            let offset = Double(index) * 0.002
+            let offset = Double(index) * (isHistoryOnly ? 0.003 : 0.002)
             messages.append(RawMessage(
                 id: "async-notice-use:\(notice.id)",
                 sessionId: sessionId,
@@ -209,6 +218,26 @@ public final class AsyncTaskNoticeManager {
                 parts: [toolResult],
                 createdAt: now.addingTimeInterval(offset + 0.001)
             ))
+            if isHistoryOnly {
+                // Close the synthetic tool pair with a truthful receipt.
+                // A bare tool-result tail would look like an interrupted
+                // agent turn after a cold load and incorrectly offer Resume.
+                let receipt = "儿童故事机：《\(notice.title ?? "故事")》已播放完成。"
+                messages.append(RawMessage(
+                    id: "async-notice-receipt:\(notice.id)", sessionId: sessionId,
+                    role: .assistant, parts: [.text(receipt)],
+                    createdAt: now.addingTimeInterval(offset + 0.002)
+                ))
+                history.append(AgentMessage(role: .assistant, parts: [.toolUse(
+                    id: toolUseId, name: ChatPersistenceSchema.asyncTaskNoticeToolName, input: inputDict
+                )], dbMessageId: "async-notice-use:\(notice.id)"))
+                history.append(AgentMessage(role: .user, parts: [.toolResult(
+                    id: toolUseId, name: ChatPersistenceSchema.asyncTaskNoticeToolName,
+                    content: outputText, isError: false
+                )], dbMessageId: "async-notice-result:\(notice.id)"))
+                history.append(AgentMessage(role: .assistant, parts: [.text(receipt)],
+                                            dbMessageId: "async-notice-receipt:\(notice.id)"))
+            }
         }
 
         guard await ChatStore.shared.injectAsyncTaskNoticeMessages(
@@ -217,6 +246,32 @@ public final class AsyncTaskNoticeManager {
         ) else {
             logger.error("[Notice] Failed to atomically inject notices for session \(sessionId); leaving them pending.")
             if requiresReply { await hooks?.finish(sessionId, .rejected) }
+            return
+        }
+
+        if isHistoryOnly {
+            guard !isBusy() else {
+                await ChatStore.shared.markAsyncTaskNoticesPending(ids: pending.map(\.id))
+                // Loop end can race this write while isDraining still owns
+                // the session. Retry once after releasing that reservation.
+                Task { await self.checkAndDrain(sessionId: sessionId) }
+                return
+            }
+            if let vm = ViewModelCache.shared.get(for: sessionId) {
+                // Append only the notice history and its text receipt instead
+                // of loadSession(), which changes the active page/session and
+                // can overwrite interrupted UI state.
+                let knownIds = Set(vm.agentHistory.compactMap(\.dbMessageId))
+                vm.agentHistory.append(contentsOf: history.filter { message in
+                    message.dbMessageId.map { !knownIds.contains($0) } ?? false
+                })
+                for notice in pending where !knownIds.contains("async-notice-receipt:\(notice.id)") {
+                    let receipt = "儿童故事机：《\(notice.title ?? "故事")》已播放完成。"
+                    vm.messages.append(ChatMessage(role: .assistant, content: receipt,
+                                                   blocks: [AssistantBlock(kind: .text, content: receipt)]))
+                }
+            }
+            Task { await self.checkAndDrain(sessionId: sessionId) }
             return
         }
 
@@ -241,6 +296,14 @@ public final class AsyncTaskNoticeManager {
 
     private func formatNoticeResultOutput(_ notice: AsyncTaskNotice) -> String {
         switch notice.taskType {
+        case "story_playback":
+            return """
+            [Story Playback Finished]
+            \(notice.result)
+
+            The native audio player confirmed natural completion. This is a terminal playback state, not a new user request. Do not replay, switch stories, dispatch tasks, navigate, or speak automatically. Use this verified state when answering the next user request.
+            """
+
         case "subagent":
             var lines: [String] = [
                 "[Background Subagent Finished]",

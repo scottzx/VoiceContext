@@ -3,8 +3,8 @@ import Combine
 import Foundation
 import VoiceRecording
 
-/// Independent foreground voice input, delivered through the existing Agent
-/// conversation. Page changes and public answers each have a scoped authority.
+/// User-enabled voice input shares one Agent conversation across foreground
+/// and background, with navigation and reply authority scoped separately.
 @MainActor
 final class XiaolanVoiceController: ObservableObject {
     static let shared = XiaolanVoiceController()
@@ -26,17 +26,25 @@ final class XiaolanVoiceController: ObservableObject {
     private var input: IndependentVoiceInput?
     private var activationID: UUID?
     private var activeRequestID: UUID?
+    private var commandCaptureActive = false
+    private var captureAllowsNavigation = true
+    private var directAllowsNavigation: Bool?
+    private var requestAllowsNavigation = false
     private var requestGeneration: UInt64?
     private var requestPageRevision: Int?
     private var authorizedReplyGeneration: UInt64?
     private var authorizedReplyPageRevision: Int?
     private var backgroundRequests: [String: UUID] = [:]
     private var answerSpeechTask: Task<Void, Never>?
+    private var commandTask: Task<Void, Never>?
+    private var executionHandoff: Task<Void, Never>?
     private var speechTask: Task<Void, Never>?
     private var speechToken: UUID?
     private var acknowledgementID: UUID?
     private var player: AVAudioPlayer?
     private var interruptionObserver: NSObjectProtocol?
+
+    var isCapturingVoice: Bool { isEnabled && !isPaused && input?.isRunning == true }
 
     enum ModeError: LocalizedError {
         case recordingActive, unavailable(String), inactive
@@ -118,6 +126,7 @@ final class XiaolanVoiceController: ObservableObject {
             throw ModeError.unavailable(reason)
         }
         guard activationID == activation, foreground else { throw ModeError.inactive }
+        try StoryLibraryStore.shared.prepareForBackgroundPlayback()
         // Permission UI may suspend this task while a recording starts.
         guard !recordings.hasUnfinishedRecording,
               AudioSessionCoordinator.shared.reserveIndependentVoice() else {
@@ -125,6 +134,7 @@ final class XiaolanVoiceController: ObservableObject {
             throw ModeError.recordingActive
         }
         activationID = nil
+        StoryPlaybackController.shared.beginVoiceInteraction()
         self.recordings = recordings
         if input == nil { input = recordings.makeIndependentVoiceInput() }
         responseGeneration &+= 1
@@ -157,13 +167,26 @@ final class XiaolanVoiceController: ObservableObject {
     }
 
     func setForeground(_ value: Bool) {
+        guard foreground != value else { return }
         foreground = value
-        if !value { activationID = nil; pause() }
+        if !value {
+            activationID = nil
+            if commandCaptureActive { captureAllowsNavigation = false }
+            // The enabled microphone and Agent continue. Only UI authority
+            // ends when the app becomes hidden or locked.
+            requestAllowsNavigation = false
+            AppNavigationCenter.shared.invalidateVoiceSession()
+        }
+        if isEnabled, !isPaused, !isBusy, !commandCaptureActive {
+            status = waitingStatus
+        }
     }
 
     func beginCommand() {
-        guard isEnabled, !isPaused, foreground, !isBusy else { return }
-        stopSpeaking()
+        guard isEnabled, !isPaused, foreground else { return }
+        directAllowsNavigation = nil
+        interruptCurrentRequest()
+        StoryPlaybackController.shared.beginVoiceInteraction()
         do { try listen(direct: true) } catch { failAndPause(error.localizedDescription) }
     }
 
@@ -178,21 +201,68 @@ final class XiaolanVoiceController: ObservableObject {
     }
 
     func navigationGeneration(sessionID: String) -> UInt64? {
+        guard foreground, requestAllowsNavigation else { return nil }
+        return executionGeneration(sessionID: sessionID)
+    }
+
+    func executionGeneration(sessionID: String) -> UInt64? {
         guard self.sessionID == sessionID, canRespond else { return nil }
         return requestGeneration
     }
 
     func isVoiceGenerationCurrent(sessionID: String, generation: UInt64) -> Bool {
-        navigationGeneration(sessionID: sessionID) == generation
+        executionGeneration(sessionID: sessionID) == generation
     }
 
     private var canRespond: Bool {
-        isEnabled && !isPaused && foreground && activeRequestID != nil
+        isEnabled && !isPaused && activeRequestID != nil
             && requestGeneration == responseGeneration
     }
 
-    private func invalidate() {
-        activationID = nil
+    private var waitingStatus: String {
+        foreground ? "等待小蓝同学" : "熄屏可唤醒，智能体继续运行"
+    }
+
+    private var hasPendingVoiceAgentWork: Bool {
+        guard let sessionID, let vm = ViewModelCache.shared.get(for: sessionID),
+              vm.agentId == XiaolanAgent.id, vm.sessionSource == "xiaolan_voice" else { return false }
+        return vm.isProcessing || vm.isCompacting || vm.currentTask != nil || vm.compactTask != nil
+            || vm.postCompactDrainPending || !vm.promptQueue.isEmpty
+    }
+
+    /// Wake input has priority over model work and output. Join the old model's
+    /// actual cleanup before submitting the next command, while capture stays live.
+    private func interruptCurrentRequest() {
+        let hadRequest = activeRequestID != nil
+        let previousCommand = commandTask
+        commandTask = nil
+        previousCommand?.cancel()
+        let previousHandoff = executionHandoff
+        var previousModel: Task<Void, Never>?
+        var previousCompact: Task<Void, Never>?
+        if let sessionID, let vm = ViewModelCache.shared.get(for: sessionID),
+           hadRequest || hasPendingVoiceAgentWork {
+            previousModel = vm.currentTask
+            previousCompact = vm.compactTask
+            // A compact task can exist before isCompacting becomes true;
+            // cancel() alone does not cover that scheduling window.
+            previousCompact?.cancel()
+            // These pending prompts belong to the superseded voice turn. Keep
+            // completed tools/history; do not let cancel() start an old queue.
+            let queued = Set(vm.promptQueue.map(\.id))
+            vm.promptQueue.removeAll()
+            vm.messages.removeAll { $0.queuedPromptId.map(queued.contains) == true }
+            IOSAgentSessionRunner.shared.cancel(sessionId: sessionID)
+            vm.compactTask = nil
+        }
+        if previousCommand != nil || previousModel != nil || previousCompact != nil {
+            executionHandoff = Task {
+                await previousHandoff?.value
+                await previousCommand?.value
+                await previousModel?.value
+                await previousCompact?.value
+            }
+        }
         responseGeneration &+= 1
         authorizedReplyGeneration = nil
         authorizedReplyPageRevision = nil
@@ -200,11 +270,10 @@ final class XiaolanVoiceController: ObservableObject {
             MeetingAnswerUserTool.unbind(sessionID: sessionID, requestID: activeRequestID)
         }
         activeRequestID = nil
+        requestAllowsNavigation = false
         requestGeneration = nil
         requestPageRevision = nil
         isBusy = false
-        input?.stop()
-        AudioSessionCoordinator.shared.end(.xiaolanCapture)
         answerSpeechTask?.cancel()
         answerSpeechTask = nil
         stopAcknowledgement()
@@ -212,12 +281,35 @@ final class XiaolanVoiceController: ObservableObject {
         AppNavigationCenter.shared.invalidateVoiceSession()
     }
 
+    private func invalidate() {
+        activationID = nil
+        interruptCurrentRequest()
+        commandCaptureActive = false
+        captureAllowsNavigation = true
+        directAllowsNavigation = nil
+        input?.stop()
+        AudioSessionCoordinator.shared.end(.xiaolanCapture)
+        StoryPlaybackController.shared.cancelVoiceInteraction()
+    }
+
     private func listen(direct: Bool = false) throws {
-        guard isEnabled, !isPaused, foreground, !isBusy else { return }
+        guard isEnabled, !isPaused else { return }
         guard recordings?.hasUnfinishedRecording != true else {
             disable()
             throw ModeError.recordingActive
         }
+        if direct { StoryPlaybackController.shared.beginVoiceInteraction() }
+        if input?.isRunning == true {
+            if direct {
+                input?.beginCommand()
+            } else if !isBusy {
+                status = waitingStatus
+                StoryPlaybackController.shared.finishVoiceInteraction()
+            }
+            return
+        }
+        // New microphone activation remains an explicit foreground action.
+        guard foreground else { throw ModeError.inactive }
         input?.stop()
         guard AudioSessionCoordinator.shared.beginAndWait(.xiaolanCapture) else {
             throw ModeError.unavailable("当前无法使用麦克风，请稍后继续语音模式。")
@@ -232,36 +324,57 @@ final class XiaolanVoiceController: ObservableObject {
     }
 
     private func receive(_ event: IndependentVoiceInput.Event, direct: Bool) {
-        guard isEnabled, !isPaused, foreground else { return }
+        guard isEnabled, !isPaused else { return }
         switch event {
-        case .ready: status = "等待小蓝同学"
-        case .listening: status = "正在听指令"
+        case .ready:
+            if !isBusy {
+                status = waitingStatus
+                StoryPlaybackController.shared.finishVoiceInteraction()
+            }
+        case .listening:
+            interruptCurrentRequest()
+            captureAllowsNavigation = foreground && (directAllowsNavigation ?? true)
+            directAllowsNavigation = nil
+            commandCaptureActive = true
+            StoryPlaybackController.shared.beginVoiceInteraction()
+            status = "正在听指令"
         case .transcribing:
+            captureAllowsNavigation = captureAllowsNavigation && foreground
+            commandCaptureActive = true
+            StoryPlaybackController.shared.beginVoiceInteraction()
             isBusy = true
             status = "正在识别指令"
-            AudioSessionCoordinator.shared.end(.xiaolanCapture)
         case .wakeOnly:
             let (id, generation) = beginTurn()
-            Task {
+            commandTask = Task {
                 await acknowledge("我在", id: id, generation: generation)
                 finishRequest(id: id, listenDirectly: true)
             }
         case .command(let text):
             lastCommand = text
             let (id, generation) = beginTurn()
-            Task {
+            commandTask = Task {
                 await acknowledge("收到，开始处理", id: id, generation: generation)
                 guard accepts(id, generation: generation) else { return }
                 status = "正在处理指令"
                 await execute(text, id: id, generation: generation)
             }
         case .timeout:
+            guard activeRequestID == nil else { return }
+            commandCaptureActive = false
+            captureAllowsNavigation = true
+            directAllowsNavigation = nil
+            isBusy = false
             status = "没有听到指令，请再说一次"
             if direct { do { try listen() } catch { failAndPause(error.localizedDescription) } }
+            else { StoryPlaybackController.shared.finishVoiceInteraction() }
         case .failure(let text, let fatal):
             error = text
             if fatal { failAndPause(text) }
-            else {
+            else if activeRequestID == nil {
+                commandCaptureActive = false
+                captureAllowsNavigation = true
+                directAllowsNavigation = nil
                 isBusy = false
                 do { try listen() } catch { failAndPause(error.localizedDescription) }
             }
@@ -269,14 +382,11 @@ final class XiaolanVoiceController: ObservableObject {
     }
 
     private func beginTurn() -> (UUID, UInt64) {
-        input?.stop()
-        AudioSessionCoordinator.shared.end(.xiaolanCapture)
-        responseGeneration &+= 1
-        authorizedReplyGeneration = nil
-        authorizedReplyPageRevision = nil
-        AppNavigationCenter.shared.invalidateVoiceSession()
+        interruptCurrentRequest()
         let id = UUID()
         activeRequestID = id
+        requestAllowsNavigation = foreground && captureAllowsNavigation
+        commandCaptureActive = false
         requestGeneration = responseGeneration
         requestPageRevision = AppNavigationCenter.shared.state.revision
         isBusy = true
@@ -310,15 +420,13 @@ final class XiaolanVoiceController: ObservableObject {
         AudioSessionCoordinator.shared.end(.xiaolanTTS)
     }
 
-    private func execute(_ command: String, id: UUID, generation: UInt64) async {
-        defer { finishRequest(id: id) }
-        guard accepts(id, generation: generation) else { return }
+    private func voiceSession(id: UUID, generation: UInt64) async -> String? {
         let runner = IOSAgentSessionRunner.shared
         do { try await XiaolanAgent.ensure() } catch {
             report(error.localizedDescription, id: id)
-            return
+            return nil
         }
-        guard accepts(id, generation: generation) else { return }
+        guard accepts(id, generation: generation) else { return nil }
         if let existing = sessionID, await ChatStore.shared.sessionExists(id: existing),
            !(await XiaolanAgent.ownsSession(existing)) {
             sessionID = nil
@@ -327,16 +435,27 @@ final class XiaolanVoiceController: ObservableObject {
             guard let created = await runner.createSession(.init(agentId: XiaolanAgent.id, source: "xiaolan_voice", role: "main", toolPolicy: "orchestrator")),
                   await XiaolanAgent.ownsSession(created) else {
                 report("未能建立语音任务会话，请检查聊天模型配置。", id: id)
-                return
+                return nil
             }
-            guard accepts(id, generation: generation) else { return }
+            guard accepts(id, generation: generation) else { return nil }
             sessionID = created
             await ChatStore.shared.updateSessionTitle(created, title: "小蓝同学 · 语音模式")
         }
         guard let sessionID, accepts(id, generation: generation), await ChatStore.shared.sessionExists(id: sessionID) else {
             report("语音会话已被删除，请关闭后重新开启语音模式。", id: id)
-            return
+            return nil
         }
+        StoryPlaybackController.shared.bindCompletionSessionIfUnowned(sessionID)
+        return sessionID
+    }
+
+    private func execute(_ command: String, id: UUID, generation: UInt64) async {
+        defer { finishRequest(id: id) }
+        await executionHandoff?.value
+        guard accepts(id, generation: generation),
+              let sessionID = await voiceSession(id: id, generation: generation),
+              accepts(id, generation: generation) else { return }
+        let runner = IOSAgentSessionRunner.shared
         let (vm, fresh) = ViewModelCache.shared.getOrCreate(for: sessionID)
         if fresh { await vm.loadSession() }
         guard accepts(id, generation: generation) else { return }
@@ -348,7 +467,8 @@ final class XiaolanVoiceController: ObservableObject {
         }
         bindAnswer(sessionID: sessionID, id: id, generation: generation)
         defer { MeetingAnswerUserTool.unbind(sessionID: sessionID, requestID: id) }
-        if requestPageRevision == AppNavigationCenter.shared.state.revision {
+        if navigationGeneration(sessionID: sessionID) == generation,
+           requestPageRevision == AppNavigationCenter.shared.state.revision {
             AppNavigationCenter.shared.bindVoiceSession(sessionID: sessionID, generation: generation)
         }
         let result = await runner.run(.init(
@@ -378,7 +498,7 @@ final class XiaolanVoiceController: ObservableObject {
             guard let self, self.accepts(id, generation: generation) else { return false }
             self.lastAnswer = text
             self.error = nil
-            if pageRevision == nil || pageRevision == AppNavigationCenter.shared.state.revision {
+            if !self.foreground || pageRevision == nil || pageRevision == AppNavigationCenter.shared.state.revision {
                 self.answerSpeechTask = Task { await self.speak(text, id: id, generation: generation, pageRevision: pageRevision) }
             } else {
                 self.status = "任务结果已保存，可在对话中查看"
@@ -389,12 +509,16 @@ final class XiaolanVoiceController: ObservableObject {
 
     private func finishRequest(id: UUID, listenDirectly: Bool = false) {
         guard activeRequestID == id else { return }
+        directAllowsNavigation = listenDirectly ? requestAllowsNavigation : nil
+        captureAllowsNavigation = true
+        commandTask = nil
         activeRequestID = nil
+        requestAllowsNavigation = false
         requestGeneration = nil
         requestPageRevision = nil
         isBusy = false
         AppNavigationCenter.shared.invalidateVoiceSession()
-        if isEnabled, !isPaused, foreground {
+        if isEnabled, !isPaused {
             do { try listen(direct: listenDirectly) } catch { failAndPause(error.localizedDescription) }
         }
         if let sessionID { Task { await AsyncTaskNoticeManager.shared.checkAndDrain(sessionId: sessionID) } }
@@ -416,18 +540,20 @@ final class XiaolanVoiceController: ObservableObject {
         当前为同一台 iPhone 上独立开启的语音会话，不依附会议或录音。
         同一开启期间连续理解此前指令与已验证工具结果；“今天”等日期采用设备当地时间。
         当前新指令的本地提示已经由宿主完成；直接执行或回答，不重复确认接收。
+        用户已开启持续语音，锁屏或切到后台时仍可执行完整智能体任务、调用业务工具和分派子智能体，并通过 answer_user 交付结果。
+        页面导航、打开预览和需要系统授权界面的操作仍须前台解锁。后台可以继续不依赖界面的工作；不能把未显示的页面说成已打开。
         用户明确要求查看子任务内容时，使用真实 source_session_id 与其 workspace/attachments 路径，通过现有 App 内预览展示。
         """
     }
 
     private func prepareBackgroundReply(sessionID: String) async -> Bool {
-        guard self.sessionID == sessionID, isEnabled, !isPaused, foreground, !isBusy,
+        guard self.sessionID == sessionID, isEnabled, !isPaused, !isBusy,
               activeRequestID == nil, authorizedReplyGeneration == responseGeneration else { return false }
         let id = UUID(), generation = responseGeneration
-        input?.stop()
-        AudioSessionCoordinator.shared.end(.xiaolanCapture)
+        StoryPlaybackController.shared.beginVoiceInteraction()
         isBusy = true
         activeRequestID = id
+        requestAllowsNavigation = false
         requestGeneration = generation
         bindAnswer(sessionID: sessionID, id: id, generation: generation, pageRevision: authorizedReplyPageRevision)
         backgroundRequests[sessionID] = id
@@ -451,13 +577,12 @@ final class XiaolanVoiceController: ObservableObject {
 
     private func speak(_ text: String, id: UUID, generation: UInt64, pageRevision: Int? = nil) async {
         func canSpeak() -> Bool {
-            accepts(id, generation: generation) && (pageRevision == nil || pageRevision == AppNavigationCenter.shared.state.revision)
+            accepts(id, generation: generation)
+                && (!foreground || pageRevision == nil || pageRevision == AppNavigationCenter.shared.state.revision)
         }
         guard canSpeak() else { return }
         guard !VoiceOutputPreferences.isMuted else { status = "已静音，结果保存在对话中"; return }
         stopSpeech()
-        input?.stop()
-        AudioSessionCoordinator.shared.end(.xiaolanCapture)
         let sanitized = VoiceTextSanitizer.sanitize(text)
         let spoken = sanitized.count > 180 ? String(sanitized.prefix(180)) + "，完整结果请查看对话。" : sanitized
         guard !spoken.isEmpty else { return }

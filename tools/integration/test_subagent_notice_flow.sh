@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 SUBAGENT_NOTICE_CHECK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/subagent-notice-flow.XXXXXX")
 trap 'rm -rf "$SUBAGENT_NOTICE_CHECK_DIR"' EXIT
-sed -n '1,/\/\/ MARK: - Agent Messages/p' Vendor/Phone/src/ios/Providers/AgentProvider.swift > "$SUBAGENT_NOTICE_CHECK_DIR/ToolTypes.swift"
+sed -n '1,/\/\/ MARK: - Stream Events/p' Vendor/Phone/src/ios/Providers/AgentProvider.swift > "$SUBAGENT_NOTICE_CHECK_DIR/ToolTypes.swift"
 # Real dispatch/executor/notice bus/reply delivery, isolated host stores and runner.
 xcrun swiftc -default-isolation MainActor \
     "$SUBAGENT_NOTICE_CHECK_DIR/ToolTypes.swift" \

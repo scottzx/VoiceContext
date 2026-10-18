@@ -89,6 +89,9 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
     func run(_ request: AgentSessionRunRequest) async -> AgentSessionRunResult {
         let (vm, isFresh) = ViewModelCache.shared.getOrCreate(for: request.sessionId)
         if isFresh { await vm.loadSession() }
+        guard !Task.isCancelled else {
+            return AgentSessionRunResult(text: nil, accepted: false, timedOut: false, cancelled: true)
+        }
         let runtimePolicy = AgentRuntimePolicies.policy(for: request.source)
         let requiresIdle = runtimePolicy.requiresIdle
         // An interaction adapter may require an idle session instead of
@@ -99,6 +102,7 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
             return .rejected
         }
         #if VOICE_AGENT_FUSION
+        vm.toolExecutionGeneration = runtimePolicy.executionGeneration?(request.sessionId)
         if runtimePolicy.requiresNavigationBinding {
             vm.appNavigationVoiceGeneration = AppNavigationCenter.shared.voiceGeneration(sessionID: request.sessionId)
         }
@@ -123,6 +127,9 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
         if vm.isProcessing {
             vm.cancel()
             try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        guard !Task.isCancelled else {
+            return AgentSessionRunResult(text: nil, accepted: false, timedOut: false, cancelled: true)
         }
 
         let countBefore = vm.messages.count
@@ -187,6 +194,9 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
         guard !vm.isProcessing, !vm.isCompacting, !vm.isTruncatingForRetry, vm.compactTask == nil,
               !vm.postCompactDrainPending, vm.promptQueue.isEmpty,
               !SessionActivityTracker.shared.isActive(sessionId) else { return .rejected }
+        #if VOICE_AGENT_FUSION
+        vm.toolExecutionGeneration = nil
+        #endif
         let restoredPolicy = AgentRuntimePolicies.policy(for: vm.sessionSource)
         if restoredPolicy.requiresNoticeReplyBinding {
             // Loading the synthetic tool-result tail itself sets canResume.

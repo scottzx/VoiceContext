@@ -30,7 +30,8 @@ enum YimaItemsAgentTool {
         ], required: ["tool_title", "action", "kind"]
     )
 
-    static func execute(_ args: [String: Any], sessionID: String?, store: YimaItemsStore? = nil) -> (output: String, success: Bool) {
+    static func execute(_ args: [String: Any], sessionID: String?, store: YimaItemsStore? = nil,
+                        allowsPresentation: Bool = true) -> (output: String, success: Bool) {
         do {
             let store = store ?? YimaItemsStore.shared
             guard store.available else { throw YimaItemsError.invalid(store.failure ?? "本地事项暂不可用。") }
@@ -65,6 +66,7 @@ enum YimaItemsAgentTool {
             guard let uuid = UUID(uuidString: rawID) else { throw YimaItemsError.invalid("事项和创建请求 ID 必须为 UUID。") }
             let id = uuid.uuidString
             if action == "open" {
+                guard allowsPresentation else { throw YimaItemsError.invalid("当前入口只返回事项内容，请在手机主动打开详情。") }
                 guard (kind == "event" ? store.event(id) != nil : store.todo(id) != nil) else { throw YimaItemsError.invalid("事项不存在。") }
                 store.pendingItem = YimaItemLink(id: id, kind: kind == "event" ? .event : .todo)
                 return ("已请求打开本地事项 \(id)", true)

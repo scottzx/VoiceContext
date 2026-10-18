@@ -25,6 +25,8 @@ definitions = Path('Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel+ToolDefiniti
 dispatch = Path('Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift').read_text()
 fallback = Path('Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel+Fallback.swift').read_text()
 store = Path('Vendor/Phone/src/ios/Agent/Chat/ChatStore.swift').read_text()
+persistence = Path('Vendor/Phone/src/ios/Agent/Chat/AIChatViewModel+Persistence.swift').read_text()
+domain = Path('Vendor/Phone/src/apple/Domain/ChatPersistence.swift').read_text()
 helper = block(vm, '        func requestReplyDelivery(')
 no_start = vm.index('                // [T-meeting-answer-user-recovery-no-tool]')
 no_end = vm.index('                // [T-ios-queued-message-continues-prev-turn]', no_start)
@@ -98,10 +100,12 @@ for source, declaration in [
     (definitions, '    var runtimeHostToolDefinitions:'),
     (definitions, '    func runtimeToolRefusal('),
     (dispatch, '    func executeSingleToolUse('),
-    (vm, '    private var canSpeakNow: Bool {')
+    (vm, '    private var canSpeakNow: Bool {'),
+    (persistence, '    private func recheckCanResumeFromHistory(')
 ]:
     wiring += block(source, declaration) + '\n'
 wiring += '    var testCanSpeakNow: Bool { canSpeakNow }\n'
+wiring += '    func testRecheckCanResumeFromHistory() { recheckCanResumeFromHistory() }\n'
 wiring += empty_classifier.replace('            func isEmptyResponse(', '    func testIsEmptyResponse(') + '\n'
 # Adapt only the two return values to expose whether the real code proceeds
 # into generic fallback. The classification and authorization are unchanged.
@@ -147,12 +151,12 @@ wiring += '''
                 break
             }
             _ = await persistAgentMessage(assistantMessage)
-            var parts: [AgentContentPart] = []
+            var toolResultParts: [AgentContentPart] = []
             for call in turn.calls {
                 let outcome = await executeSingleToolUse(tu: call, msgIdx: msgIdx, tools: tools, batchBudget: .init())
-                parts.append(outcome.resultPart)
+                toolResultParts.append(outcome.resultPart)
             }
-            let result = AgentMessage(role: .user, parts: parts)
+            let result = AgentMessage(role: .user, parts: toolResultParts)
             agentHistory.append(result)
             _ = await persistAgentMessage(result)
             if userDidCancel { break }
@@ -164,6 +168,10 @@ wiring += '''
 }
 enum ContextDisplayCheck {
 ''' + block(store, '    static func stripSystemReminders(') + '\n}\n'
+wiring += 'extension ChatStore {\n' + block(store, '    static func isInterruptedTail(') + '\n}\n'
+bridge_start = domain.index('    public static let internalBridgeText =')
+bridge_end = domain.index('    public var isInternalBridge:', bridge_start)
+wiring += 'enum RawMessage {\n' + domain[bridge_start:bridge_end] + '\n}\n'
 Path(sys.argv[1], 'RecoveryWiring.swift').write_text(wiring)
 PY
 xcrun swiftc -default-isolation MainActor -D VOICE_AGENT_FUSION \

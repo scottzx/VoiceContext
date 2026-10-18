@@ -15,18 +15,28 @@ func hostDefinition(_ name: String) -> AgentToolDefinition {
 enum MeetingAnswerUserTool {
     static var definition: AgentToolDefinition { hostDefinition("answer_user") }
     static func canRequestDelivery(sessionID: String?) -> Bool { true }
+    static func didDeliver(sessionID: String?) -> Bool { sessionID == "fixture-delivered" }
     static let deliveryReminder = "Reply through answer_user"
 }
 enum MeetingAppleTool { static var definition: AgentToolDefinition { hostDefinition("apple_native") } }
 enum YimaItemsAgentTool { static var definition: AgentToolDefinition { hostDefinition("yima_items") } }
 enum AppNavigationTool { static var definition: AgentToolDefinition { hostDefinition("app_navigation") } }
 enum AppPresentationTool { static var definition: AgentToolDefinition { hostDefinition("app_present") } }
+enum StoryPlayerTool { static var definition: AgentToolDefinition { hostDefinition("story_player") } }
+@MainActor final class AsyncTaskNoticeManager {
+    static let shared = AsyncTaskNoticeManager()
+    var historyOnlyTaskTypes: Set<String> = []
+}
 enum ChatHistorySearchTool { static var definition: AgentToolDefinition { hostDefinition("chat_history_search") } }
 enum AgentDirectoryTools {
     static var definitions: [AgentToolDefinition] { [hostDefinition("create_agent"), hostDefinition("list_agents"), hostDefinition("send_agent_message")] }
     static func promptSection(canDispatch: Bool) -> String { "Agent directory: list_agents / send_agent_message / create_agent" }
 }
 enum XiaolanAgent { static let id = "fixture-xiaolan" }
+@MainActor final class XiaolanVoiceController {
+    static let shared = XiaolanVoiceController()
+    func executionGeneration(sessionID: String) -> UInt64? { sessionID == "voice-session" ? 77 : nil }
+}
 enum SystemPromptBuilder {
     struct IdentityPolicy {
         var fallbackName: String
@@ -97,14 +107,22 @@ enum OutcomePart {
 @main struct MeetingToolPolicyChecks {
     @MainActor static func main() async {
         VoiceAgentConfiguration.install()
+        precondition(AsyncTaskNoticeManager.shared.historyOnlyTaskTypes == ["story_playback"],
+                     "Story completions must restore as passive history notices before pending recovery")
+        precondition(AgentRuntimePolicies.policy(for: "xiaolan_voice").executionGeneration?("voice-session") == 77)
+        precondition(AgentRuntimePolicies.policy(for: "meeting_assistant").executionGeneration == nil,
+                     "Only the independent voice host supplies its execution generation")
         let shared: Set<String> = ["answer_user", "apple_native", "yima_items", "memory_get", "memory_write"]
         let meetingTools = shared.union(SubagentTools.names)
-        let voiceTools = meetingTools.union(["app_navigation", "app_present"])
+        let voiceTools = meetingTools.union(["app_navigation", "app_present", "story_player"])
         var third = AgentRuntimePolicies.policy(for: "xiaolan_voice")
         third.prompt = { _, _, notice in notice ? "Third delivery answer_user" : "Third interactive tools" }
         AgentRuntimePolicies.register(source: "fixture_interaction", policy: third)
 
         for (source, expected) in [("meeting_assistant", meetingTools), ("xiaolan_voice", voiceTools), ("fixture_interaction", voiceTools)] {
+            let delivery = AgentRuntimePolicies.policy(for: source).replyDelivery!
+            precondition(delivery.didDeliver("fixture-delivered") && !delivery.didDeliver("fixture-open"),
+                         "Configured voice presets must distinguish a delivered answer from an open request")
             let vm = AIChatViewModel()
             vm.sessionSource = source
             precondition(vm.effectiveToolPolicy == .orchestrator && !vm.liteModeActive,
@@ -192,11 +210,11 @@ enum OutcomePart {
                 _ = await ordinary.executeSingleToolUse(tu: .init(name: tool.name), msgIdx: 0, tools: noticeTools, batchBudget: .init())
             }
             precondition(ordinary.refused.isEmpty && ordinary.executed.count == noticeTools.count)
-            for name in ["answer_user", "apple_native"] {
+            for name in ["answer_user", "apple_native", "story_player"] {
                 _ = await ordinary.executeSingleToolUse(tu: .init(name: name), msgIdx: 0,
                                                        tools: noticeTools + [hostDefinition(name)], batchBudget: .init())
             }
-            precondition(ordinary.refused.count == 2, "Managed host capabilities cannot be forged into an ordinary session")
+            precondition(ordinary.refused.count == 3, "Managed host capabilities cannot be forged into an ordinary session")
         }
         let lite = AIChatViewModel()
         lite.sessionSource = "chat"

@@ -20,7 +20,8 @@ final class XiaolanVoiceAcknowledgement: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func say(_ text: String) async -> Bool {
-        guard !Task.isCancelled, ["我在", "收到，开始处理"].contains(text),
+        guard ["我在", "收到，开始处理"].contains(text) else { return false }
+        guard !Task.isCancelled,
               let voice = AVSpeechSynthesisVoice(language: "zh-CN") else { return false }
         stop()
         let speech = AVSpeechUtterance(string: text)

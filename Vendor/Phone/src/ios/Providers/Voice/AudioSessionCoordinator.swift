@@ -39,6 +39,7 @@ final class AudioSessionCoordinator {
         case capture = 4
         case toolCapture = 5
         case meetingAssistantTTS = 6
+        case storyPlayback = 7
         case xiaolanCapture = 8
         case xiaolanTTS = 9
         case recording = 10
@@ -50,9 +51,11 @@ final class AudioSessionCoordinator {
     /// True while the mic is capturing — reply TTS is suppressed in this state.
     var isCapturing: Bool { active.contains(.capture) || active.contains(.toolCapture) || active.contains(.xiaolanCapture) || isRecording }
     var isRecording: Bool { !recordingOwners.isEmpty }
+    var isStoryPlaybackActive: Bool { active.contains(.storyPlayback) }
     private(set) var isIndependentVoiceEnabled = false
     private var recordingOwners = Set<UUID>()
     static let recordingWillStart = Notification.Name("VoiceContext.recordingWillStart")
+    static let storyPlaybackPreempted = Notification.Name("VoiceContext.storyPlaybackPreempted")
 
     func beginTool(_ intent: Intent) -> Bool {
         guard !active.contains(intent) else { return false }
@@ -75,6 +78,7 @@ final class AudioSessionCoordinator {
         }
         // Synchronous observers stop chat capture before the recorder takes the mic.
         NotificationCenter.default.post(name: Self.recordingWillStart, object: nil)
+        NotificationCenter.default.post(name: Self.storyPlaybackPreempted, object: nil)
         BackupKeepAlive.end()
         SpeechRecognitionManager.shared.stopRecording()
         GlobalAudioPlayer.shared.stop()
@@ -147,7 +151,7 @@ final class AudioSessionCoordinator {
         active.remove(.xiaolanTTS)
         isIndependentVoiceEnabled = false
         apply(reason: "close voice mode")
-        FusionAudio.suspendWebAudio(false)
+        FusionAudio.suspendWebAudio(isStoryPlaybackActive)
         BackgroundKeepAliveManager.shared.resumeSilentAudioForMedia(caller: "VoiceContext.voiceMode")
     }
 
@@ -192,6 +196,7 @@ final class AudioSessionCoordinator {
         guard intent != .meetingAssistantTTS else { return false }
         guard !isRecording || intent == .recording else { return false }
         guard independentVoiceAllows(intent) else { return false }
+        if intent == .storyPlayback, isCapturing && !active.contains(.xiaolanCapture) { return false }
         if intent == .capture, active.contains(.toolCapture) { return false }
         if intent == .toolCapture, active.contains(.capture) { return false }
         beginInternal(intent)
@@ -212,6 +217,16 @@ final class AudioSessionCoordinator {
         guard intent != .meetingAssistantTTS else { return }
         guard !isRecording || intent == .recording else { return }
         guard independentVoiceAllows(intent) else { return }
+        if intent == .storyPlayback, isCapturing && !active.contains(.xiaolanCapture) { return }
+        if [.capture, .toolCapture, .mediaAttachment, .replyTTS, .toolTTS].contains(intent) {
+            NotificationCenter.default.post(name: Self.storyPlaybackPreempted, object: nil)
+        }
+        if intent == .storyPlayback {
+            GlobalAudioPlayer.shared.stop()
+            PlayerOffloadBridge.pauseForRecording()
+            VoiceOutputPlayer.shared.stopAll()
+            NotificationCenter.default.post(name: Self.replyTTSPreemptedNotification, object: nil)
+        }
         if intent == .capture || intent == .toolCapture { BackupKeepAlive.end() }
         // Media attachment preempts reply TTS (mutually exclusive voice content):
         // stop the cloud queue directly and notify the chat VM to stop System TTS,
@@ -259,6 +274,10 @@ final class AudioSessionCoordinator {
             return (.record, .measurement, [])
         case .mediaAttachment:
             return (.playback, .default, [.duckOthers])
+        case .storyPlayback:
+            return isIndependentVoiceEnabled
+                ? (.playAndRecord, .default, [.defaultToSpeaker])
+                : (.playback, .default, [.duckOthers])
         case .replyTTS, .toolTTS:
             return (.playback, .spokenAudio, [.duckOthers])
         case .backgroundKeepAlive, .backupKeepAlive:
@@ -268,6 +287,7 @@ final class AudioSessionCoordinator {
 
     private func independentVoiceAllows(_ intent: Intent) -> Bool {
         if intent == .xiaolanCapture || intent == .xiaolanTTS { return isIndependentVoiceEnabled && !isRecording }
+        if intent == .storyPlayback { return !isRecording }
         return !isIndependentVoiceEnabled
     }
 
