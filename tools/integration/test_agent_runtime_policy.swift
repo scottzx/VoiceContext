@@ -7,6 +7,16 @@ enum AgentToolPolicy { case standalone, orchestrator }
         func tool(_ name: String) -> AgentToolDefinition {
             .init(name: name, description: name, parameters: [:], required: [])
         }
+        precondition(AgentRuntimePolicies.requiresShellRuntime(for: nil))
+        AgentRuntimePolicies.bootsShellForUnconfiguredSessions = false
+        precondition(!AgentRuntimePolicies.requiresShellRuntime(for: nil))
+        var native = AgentRuntimePolicy()
+        native.requiresShellRuntime = false
+        native.blockedTools = ["shell_execute"]
+        precondition(native.filter([.init(name: "shell_execute", description: "shell", parameters: [:], required: [])], noticeDriven: false).isEmpty)
+        AgentRuntimePolicies.register(source: "native-only", policy: native)
+        precondition(!AgentRuntimePolicies.requiresShellRuntime(for: "native-only"))
+        AgentRuntimePolicies.bootsShellForUnconfiguredSessions = true
         let ordinary = AgentRuntimePolicies.policy(for: "unregistered")
         precondition(ordinary.toolPolicyOverride == nil && ordinary.allowedTools == nil)
         precondition(ordinary.allowsLiteMode && ordinary.allowsAutomaticSpeech && !ordinary.requiresIdle)

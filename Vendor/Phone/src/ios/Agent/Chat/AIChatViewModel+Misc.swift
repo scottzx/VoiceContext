@@ -30,6 +30,7 @@ extension AIChatViewModel {
     // MARK: - Kernel Boot
 
     func ensureKernelBooted() {
+        guard AgentRuntimePolicies.requiresShellRuntime(for: sessionSource) else { return }
         guard kernelStatus == .notBooted else { return }
         kernelStatus = .booting
 

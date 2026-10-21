@@ -107,6 +107,19 @@ enum OutcomePart {
 @main struct MeetingToolPolicyChecks {
     @MainActor static func main() async {
         VoiceAgentConfiguration.install()
+        var nativeChild = AgentRuntimePolicies.policy(for: "subagent")
+        nativeChild.requiresShellRuntime = false
+        nativeChild.blockedTools = ["shell_execute", "file_read", "file_write", "file_edit", "read_image", "browser_use"]
+        AgentRuntimePolicies.register(source: "native-analysis", policy: nativeChild)
+        let nativeExecutor = AIChatViewModel()
+        nativeExecutor.agentRole = .executor
+        nativeExecutor.sessionSource = "native-analysis"
+        nativeExecutor.chatMode = .full
+        precondition(!AgentRuntimePolicies.requiresShellRuntime(for: nativeExecutor.sessionSource))
+        for name in nativeChild.blockedTools {
+            precondition(!nativeExecutor.makeAgentTools().contains { $0.name == name })
+            precondition(nativeExecutor.runtimeToolRefusal(name: name, tools: [hostDefinition(name)]) != nil)
+        }
         precondition(AsyncTaskNoticeManager.shared.historyOnlyTaskTypes == ["story_playback"],
                      "Story completions must restore as passive history notices before pending recovery")
         precondition(AgentRuntimePolicies.policy(for: "xiaolan_voice").executionGeneration?("voice-session") == 77)

@@ -37,6 +37,7 @@ extension AIChatViewModel {
     /// Registration and dispatch share the configured ceiling, including calls
     /// forged by a model or widened by a tool-visibility hook.
     func runtimeToolRefusal(name: String, tools: [AgentToolDefinition]) -> String? {
+        if runtimePolicy.blockedTools.contains(name) { return "This tool is disabled by the host runtime policy." }
         guard tools.contains(where: { $0.name == name }) else {
             return "This tool is not registered for the current round."
         }
@@ -329,7 +330,9 @@ extension AIChatViewModel {
         }
 
         tools.append(contentsOf: runtimeHostToolDefinitions)
-        return agentRole == .executor ? tools : runtimePolicy.filter(tools, noticeDriven: isNoticeDriven)
+        return agentRole == .executor
+            ? tools.filter { !runtimePolicy.blockedTools.contains($0.name) }
+            : runtimePolicy.filter(tools, noticeDriven: isNoticeDriven)
     }
 
 }

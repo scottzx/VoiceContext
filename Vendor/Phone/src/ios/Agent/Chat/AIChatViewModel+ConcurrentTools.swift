@@ -1011,8 +1011,15 @@ extension AIChatViewModel {
             toolSuccess = !reply.hasPrefix("Error:")
 
         default:
-            toolOutput = "Error: Unknown tool '\(tu.name)'"
-            toolSuccess = false
+            if let result = try await AgentRuntimePolicies.executeHostTool(name: tu.name, context: .init(
+                toolCallId: tu.id, sessionId: sessionId, source: sessionSource, argumentsJSON: argsJson
+            )) {
+                toolOutput = result.content
+                toolSuccess = result.succeeded
+            } else {
+                toolOutput = "Error: Unknown tool '\(tu.name)'"
+                toolSuccess = false
+            }
         }
         } catch is CancellationError {
             let cancelContent = "<system-reminder>The user cancelled this operation. The returned result may be incomplete.</system-reminder>"

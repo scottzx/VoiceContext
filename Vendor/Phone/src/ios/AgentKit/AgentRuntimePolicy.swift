@@ -14,9 +14,11 @@ struct AgentReplyDeliveryPolicy {
 struct AgentRuntimePolicy {
     var toolPolicyOverride: AgentToolPolicy?
     var allowedTools: Set<String>?
+    var blockedTools: Set<String> = []
     var noticeAllowedTools: Set<String>?
     var additionalTools: [AgentToolDefinition] = []
     var replyDelivery: AgentReplyDeliveryPolicy?
+    var requiresShellRuntime = true
     var allowsLiteMode = true
     var allowsAutomaticSpeech = true
     var headless = false
@@ -33,8 +35,9 @@ struct AgentRuntimePolicy {
     }
 
     func filter(_ tools: [AgentToolDefinition], noticeDriven: Bool) -> [AgentToolDefinition] {
-        guard let allowed = allowedToolNames(noticeDriven: noticeDriven) else { return tools }
-        return tools.filter { allowed.contains($0.name) }
+        let permitted = tools.filter { !blockedTools.contains($0.name) }
+        guard let allowed = allowedToolNames(noticeDriven: noticeDriven) else { return permitted }
+        return permitted.filter { allowed.contains($0.name) }
     }
 }
 
@@ -51,10 +54,29 @@ enum AgentRuntimePolicies {
                           headless: true, restoresSourceOnLoad: true)
     ]
     static var hostTools: [AgentToolDefinition] = []
+    /// Hosts with native-only professional sessions can keep optional shell lazy.
+    static var bootsShellForUnconfiguredSessions = true
+    /// Native host callbacks are dispatched only after the existing policy,
+    /// hooks and preflight gates in AIChatViewModel. Registration does not
+    /// grant a role or interaction permission to call the tool.
+    static var hostToolHandlers: [String: AgentHostToolHandler] = [:]
+
+    static func executeHostTool(name: String, context: AgentHostToolContext) async throws -> AgentHostToolResult? {
+        guard let handler = hostToolHandlers[name] else { return nil }
+        try Task.checkCancellation()
+        let result = try await handler(context)
+        try Task.checkCancellation()
+        return result
+    }
     static var hiddenAgentIDs: Set<String> = []
 
     static func register(source: String, policy: AgentRuntimePolicy) {
         sources[source] = policy
+    }
+
+    static func requiresShellRuntime(for source: String?) -> Bool {
+        guard let source, let policy = sources[source] else { return bootsShellForUnconfiguredSessions }
+        return policy.requiresShellRuntime
     }
 
     static func policy(for source: String?) -> AgentRuntimePolicy {
@@ -70,3 +92,20 @@ enum AgentRuntimePolicies {
         return names
     }
 }
+
+
+/// JSON stays provider-neutral and preserves the caller's tool-use identity.
+/// Business schemas are validated by the injected host, not this registry.
+struct AgentHostToolContext: Sendable {
+    let toolCallId: String
+    let sessionId: String?
+    let source: String?
+    let argumentsJSON: String
+}
+
+struct AgentHostToolResult: Sendable {
+    let content: String
+    let succeeded: Bool
+}
+
+typealias AgentHostToolHandler = @MainActor (AgentHostToolContext) async throws -> AgentHostToolResult
