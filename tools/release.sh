@@ -117,25 +117,25 @@ rm -rf "$ARCHIVE_PATH"
 xcodebuild -project speech_note/speech_note.xcodeproj \
            -scheme speech_note \
            -destination 'generic/platform=iOS' \
+           -derivedDataPath "$ROOT_DIR/build/speech_note-derived-data" \
            -archivePath "$ARCHIVE_PATH" \
-           clean archive
+           archive
 
 if [ $? -ne 0 ]; then
     echo "❌ Xcode Archive 归档失败，请检查编译错误。"
     exit 1
 fi
 
-# 3. 复制到 Xcode Organizer 系统目录
+# 3. 移入 Xcode Organizer 系统目录，只保留一份完整归档
 TODAY=$(date +%Y-%m-%d)
 TIME_STR=$(date +%H-%M-%S)
 ORGANIZER_DIR="$HOME/Library/Developer/Xcode/Archives/$TODAY"
 ORGANIZER_ARCHIVE="$ORGANIZER_DIR/speech_note $TODAY $TIME_STR.xcarchive"
 
 mkdir -p "$ORGANIZER_DIR"
-cp -R "$ARCHIVE_PATH" "$ORGANIZER_ARCHIVE"
+mv "$ARCHIVE_PATH" "$ORGANIZER_ARCHIVE"
 
 echo "✅ 生产包归档成功:"
-echo "   - 临时路径: $ARCHIVE_PATH"
 echo "   - Xcode Organizer 路径: $ORGANIZER_ARCHIVE"
 
 # 4. Git 提交与推送 (如果启用了 --git)

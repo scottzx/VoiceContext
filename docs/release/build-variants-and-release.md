@@ -61,7 +61,29 @@ bash tools/integration/build_device.sh production
 
 开发产物位于 `build/VoiceContextAgent/Build/Products/Debug-Dev-iphoneos/VoiceContextAgent.app`；正式身份 Debug 产物位于 `Debug-iphoneos/VoiceContextAgent.app`。
 
-`production` 参数表示正式产品身份，**不表示发行归档**。该脚本仍使用 `Debug` 和 `CODE_SIGNING_ALLOWED=NO`，产物不能直接用于 TestFlight 上传。
+`production` 参数表示正式产品身份，**不表示发行归档**。该脚本使用 `Debug`，默认 `CODE_SIGNING_ALLOWED=NO`，产物不能直接用于 TestFlight 上传。
+
+需要本地安装包时，复用同一个构建目录，显式启用签名后包装 IPA：
+
+```bash
+# 仅编译和签名，允许 Xcode 更新自动签名配置；不安装、不运行
+bash tools/integration/build_device.sh development --signed
+python3 tools/integration/package_ipa.py development
+```
+
+开发版默认输出 `build/distribution/development/public/app.ipa`；正式身份的 Debug 包使用 `production --signed` 构建，再用 `package_ipa.py production` 输出到 `build/distribution/production/public/app.ipa`。每种身份只替换这一份 IPA，不按任务或日期另存完整包。已有签名 `.app` 时可直接包装，无需重新编译；默认未签名编译会覆盖同配置产物，包装器遇到缺少签名或描述文件时会拒绝。
+
+包装器使用临时 `Payload`，检查暂存 App 签名、身份、ZIP CRC、包内信息和可执行权限后才原子替换旧 IPA；失败保留旧 IPA，成功或失败都会移除暂存副本。输出 JSON 包含包大小、版本和 SHA-256，可保存到公开目录外作为交付证据。它不修改版本号、安装页面或 manifest；网页安装前仍需核对签名描述文件是否覆盖目标设备。
+
+若已有下载服务固定指向某个目录，用 `--output` 沿用它的 IPA 路径，保持下载 URL；不要把整个服务目录删掉。也可用 `--app` 指定已有签名包：
+
+```bash
+python3 tools/integration/package_ipa.py development \
+  --app /path/to/VoiceContextAgent.app \
+  --output /path/to/existing/public/app.ipa
+```
+
+日常保留固定构建目录中的 `.app` 和每种身份的一份 IPA；任务目录只保存日志、哈希和安装回执，打包后不保留 `staging/Payload`。`build/VoiceContextAgent` 与 `build/PhonePackages` 是可复用编译和依赖缓存，不因每次发包而清空。正式发行的 `.xcarchive` 与 dSYM 保留用于上传及崩溃符号化，不纳入日常安装包覆盖策略。旧 `tools/release.sh` 也复用固定编译缓存，并在归档成功后将归档移入 Organizer，避免同时留下两份。
 
 ## 4. 从开发版转到 TestFlight
 

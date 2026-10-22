@@ -143,6 +143,8 @@ Use regular, medium/semibold, and bold intentionally. If most text is bold, hier
 - **Empty states:** One concise message and the recording control. No decorative illustration is required.
 - **Future larger platforms:** A split view may be used on iPad/macOS later, but v1 iPhone navigation must not imitate desktop columns.
 
+Remote chat source update (2026-10-22, explicit product-owner approval): the Chat home header switches between this phone and configured DSH services. Reuse the current native conversation UI and appearance preferences; remote execution/settings belong to the selected service. Keep the local iCloud status entry separate. Use native Lists/Forms for connection management and truthful loading/offline/approval states. Network access uses Tailscale only. See [DSH remote chat](docs/design/dsh-remote-chat.md).
+
 ### Shape hierarchy
 
 | Role | Radius |

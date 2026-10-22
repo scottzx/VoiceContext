@@ -245,7 +245,14 @@ private struct BridgedAssistantHeaderV3: View {
     var onOpenSoulSettings: (() -> Void)?
     var body: some View {
         HStack(spacing: 6) {
-            if let speaker {
+            if let name = message.remoteAssistantName {
+                Image(systemName: "server.rack")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(ChatColors.secondaryText)
+                Text(name)
+                    .font(YimaDesign.Typography.section)
+                    .foregroundStyle(ChatColors.primaryText)
+            } else if let speaker {
                 Text(speaker.emoji.isEmpty ? "🤖" : speaker.emoji)
                     .font(.system(size: 18))
                     .frame(width: 22, height: 22)
@@ -299,9 +306,9 @@ private struct BridgedAssistantHeaderV3: View {
         .contentShape(Rectangle())
         .onTapGesture { onOpenSoulSettings?() }
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(AppLocalized("Open Soul settings"))
-        .accessibilityHint(AppLocalized("Change the assistant's name, icon and personality"))
+        .accessibilityAddTraits(message.remoteAssistantName == nil ? .isButton : [])
+        .accessibilityLabel(message.remoteAssistantName ?? AppLocalized("Open Soul settings"))
+        .accessibilityHint(message.remoteAssistantName == nil ? AppLocalized("Change the assistant's name, icon and personality") : "")
         .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
             soulMeta = SoulStore.cachedMetadata
         }
@@ -1422,7 +1429,7 @@ extension CollectionViewMessageListV3 {
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] block in
-                    guard let self else { return }
+                    guard let self, let vm = self.vm else { return }
                     if let block {
                         let toolBlocks = message.blocks.filter { $0.toolStatus != nil }
                         self.sheetPresenter.sheetData = ToolSheetPresenter.SheetData(
@@ -1430,7 +1437,8 @@ extension CollectionViewMessageListV3 {
                             block: block,
                             toolBlocks: toolBlocks,
                             toolSnapshots: bridge.toolSnapshots,
-                            browserPool: bridge.browserPool
+                            browserPool: bridge.browserPool,
+                            isRemote: vm.isDSH
                         )
                     }
                     // Dismiss is handled by sheetPresenter.onDismiss (set in attach)
@@ -1476,7 +1484,7 @@ extension CollectionViewMessageListV3 {
             bridge.isActiveMessage = isActive
             bridge.commandStartTime = vm.commandStartTime
             bridge.onStop = isActive ? { [weak self] in self?.onStop?() } : nil
-            bridge.browserPool = vm.browserTabPool
+            bridge.browserPool = vm.isDSH ? nil : vm.browserTabPool
             bridge.toolSnapshots = vm.toolSnapshots
             bridge.autoRetryAttempt = isLast ? vm.autoRetryAttempt : 0
             bridge.autoRetryCountdown = isLast ? vm.autoRetryCountdown : 0
@@ -1551,7 +1559,7 @@ extension CollectionViewMessageListV3 {
                 self.compactSummaryPresenter.summary = summary
             }
 
-            if message.isCompactedHistory || message.role == .compactDivider || message.role == .systemInfo {
+            if vm.isDSH || message.isCompactedHistory || message.role == .compactDivider || message.role == .systemInfo {
                 bridge.onRetry = nil; bridge.onEdit = nil; bridge.onCompact = nil
                 bridge.onDeleteFrom = nil
             } else if !vm.isProcessing && !vm.isCompacting {
@@ -5291,6 +5299,7 @@ private final class ToolSheetPresenter: ObservableObject {
         let toolBlocks: [AssistantBlock]
         let toolSnapshots: [ToolSnapshotItem]
         let browserPool: BrowserTabPool?
+        let isRemote: Bool
     }
 
     @Published var sheetData: SheetData?
@@ -5320,12 +5329,16 @@ private struct SheetOverlayView: View {
         Color.clear
             .frame(width: 0, height: 0)
             .sheet(item: $toolPresenter.sheetData) { data in
+                if data.isRemote {
+                    DSHReadOnlyToolSheet(block: data.block)
+                } else {
                 ToolLiveSheet(
                     toolBlocks: data.toolBlocks,
                     initialIdx: data.toolBlocks.firstIndex(where: { $0.id == data.block.id }) ?? 0,
                     toolSnapshots: data.toolSnapshots,
                     browserPool: data.browserPool
                 )
+                }
             }
             .onChange(of: toolPresenter.sheetData?.id) { newVal in
                 if newVal == nil {

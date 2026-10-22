@@ -23,6 +23,7 @@ extension AIChatViewModel {
     }
 
     func reloadMessagesFromDB(reason: String = "unspecified") async {
+        guard !isDSH else { return }
         guard let sessionId else {
             logger.info("[ReloadTrace] skip reason=\(reason) sid=nil")
             return
@@ -139,6 +140,7 @@ extension AIChatViewModel {
     /// For UI, we merge consecutive assistant + tool-result turns into a single ChatMessage,
     /// matching how they appeared during the live session.
     func loadSession() async {
+        if isDSH { await loadDSHSession(); return }
         guard let sessionId else { return }
 
         let sinceAppear = (CFAbsoluteTimeGetCurrent() - Self.onAppearTimestamp) * 1000
@@ -1105,6 +1107,7 @@ extension AIChatViewModel {
     /// Creates a session if needed and returns its ID.
     @discardableResult
     func ensureSessionReturningId() async -> String {
+        if isDSH { return sessionId ?? "" }
         if let sid = sessionId {
             logger.info("🔑DRAFT [vm=\(self.vmInstanceId)] ensureSession already has sessionId=\(sid)")
             return sid

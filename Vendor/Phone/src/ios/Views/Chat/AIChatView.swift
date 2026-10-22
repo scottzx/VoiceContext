@@ -27,8 +27,15 @@ private final class CachedViewModel: ObservableObject {
     /// observes all @Published changes through the @StateObject.
     private var cancellable: AnyCancellable?
 
-    init(sessionId: String?, initialPrompt: String? = nil) {
-        if let sessionId {
+    init(sessionId: String?, draftId: String? = nil, dshService: DSHService? = nil, initialPrompt: String? = nil) {
+        if let dshService {
+            let result = ViewModelCache.shared.getOrCreateDSH(
+                service: dshService, sessionID: sessionId,
+                draftID: draftId ?? "__new__\(UUID().uuidString)"
+            )
+            self.vm = result.vm
+            self.isNew = result.isNew
+        } else if let sessionId {
             let (cached, isNew) = ViewModelCache.shared.getOrCreate(for: sessionId)
             self.vm = cached
             self.isNew = isNew
@@ -176,6 +183,7 @@ struct AIChatView: View {
     var draftId: String? = nil
     /// If non-nil, this is a read-only view of a remote device's session.
     var remoteDeviceId: String? = nil
+    var dshService: DSHService? = nil
     /// Model group to bind when creating a new session (from long-press FAB).
     var initialGroupId: String? = nil
     /// Header data already available at the navigation source. Seeding the
@@ -224,6 +232,7 @@ struct AIChatView: View {
     init(
         sessionId: String? = nil,
         draftId: String? = nil,
+        dshService: DSHService? = nil,
         remoteDeviceId: String? = nil,
         initialGroupId: String? = nil,
         initialSession: ChatSession? = nil,
@@ -237,6 +246,7 @@ struct AIChatView: View {
     ) {
         self.sessionId = sessionId
         self.draftId = draftId
+        self.dshService = dshService
         self.remoteDeviceId = remoteDeviceId
         self.initialGroupId = initialGroupId
         self.initialHeaderTitle = initialHeaderTitle
@@ -262,7 +272,7 @@ struct AIChatView: View {
         // re-init a no-op when the StateObject already exists. CachedViewModel.init
         // logs its own creation (🔑DRAFT), so the redundant per-init [SessionLoad]
         // line is dropped.
-        _cached = StateObject(wrappedValue: CachedViewModel(sessionId: sessionId, initialPrompt: initialPrompt))
+        _cached = StateObject(wrappedValue: CachedViewModel(sessionId: sessionId, draftId: draftId, dshService: dshService, initialPrompt: initialPrompt))
         AIChatViewModel.onAppearTimestamp = CFAbsoluteTimeGetCurrent()
     }
     @StateObject private var oauth = ClaudeOAuthManager.shared
@@ -556,6 +566,10 @@ struct AIChatView: View {
     @State private var missingMinisFileName: String?
 
     var body: some View {
+        chatLifecycleContent
+    }
+
+    private var chatMainContent: some View {
         ZStack {
             // Messages — floating tool preview overlaid at bottom
             messagesArea
@@ -649,7 +663,11 @@ struct AIChatView: View {
                                 }
                         }
                         VStack(spacing: 0) {
-                            FloatingApprovalBar(store: approvalStore, showSheet: $showApprovalSheet)
+                            if vm.isDSH {
+                                DSHConversationControls(vm: vm)
+                            } else {
+                                FloatingApprovalBar(store: approvalStore, showSheet: $showApprovalSheet)
+                            }
                             #if DEBUG
                             if isReadOnly {
                                 forkBanner
@@ -721,7 +739,7 @@ struct AIChatView: View {
                     .allowsHitTesting(false)
                 }
                 .overlay {
-                    SessionLockGateOverlay(sessionId: vm.sessionId)
+                    if !vm.isDSH { SessionLockGateOverlay(sessionId: vm.sessionId) }
                 }
                 .onChange(of: vm.isLoadingSession) { newValue in
                     // [SpinnerTrace] Every transition of the
@@ -733,10 +751,11 @@ struct AIChatView: View {
                 }
 
             // Full-screen kernel boot overlay
-            kernelBootOverlay
+            if !vm.isDSH { kernelBootOverlay }
         }
         .background(ChatColors.background)
         .onDrop(of: [.image, .movie, .fileURL, .data], isTargeted: $isDropTargeted) { providers in
+            guard !vm.isDSH else { return false }
             handleDropProviders(providers)
             return true
         }
@@ -749,7 +768,7 @@ struct AIChatView: View {
                     .allowsHitTesting(false)
             }
         }
-        .environment(\.chatSessionId, vm.sessionId)
+        .environment(\.chatSessionId, vm.isDSH ? nil : vm.sessionId)
         // The navigation chrome belongs to this destination instead of the
         // UINavigationBar. Back, title and actions therefore share one frame
         // from the first render and travel together during interactive pop.
@@ -771,6 +790,10 @@ struct AIChatView: View {
                     .frame(width: 0, height: 0)
             }
         }
+    }
+
+    private var chatConversationPresentations: some View {
+        chatMainContent
         .sheet(item: $titlePillEditSession) { session in
             SessionEditSheet(session: session) { newTitle, newCategory in
                 Task {
@@ -931,6 +954,10 @@ struct AIChatView: View {
         .environment(\.openImageGallery, OpenImageGalleryAction { presentation in
             imageGallery = presentation
         })
+    }
+
+    private var chatMediaPresentations: some View {
+        chatConversationPresentations
         .fullScreenCover(item: $previewImageFile) { fileURL in
             MinisImageFilePreviewView(fileURL: fileURL)
         }
@@ -1035,6 +1062,7 @@ struct AIChatView: View {
         // to new subscribers on first attach — without it, a chat view
         // created after a previous OSC capture would re-present a stale URL.
         .onReceive(MinisOpenURLBroker.shared.$pendingURL.dropFirst().compactMap { $0 }) { url in
+            guard !vm.isDSH else { return }
             if MinisOpenURLBroker.isWebScheme(url.scheme) {
                 // Skip when a topmost host wants to present the web preview
                 // itself: ToolLiveSheet (`toolSheetVisible`) or the
@@ -1072,6 +1100,10 @@ struct AIChatView: View {
                 }
             })
         }
+    }
+
+    private var chatToolPresentations: some View {
+        chatMediaPresentations
         .sheet(isPresented: $showFileBrowser) {
             NavigationStack {
                 let base = RootfsManager.shared.dataPath
@@ -1085,8 +1117,12 @@ struct AIChatView: View {
         }
         .sheet(isPresented: $showModelPicker) {
             NavigationStack {
-                SessionModelPicker(sessionId: vm.sessionId) {
-                    await vm.ensureSessionReturningId()
+                if vm.isDSH {
+                    DSHModelPickerView(vm: vm)
+                } else {
+                    SessionModelPicker(sessionId: vm.sessionId) {
+                        await vm.ensureSessionReturningId()
+                    }
                 }
             }
             .presentationDetents([.large])
@@ -1294,130 +1330,17 @@ struct AIChatView: View {
                 minisLogger.error("File import failed: \(error.localizedDescription)")
             }
         }
-        .onAppear {
-            let sinceInit = (CFAbsoluteTimeGetCurrent() - AIChatViewModel.onAppearTimestamp) * 1000
-            minisLogger.info("[SessionLoad] onAppear T+\(String(format: "%.0f", sinceInit))ms isNew=\(cached.isNew) msgs=\(vm.messages.count)")
-            // [T-inputbar-stale-across-reentry] Re-arm the leading-edge seed on
-            // EVERY appear. AIChatView is keyed `.id(sessionId)` in ContentView,
-            // so re-entering the SAME session reuses the same SwiftUI identity
-            // and its @State survives — `inputBarHeight` keeps whatever (possibly
-            // wrong) value it last held, and because `didSeedInputBarHeight` is
-            // still true the synchronous seed never re-fires. If the composer's
-            // geometry doesn't change on re-entry, onGeometryChange emits no new
-            // callback either, so nothing ever reconciles it: a too-tall height
-            // survives indefinitely across re-renders. Clearing the flag makes
-            // the next (guaranteed) geometry callback re-seed authoritatively.
-            didSeedInputBarHeight = false
-            inputBarHeightDebounce?.cancel()
-            inputBarHeightDebounce = nil
-            AppLogger(category: "InputBarLayout").info("inputBarHeight re-arm seed on appear (was \(inputBarHeight))")
-            vm.sessionId = sessionId
-            vm.draftId = draftId
-            vm.remoteDeviceId = remoteDeviceId
-            vm.initialGroupId = initialGroupId
-            // Snapshot total session count once so the New-Chat onboarding
-            // grid only appears for first-time users (no prior sessions).
-            // [T-ios-session-coldload-listsessions-block] Use the bare
-            // COUNT(*) query, NOT listSessions().count — the latter ran 4
-            // un-indexable parts_json LIKE subqueries per session (~0.5s cold
-            // on a 100k-message DB) and, on the serialized ChatStore actor,
-            // head-of-line-blocked the loadSession() dispatched below, which
-            // was the reported ~3s cold-open stall. The comment used to claim
-            // "single SQLite COUNT" — now the code actually does one.
-            if totalSessionCount == nil {
-                Task.detached(priority: .utility) {
-                    let count = await ChatStore.shared.sessionCount()
-                    await MainActor.run { totalSessionCount = count }
-                }
-            }
-            if let sessionId { AIChatViewModel.activeSessionId = sessionId }
-            vm.ensureKernelBooted()
-            if let sessionId {
-                if cached.isNew || (vm.messages.isEmpty && !vm.isLoadingSession) {
-                    // Load session if: (a) VM is freshly created, or (b) cache hit but messages
-                    // are empty — this can happen on iOS 16 where NavigationStack may recreate
-                    // @StateObject unexpectedly, causing isNew=false but an empty VM.
-                    minisLogger.info("🔄SESSION AIChatView.onAppear loading session \(sessionId) isNew=\(cached.isNew) msgs=\(vm.messages.count)")
-                    // [T-ios-session-coldload-listsessions-block] .userInitiated
-                    // so the actual session-open work wins the serialized
-                    // ChatStore actor queue over background sidebar-refresh
-                    // listSessions() scans that would otherwise starve it.
-                    Task(priority: .userInitiated) {
-                        // Phase A: auto-repair any sortOrder / legacy marker anomalies
-                        // before loading. Cheap no-op if the session is healthy.
-                        _ = await ChatStore.shared.repairSessionIfNeeded(sessionId: sessionId)
-                        await vm.loadSession()
-                    }
-                } else if vm.messages.isEmpty && vm.isLoadingSession {
-                    // iOS 16 edge case: a previous view instance started loadSession()
-                    // but this view appeared before it completed. Wait for it to finish,
-                    // then reload if messages are still empty (objectWillChange may have
-                    // fired between old and new CachedViewModel subscriptions).
-                    minisLogger.info("🔄SESSION AIChatView.onAppear WAITING for in-flight load session=\(sessionId)")
-                    Task {
-                        // Wait for the in-flight load to complete (poll at short intervals)
-                        for _ in 0..<20 {
-                            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                            if !vm.isLoadingSession { break }
-                        }
-                        // If messages are still empty after the load completed, retry
-                        if vm.messages.isEmpty && !vm.isLoadingSession {
-                            minisLogger.warning("🔄SESSION AIChatView.onAppear RETRY load — messages still empty after in-flight load for \(sessionId)")
-                            await vm.loadSession()
-                        }
-                    }
-                } else {
-                    let reuseStart = CFAbsoluteTimeGetCurrent()
-                    minisLogger.info("🔄SESSION AIChatView.onAppear REUSING cached vm for \(sessionId) isProcessing=\(vm.isProcessing) msgs=\(vm.messages.count)")
-                    // Remount minis for this session (in case another session took over)
-                    vm.mountMinis(for: sessionId)
-                    // While the user was off this view, an iCloud / LAN
-                    // sync may have landed new messages (or applied a
-                    // tombstone). reloadMessagesFromDB internally compares
-                    // SQLite count + max(sort_order) + (id, sort_order)
-                    // hash against the VM's last-known baseline and only
-                    // re-renders on diff. Skip when isProcessing — the
-                    // active stream owns messages right now and a reload
-                    // would clobber the in-flight assistant turn.
-                    if !vm.isProcessing && !vm.isCompacting {
-                        Task { @MainActor in await vm.reloadMessagesFromDB(reason: "AIChatView.onAppear-reuse") }
-                    }
-                    vm.consumeDeferredSnapshotIfNeeded()
-                    let mountElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
-                    // Cached VM already has messages — trigger scroll-to-bottom
-                    // since isLoadingSession won't transition and its onChange won't fire.
-                    if !vm.messages.isEmpty {
-                        vm.forceScrollToBottom.send()
-                    }
-                    let totalElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
-                    minisLogger.info("[SessionLoad] \(sessionId) — REUSE: \(String(format: "%.1f", totalElapsed))ms [mount: \(String(format: "%.1f", mountElapsed)) | msgs: \(vm.messages.count)]")
-                }
-            } else {
-                minisLogger.info("🔄SESSION AIChatView.onAppear nil sessionId — draft mode")
-                // Draft session — auto-focus input for immediate typing
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    guard !hasOverlayPresented, isChatViewVisible else { return }
-                    inputFocused = true
-                }
-            }
-            minisLogger.info("[Share] AIChatView.onAppear: sessionId=\(sessionId ?? "nil") bufferVersion=\(shareCoordinator.bufferVersion) hasBuffer=\(shareCoordinator.pendingShareBuffer != nil)")
-            injectPendingShareIfNeeded()
-            injectPendingTransferIfNeeded()
-            isChatViewVisible = true
-            refreshTitlePillSession()
-            // Notify workflow that THIS view is mounted + visible. If
-            // the workflow is waiting for our session id, it will
-            // transition to chatReady — our state observer below picks
-            // that up and flips `showCamera`. Transient draft views
-            // (sessionId=nil) won't match the workflow's target and
-            // are correctly skipped.
-            tryMarkWorkflowChatReady(reason: "onAppear")
-        }
+    }
+
+    private var chatLifecycleContent: some View {
+        chatToolPresentations
+        .onAppear(perform: handleChatAppearance)
         .observingQuickActions(modifier: quickActionObserver)
         .onChange(of: vm.sessionId) { _ in
             refreshTitlePillSession()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sessionDidUpdate)) { note in
+            guard !vm.isDSH else { return }
             guard let sid = vm.sessionId,
                   let updatedId = note.object as? String,
                   updatedId == sid else { return }
@@ -1429,6 +1352,7 @@ struct AIChatView: View {
             injectPendingShareIfNeeded()
         }
         .onDisappear {
+            if vm.isDSH { vm.detachDSHSession() }
             isChatViewVisible = false
             // [T-voice-inputbar-collapse-selfheal] The health probe must not
             // outlive the view — its report would describe a composer that no
@@ -1502,7 +1426,7 @@ struct AIChatView: View {
             }
         }
         .onChange(of: deepLink.showTerminal) { show in
-            if show {
+            if show && !vm.isDSH {
                 terminalInitCommand = deepLink.terminalInitCommand
                 showTerminal = true
                 deepLink.showTerminal = false
@@ -1515,7 +1439,7 @@ struct AIChatView: View {
         // blind user must still hear that the reply ended regardless of an
         // unrelated keyboard preference. The outcome closure is evaluated at
         // the end edge so it sees the final cancel/error state.
-        .announceChatTurnEnd(isProcessing: vm.isProcessing) {
+        .announceChatTurnEnd(isProcessing: vm.isProcessing) { () -> ChatTurnOutcome in
             if vm.userDidCancel { return .stopped }
             if vm.errorMessage != nil { return .failed }
             return .finished
@@ -1581,6 +1505,142 @@ struct AIChatView: View {
         .environmentObject(vm)
     }
 
+    private func handleChatAppearance() {
+        let sinceInit = (CFAbsoluteTimeGetCurrent() - AIChatViewModel.onAppearTimestamp) * 1000
+        minisLogger.info("[SessionLoad] onAppear T+\(String(format: "%.0f", sinceInit))ms isNew=\(cached.isNew) msgs=\(vm.messages.count)")
+        // [T-inputbar-stale-across-reentry] Re-arm the leading-edge seed on
+        // EVERY appear. AIChatView is keyed `.id(sessionId)` in ContentView,
+        // so re-entering the SAME session reuses the same SwiftUI identity
+        // and its @State survives — `inputBarHeight` keeps whatever (possibly
+        // wrong) value it last held, and because `didSeedInputBarHeight` is
+        // still true the synchronous seed never re-fires. If the composer's
+        // geometry doesn't change on re-entry, onGeometryChange emits no new
+        // callback either, so nothing ever reconciles it: a too-tall height
+        // survives indefinitely across re-renders. Clearing the flag makes
+        // the next (guaranteed) geometry callback re-seed authoritatively.
+        didSeedInputBarHeight = false
+        inputBarHeightDebounce?.cancel()
+        inputBarHeightDebounce = nil
+        AppLogger(category: "InputBarLayout").info("inputBarHeight re-arm seed on appear (was \(inputBarHeight))")
+        if vm.isDSH {
+            handleDSHChatAppearance()
+            return
+        }
+        vm.sessionId = sessionId
+        vm.draftId = draftId
+        vm.remoteDeviceId = remoteDeviceId
+        vm.initialGroupId = initialGroupId
+        // Snapshot total session count once so the New-Chat onboarding
+        // grid only appears for first-time users (no prior sessions).
+        // [T-ios-session-coldload-listsessions-block] Use the bare
+        // COUNT(*) query, NOT listSessions().count — the latter ran 4
+        // un-indexable parts_json LIKE subqueries per session (~0.5s cold
+        // on a 100k-message DB) and, on the serialized ChatStore actor,
+        // head-of-line-blocked the loadSession() dispatched below, which
+        // was the reported ~3s cold-open stall. The comment used to claim
+        // "single SQLite COUNT" — now the code actually does one.
+        if totalSessionCount == nil {
+            Task.detached(priority: .utility) {
+                let count = await ChatStore.shared.sessionCount()
+                await MainActor.run { totalSessionCount = count }
+            }
+        }
+        if let sessionId { AIChatViewModel.activeSessionId = sessionId }
+        vm.ensureKernelBooted()
+        if let sessionId {
+            if cached.isNew || (vm.messages.isEmpty && !vm.isLoadingSession) {
+                // Load session if: (a) VM is freshly created, or (b) cache hit but messages
+                // are empty — this can happen on iOS 16 where NavigationStack may recreate
+                // @StateObject unexpectedly, causing isNew=false but an empty VM.
+                minisLogger.info("🔄SESSION AIChatView.onAppear loading session \(sessionId) isNew=\(cached.isNew) msgs=\(vm.messages.count)")
+                // [T-ios-session-coldload-listsessions-block] .userInitiated
+                // so the actual session-open work wins the serialized
+                // ChatStore actor queue over background sidebar-refresh
+                // listSessions() scans that would otherwise starve it.
+                Task(priority: .userInitiated) {
+                    // Phase A: auto-repair any sortOrder / legacy marker anomalies
+                    // before loading. Cheap no-op if the session is healthy.
+                    _ = await ChatStore.shared.repairSessionIfNeeded(sessionId: sessionId)
+                    await vm.loadSession()
+                }
+            } else if vm.messages.isEmpty && vm.isLoadingSession {
+                // iOS 16 edge case: a previous view instance started loadSession()
+                // but this view appeared before it completed. Wait for it to finish,
+                // then reload if messages are still empty (objectWillChange may have
+                // fired between old and new CachedViewModel subscriptions).
+                minisLogger.info("🔄SESSION AIChatView.onAppear WAITING for in-flight load session=\(sessionId)")
+                Task {
+                    // Wait for the in-flight load to complete (poll at short intervals)
+                    for _ in 0..<20 {
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        if !vm.isLoadingSession { break }
+                    }
+                    // If messages are still empty after the load completed, retry
+                    if vm.messages.isEmpty && !vm.isLoadingSession {
+                        minisLogger.warning("🔄SESSION AIChatView.onAppear RETRY load — messages still empty after in-flight load for \(sessionId)")
+                        await vm.loadSession()
+                    }
+                }
+            } else {
+                let reuseStart = CFAbsoluteTimeGetCurrent()
+                minisLogger.info("🔄SESSION AIChatView.onAppear REUSING cached vm for \(sessionId) isProcessing=\(vm.isProcessing) msgs=\(vm.messages.count)")
+                // Remount minis for this session (in case another session took over)
+                vm.mountMinis(for: sessionId)
+                // While the user was off this view, an iCloud / LAN
+                // sync may have landed new messages (or applied a
+                // tombstone). reloadMessagesFromDB internally compares
+                // SQLite count + max(sort_order) + (id, sort_order)
+                // hash against the VM's last-known baseline and only
+                // re-renders on diff. Skip when isProcessing — the
+                // active stream owns messages right now and a reload
+                // would clobber the in-flight assistant turn.
+                if !vm.isProcessing && !vm.isCompacting {
+                    Task { @MainActor in await vm.reloadMessagesFromDB(reason: "AIChatView.onAppear-reuse") }
+                }
+                vm.consumeDeferredSnapshotIfNeeded()
+                let mountElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
+                // Cached VM already has messages — trigger scroll-to-bottom
+                // since isLoadingSession won't transition and its onChange won't fire.
+                if !vm.messages.isEmpty {
+                    vm.forceScrollToBottom.send()
+                }
+                let totalElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
+                minisLogger.info("[SessionLoad] \(sessionId) — REUSE: \(String(format: "%.1f", totalElapsed))ms [mount: \(String(format: "%.1f", mountElapsed)) | msgs: \(vm.messages.count)]")
+            }
+        } else {
+            minisLogger.info("🔄SESSION AIChatView.onAppear nil sessionId — draft mode")
+            // Draft session — auto-focus input for immediate typing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                guard !hasOverlayPresented, isChatViewVisible else { return }
+                inputFocused = true
+            }
+        }
+        minisLogger.info("[Share] AIChatView.onAppear: sessionId=\(sessionId ?? "nil") bufferVersion=\(shareCoordinator.bufferVersion) hasBuffer=\(shareCoordinator.pendingShareBuffer != nil)")
+        injectPendingShareIfNeeded()
+        injectPendingTransferIfNeeded()
+        isChatViewVisible = true
+        refreshTitlePillSession()
+        // Notify workflow that THIS view is mounted + visible. If
+        // the workflow is waiting for our session id, it will
+        // transition to chatReady — our state observer below picks
+        // that up and flips `showCamera`. Transient draft views
+        // (sessionId=nil) won't match the workflow's target and
+        // are correctly skipped.
+        tryMarkWorkflowChatReady(reason: "onAppear")
+    }
+
+    private func handleDSHChatAppearance() {
+        isChatViewVisible = true
+        if vm.dshTitle.isEmpty { vm.dshTitle = initialHeaderTitle ?? "" }
+        if let service = vm.dshService {
+            AIChatViewModel.activeSessionId = vm.sessionId.map {
+                ViewModelCache.dshKey(serviceID: service.id, sessionID: $0)
+            } ?? ViewModelCache.dshDraftKey(serviceID: service.id, draftID: vm.draftId ?? "draft")
+        }
+        vm.consumeDeferredSnapshotIfNeeded()
+        Task { await vm.loadDSHSession() }
+    }
+
     // MARK: - Home Screen Quick Actions
 
     /// Stable id this view represents in the navigation stack. For
@@ -1593,7 +1653,7 @@ struct AIChatView: View {
     private var quickActionObserver: QuickActionObserverModifier {
         QuickActionObserverModifier(
             sessionId: quickActionMatchId,
-            isVisible: isChatViewVisible,
+            isVisible: isChatViewVisible && !vm.isDSH,
             onWaitingMatch: { tryMarkWorkflowChatReady(reason: "modifier-waiting") },
             onChatReady: { action in applyQuickAction(action) }
         )
@@ -1604,6 +1664,7 @@ struct AIChatView: View {
     /// Idempotent: workflow ignores the call unless its target id
     /// matches and the state is `waitingForChatMount`.
     private func tryMarkWorkflowChatReady(reason: String) {
+        guard !vm.isDSH else { return }
         guard let sid = quickActionMatchId, isChatViewVisible else { return }
         if case .waitingForChatMount(_, let target) = QuickActionWorkflow.shared.state, target == sid {
             minisLogger.info("[QuickAction] tryMarkWorkflowChatReady reason=\(reason) sid=\(sid)")
@@ -1615,6 +1676,7 @@ struct AIChatView: View {
     /// `chatReady` state. Flips the relevant @State so SwiftUI mounts
     /// the camera sheet / starts speech recognition.
     private func applyQuickAction(_ action: ChatLaunchAction) {
+        guard !vm.isDSH else { return }
         minisLogger.info("[QuickAction] applyQuickAction action=\(String(describing: action)) showCamera=\(showCamera) hasOverlay=\(hasOverlayPresented) chatVisible=\(isChatViewVisible)")
         // Guard against late deliveries to a view that already
         // disappeared — workflow re-publishes chatReady on retry and
@@ -1695,6 +1757,7 @@ struct AIChatView: View {
     }
 
     private func injectPendingShareIfNeeded() {
+        guard !vm.isDSH else { return }
         // [T-share-routes-to-background-session] Only the session the share was
         // ROUTED TO may consume it. Both entry points (onAppear and the
         // bufferVersion observer) funnel through here, so the check sits at the
@@ -1777,6 +1840,7 @@ struct AIChatView: View {
     // MARK: - Pending Transfer Injection
 
     private func injectPendingTransferIfNeeded() {
+        guard !vm.isDSH else { return }
         guard let transfer = ViewModelCache.pendingTransfer else { return }
 
         // [T-ios-moveto-transfer-race] Only the intended target may consume the
@@ -1832,6 +1896,25 @@ struct AIChatView: View {
 
     @ViewBuilder
     private var trailingMenu: some View {
+        if vm.isDSH {
+            Menu {
+                Button {
+                    Task { await vm.loadDSHSession() }
+                } label: { Label("重新连接", systemImage: "arrow.clockwise") }
+                Button {
+                    guard let service = vm.dshService else { return }
+                    NotificationCenter.default.post(
+                        name: Notification.Name("Yima.dshNewChatRequested"), object: service.id.uuidString
+                    )
+                } label: { Label("新建聊天", systemImage: "square.and.pencil") }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .foregroundStyle(.primary)
+                    .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(String(localized: "More"))
+        } else {
         // [T-ios-navbar-uikit-menu] FINAL: UIKit-owned button+menu. The
         // SwiftUI route is exhausted — with .equatable() the toolbar host
         // provably stopped ALL ToolbarContent rebuilds (device log
@@ -1915,6 +1998,7 @@ struct AIChatView: View {
                 #endif
             }
         )
+        }
     }
 
     // MARK: - New Chat (menu entry)
@@ -2122,6 +2206,7 @@ struct AIChatView: View {
     /// The persisted row title remains the source for ordinary conversations;
     /// partner and group sessions use their canonical roster identities.
     private var chatHeaderTitle: String {
+        if vm.isDSH { return vm.dshTitle.isEmpty ? (initialHeaderTitle ?? dshService?.name ?? "DSH") : vm.dshTitle }
         if titlePillSession?.spawnRole == GroupSessionRole.group || vm.isGroupTranscript {
             let group = vm.groupId.flatMap { groupStore.group($0) }
                 ?? titlePillSession.flatMap { session in
@@ -2149,6 +2234,7 @@ struct AIChatView: View {
     /// Partner and group identities are managed from their own edit screens.
     /// Keep the historical title editor only for ordinary conversations.
     private var canEditChatHeaderTitle: Bool {
+        guard !vm.isDSH else { return false }
         guard let session = titlePillSession else { return false }
         return session.agentId == nil && session.spawnRole != GroupSessionRole.group
     }
@@ -2201,13 +2287,14 @@ struct AIChatView: View {
     /// observed via `@ObservedObject lockStore` so toggles to the lock
     /// state push a re-render of the toolbar synchronously with the gate.
     private var titleIsVisuallyLocked: Bool {
-        guard let sid = vm.sessionId, !sid.isEmpty else { return false }
+        guard !vm.isDSH, let sid = vm.sessionId, !sid.isEmpty else { return false }
         return lockStore.isVisuallyLocked(sid)
     }
 
     // MARK: - Session Title Snapshot
 
     private func refreshTitlePillSession() {
+        guard !vm.isDSH else { return }
         guard let sid = vm.sessionId else {
             titlePillSession = nil
             return
@@ -2370,28 +2457,28 @@ struct AIChatView: View {
             CollectionViewMessageListV3(
                 vm: vm,
                 inputFocused: inputFocused,
-                onRetryMessage: { vm.retryFromMessage($0); vm.forceScrollToBottom.send() },
-                onRetryLast: { vm.retry(); vm.forceScrollToBottom.send() },
+                onRetryMessage: vm.isDSH ? nil : { vm.retryFromMessage($0); vm.forceScrollToBottom.send() },
+                onRetryLast: vm.isDSH ? nil : { vm.retry(); vm.forceScrollToBottom.send() },
                 // [T-ios-assistant-header-open-soul] Routed through the same
                 // handler every `minis://` link in the transcript uses, so the
                 // identity row and an agent-authored
                 // `[Soul](minis://settings/soul)` link land identically —
                 // no second navigation path to keep in sync.
-                onOpenSoulSettings: {
+                onOpenSoulSettings: vm.isDSH ? nil : {
                     guard let url = URL(string: "minis://settings/soul") else { return }
                     _ = handleMinisURLTap(url)
                 },
-                onEdit: { [self] msgId in
+                onEdit: vm.isDSH ? nil : { [self] msgId in
                     vm.editMessage(msgId)
                     inputFocused = true
                 },
-                onDeleteFrom: { vm.deleteFromMessage($0) },
-                onWithdraw: { vm.withdrawQueuedMessage($0) },
-                onResume: { vm.resume(); vm.forceScrollToBottom.send() },
-                onStop: { vm.stopCurrentCommand() },
-                onCompact: { msgId in compactConfirmMessageId = msgId },
-                onRevertCompact: { Task { await vm.revertCompact() } },
-                onForceSync: { [self] in
+                onDeleteFrom: vm.isDSH ? nil : { vm.deleteFromMessage($0) },
+                onWithdraw: vm.isDSH ? nil : { vm.withdrawQueuedMessage($0) },
+                onResume: vm.isDSH ? nil : { vm.resume(); vm.forceScrollToBottom.send() },
+                onStop: vm.isDSH ? { vm.cancel() } : { vm.stopCurrentCommand() },
+                onCompact: vm.isDSH ? nil : { msgId in compactConfirmMessageId = msgId },
+                onRevertCompact: vm.isDSH ? nil : { Task { await vm.revertCompact() } },
+                onForceSync: vm.isDSH ? nil : { [self] in
                     guard let sid = vm.sessionId else { return }
                     Task {
                         let count = await ChatStore.shared.forceSyncSession(sid)
@@ -2425,7 +2512,7 @@ struct AIChatView: View {
             // window before its messages load. Returning users with any
             // prior chat skip the tip even on a fresh draft (so it's a
             // genuine first-launch hint).
-            if vm.sessionId == nil
+            if !vm.isDSH && vm.sessionId == nil
                 && vm.messages.isEmpty
                 && !vm.isLoadingSession
                 && (totalSessionCount ?? Int.max) == 0 {
@@ -2755,6 +2842,10 @@ struct AIChatView: View {
     }
 
     private func handleMinisURLTap(_ url: URL) -> OpenURLAction.Result {
+        if vm.isDSH && !["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            vm.errorMessage = AppLocalized("远程文件暂不能在手机本地打开。")
+            return .handled
+        }
         if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
             withAnimation { safariURL = url }
             return .handled
@@ -2818,6 +2909,7 @@ struct AIChatView: View {
     }
 
     private func handleDropProviders(_ providers: [NSItemProvider]) {
+        guard !vm.isDSH else { return }
         minisLogger.info("[Drop] handleDropProviders called with \(providers.count) provider(s)")
         for (index, provider) in providers.enumerated() {
             let types = provider.registeredTypeIdentifiers
@@ -2954,15 +3046,20 @@ struct AIChatView: View {
     /// runtime demangle chokes on deep nested types otherwise.
     private var inputBottomRow: AnyView {
         let row = HStack(spacing: YimaDesign.Space.xs) {
-            attachmentMenuButton
-            slashMenuButton
-            modelPickerButton
+            if !vm.isDSH {
+                attachmentMenuButton
+                slashMenuButton
+                modelPickerButton
+            } else {
+                modelPickerButton
+                    .disabled(!vm.dshConnected || vm.dshControlBusy || vm.isProcessing)
+            }
             // Yields its 46pt to the exit capsule while editing, for the same
             // reason the read-aloud toggle does below: this row overflows on a
             // small phone once a capsule joins the icons. The mode is per
             // session and unchanged by the edit, so nothing is lost by hiding
             // the control until the edit is committed or cancelled.
-            if vm.editingMessageIndex == nil { chatModePickerButton }
+            if !vm.isDSH && vm.editingMessageIndex == nil { chatModePickerButton }
             if vm.editingMessageIndex != nil { editExitButton }
             Spacer()
             // Mutually exclusive with editExitButton: while editing a past
@@ -3352,9 +3449,13 @@ struct AIChatView: View {
             // `%@` form ("Message %@ (@ to mention files)") as the lookup
             // key in Localizable.xcstrings, so translators get one
             // parameterized entry per locale instead of one per soul name.
-            placeholder: AppLocalized("Message \(soulName) (@ to mention files)"),
-            onPasteImage: { image in vm.addImageAttachment(image) },
-            onPasteFile: { url in vm.addFileAttachment(from: url) },
+            placeholder: vm.isDSH ? AppLocalized("发送消息") : AppLocalized("Message \(soulName) (@ to mention files)"),
+            onPasteImage: { image in
+                if vm.isDSH { vm.errorMessage = AppLocalized("远程聊天暂不支持附件。") } else { vm.addImageAttachment(image) }
+            },
+            onPasteFile: { url in
+                if vm.isDSH { vm.errorMessage = AppLocalized("远程聊天暂不支持附件。") } else { vm.addFileAttachment(from: url) }
+            },
             onReturnKey: handleReturnKey,
             onArrowUp: handleArrowUp,
             onArrowDown: handleArrowDown,
@@ -4491,7 +4592,7 @@ struct AIChatView: View {
     }
 
     private var canEnqueue: Bool {
-        vm.isProcessing && !vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !vm.isDSH && vm.isProcessing && !vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Whether the composer actually holds something worth moving to another
@@ -4530,7 +4631,7 @@ struct AIChatView: View {
     /// Dismiss keyboard (commit dictation/marked text) before sending.
     private func performSend() {
         // Intercept slash commands — execute instead of sending to LLM
-        if vm.tryExecuteInputAsSlashCommand() { return }
+        if !vm.isDSH && vm.tryExecuteInputAsSlashCommand() { return }
 
         minisLogger.info("🔑DRAFT performSend vm=\(vm.vmInstanceId) vm.sessionId=\(vm.sessionId ?? "nil") draftId=\(draftId ?? "nil") inputText='\(String(vm.inputText.prefix(50)))' isProcessing=\(vm.isProcessing)")
         // Keep SwiftUI focus when a hardware keyboard is connected — dropping

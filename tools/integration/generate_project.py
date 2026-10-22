@@ -105,6 +105,17 @@ for file in sorted((ROOT / 'Integration/Recording').glob('*.swift')):
     add(record,'PBXSourcesBuildPhase',ref(file,'sourcecode.swift'))
 for file in sorted((ROOT / 'Integration/App').glob('*.swift')):
     add(main,'PBXSourcesBuildPhase',ref(file,'sourcecode.swift'))
+# DSH additions live outside the imported target's synchronized source groups.
+remote_chat_sources = sorted((PHONE / 'Agent/RemoteDSH').glob('*.swift')) + [
+    PHONE / 'Agent/Chat/AIChatViewModel+DSH.swift',
+    PHONE / 'Views/Chat/DSHChatControls.swift',
+]
+for file in remote_chat_sources:
+    if file.exists():
+        file_id = ref(file, 'sourcecode.swift')
+        source_refs = {o[bid].get('fileRef') for bid in phase(main, 'PBXSourcesBuildPhase')['files']}
+        if file_id not in source_refs:
+            add(main, 'PBXSourcesBuildPhase', file_id)
 for file in sorted((ROOT / 'Integration/NativeOffloads').glob('*.m')):
     add(main,'PBXSourcesBuildPhase',ref(file,'sourcecode.c.objc'))
 design_tokens = ref(ROOT / 'Integration/Shared/YimaDesignTokens.swift', 'sourcecode.swift')

@@ -4371,6 +4371,8 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>37297DC441104C81C504D974</string>
 				<string>AB4A4827E0C94072F74044AD</string>
 				<string>D92E352903E4E9D0CA34500E</string>
+				<string>9FF911BCE60C6CF65B7C4DC5</string>
+				<string>CE849D37A0DC75BA03A6C850</string>
 				<string>BCD5FDD811430C31F66864CB</string>
 				<string>ED3DE82958E564978AB5E0F7</string>
 				<string>E6448D12DD8C2BDCA0E01183</string>
@@ -4408,6 +4410,13 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>AE64C4D48D4044436E46539D</string>
 				<string>AE64D4CAC77BBA4762ECD34A</string>
 				<string>8D2CB404C530DFEED153D34D</string>
+				<string>9C1579BB1BAA7FF19C67BCEC</string>
+				<string>A166402DE5B5779AB8C93DBD</string>
+				<string>88256A3E49D574E57ABAD120</string>
+				<string>A82A545159E9D56ACEC7AEF9</string>
+				<string>0D6BA38C596128F76937E2D2</string>
+				<string>4793D29414865614AD4FA059</string>
+				<string>4CD3FDEADB06FC31DFE03262</string>
 				<string>F6DFE1719E9E3D9C82DBABE4</string>
 				<string>E9B5E24D5ABC921EDD6B5B63</string>
 				<string>466E718AAB8A589451CEB5E4</string>
@@ -8074,6 +8083,8 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>21D8FFD9E51CE5B779E4F141</string>
 				<string>A6AD5301A563F20AD7911AD4</string>
 				<string>2A2FA0B37DAF889DFEF38AD0</string>
+				<string>21ABCD6E67345A7148073A47</string>
+				<string>F5EC9428905BFC2DD86E9793</string>
 				<string>203ED43E7D29FB646255D541</string>
 				<string>452C12BED211A1B32E5FA23C</string>
 				<string>E17E43DD05F6CF76F31A49B0</string>
@@ -8111,6 +8122,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>0353FA486F79E412CB320A56</string>
 				<string>9440CF2CFF0947253263EF05</string>
 				<string>F72CD7594FA8DB9FEDAAB212</string>
+				<string>69C7E5843E11111AA3FD5992</string>
+				<string>7775BB31DD9246704F70808F</string>
+				<string>4AC883BBD7C32C081D895325</string>
+				<string>985091BB83CC8F5EA056934E</string>
+				<string>9B07AA1D91D9FFB45942C669</string>
+				<string>C545F3AB8A05B58C72C58BAD</string>
+				<string>B5471B25C53291914314AF72</string>
 				<string>036EBAFEB2D1A86A4355D475</string>
 				<string>8BF114A26695C9F77274BEAE</string>
 				<string>44FA46CCE0322629D0CB3BE4</string>
@@ -19744,6 +19762,42 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>D92E352903E4E9D0CA34500E</string>
 		</dict>
+		<key>9FF911BCE60C6CF65B7C4DC5</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/DSHServiceSettingsView.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>21ABCD6E67345A7148073A47</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>9FF911BCE60C6CF65B7C4DC5</string>
+		</dict>
+		<key>CE849D37A0DC75BA03A6C850</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/DSHSessionListView.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>F5EC9428905BFC2DD86E9793</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>CE849D37A0DC75BA03A6C850</string>
+		</dict>
 		<key>BCD5FDD811430C31F66864CB</key>
 		<dict>
 			<key>isa</key>
@@ -20409,6 +20463,132 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>8D2CB404C530DFEED153D34D</string>
+		</dict>
+		<key>9C1579BB1BAA7FF19C67BCEC</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>Agent/RemoteDSH/DSHChatReducer.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>69C7E5843E11111AA3FD5992</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>9C1579BB1BAA7FF19C67BCEC</string>
+		</dict>
+		<key>A166402DE5B5779AB8C93DBD</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>Agent/RemoteDSH/DSHClient.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>7775BB31DD9246704F70808F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A166402DE5B5779AB8C93DBD</string>
+		</dict>
+		<key>88256A3E49D574E57ABAD120</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>Agent/RemoteDSH/DSHModels.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>4AC883BBD7C32C081D895325</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>88256A3E49D574E57ABAD120</string>
+		</dict>
+		<key>A82A545159E9D56ACEC7AEF9</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>Agent/RemoteDSH/DSHServiceStore.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>985091BB83CC8F5EA056934E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A82A545159E9D56ACEC7AEF9</string>
+		</dict>
+		<key>0D6BA38C596128F76937E2D2</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>Agent/RemoteDSH/DSHSessionRoute.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>9B07AA1D91D9FFB45942C669</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>0D6BA38C596128F76937E2D2</string>
+		</dict>
+		<key>4793D29414865614AD4FA059</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>Agent/Chat/AIChatViewModel+DSH.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>C545F3AB8A05B58C72C58BAD</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>4793D29414865614AD4FA059</string>
+		</dict>
+		<key>4CD3FDEADB06FC31DFE03262</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>Views/Chat/DSHChatControls.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>B5471B25C53291914314AF72</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>4CD3FDEADB06FC31DFE03262</string>
 		</dict>
 		<key>F6DFE1719E9E3D9C82DBABE4</key>
 		<dict>

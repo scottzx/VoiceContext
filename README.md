@@ -70,7 +70,7 @@ voice_type/
 │   ├── speech_noteUITests/             # 原 UI 测试与截图流程
 │   └── Supporting/                     # 生成的公开 Skill / 模板包
 ├── tools/
-│   ├── integration/                    # 导入、工程生成、设备编译与装配审计
+│   ├── integration/                    # 导入、工程生成、设备编译、IPA 包装与装配审计
 │   ├── VoiceContext/                   # 公开 Skill / 模板源文件
 │   ├── sync_version.py                 # VERSION → 原工程及发布文档
 │   └── release.sh                      # 原独立录音工程发布脚本
@@ -125,6 +125,8 @@ bash tools/integration/build_device.sh
 # 正式身份的 Debug 编译检查；不是发行归档
 bash tools/integration/build_device.sh production
 ```
+
+本地发包使用 `bash tools/integration/build_device.sh development --signed` 和 `python3 tools/integration/package_ipa.py development`。构建缓存复用固定目录，IPA 默认覆盖 `build/distribution/development/public/app.ipa`，暂存副本自动清理；已有签名产物可直接包装。详细规则及现有下载链接的复用方式见[发布说明](docs/release/build-variants-and-release.md#3-日常开发与本地编译)。
 
 版本更新链路为 `VERSION → tools/sync_version.py → 原 speech_note 工程 → tools/integration/generate_project.py → 融合工程`。旧的 `tools/release.sh` 仍归档原独立录音应用；融合版的 Release 归档和上传按[开发版、TestFlight 与正式版切换](docs/release/build-variants-and-release.md)执行。
 

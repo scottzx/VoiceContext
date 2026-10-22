@@ -4,6 +4,8 @@
 
 ## 产品文档
 
+- [DSH 远程聊天接入](./design/dsh-remote-chat.md)：2026-10-22 已实现聊天首页 header 切换本机/DSH 服务，复用聊天页面，通过 Tailscale 接入远程会话；[实施检查](./testing/dsh-remote-chat.md)记录编译与真实只读连接验证，完整真机对话待授权验收。
+
 - [小蓝总管与专业伙伴：设计及改造方案](./design/xiaolan-specialist-partners.md)：2026-10-20 角色及权限方向已确认，包含美食/故事伙伴的独立上下文、长期记忆与单聊、小蓝统一交付、伙伴业务弹窗和小蓝独有页面跳转；分阶段任务与验收已整理，架构改造尚未开始。
 
 - [美食地图：地点收藏与标签](./design/food-map.md)：2026-10-20 原型已认可，原生地图、本地收藏与标签、苹果地图导航及小蓝语音工具已接入；[实施检查与真机验收](./testing/food-map.md)记录验证边界，[原型](./design/food-map-prototype/index.html)保留作设计参考。

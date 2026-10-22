@@ -65,6 +65,8 @@ final class ChatMessage: Identifiable, ObservableObject {
     /// reads this to draw the speaker's own emoji, name and accent instead of
     /// the app-wide SOUL identity.
     var senderAgentId: String?
+    /// Display identity supplied by a remote session, independent of local SOUL.
+    var remoteAssistantName: String?
     /// SF Symbol name for systemInfo rows (e.g. "brain.head.profile", "arrow.down.right.and.arrow.up.left").
     var systemIcon: String?
     /// LLM-generated compact summary (for display in info sheet on compact divider).

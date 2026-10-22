@@ -90,3 +90,9 @@ python3 tools/integration/verify_fusion.py --variant production
 真机试用后产品负责人追加选择收藏确认弹窗：工具等待用户核对名称、完整地址和最终标签并点击确认；主聊天提示词同步要求不以口头收藏或页面跳转代替按钮确认，取消/失效后不自动重复弹窗。原生确认状态机、页面、语音输入等待和导航恢复仍由 `Integration` 承接。
 
 地图页面、搜索、收藏、标签及导航交接均在 `Integration/App`，未改动原生 `apple-maps` 或 `apple-location` 桥接。后续合并上游时保留上述两处融合接入及工具运行策略。设计与验证见[美食地图](../design/food-map.md)和[实施检查记录](../testing/food-map.md)。
+
+## 2026-10-22 DSH 远程聊天定制
+
+本次为产品 fork 定制，不推进上游基线。`ContentView` 增加融合版会话来源切换；`AIChatView` / `AIChatViewModel` 保留本机路径并接入独立 `Agent/RemoteDSH` 客户端和展示 driver。消息列表复用原有渲染，远程工具使用只读详情，避免访问本地终端/文件；缓存增加来源、origin 与草稿别名隔离。生成器显式加入新增源文件。
+
+后续合并上游时保留这些分派、无本机执行/持久化副作用的边界及页面长表达式拆分。网络只使用 Tailscale；服务元数据和受保护凭据不属于上游同步数据。设计与验证见[接入设计](../design/dsh-remote-chat.md)和[实施检查](../testing/dsh-remote-chat.md)。

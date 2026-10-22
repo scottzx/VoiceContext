@@ -901,6 +901,17 @@ struct ContentView: View {
     @ObservedObject private var sidebarBadgeStore = SessionBadgeStore.shared
     @ObservedObject private var sidebarConcurrencyManager = SessionConcurrencyManager.shared
     @State private var sessions: [ChatSession] = []
+    #if VOICE_AGENT_FUSION
+    @ObservedObject private var dshServices = DSHServiceStore.shared
+    @State private var showDSHServices = false
+    @State private var dshListRevision = UUID()
+    @State private var dshSessionTitles: [String: String] = [:]
+
+    private var selectedDSHService: DSHService? {
+        guard agentFilter == nil else { return nil }
+        return dshServices.services.first { $0.id == dshServices.selectedServiceID }
+    }
+    #endif
     @State private var folders: [ChatFolder] = []
     /// Collapsed folder sections. Pure UI view-state: persisted locally, never
     /// synced (like SessionBadgeStore's .unread — cross-device expand state is
@@ -1269,6 +1280,7 @@ struct ContentView: View {
                     return
                 }
                 guard appNavigation.isCurrent(command), appNavigationIsActive else { return }
+                dshServices.selectedServiceID = nil
                 guard !SessionLockStore.shared.isLocked(sessionID) else {
                     appNavigation.fail(commandID: command.id, message: "请先手动解锁此对话。")
                     return
@@ -1864,11 +1876,14 @@ struct ContentView: View {
                 // tracker at line ~1879 uses.
                 if hadRecord {
                     let foreground: String? = navigationPath.isEmpty ? nil : currentStackSessionId
-                    if let foreground {
+                    if let foreground, !foreground.hasPrefix("dsh:") {
                         // Already on screen — stamp it and navigate nowhere.
                         shareCoordinator.setBufferTarget(foreground)
                         shareLog.info("[Share] onChange: routing share into the foreground session \(foreground.prefix(16)) (no navigation needed)")
                     } else {
+                        #if VOICE_AGENT_FUSION
+                        dshServices.selectedServiceID = nil
+                        #endif
                         let target = Self.makeNewSessionId()
                         shareCoordinator.setBufferTarget(target)
                         shareLog.info("[Share] onChange: no session on screen — opening new session \(target.prefix(16)) for share")
@@ -1883,6 +1898,40 @@ struct ContentView: View {
 
     private var workspaceLifecycle: some View {
         workspaceUpdates
+        #if VOICE_AGENT_FUSION
+        .sheet(isPresented: $showDSHServices, onDismiss: { dshListRevision = UUID() }) {
+            DSHServiceSettingsView()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.dshNewChatRequested"))) { notification in
+            guard agentFilter == nil, let value = notification.object as? String,
+                  let id = UUID(uuidString: value), dshServices.services.contains(where: { $0.id == id }) else { return }
+            selectChatSource(id)
+            openSession(DSHSessionRoute.draft(serviceID: id).rawValue)
+        }
+        .onChange(of: dshServices.services) { previous, current in
+            for old in previous where current.first(where: { $0.id == old.id })?.url != old.url {
+                ViewModelCache.shared.invalidateDSH(serviceID: old.id)
+            }
+            let route = selectedSessionId.flatMap(DSHSessionRoute.init(rawValue:))
+                ?? currentStackSessionId.flatMap(DSHSessionRoute.init(rawValue:))
+            if let route {
+                let oldOrigin = previous.first { $0.id == route.serviceID }?.url
+                let newOrigin = current.first { $0.id == route.serviceID }?.url
+                if oldOrigin != newOrigin {
+                    selectChatSource(newOrigin == nil ? nil : route.serviceID)
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.dshServiceCredentialsDidChange"))) { notification in
+            guard agentFilter == nil, let value = notification.object as? String,
+                  let serviceID = UUID(uuidString: value) else { return }
+            ViewModelCache.shared.invalidateDSH(serviceID: serviceID)
+            dshListRevision = UUID()
+            let route = selectedSessionId.flatMap(DSHSessionRoute.init(rawValue:))
+                ?? currentStackSessionId.flatMap(DSHSessionRoute.init(rawValue:))
+            if route?.serviceID == serviceID { selectChatSource(dshServices.selectedServiceID) }
+        }
+        #endif
         .onChange(of: deepLink.showEnvironmentVariables) { show in
             if show {
                 activeToolSheet = .settings
@@ -1916,6 +1965,9 @@ struct ContentView: View {
         }
         .onChange(of: deepLink.pendingSessionId) { sid in
             guard let sid, !sid.isEmpty else { return }
+            #if VOICE_AGENT_FUSION
+            dshServices.selectedServiceID = nil
+            #endif
             // Switch to the requested session if it exists in the loaded
             // list. If not loaded yet (cold launch with deep link), set
             // it now — the session-load path will pick it up once the
@@ -2010,66 +2062,68 @@ struct ContentView: View {
                     // replacing the top element in place (menu "New Chat" swaps
                     // [current] → [draft]) would otherwise reuse the old view's
                     // @StateObject vm and nothing visibly changes.
-                    if id.hasPrefix("remote:") {
-                        let parts = id.split(separator: ":", maxSplits: 2)
-                        if parts.count == 3 {
-                            AIChatView(sessionId: String(parts[2]), remoteDeviceId: String(parts[1]))
-                                .id(id)
-                        }
-                    } else {
-                        let isDraft = Self.isNewSessionId(id)
-                        AIChatView(
-                            sessionId: isDraft ? nil : id,
-                            draftId: isDraft ? id : nil,
-                            initialGroupId: Self.extractGroupId(from: id),
-                            initialSession: isDraft ? nil : sessionForRow(id),
-                            initialPrompt: meetingPrompts[id]
-                        )
-                            #if VOICE_AGENT_FUSION
-                            .appNavigationPage("chat.session", params: ["session_id": id], onBack: { commitNavigationPath(NavigationPath()) })
-                            #endif
+                    #if VOICE_AGENT_FUSION
+                    if let route = DSHSessionRoute(rawValue: id) {
+                        dshChatDestination(route, showsBackButton: true)
                             .id(id)
-                            .onAppear {
-                                if currentStackSessionId != id {
-                                    currentStackSessionId = id
-                                    // [T-ios-stacknav-transition-attributegraph-race]
-                                    // Keep the outgoing-id tracker in lockstep.
-                                    // This branch fires exactly when the two
-                                    // have DIVERGED — the "swallowed push left
-                                    // currentStackSessionId set to a target
-                                    // that never appeared" case documented on
-                                    // the .moveInputToSession handler — and it
-                                    // mounts a chat WITHOUT a navigationPath
-                                    // change, so the observer that normally
-                                    // maintains previousStackSessionId does not
-                                    // run. Left unsynced, the next real
-                                    // transition would suspend whichever id the
-                                    // last observer pass recorded instead of
-                                    // the vm actually on screen: the wrong vm
-                                    // stalls and the real outgoing one keeps
-                                    // publishing into its teardown.
-                                    previousStackSessionId = id
-                                }
-                                SessionBadgeStore.shared.remove(.unread, for: id)
-                                shareLog.info("🔄SESSION stackNav APPEAR id=\(id)")
-                            }
-                            .onDisappear { shareLog.info("🔄SESSION stackNav DISAPPEAR id=\(id)") }
+                    } else {
+                        localChatDestination(id)
                     }
+                    #else
+                    localChatDestination(id)
+                    #endif
                 }
         }
-        // [T-ios-tabbar-return-lag] The tab bar's RETURN must be declared from
-        // the list side, not left to the popped chat.
-        //
-        // AIChatView hides the bar for the full-screen chat
-        // (`.toolbar(.hidden, for: .tabBar)`), but nothing here ever declared
-        // `.visible` — and toolbar visibility is only (re)applied when the
-        // owning view is shown, so on pop the bar animated back AFTER the list
-        // was already on screen: the reported "bottom nav appears late".
-        // Binding it to the path flips it back to `.visible` in the same
-        // transaction that empties the path, so the bar rides the pop
-        // transition instead of trailing it. Same shape AgentListView already
-        // uses on its NavigationStack (AgentKit/AgentListView.swift).
         .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
+    }
+
+    @ViewBuilder
+    private func localChatDestination(_ id: String) -> some View {
+        if id.hasPrefix("remote:") {
+            let parts = id.split(separator: ":", maxSplits: 2)
+            if parts.count == 3 {
+                AIChatView(sessionId: String(parts[2]), remoteDeviceId: String(parts[1]))
+                    .id(id)
+            }
+        } else {
+            let isDraft = Self.isNewSessionId(id)
+            AIChatView(
+                sessionId: isDraft ? nil : id,
+                draftId: isDraft ? id : nil,
+                initialGroupId: Self.extractGroupId(from: id),
+                initialSession: isDraft ? nil : sessionForRow(id),
+                initialPrompt: meetingPrompts[id]
+            )
+                #if VOICE_AGENT_FUSION
+                .appNavigationPage("chat.session", params: ["session_id": id], onBack: { commitNavigationPath(NavigationPath()) })
+                #endif
+                .id(id)
+                .onAppear {
+                    if currentStackSessionId != id {
+                        currentStackSessionId = id
+                        // [T-ios-stacknav-transition-attributegraph-race]
+                        // Keep the outgoing-id tracker in lockstep.
+                        // This branch fires exactly when the two
+                        // have DIVERGED — the "swallowed push left
+                        // currentStackSessionId set to a target
+                        // that never appeared" case documented on
+                        // the .moveInputToSession handler — and it
+                        // mounts a chat WITHOUT a navigationPath
+                        // change, so the observer that normally
+                        // maintains previousStackSessionId does not
+                        // run. Left unsynced, the next real
+                        // transition would suspend whichever id the
+                        // last observer pass recorded instead of
+                        // the vm actually on screen: the wrong vm
+                        // stalls and the real outgoing one keeps
+                        // publishing into its teardown.
+                        previousStackSessionId = id
+                    }
+                    SessionBadgeStore.shared.remove(.unread, for: id)
+                    shareLog.info("🔄SESSION stackNav APPEAR id=\(id)")
+                }
+                .onDisappear { shareLog.info("🔄SESSION stackNav DISAPPEAR id=\(id)") }
+        }
     }
 
     // MARK: - Detail View
@@ -2077,6 +2131,29 @@ struct ContentView: View {
     @ViewBuilder
     private var detailView: some View {
         if let id = selectedSessionId {
+            #if VOICE_AGENT_FUSION
+            if let route = DSHSessionRoute(rawValue: id) {
+                dshChatDestination(route, showsBackButton: false).id(id)
+            } else {
+                localDetailView(id)
+            }
+            #else
+            localDetailView(id)
+            #endif
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.system(size: 48))
+                    .foregroundStyle(.secondary)
+                Text("No Conversation Selected").font(.title3.bold())
+                Text("Select a conversation or start a new one").font(.subheadline).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private func localDetailView(_ id: String) -> some View {
             // Draft sessions always pass nil — the VM creates a real session internally
             // on first send. The .id() ensures each draft gets its own View lifecycle.
             let isDraft = Self.isNewSessionId(id)
@@ -2096,20 +2173,61 @@ struct ContentView: View {
                 .onDisappear {
                     draftLog.info("🔑DRAFT detailView DISAPPEAR id=\(id)")
                 }
+    }
+
+    #if VOICE_AGENT_FUSION
+    @ViewBuilder
+    private func dshChatDestination(_ route: DSHSessionRoute, showsBackButton: Bool) -> some View {
+        if let service = dshServices.services.first(where: { $0.id == route.serviceID }) {
+            AIChatView(sessionId: route.isDraft ? nil : route.sessionID,
+                       draftId: route.isDraft ? route.rawValue : nil,
+                       dshService: service,
+                       initialHeaderTitle: dshSessionTitles[route.rawValue] ?? service.name,
+                       showsHeaderBackButton: showsBackButton)
+                .onAppear { currentStackSessionId = route.rawValue }
         } else {
-            VStack(spacing: 12) {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.secondary)
-                Text("No Conversation Selected")
-                    .font(.title3.bold())
-                Text("Select a conversation or start a new one")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text("远程服务已移除，请返回聊天首页。")
+                .foregroundStyle(.secondary).padding()
         }
     }
+
+    private func selectChatSource(_ serviceID: UUID?) {
+        dismissSearch()
+        isSelecting = false
+        selectedIds.removeAll()
+        selectedSessionId = nil
+        pendingBackgroundNavigation = nil
+        commitNavigationPath(NavigationPath())
+        currentStackSessionId = nil
+        dshServices.selectedServiceID = serviceID
+    }
+
+    private var chatSourceMenu: some View {
+        Menu {
+            Button { selectChatSource(nil) } label: {
+                Label("本机", systemImage: selectedDSHService == nil ? "checkmark" : "iphone")
+            }
+            ForEach(dshServices.services) { service in
+                Button { selectChatSource(service.id) } label: {
+                    Label(service.name, systemImage: selectedDSHService?.id == service.id ? "checkmark" : "server.rack")
+                }
+            }
+            Divider()
+            Button { showDSHServices = true } label: {
+                Label("管理远程服务", systemImage: "server.rack")
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(selectedDSHService?.name ?? AppLocalized("本机"))
+                    .font(.headline).lineLimit(1)
+                Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.primary).frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .accessibilityLabel("切换会话来源")
+        .accessibilityValue(selectedDSHService?.name ?? AppLocalized("本机"))
+    }
+    #endif
 
     // MARK: - Display Sessions
 
@@ -2660,6 +2778,27 @@ struct ContentView: View {
 
     @ViewBuilder
     private func sessionList(useNavigationLinks: Bool) -> some View {
+        Group {
+            #if VOICE_AGENT_FUSION
+            if let service = selectedDSHService {
+                DSHSessionListView(service: service, onOpen: { session in
+                    let route = DSHSessionRoute(serviceID: service.id, sessionID: session.id)
+                    dshSessionTitles[route.rawValue] = session.title
+                    openSession(route.rawValue)
+                }, onManage: { showDSHServices = true })
+                .id(service.id.uuidString + service.url.absoluteString + dshListRevision.uuidString)
+                .toolbar { sidebarToolbarContent }
+            } else {
+                localSessionList(useNavigationLinks: useNavigationLinks)
+            }
+            #else
+            localSessionList(useNavigationLinks: useNavigationLinks)
+            #endif
+        }
+    }
+
+    @ViewBuilder
+    private func localSessionList(useNavigationLinks: Bool) -> some View {
         Group {
             if useNavigationLinks {
                 stackList
@@ -3225,66 +3364,12 @@ struct ContentView: View {
                 Text(selectedIds.isEmpty ? "Select Sessions" : "\(selectedIds.count) Selected")
                     .font(.headline)
             } else {
-                let canOpenSync: Bool = {
-                    if #available(iOS 17.0, *) { return SyncV2Bootstrap.isEnabled }
-                    return false
-                }()
-                // Title text comes from SOUL.md (falls back to "Minis"). The
-                // leading sync indicator floats as an overlay so it doesn't
-                // take layout space — title stays perfectly centered in the
-                // navigation bar regardless of whether the indicator is visible.
-                // When iCloud sync isn't enabled the title is a plain Text;
-                // wrapping it in a `.disabled` Button would drain SwiftUI's
-                // default disabled-button tint into the label and render the
-                // SOUL name grey, which read as a styling bug rather than the
-                // intended "no sync detail to open" state.
-                // [T-ios-soul-name-sidebar-stale] The `.onReceive(soulMdChanged)`
-                // that refreshes `soulName` used to live HERE. It was moved to the
-                // stable `sessionList(useNavigationLinks:)` body for the SAME reason
-                // the migration timer was (see the T-ios-migration-timer note below):
-                // this toolbar principal item rebuilds on every canOpenSync /
-                // soulName / migrationSubtitle / isSelecting change, so a sink
-                // attached here gets torn down and re-created constantly and can
-                // drop a .soulMdChanged notification that arrives during the gap.
-                // This Text now only READS `soulName`.
-                let titleLabel = Text(soulName)
-                    .font(.system(size: 18.5, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .overlay(alignment: .leading) {
-                        if canOpenSync {
-                            Button {
-                                activeToolSheet = .syncMigrationDetail
-                            } label: {
-                                titleSyncIndicator(for: migrationSubtitle)
-                                    .contentShape(Rectangle())
-                                    .padding(4)
-                            }
-                            .buttonStyle(.plain)
-                            .offset(x: -27)
-                        }
-                    }
-                // [T-ios-migration-timer-toolbar-uaf-crash] The migration-subtitle
-                // refresh driver used to live HERE, on this `titleLabel` Text inside
-                // the churny toolbar principal item. That item rebuilds whenever
-                // canOpenSync / soulName / migrationSubtitle / isSelecting change, so
-                // AttributeGraph repeatedly tore down the driver's sink — a
-                // use-after-free release in the setBody transaction (EXC_BAD_ACCESS,
-                // build 309). The driver now lives on the stable
-                // `sessionList(useNavigationLinks:)` body (identity-stable across the
-                // sidebar lifetime) as a `.task` async loop, not a Combine timer sink
-                // (see migrationSubtitleLoop, T-ios-migration-timer-sessionlist-uaf-crash);
-                // this Text only READS the `migrationSubtitle` @State.
-
-                if canOpenSync {
-                    Button {
-                        activeToolSheet = .syncMigrationDetail
-                    } label: {
-                        titleLabel
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    titleLabel
-                }
+                #if VOICE_AGENT_FUSION
+                if agentFilter == nil { chatSourceMenu }
+                else { localChatTitle }
+                #else
+                localChatTitle
+                #endif
             }
         }
         ToolbarItem(placement: .topBarLeading) {
@@ -3294,6 +3379,18 @@ struct ContentView: View {
                     selectedIds.removeAll()
                 }
             }
+            #if VOICE_AGENT_FUSION
+            if !isSelecting, agentFilter == nil, selectedDSHService == nil {
+                if #available(iOS 17.0, *), SyncV2Bootstrap.isEnabled {
+                    Button { activeToolSheet = .syncMigrationDetail } label: {
+                        titleSyncIndicator(for: migrationSubtitle)
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("iCloud 同步状态")
+                }
+            }
+            #endif
             #if !VOICE_AGENT_FUSION
             if !isSelecting {
                 Button {
@@ -3370,8 +3467,84 @@ struct ContentView: View {
         #endif
         ToolbarItem(placement: .topBarTrailing) {
             if !isSelecting {
+                #if VOICE_AGENT_FUSION
+                if let service = selectedDSHService {
+                    Button { openSession(DSHSessionRoute.draft(serviceID: service.id).rawValue) } label: {
+                        Image(systemName: "square.and.pencil")
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("新建远程会话")
+                } else {
+                    newChatButton
+                }
+                #else
                 newChatButton
+                #endif
             }
+        }
+    }
+
+    @ViewBuilder
+    private var localChatTitle: some View {
+        let canOpenSync: Bool = {
+            if #available(iOS 17.0, *) { return SyncV2Bootstrap.isEnabled }
+            return false
+        }()
+        // Title text comes from SOUL.md (falls back to "Minis"). The
+        // leading sync indicator floats as an overlay so it doesn't
+        // take layout space — title stays perfectly centered in the
+        // navigation bar regardless of whether the indicator is visible.
+        // When iCloud sync isn't enabled the title is a plain Text;
+        // wrapping it in a `.disabled` Button would drain SwiftUI's
+        // default disabled-button tint into the label and render the
+        // SOUL name grey, which read as a styling bug rather than the
+        // intended "no sync detail to open" state.
+        // [T-ios-soul-name-sidebar-stale] The `.onReceive(soulMdChanged)`
+        // that refreshes `soulName` used to live HERE. It was moved to the
+        // stable `sessionList(useNavigationLinks:)` body for the SAME reason
+        // the migration timer was (see the T-ios-migration-timer note below):
+        // this toolbar principal item rebuilds on every canOpenSync /
+        // soulName / migrationSubtitle / isSelecting change, so a sink
+        // attached here gets torn down and re-created constantly and can
+        // drop a .soulMdChanged notification that arrives during the gap.
+        // This Text now only READS `soulName`.
+        let titleLabel = Text(soulName)
+            .font(.system(size: 18.5, weight: .semibold))
+            .foregroundStyle(.primary)
+            .overlay(alignment: .leading) {
+                if canOpenSync {
+                    Button {
+                        activeToolSheet = .syncMigrationDetail
+                    } label: {
+                        titleSyncIndicator(for: migrationSubtitle)
+                            .contentShape(Rectangle())
+                            .padding(4)
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: -27)
+                }
+            }
+        // [T-ios-migration-timer-toolbar-uaf-crash] The migration-subtitle
+        // refresh driver used to live HERE, on this `titleLabel` Text inside
+        // the churny toolbar principal item. That item rebuilds whenever
+        // canOpenSync / soulName / migrationSubtitle / isSelecting change, so
+        // AttributeGraph repeatedly tore down the driver's sink — a
+        // use-after-free release in the setBody transaction (EXC_BAD_ACCESS,
+        // build 309). The driver now lives on the stable
+        // `sessionList(useNavigationLinks:)` body (identity-stable across the
+        // sidebar lifetime) as a `.task` async loop, not a Combine timer sink
+        // (see migrationSubtitleLoop, T-ios-migration-timer-sessionlist-uaf-crash);
+        // this Text only READS the `migrationSubtitle` @State.
+
+        if canOpenSync {
+            Button {
+                activeToolSheet = .syncMigrationDetail
+            } label: {
+                titleLabel
+            }
+            .buttonStyle(.plain)
+        } else {
+            titleLabel
         }
     }
 
@@ -3464,6 +3637,9 @@ struct ContentView: View {
             // .onReceive already navigated — handledRecently suppresses the
             // launch-screen default so it can't clobber that navigation.
             if let notificationTarget = NotificationNavigationStore.shared.takePending() {
+                #if VOICE_AGENT_FUSION
+                dshServices.selectedServiceID = nil
+                #endif
                 shareLog.info("[Share] .task: notification tap target=\(notificationTarget.prefix(8)) — overriding launchScreen logic")
                 var tx = Transaction()
                 tx.disablesAnimations = true
@@ -3492,6 +3668,9 @@ struct ContentView: View {
                 // Launch-Session default, or a chat resuming an agent loop —
                 // from mounting first and swallowing the share.
                 let target = Self.makeNewSessionId()
+                #if VOICE_AGENT_FUSION
+                dshServices.selectedServiceID = nil
+                #endif
                 shareCoordinator.setBufferTarget(target)
                 shareLog.info("[Share] .task: cold launch — opening new session \(target.prefix(16)) for share")
                 var tx = Transaction()
@@ -3573,6 +3752,9 @@ struct ContentView: View {
     }
 
     private func handleNewChatRequest(initialPrompt: String? = nil) {
+        #if VOICE_AGENT_FUSION
+        dshServices.selectedServiceID = nil
+        #endif
         let newId = Self.makeNewSessionId()
         if let initialPrompt { meetingPrompts[newId] = initialPrompt }
         // Clear any stale flags left over from a prior quick-action

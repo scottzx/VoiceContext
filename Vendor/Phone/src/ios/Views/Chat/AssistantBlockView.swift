@@ -272,7 +272,7 @@ struct ToolCapsuleView: View {
         // Tool name from the block kind.
         let toolName: String
         switch block.kind {
-        case .shellTool:     toolName = "shell_execute"
+        case .shellTool(let command): toolName = vm.isDSH ? command : "shell_execute"
         case .fileReadTool:  toolName = "file_read"
         case .fileWriteTool: toolName = "file_write"
         case .fileEditTool:  toolName = "file_edit"
@@ -394,7 +394,7 @@ struct ToolCapsuleView: View {
                 }
 
                 // Stop button for running commands
-                if case .running = block.toolStatus {
+                if case .running = block.toolStatus, onStop != nil {
                     Button {
                         onStop?()
                     } label: {
@@ -448,7 +448,7 @@ struct ToolCapsuleView: View {
                     // and confuse downstream state — hide both the divider and
                     // the button as a group so the menu doesn't leave a
                     // trailing separator with nothing under it.
-                    if !vm.isProcessing {
+                    if !vm.isProcessing && !vm.isDSH {
                         Divider()
                         Button(role: .destructive) {
                             // Re-run the whole assistant turn that owns this

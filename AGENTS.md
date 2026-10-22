@@ -90,6 +90,13 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Run the app or tests on a physical iOS device only after the user gives explicit authorization for that run.
 - Without explicit authorization for a physical-device run, limit verification to static inspection and non-runtime checks.
 
+## Packaging and Build Artifacts
+
+- Reuse `tools/integration/build_device.sh` and its fixed `build/VoiceContextAgent` / `build/PhonePackages` directories. Use `--signed` when a signed local installation package is needed; this does not install or run the app.
+- Package existing signed apps with `tools/integration/package_ipa.py [development|production]`. Keep its fixed per-variant IPA path; use `--output` to preserve an existing download service's IPA path.
+- Keep task-specific logs, hashes, and installation receipts, but do not retain task-specific copies of `.app`, IPA, or `staging/Payload` after packaging. The packager removes its temporary Payload on success and failure.
+- Preserve release `.xcarchive` / dSYM history and reusable dependency caches. Do not delete an entire distribution directory while its download service is active.
+
 ## Design System
 
 Always read `DESIGN.md` before making any visual or UI decision. All typography, colors, spacing, layout, motion, component hierarchy, and prohibited patterns are defined there. Do not deviate without explicit user approval. During UI review or QA, flag any implementation that conflicts with `DESIGN.md`.

@@ -86,6 +86,32 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// If non-nil, this VM is in read-only mode viewing a remote device's session.
     var remoteDeviceId: String?
 
+    /// Remote DSH owns execution and persistence; this VM only presents its state.
+    var dshService: DSHService?
+    var dshClient: DSHClient?
+    var dshFollowTask: Task<Void, Never>?
+    var dshGeneration = UUID()
+    var dshMessages: [String: ChatMessage] = [:]
+    var dshRawTexts: [String: String] = [:]
+    var dshBlocks: [String: AssistantBlock] = [:]
+    @Published var dshInteractions: [DSHInteraction] = []
+    @Published var dshModels: [DSHModelOption] = []
+    @Published var dshACPConfiguration: [String: Any] = [:]
+    @Published var dshModelSelection: DSHModelSelection?
+    @Published var dshAgentPreset: String?
+    @Published var dshHasMore = false
+    @Published var dshSending = false
+    @Published var dshConnected = false
+    @Published var dshControlBusy = false
+    @Published var dshStatusText = ""
+    @Published var dshTitle = ""
+    var isDSH: Bool { dshService != nil }
+    var presentationSessionID: String? {
+        guard let service = dshService else { return sessionId }
+        if let sessionId { return ViewModelCache.dshKey(serviceID: service.id, sessionID: sessionId) }
+        return draftId.map { ViewModelCache.dshDraftKey(serviceID: service.id, draftID: $0) }
+    }
+
     // MARK: - Agent identity
     //
     // Which persistent Agent this session belongs to, and which role the loop
@@ -250,7 +276,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// foreground (after having been backgrounded) gets the suspension hint.
     private static let bgHintBrowserThreshold: TimeInterval = 5 * 60
 
-    init() {
+    init(dshService: DSHService? = nil) {
+        self.dshService = dshService
         logger.info("🔄SESSION [vm=\(self.vmInstanceId)] init — new AIChatViewModel created")
 
         fontChangeObserver = NotificationCenter.default.addObserver(
@@ -317,7 +344,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 // subscriber bound and be lost, starving
                 // consumeDeferredSnapshotIfNeeded (the in-app switch-back
                 // path) of the flag it exists to consume.
-                let sid = self.sessionId
+                let sid = self.presentationSessionID
                 let gatePassed = (sid != nil && Self.activeSessionId == sid)
                 let needsFlag = self.needsSnapshotReloadOnResume
                 logger.info("[BlocksLost] didBecomeActive gate sid=\(sid?.prefix(8) ?? "nil") vm=\(self.vmInstanceId) activeSessionId=\(Self.activeSessionId?.prefix(8) ?? "nil") gatePassed=\(gatePassed) needsFlag=\(needsFlag)")
@@ -343,7 +370,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         detachedLoopEndObserver = NotificationCenter.default.addObserver(
             forName: .sessionAgentLoopDidEnd, object: nil, queue: .main
         ) { [weak self] notification in
-            guard let self, let sid = self.sessionId else { return }
+            guard let self, !self.isDSH, let sid = self.sessionId else { return }
             guard let notifSid = notification.object as? String, notifSid == sid else { return }
             guard Self.activeSessionId == sid else { return }
             guard !self.isProcessing else { return }
@@ -356,7 +383,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         syncChangeObserver = NotificationCenter.default.addObserver(
             forName: .cloudSyncDidFetchChanges, object: nil, queue: .main
         ) { [weak self] _ in
-            guard let self, let sid = self.sessionId else { return }
+            guard let self, !self.isDSH, let sid = self.sessionId else { return }
             // Only the foreground-visible VM reacts. ViewModelCache holds
             // every session the user has ever opened in this launch, and
             // each instance is a notification subscriber — without this
@@ -387,7 +414,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         activityTrackingCancellable = $isProcessing
             .removeDuplicates()
             .sink { [weak self] processing in
-                guard let self else { return }
+                guard let self, !self.isDSH else { return }
                 // Key selection:
                 //   - Before the draft has a real session (sessionId == nil),
                 //     fall back to draftId so the sidebar proxy row still
@@ -610,15 +637,17 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 logger.info("🔑DRAFT [vm=\(self.vmInstanceId)] inputText CLEARED (was \(oldValue.count)ch) sessionId=\(self.sessionId ?? "nil") draftId=\(self.draftId ?? "nil") isProcessing=\(self.isProcessing)")
                 #endif
             }
-            updateSlashMenuState()
-            updateMentionMenuState()
+            if !isDSH {
+                updateSlashMenuState()
+                updateMentionMenuState()
+            }
         }
     }
     /// Caret position (character offset) published by the input text view.
     /// Used by the `@` mention detector to locate the active token.
     @Published var inputCaret: Int = 0 {
         didSet {
-            updateMentionMenuState()
+            if !isDSH { updateMentionMenuState() }
             // If the caret arrived at the desired location, clear the pending
             // request so subsequent edits aren't forced back.
             if let p = pendingCaret, p == inputCaret {
@@ -637,6 +666,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     @Published var isProcessing = false {
         didSet {
             _deinitSnapshot = "isProcessing=\(isProcessing) session=\(sessionId ?? "nil") draft=\(draftId ?? "nil")"
+            if isDSH { return }
             if isProcessing && !oldValue {
                 // Agent loop starting — defer iCloud sync sends until completion
                 Task { await ChatStore.shared.setSyncSendDeferred(true) }
@@ -765,6 +795,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
     @Published var canResume = false {
         didSet {
+            if isDSH { return }
             // [T-session-paused-badge-active-false-positive] Drive the session-
             // list PAUSED badge directly off canResume — the authoritative "this
             // session is interrupted (tap Resume)" flag and the single chokepoint
@@ -1248,7 +1279,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Set when `isProcessing` transitions to false but `retrySnapshotReloadSignal`
     /// cannot fire because `streamingUIUpdatesSuspended` is true. Cleared when the
     /// suspend lifts — at that point the snapshot rebuild is safe and is replayed.
-    private var needsSnapshotReloadOnResume = false
+    var needsSnapshotReloadOnResume = false
 
     /// [T-ios-ui-blocks-lost-suspend-resume] Fired on the main thread whenever
     /// `streamingUIUpdatesSuspended` transitions from true → false, from ANY
@@ -2209,7 +2240,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
     /// Session ID for persistence integration. Set by the view on appear.
     var sessionId: String? {
-        didSet { browserTabPool.sessionId = sessionId }
+        didSet { if !isDSH { browserTabPool.sessionId = sessionId } }
     }
 
     /// The draft ID assigned by the parent view (e.g. "__new__<UUID>").
@@ -2400,7 +2431,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Credential validity is checked at send time, not here — avoids blocking the
     /// send button due to Keychain/OAuth state that SwiftUI can't observe.
     var isReady: Bool {
-        ProviderConfigStore.shared.instances.contains { $0.isEnabled }
+        if isDSH { return !isLoadingSession && dshConnected && !dshSending && !dshControlBusy }
+        return ProviderConfigStore.shared.instances.contains { $0.isEnabled }
     }
 
     // MARK: - Send Message
@@ -2413,6 +2445,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     }
 
     func send() {
+        if isDSH { sendDSHMessage(); return }
         // Read-only mode — cannot send messages
         guard remoteDeviceId == nil else { return }
 
@@ -3081,6 +3114,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Retry the next agent loop iteration (continue from where the error occurred,
     /// keeping all previously completed tool blocks and conversation history).
     func retry() {
+        guard !isDSH else { return }
         guard !isProcessing else { return }
         guard let lastMsg = messages.last, lastMsg.role == .assistant else { return }
 
@@ -3257,6 +3291,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Resume an interrupted agent loop. Injects a "Continue" user message
     /// into agentHistory so the model knows to pick up where it left off.
     func resume() {
+        if isDSH { Task { await loadDSHSession() }; return }
         guard !isProcessing, canResume else { return }
         // [T-ios-orphan-user-tail GH#262/#263] A tail of "user turn with no
         // reply at all" has no assistant row to resume INTO — the reply never
@@ -3546,6 +3581,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     }
 
     func retryFromMessage(_ messageId: UUID, replacementAttachments: [InputAttachment]? = nil) {
+        guard !isDSH else { return }
         guard !isProcessing else { return }
         // [T-ios-retry-keyboard] Re-running from an existing user message is a
         // retry, not a new send.
@@ -3680,6 +3716,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// (`keepUpTo - 1`), so the surviving history ends on the PREVIOUS
     /// assistant turn — still a valid, self-consistent context.
     func deleteFromMessage(_ messageId: UUID) {
+        guard !isDSH else { return }
         guard !isProcessing else { return }
         // Same truncation guard as retry: a deferred iCloud-sync reload landing
         // mid-truncation would rebuild `messages` from a stale DB snapshot and
@@ -3935,6 +3972,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// truncating at the preceding user message — delegate to
     /// retryFromMessage(precedingUser) and skip the sub-message rewrite.
     func retryFromToolBlock(blockId: UUID) {
+        guard !isDSH else { return }
         guard !isProcessing else { return }
 
         // Locate the assistant UI message + the target block's index within it.
@@ -4177,6 +4215,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// The next call to send() will truncate the conversation from this message
     /// and re-run the agent loop with the edited content.
     func editMessage(_ messageId: UUID) {
+        guard !isDSH else { return }
         guard !isProcessing else { return }
         guard let idx = messages.firstIndex(where: { $0.id == messageId }),
               messages[idx].role == .user else { return }
@@ -4238,6 +4277,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     }
 
     func cancel() {
+        if isDSH { cancelDSHTurn(); return }
         // Stop on a group transcript stops the ROOM, not a loop — this vm has
         // none. The member currently speaking finishes into its own session
         // (interrupting it mid-write would leave a torn transcript there), but
@@ -6943,6 +6983,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
     /// Set thinking level — persists if session exists, otherwise holds in memory.
     func setThinkingLevel(_ level: ThinkingLevel) {
+        guard !isDSH else { return }
         let maxLevel = resolveCurrentEntry()?.effectiveMaxThinkingLevel ?? .xhigh
         let clamped = level == .off ? level : min(level, maxLevel)
         if let sid = sessionId {

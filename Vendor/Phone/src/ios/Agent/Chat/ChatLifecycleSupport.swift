@@ -389,6 +389,7 @@ final class ViewModelCache {
     static let shared = ViewModelCache()
 
     private var cache: [String: AIChatViewModel] = [:]
+    private var dshDraftAliases: [String: String] = [:]
 
     /// Session IDs in least-recently-used → most-recently-used order. Kept in
     /// sync with `cache`: appended/moved to the end on every access, removed
@@ -477,17 +478,76 @@ final class ViewModelCache {
 
     /// Get an existing cached ViewModel without creating a new one.
     func get(for sessionId: String) -> AIChatViewModel? {
-        if cache[sessionId] != nil { touch(sessionId) }
-        return cache[sessionId]
+        let key = dshDraftAliases[sessionId] ?? sessionId
+        if cache[key] != nil { touch(key) }
+        return cache[key]
     }
 
     /// Remove a session's ViewModel from the cache (e.g. on session delete).
     func remove(sessionId: String) {
-        lruOrder.removeAll { $0 == sessionId }
-        if let removed = cache.removeValue(forKey: sessionId) {
-            removed.cancel()
+        let key = dshDraftAliases[sessionId] ?? sessionId
+        dshDraftAliases = dshDraftAliases.filter { $0.key != key && $0.value != key }
+        lruOrder.removeAll { $0 == key }
+        if let removed = cache.removeValue(forKey: key) {
+            if removed.isDSH { removed.detachDSHSession() } else { removed.cancel() }
             logger.info("🔄SESSION ViewModelCache REMOVE session=\(sessionId) vm=\(removed.vmInstanceId)")
         }
+    }
+
+    static func dshKey(serviceID: UUID, sessionID: String) -> String {
+        "dsh:\(serviceID.uuidString):\(sessionID)"
+    }
+
+    static func dshDraftKey(serviceID: UUID, draftID: String) -> String {
+        let prefix = "dsh:\(serviceID.uuidString):"
+        return draftID.hasPrefix(prefix) ? draftID : prefix + draftID
+    }
+
+    func getOrCreateDSH(service: DSHService, sessionID: String?, draftID: String) -> (vm: AIChatViewModel, isNew: Bool) {
+        let requestedKey = sessionID.map { Self.dshKey(serviceID: service.id, sessionID: $0) }
+            ?? Self.dshDraftKey(serviceID: service.id, draftID: draftID)
+        let key = dshDraftAliases[requestedKey] ?? requestedKey
+        if let vm = cache[key] {
+            if vm.dshService?.url == service.url {
+                vm.dshService = service
+                touch(key)
+                return (vm, false)
+            }
+            vm.detachDSHSession()
+            cache.removeValue(forKey: key)
+            dshDraftAliases = dshDraftAliases.filter { $0.key != key && $0.value != key }
+            lruOrder.removeAll { $0 == key }
+        }
+        let vm = AIChatViewModel(dshService: service)
+        vm.sessionId = sessionID
+        vm.draftId = draftID
+        cache[requestedKey] = vm
+        touch(requestedKey)
+        evictIfOverCap()
+        return (vm, true)
+    }
+
+    func invalidateDSH(serviceID: UUID) {
+        let prefix = "dsh:\(serviceID.uuidString):"
+        dshDraftAliases = dshDraftAliases.filter { !$0.key.hasPrefix(prefix) && !$0.value.hasPrefix(prefix) }
+        for key in Array(cache.keys) where key.hasPrefix(prefix) {
+            cache[key]?.detachDSHSession()
+            cache.removeValue(forKey: key)
+            lruOrder.removeAll { $0 == key }
+        }
+    }
+
+    func cacheDSHSession(_ vm: AIChatViewModel, serviceID: UUID, sessionID: String) {
+        let key = Self.dshKey(serviceID: serviceID, sessionID: sessionID)
+        if let draftID = vm.draftId {
+            let draftKey = Self.dshDraftKey(serviceID: serviceID, draftID: draftID)
+            cache.removeValue(forKey: draftKey)
+            lruOrder.removeAll { $0 == draftKey }
+            dshDraftAliases[draftKey] = key
+        }
+        cache[key] = vm
+        touch(key)
+        evictIfOverCap()
     }
 
     /// Create a fresh (uncached) ViewModel for draft sessions (nil sessionId).
@@ -550,8 +610,9 @@ final class ViewModelCache {
     }
 
     private func evict(_ sessionId: String, vm: AIChatViewModel, reason: String) {
-        vm.cancel()
+        if vm.isDSH { vm.detachDSHSession() } else { vm.cancel() }
         cache.removeValue(forKey: sessionId)
+        dshDraftAliases = dshDraftAliases.filter { $0.key != sessionId && $0.value != sessionId }
         lruOrder.removeAll { $0 == sessionId }
         // Clearing the stale marker too — a rebuilt VM loads fresh from SQLite.
         staleSessionIds.remove(sessionId)
