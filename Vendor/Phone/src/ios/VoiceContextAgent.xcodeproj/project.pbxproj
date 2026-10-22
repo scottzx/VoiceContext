@@ -4401,6 +4401,13 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>D8C17318F6F238A391802232</string>
 				<string>4BAD8119BC3975B07310C63F</string>
 				<string>C62BFC28E738B5BF34424F74</string>
+				<string>CEC518DE9C489248E8285FAF</string>
+				<string>07889901C21A00EE94949329</string>
+				<string>ECC7A7B62A52282B26502629</string>
+				<string>07C482D1097FBBD494830601</string>
+				<string>AE64C4D48D4044436E46539D</string>
+				<string>AE64D4CAC77BBA4762ECD34A</string>
+				<string>8D2CB404C530DFEED153D34D</string>
 				<string>F6DFE1719E9E3D9C82DBABE4</string>
 				<string>E9B5E24D5ABC921EDD6B5B63</string>
 				<string>466E718AAB8A589451CEB5E4</string>
@@ -8097,6 +8104,13 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>767A0376611825FA7F285724</string>
 				<string>D70C81B406EA46E7C9E4A257</string>
 				<string>ADA9100410EF92013EF33BA6</string>
+				<string>62875DE8965843A17995FC3F</string>
+				<string>DD460400CF5871391CF7A76C</string>
+				<string>9F1627E873950690E4856933</string>
+				<string>08423EF6D10B319C95FCF97F</string>
+				<string>0353FA486F79E412CB320A56</string>
+				<string>9440CF2CFF0947253263EF05</string>
+				<string>F72CD7594FA8DB9FEDAAB212</string>
 				<string>036EBAFEB2D1A86A4355D475</string>
 				<string>8BF114A26695C9F77274BEAE</string>
 				<string>44FA46CCE0322629D0CB3BE4</string>
@@ -20269,6 +20283,132 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>C62BFC28E738B5BF34424F74</string>
+		</dict>
+		<key>CEC518DE9C489248E8285FAF</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/YimaPlaceSearch.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>62875DE8965843A17995FC3F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>CEC518DE9C489248E8285FAF</string>
+		</dict>
+		<key>07889901C21A00EE94949329</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/YimaPlacesAgentTool.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>DD460400CF5871391CF7A76C</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>07889901C21A00EE94949329</string>
+		</dict>
+		<key>ECC7A7B62A52282B26502629</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/YimaPlacesPresentation.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>9F1627E873950690E4856933</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>ECC7A7B62A52282B26502629</string>
+		</dict>
+		<key>07C482D1097FBBD494830601</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/YimaPlacesSaveConfirmation.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>08423EF6D10B319C95FCF97F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>07C482D1097FBBD494830601</string>
+		</dict>
+		<key>AE64C4D48D4044436E46539D</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/YimaPlacesSaveConfirmationView.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>0353FA486F79E412CB320A56</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>AE64C4D48D4044436E46539D</string>
+		</dict>
+		<key>AE64D4CAC77BBA4762ECD34A</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/YimaPlacesStore.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>9440CF2CFF0947253263EF05</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>AE64D4CAC77BBA4762ECD34A</string>
+		</dict>
+		<key>8D2CB404C530DFEED153D34D</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>../../../../Integration/App/YimaPlacesView.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+		</dict>
+		<key>F72CD7594FA8DB9FEDAAB212</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>8D2CB404C530DFEED153D34D</string>
 		</dict>
 		<key>F6DFE1719E9E3D9C82DBABE4</key>
 		<dict>

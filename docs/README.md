@@ -4,6 +4,10 @@
 
 ## 产品文档
 
+- [小蓝总管与专业伙伴：设计及改造方案](./design/xiaolan-specialist-partners.md)：2026-10-20 角色及权限方向已确认，包含美食/故事伙伴的独立上下文、长期记忆与单聊、小蓝统一交付、伙伴业务弹窗和小蓝独有页面跳转；分阶段任务与验收已整理，架构改造尚未开始。
+
+- [美食地图：地点收藏与标签](./design/food-map.md)：2026-10-20 原型已认可，原生地图、本地收藏与标签、苹果地图导航及小蓝语音工具已接入；[实施检查与真机验收](./testing/food-map.md)记录验证边界，[原型](./design/food-map-prototype/index.html)保留作设计参考。
+
 - [儿童故事机与锁屏小蓝](./design/children-story-player.md)：2026-10-18 用户确认本轮功能测试通过，涵盖故事库/播放、优先唤醒、完播回传、锁屏完整智能体及录音互斥；见第 17 节收尾记录。
 
 - [共用 Agent 运行时与策略](./architecture/agent-runtime-policies.md)：配置、执行与语音适配边界，既有 spawn/notice 复用及架构验收。

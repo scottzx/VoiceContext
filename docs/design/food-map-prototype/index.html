@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>美食地图 · Yima 交互原型</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="workbench">
+  <main class="phone" id="phone" aria-label="Yima 美食地图交互原型">
+    <div class="prototype-strip">交互原型 <span>·</span> 虚构地点</div>
+    <div id="screen" class="screen"></div>
+    <div class="sheet-layer" id="sheet-layer" hidden>
+      <div class="scrim" data-action="close-sheet" aria-hidden="true"></div>
+      <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1"></section>
+    </div>
+    <div class="toast" role="status" id="toast" hidden></div>
+  </main>
+  <aside class="review" aria-label="原型查看设置">
+    <p class="eyebrow">YIMA / 交互评审</p>
+    <h1>美食地图</h1>
+    <p class="review-intro">地图、收藏和标签。<br>先把完整流程点一遍。</p>
+    <div class="review-group">
+      <h2>查看方式</h2>
+      <div class="theme-switch" aria-label="外观">
+        <button data-review="light" aria-pressed="true">浅色</button>
+        <button data-review="dark" aria-pressed="false">深色</button>
+      </div>
+      <label class="review-toggle"><span>放大文字</span><input type="checkbox" id="large-text"></label>
+    </div>
+    <div class="review-group">
+      <h2>演示状态</h2>
+      <label class="review-toggle"><span>空收藏</span><input type="checkbox" id="empty-state"></label>
+      <label class="review-toggle"><span>网络不可用</span><input type="checkbox" id="offline-state"></label>
+      <label class="review-toggle"><span>定位不可用</span><input type="checkbox" id="location-state"></label>
+      <button class="reset-button" data-review="reset">重置演示</button>
+    </div>
+    <p class="review-note">虚构店名、地址和街区，仅用于评审。不会请求定位或麦克风，也不会打开真实导航。修改仅保存在此浏览器。</p>
+    <p class="review-note" id="storage-note" hidden></p>
+  </aside>
+</div>
+<div class="sr-only" id="announcement" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>

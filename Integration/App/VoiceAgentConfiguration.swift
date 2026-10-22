@@ -8,8 +8,11 @@ enum VoiceAgentConfiguration {
     static func install() {
         guard !installed else { return }
         installed = true
+        AppNavigationCenter.shared.presentationBlockReason = {
+            YimaPlacesSaveConfirmation.shared.isPresenting ? "请先确认或取消地点收藏，再跳转页面。" : nil
+        }
         AsyncTaskNoticeManager.shared.historyOnlyTaskTypes.insert("story_playback")
-        AgentRuntimePolicies.hostTools = [YimaItemsAgentTool.definition, AppNavigationTool.definition, AppPresentationTool.definition]
+        AgentRuntimePolicies.hostTools = [YimaItemsAgentTool.definition, YimaPlacesAgentTool.definition, AppNavigationTool.definition, AppPresentationTool.definition]
         AgentRuntimePolicies.hiddenAgentIDs.insert(XiaolanAgent.id)
         let shared: Set<String> = ["answer_user", "apple_native", "yima_items", "memory_get", "memory_write"]
         let common = shared.union(SubagentTools.names)
@@ -25,7 +28,7 @@ enum VoiceAgentConfiguration {
         for (source, meeting) in [("meeting_assistant", true), ("xiaolan_voice", false)] {
             AgentRuntimePolicies.register(source: source, policy: .init(
                 toolPolicyOverride: .orchestrator,
-                allowedTools: meeting ? common : common.union(["app_navigation", "app_present", "story_player"]),
+                allowedTools: meeting ? common : common.union(["app_navigation", "app_present", "story_player", "yima_places"]),
                 noticeAllowedTools: ["answer_user"],
                 additionalTools: meeting ? [MeetingAppleTool.definition] : [MeetingAppleTool.definition, StoryPlayerTool.definition],
                 replyDelivery: reply, allowsLiteMode: false, allowsAutomaticSpeech: false,

@@ -14,6 +14,11 @@ struct AppNavigationChecks {
         center.setAvailability(foreground: true, unlocked: true)
         center.mount(routeID: "chat")
         let initial = center.state.revision
+        center.presentationBlockReason = { "请先完成当前确认。" }
+        let blocked = await center.navigate(routeID: "chat", expectedRevision: initial)
+        check(blocked.status == "busy" && center.command == nil && center.state.revision == initial,
+              "A confirmation sheet must block navigation, including same-page shortcuts")
+        center.presentationBlockReason = nil
 
         func rejected(_ args: [String: Any]) {
             do { _ = try AppNavigationTool.invocation(args); preconditionFailure("Invalid navigation arguments were accepted: \(args)") }

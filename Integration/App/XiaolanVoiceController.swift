@@ -21,6 +21,7 @@ final class XiaolanVoiceController: ObservableObject {
 
     private(set) var responseGeneration: UInt64 = 0
     private var foreground = true
+    private var placeConfirmationPresented = false
     private var installed = false
     private weak var recordings: VoiceRecordingWorkspace?
     private var input: IndependentVoiceInput?
@@ -104,7 +105,7 @@ final class XiaolanVoiceController: ObservableObject {
     }
 
     private func activate(recordings: VoiceRecordingWorkspace, continuing: Bool) async throws {
-        guard foreground else { throw ModeError.inactive }
+        guard foreground, !placeConfirmationPresented else { throw ModeError.inactive }
         guard !recordings.hasUnfinishedRecording else { throw ModeError.recordingActive }
         if let reason = recordings.startupError ?? IndependentVoiceInput.unavailableReason
             ?? MeetingAssistantController.modelUnavailableReason() {
@@ -166,6 +167,20 @@ final class XiaolanVoiceController: ObservableObject {
         status = "语音模式已暂停"
     }
 
+    /// Stop listening while a tool awaits a deliberate tap, preserving that tool's execution generation.
+    func setPlaceConfirmationPresented(_ presented: Bool) {
+        guard placeConfirmationPresented != presented else { return }
+        placeConfirmationPresented = presented
+        if presented {
+            input?.stop()
+            AudioSessionCoordinator.shared.end(.xiaolanCapture)
+            commandCaptureActive = false
+            if isEnabled, !isPaused { status = "等待确认收藏" }
+        } else if isEnabled, !isPaused, !isBusy, foreground {
+            do { try listen() } catch { failAndPause(error.localizedDescription) }
+        }
+    }
+
     func setForeground(_ value: Bool) {
         guard foreground != value else { return }
         foreground = value
@@ -183,7 +198,7 @@ final class XiaolanVoiceController: ObservableObject {
     }
 
     func beginCommand() {
-        guard isEnabled, !isPaused, foreground else { return }
+        guard isEnabled, !isPaused, foreground, !placeConfirmationPresented else { return }
         directAllowsNavigation = nil
         interruptCurrentRequest()
         StoryPlaybackController.shared.beginVoiceInteraction()
@@ -293,7 +308,7 @@ final class XiaolanVoiceController: ObservableObject {
     }
 
     private func listen(direct: Bool = false) throws {
-        guard isEnabled, !isPaused else { return }
+        guard isEnabled, !isPaused, !placeConfirmationPresented else { return }
         guard recordings?.hasUnfinishedRecording != true else {
             disable()
             throw ModeError.recordingActive
@@ -324,7 +339,7 @@ final class XiaolanVoiceController: ObservableObject {
     }
 
     private func receive(_ event: IndependentVoiceInput.Event, direct: Bool) {
-        guard isEnabled, !isPaused else { return }
+        guard isEnabled, !isPaused, !placeConfirmationPresented else { return }
         switch event {
         case .ready:
             if !isBusy {

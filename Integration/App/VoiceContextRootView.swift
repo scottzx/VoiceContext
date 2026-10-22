@@ -22,6 +22,7 @@ struct VoiceContextRootView: View {
     @ObservedObject private var navigation = AppNavigationCenter.shared
     @ObservedObject private var offloadPermission = OffloadPermissionManager.shared
     @ObservedObject private var voice = XiaolanVoiceController.shared
+    @ObservedObject private var placeSaveConfirmation = YimaPlacesSaveConfirmation.shared
     @State private var chatDetailVisible = false
     @State private var permissionSource: AppNavigationState?
     @State private var routingTab: Tab?
@@ -32,6 +33,11 @@ struct VoiceContextRootView: View {
     @State private var awaitingExtensionDismiss = false
     @State private var awaitingArtifactDismiss = false
     @State private var voiceForms: Set<UUID> = []
+    @State private var placeSaveSource: AppNavigationState?
+    @State private var placeSaveSuspendedRevision: Int?
+    @State private var placeSaveVoiceSession: String?
+    @State private var placeSaveVoiceGeneration: UInt64?
+    @State private var placeSaveNeedsRemount = false
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
@@ -56,11 +62,24 @@ struct VoiceContextRootView: View {
         .background {
             XiaolanFloatingControl(recordings: recordings,
                                    visible: phase == .active && !lock.appIsLocked && offloadPermission.pendingRequest == nil && permissionSource == nil,
-                                   controlsEnabled: voiceForms.isEmpty && !extensionEditing && localItem == nil && !modelSettings && !transcriptionModelDownload && results == nil)
+                                   controlsEnabled: !placeSaveConfirmation.isPresenting && voiceForms.isEmpty && !extensionEditing && localItem == nil && !modelSettings && !transcriptionModelDownload && results == nil)
                 .frame(width: 0, height: 0)
         }
         .tint(YimaDesign.Color.ink)
         .offloadPermissionDialog(enabled: rootPermissionPresenterEnabled)
+        .protectedYimaSheet(item: Binding(
+            get: { placeSaveConfirmation.request },
+            set: { if $0 == nil, let request = placeSaveConfirmation.request { placeSaveConfirmation.cancel(id: request.id) } }
+        ), onDismiss: finishPlaceSavePresentation) { request in
+            YimaPlacesSaveConfirmationView(request: request)
+        }
+        .onChange(of: canPresentPlaceSaveConfirmation, initial: true) { _, available in
+            placeSaveConfirmation.setPresentationAvailable(available)
+        }
+        .onChange(of: placeSaveConfirmation.isPresenting) { _, presented in
+            if presented { beginPlaceSavePresentation() }
+            else { restorePlaceSavePresentation(); remountAfterPlaceSave() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.chatDetailVisibilityChanged"))) { note in
             chatDetailVisible = note.userInfo?["visible"] as? Bool ?? false
         }
@@ -147,6 +166,7 @@ struct VoiceContextRootView: View {
             MeetingAssistantBridge.shared.setForeground(newValue == .active && !lock.appIsLocked)
             XiaolanVoiceController.shared.setForeground(newValue == .active && !lock.appIsLocked)
             navigation.setAvailability(foreground: newValue == .active, unlocked: !lock.appIsLocked)
+            remountAfterPlaceSave()
             if newValue == .active { Task { await MeetingWorkspaceBridge.shared.refresh() } }
         }
         .onOpenURL { url in
@@ -183,6 +203,7 @@ struct VoiceContextRootView: View {
             MeetingAssistantBridge.shared.setForeground(!locked && phase == .active)
             XiaolanVoiceController.shared.setForeground(!locked && phase == .active)
             navigation.setAvailability(foreground: phase == .active, unlocked: !locked)
+            remountAfterPlaceSave()
             if locked { items.recordingMeetingInProgress = nil }
             else { presentPendingItem() }
         }
@@ -247,7 +268,7 @@ struct VoiceContextRootView: View {
             navigation.registerSupportedRoutes([
                 "chat", "chat.session", "recordings.list", "recording.detail", "reminders", "reminders.all", "schedule.day", "tasks.list",
                 "extensions", "extension.settings", "extension.skills", "extension.models", "extension.soul", "extension.memory",
-                "extension.mcp", "extension.hardware", "extension.terminal", "extension.browser", "extension.stories", "extension.custom", "extension.custom_functions", "artifact.preview"
+                "extension.mcp", "extension.hardware", "extension.terminal", "extension.browser", "extension.stories", "extension.places", "extension.places.show", "extension.custom", "extension.custom_functions", "artifact.preview"
             ])
             if offloadPermission.pendingRequest == nil { navigationPresentationDidDismiss() }
             await recordings.prepare()
@@ -268,7 +289,8 @@ struct VoiceContextRootView: View {
 
     private var rootPermissionPresenterEnabled: Bool {
         guard previewArtifact == nil, !extensionPresentation, localItem == nil, !modelSettings,
-              !transcriptionModelDownload, results == nil, voiceForms.isEmpty else { return false }
+              !transcriptionModelDownload, results == nil, voiceForms.isEmpty,
+              !placeSaveConfirmation.isPresenting else { return false }
         if selection == .chat { return !chatDetailVisible }
         if selection == .meetings { return voice.isEnabled }
         return true
@@ -277,7 +299,8 @@ struct VoiceContextRootView: View {
     private func handleNavigation(_ command: AppNavigationCommand?) {
         guard let command, navigation.isCurrent(command) else { return }
         guard localItem == nil, !modelSettings, !transcriptionModelDownload, results == nil,
-              voiceForms.isEmpty, offloadPermission.pendingRequest == nil, permissionSource == nil else {
+              voiceForms.isEmpty, offloadPermission.pendingRequest == nil, permissionSource == nil,
+              !placeSaveConfirmation.isPresenting else {
             navigation.fail(commandID: command.id, message: "请先关闭当前弹窗，再跳转页面。")
             return
         }
@@ -332,6 +355,57 @@ struct VoiceContextRootView: View {
     private func navigationPresentationDidDismiss() {
         NotificationCenter.default.post(name: Notification.Name("Yima.navigationPresentationDismissed"), object: nil)
     }
+
+    private var canPresentPlaceSaveConfirmation: Bool {
+        phase == .active && !lock.appIsLocked && !lock.showPrivacyScreen && navigation.available && navigation.command == nil &&
+            previewArtifact == nil && !extensionPresentation && localItem == nil && !modelSettings &&
+            !transcriptionModelDownload && results == nil && voiceForms.isEmpty &&
+            offloadPermission.pendingRequest == nil && permissionSource == nil
+    }
+
+    private func beginPlaceSavePresentation() {
+        guard placeSaveSuspendedRevision == nil else { return }
+        placeSaveSource = navigation.state
+        placeSaveVoiceSession = voice.sessionID
+        if let sessionID = voice.sessionID, let generation = voice.navigationGeneration(sessionID: sessionID),
+           navigation.isVoiceBindingCurrent(sessionID: sessionID, generation: generation) {
+            placeSaveVoiceGeneration = generation
+        } else { placeSaveVoiceGeneration = nil }
+        if let source = placeSaveSource, let route = source.routeID { navigation.unmount(routeID: route, params: source.params) }
+        placeSaveSuspendedRevision = navigation.state.revision
+        voice.setPlaceConfirmationPresented(true)
+    }
+
+    private func restorePlaceSavePresentation() {
+        guard let revision = placeSaveSuspendedRevision else { return }
+        if !navigation.available { placeSaveNeedsRemount = true }
+        if navigation.available, navigation.state.routeID == nil, navigation.state.revision == revision,
+           let source = placeSaveSource, let route = source.routeID {
+            navigation.mount(routeID: route, params: source.params, canGoBack: source.canGoBack)
+            if let sessionID = placeSaveVoiceSession, let generation = placeSaveVoiceGeneration,
+               voice.navigationGeneration(sessionID: sessionID) == generation {
+                navigation.bindVoiceSession(sessionID: sessionID, generation: generation)
+            }
+        }
+        placeSaveSource = nil
+        placeSaveSuspendedRevision = nil
+        placeSaveVoiceSession = nil
+        placeSaveVoiceGeneration = nil
+        voice.setPlaceConfirmationPresented(false)
+    }
+
+    private func finishPlaceSavePresentation() {
+        restorePlaceSavePresentation()
+        placeSaveConfirmation.presentationDidDismiss()
+        if navigation.available { placeSaveNeedsRemount = false; navigationPresentationDidDismiss() }
+        else { placeSaveNeedsRemount = true }
+    }
+
+    private func remountAfterPlaceSave() {
+        guard placeSaveNeedsRemount, navigation.available, !placeSaveConfirmation.isPresenting else { return }
+        placeSaveNeedsRemount = false
+        navigationPresentationDidDismiss()
+    }
     private func presentPendingItem() {
         guard !lock.appIsLocked, let item = items.pendingItem else { return }
         items.pendingItem = nil
@@ -360,13 +434,14 @@ struct VoiceContextRootView: View {
 private struct RecordingResultsRequest: Identifiable { let id: String }
 
 private struct VoiceContextExtensionsView: View {
-    private enum Destination: Hashable { case skills, providers, soul, memory, mcp, hardware, terminal, browser, stories, customFunctions }
+    private enum Destination: Hashable { case skills, providers, soul, memory, mcp, hardware, terminal, browser, stories, customFunctions, places(UUID?) }
     @State private var navigationPath: [Destination] = []
     @State private var settings = false
     @State private var terminal = false
     @State private var browser = false
     @State private var addCustomFunction = false
     @State private var openedCustomFunction: CustomExtensionItem?
+    @State private var placesPresentation = false
     @StateObject private var customFunctions = CustomExtensionsStore.shared
     @ObservedObject var browserPool: BrowserTabPool
     @ObservedObject private var voice = XiaolanVoiceController.shared
@@ -398,6 +473,7 @@ private struct VoiceContextExtensionsView: View {
                         }
                         .accessibilityValue(voice.isEnabled ? voice.status : "未开启")
                         .accessibilityIdentifier("extensions-voice-mode")
+                        destinationTile(.places(nil), title: "美食地图", symbol: "map")
                     }
                     extensionSection("我的与设置") {
                         Button { navigation.userNavigationBegan(); settings = true } label: { tile(AppLocalized("设置"), symbol: "gearshape") }
@@ -414,21 +490,28 @@ private struct VoiceContextExtensionsView: View {
                 ToolbarItem(placement: .topBarTrailing) { VoiceRecordingStatusControl() }
             }
             .navigationDestination(for: Destination.self) { destination in
-                Group {
-                    switch destination {
-                    case .skills: SkillsManagementView()
-                    case .providers: ModelsAndServicesView()
-                    case .soul: SoulSettingsView()
-                    case .memory: MemoryManagementView()
-                    case .mcp: MCPIntegrationsView()
-                    case .hardware: HardwareBridgeSettingsView()
-                    case .terminal: terminalPage
-                    case .browser: browserPage
-                    case .stories: StoryPlayerView()
-                    case .customFunctions: CustomExtensionsManagementView(store: customFunctions)
+                if case .places(let presentationID) = destination {
+                    // This page acknowledges its route only after the requested
+                    // native result snapshot has been applied to the map.
+                    YimaPlacesView(presentationID: presentationID)
+                } else {
+                    Group {
+                        switch destination {
+                        case .skills: SkillsManagementView()
+                        case .providers: ModelsAndServicesView()
+                        case .soul: SoulSettingsView()
+                        case .memory: MemoryManagementView()
+                        case .mcp: MCPIntegrationsView()
+                        case .hardware: HardwareBridgeSettingsView()
+                        case .terminal: terminalPage
+                        case .browser: browserPage
+                        case .stories: StoryPlayerView()
+                        case .customFunctions: CustomExtensionsManagementView(store: customFunctions)
+                        case .places: EmptyView()
+                        }
                     }
+                    .appNavigationPage(route(for: destination), onBack: { if !navigationPath.isEmpty { navigationPath.removeLast() } })
                 }
-                .appNavigationPage(route(for: destination), onBack: { if !navigationPath.isEmpty { navigationPath.removeLast() } })
             }
         }
         .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
@@ -458,6 +541,9 @@ private struct VoiceContextExtensionsView: View {
             settings = false; terminal = false; browser = false; openedCustomFunction = nil; addCustomFunction = false
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.extensionPresentationChanged"))) { note in
+            if note.userInfo?["source"] as? String == "places" {
+                placesPresentation = note.userInfo?["active"] as? Bool ?? false
+            }
             if note.userInfo?["active"] as? Bool == false { handleNavigation(navigation.command) }
         }
     }
@@ -492,18 +578,27 @@ private struct VoiceContextExtensionsView: View {
         case .browser: "extension.browser"
         case .stories: "extension.stories"
         case .customFunctions: "extension.custom_functions"
+        case .places(let id): id == nil ? "extension.places" : "extension.places.show"
         }
     }
 
     private func handleNavigation(_ command: AppNavigationCommand?) {
         guard isActive, let command, navigation.isCurrent(command), command.action == .navigate else { return }
-        guard !hasPresentation else { return }
-        let destinations: [String: Destination] = [
+        guard !hasPresentation, !placesPresentation else { return }
+        var destinations: [String: Destination] = [
             "extension.skills": .skills, "extension.models": .providers, "extension.soul": .soul,
             "extension.memory": .memory, "extension.mcp": .mcp, "extension.hardware": .hardware,
             "extension.terminal": .terminal, "extension.browser": .browser, "extension.stories": .stories,
-            "extension.custom_functions": .customFunctions
+            "extension.custom_functions": .customFunctions, "extension.places": .places(nil)
         ]
+        if command.routeID == "extension.places.show" {
+            guard let rawID = command.params["presentation_id"], let id = UUID(uuidString: rawID),
+                  YimaPlacesPresentation.shared.request(id: id) != nil else {
+                navigation.fail(commandID: command.id, message: "地图结果已过期，请重新查找地点。")
+                return
+            }
+            destinations[command.routeID] = .places(id)
+        }
         guard command.routeID == "extensions" || command.routeID == "extension.settings" ||
                 command.routeID == "extension.custom" || destinations[command.routeID] != nil else { return }
         guard !addCustomFunction else {

@@ -19,6 +19,15 @@ enum MeetingAnswerUserTool {
     static let deliveryReminder = "Reply through answer_user"
 }
 enum MeetingAppleTool { static var definition: AgentToolDefinition { hostDefinition("apple_native") } }
+enum YimaPlacesAgentTool { static var definition: AgentToolDefinition { hostDefinition("yima_places") } }
+@MainActor final class AppNavigationCenter {
+    static let shared = AppNavigationCenter()
+    var presentationBlockReason: (() -> String?)?
+}
+@MainActor final class YimaPlacesSaveConfirmation {
+    static let shared = YimaPlacesSaveConfirmation()
+    var isPresenting = false
+}
 enum YimaItemsAgentTool { static var definition: AgentToolDefinition { hostDefinition("yima_items") } }
 enum AppNavigationTool { static var definition: AgentToolDefinition { hostDefinition("app_navigation") } }
 enum AppPresentationTool { static var definition: AgentToolDefinition { hostDefinition("app_present") } }
@@ -127,7 +136,7 @@ enum OutcomePart {
                      "Only the independent voice host supplies its execution generation")
         let shared: Set<String> = ["answer_user", "apple_native", "yima_items", "memory_get", "memory_write"]
         let meetingTools = shared.union(SubagentTools.names)
-        let voiceTools = meetingTools.union(["app_navigation", "app_present", "story_player"])
+        let voiceTools = meetingTools.union(["app_navigation", "app_present", "story_player", "yima_places"])
         var third = AgentRuntimePolicies.policy(for: "xiaolan_voice")
         third.prompt = { _, _, notice in notice ? "Third delivery answer_user" : "Third interactive tools" }
         AgentRuntimePolicies.register(source: "fixture_interaction", policy: third)

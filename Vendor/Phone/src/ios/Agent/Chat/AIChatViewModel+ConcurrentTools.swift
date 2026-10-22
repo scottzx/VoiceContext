@@ -595,6 +595,18 @@ extension AIChatViewModel {
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].content = result.output
             }
+        case "yima_places":
+            let result = await YimaPlacesAgentTool.execute(
+                toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource,
+                isExecutor: self.agentRole == .executor, noticeDriven: self.isNoticeDriven,
+                executionGeneration: self.toolExecutionGeneration,
+                voiceNavigationGeneration: self.appNavigationVoiceGeneration
+            )
+            toolOutput = result.output
+            toolSuccess = result.success
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
         case "apple_native":
             let result = await MeetingAppleTool.execute(
                 toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource

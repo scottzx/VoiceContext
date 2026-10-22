@@ -82,3 +82,11 @@ python3 tools/integration/verify_fusion.py --variant production
 本次是产品 fork 定制，不推进 OpenMinis 上游基线。`src/ios/AppDelegate.swift` 在融合条件下桥接产品的后台下载 session；`HardwareBridge/Transcription/HardwareVoiceTranscriber.swift` 从已校验的持久模型目录加载，缺模型时请求打开下载页；`Views/Chat/AIChatView.swift` 在开始本地 SenseVoice 输入前检查模型并展示产品下载页。`Providers/Voice/VoiceProvider+SenseVoice.swift` 更新模型来源注释。
 
 以上适配通过 `VOICE_AGENT_FUSION` 与独立上游模块隔离。保留原聊天的系统 / 云语音和固定 RealTimeCutVADLibrary 依赖，未修改 TranscribeKit 快照。后续合并上游时保留这些下载入口、生命周期桥接与模型路径适配。设计与验证边界见[免费转写与魔搭按需模型下载](../design/free-transcription-model-download.md)。
+
+## 2026-10-20 美食地图融合定制
+
+本次是产品 fork 定制，不推进上游基线。`Agent/Chat/AIChatViewModel+ConcurrentTools.swift` 在 `VOICE_AGENT_FUSION` 分支分派 `yima_places`，独立传递当前执行代次和语音导航绑定；`AIChatViewModel.swift` 只为支持该工具的融合主会话增加真实搜索、收藏、地图展示和导航回执规则。子 Agent 和完成通知回合不获得本工具权限。
+
+真机试用后产品负责人追加选择收藏确认弹窗：工具等待用户核对名称、完整地址和最终标签并点击确认；主聊天提示词同步要求不以口头收藏或页面跳转代替按钮确认，取消/失效后不自动重复弹窗。原生确认状态机、页面、语音输入等待和导航恢复仍由 `Integration` 承接。
+
+地图页面、搜索、收藏、标签及导航交接均在 `Integration/App`，未改动原生 `apple-maps` 或 `apple-location` 桥接。后续合并上游时保留上述两处融合接入及工具运行策略。设计与验证见[美食地图](../design/food-map.md)和[实施检查记录](../testing/food-map.md)。

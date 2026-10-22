@@ -17,6 +17,7 @@
 
 - `Vendor/Phone`：完整 iOS 平台源码、Apple/shared 共用代码、资源、构建脚本及 iSH 源码快照；不是只复制 AgentRunEngine。
 - `Integration/App`：四 Tab、Yima 本地事项与会议关系、系统来源、音频桥接、文稿快照、录音产物预览。
+- `Integration/App/YimaPlaces*.swift`、`YimaPlaceSearch.swift`：美食地图的共享本地收藏与标签、真实 MapKit 查询、原生地图/列表/详情、收藏核对弹窗、苹果地图交接和 `yima_places` 工具，供主聊天与小蓝使用。
 - `Integration/Recording`：将原录音业务作为 `VoiceRecording.framework` 提供给宿主。独立 Swift 模块保留原 actor isolation，避免两套 `ContentView` 等类型冲突。
 - `speech_note/speech_note`：复用原录音、转写、SQLite/journal、文稿和设置；增加宿主入口与模型按需下载。语音转文字免费开放，旧数据不搬进新 Agent 容器。
 - 主模块名保留 `Minis`，以兼容 phone 原有 Objective-C/Swift 桥接与运行时类型查找；产品显示名为一芥伙伴 / Yima，签名身份沿用原产品。
@@ -30,6 +31,7 @@
 3. 提醒：默认提供本地 Yima日历/Yima待办，支持编辑、完成、未安排、来源筛选和会议回跳；没有系统权限仍可使用。授权后另以 EventKit 查询系统提醒事项列表，默认隐藏已完成；工具栏筛选列表及显示已完成。新增优先筛选中的可写列表，否则使用系统默认可写列表。圆圈/滑动/可访问操作可完成与恢复，删除先确认；编辑可选日期、时间和独立定时提醒，保留未编辑属性，复杂时间组合引导到系统处理。读取失败、权限和无可写列表分别呈现；响应外部变更和授权撤销。与 `apple-reminders` 共用系统数据。
 4. 拓展：每行四个方块入口，顶部「自定义功能」配置名称、URL 和可选 Logo，长按进入排序与删除；下方保留 Skills、模型与服务、浏览器、终端及统一「设置」入口的原顺序。Agent 通过原生 CLI `yima-extensions` 管理同一份配置，参见[配置与命令约定](../docs/design/custom-extensions.md#agent-原生-cli)。设置内保留录音与我的、模型、工具和存储等功能分组，语言与外观使用应用级偏好；继续沿用紧凑标题与系统底色。
 5. 录音详情「智能体产物」预览 `Generated/<recordingID>/` 的文件。来源 revision 由草稿和 Skill 要求写入结果；当前不是独立的 session/产物关系数据库。
+6. 拓展 → 美食地图：MapKit 地图/收藏列表共享筛选与本地数据，可查找真实地点、选择分店、添加/编辑标签、删除收藏并交给苹果地图。主聊天与小蓝使用 `yima_places` 操作同一份数据，收藏前在当前页面弹窗核对名称、地址、内嵌地图与标签，点确认才保存；搜索结果实时显示实际收藏状态。保存后默认停留原页面，只在用户明确要求展示或导航时跳转。原型已通过；安装与手动验收进展见[实施检查记录](../docs/testing/food-map.md)。
 
 ## 全局偏好
 

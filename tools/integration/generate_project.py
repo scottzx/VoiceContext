@@ -203,6 +203,7 @@ info['CFBundleName']='Yima'
 info['NSMicrophoneUsageDescription']='一芥伙伴使用麦克风录制你主动开始的会议或日常语音，并在你选择语音输入时转为聊天文字。'
 info['NSRemindersFullAccessUsageDescription']='在待办事项中展示和管理你的系统提醒事项，并让你授权的智能体任务使用同一份待办。'
 info['NSCalendarsFullAccessUsageDescription']='在提醒中展示你的系统日历日程和日期标记，供你使用系统界面查看和编辑日程，并支持你授权的智能体日历任务。'
+info['NSLocationWhenInUseUsageDescription']='在你启用录音地点或要求获取当前位置、查询附近地点时使用定位；不授权定位也能按明确地址收藏地点和查看地图。'
 for key, value in info.items():
     if key.endswith('UsageDescription') and isinstance(value, str):
         info[key] = value.replace('一伴', '一芥伙伴').replace('听记', '一芥伙伴')
@@ -333,6 +334,12 @@ for tid in p['targets']:
                 lang: {'stringUnit': {'state': 'translated', 'value': name + suffix}}
                 for lang, name in [('en', en), ('zh-Hans', zh), ('zh-Hant', zh)]}}
         if target['name'] == 'VoiceContextAgent':
+            entries['NSLocationWhenInUseUsageDescription'] = {'extractionState': 'manual', 'localizations': {
+                lang: {'stringUnit': {'state': 'translated', 'value': text}}
+                for lang, text in [
+                    ('en', 'Use location when you enable recording locations or ask for your current location or nearby places. You can save places by address and view the map without location access.'),
+                    ('zh-Hans', info['NSLocationWhenInUseUsageDescription']),
+                    ('zh-Hant', '在你啟用錄音地點或要求取得目前位置、查詢附近地點時使用定位；不授權定位也能依明確地址收藏地點和查看地圖。')]}}
             entries['NSCalendarsFullAccessUsageDescription'] = {'extractionState': 'manual', 'localizations': {
                 lang: {'stringUnit': {'state': 'translated', 'value': text}}
                 for lang, text in [

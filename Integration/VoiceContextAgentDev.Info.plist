@@ -220,7 +220,7 @@
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Yima uses background location to keep agent tasks running when the app is in the background. Location data is only used to record session connection history.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>一芥伙伴会在录音时获取你的位置，以便自动记录录音发生的地点。</string>
+	<string>在你启用录音地点或要求获取当前位置、查询附近地点时使用定位；不授权定位也能按明确地址收藏地点和查看地图。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>一芥伙伴使用麦克风录制你主动开始的会议或日常语音，并在你选择语音输入时转为聊天文字。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

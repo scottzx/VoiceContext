@@ -37,6 +37,8 @@ enum AppRouteCatalog {
         .init(id: "extension.terminal", title: "终端", parent: "extensions"),
         .init(id: "extension.browser", title: "浏览器", parent: "extensions"),
         .init(id: "extension.stories", title: "儿童故事机", parent: "extensions"),
+        .init(id: "extension.places", title: "美食地图", parent: "extensions"),
+        .init(id: "extension.places.show", title: "地图地点", parent: "extension.places", parameters: ["presentation_id": ["uuid"]]),
         .init(id: "extension.custom_functions", title: "管理自定义功能", parent: "extensions"),
         .init(id: "extension.custom", title: "自定义功能", parent: "extensions", parameters: ["id": ["uuid"]]),
         .init(id: "artifact.preview", title: "内容预览", parent: "chat", parameters: ["artifact_id": ["session_id:artifact_uuid"]])
@@ -126,6 +128,7 @@ final class AppNavigationCenter: ObservableObject {
     private var pendingVoiceGeneration: UInt64?
     private var timeout: Task<Void, Never>?
     private let timeoutNanoseconds: UInt64
+    var presentationBlockReason: (@MainActor () -> String?)?
 
     init(timeoutNanoseconds: UInt64 = 5_000_000_000) { self.timeoutNanoseconds = timeoutNanoseconds }
 
@@ -227,6 +230,7 @@ final class AppNavigationCenter: ObservableObject {
                         sessionID: String?, voiceGeneration: UInt64?) async -> AppNavigationReceipt {
         guard !Task.isCancelled else { return receipt("stale", "This request was cancelled.") }
         guard available else { return receipt("unavailable", "App navigation requires the foreground, unlocked app.") }
+        if let reason = presentationBlockReason?() { return receipt("busy", reason) }
         if sessionID != nil || voiceGeneration != nil {
             guard isVoiceBindingCurrent(sessionID: sessionID, generation: voiceGeneration) else { return receipt("stale", "This voice request is no longer active.") }
         }

@@ -1943,13 +1943,21 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         - Avoid Markdown, tables, long lists, headings, and unnecessary preambles because the reply is shown on a small screen and spoken aloud.
         - Keep essential safety warnings and required steps. Be longer only when the user explicitly asks for detail or correctness requires it.
         """ : ""
+        #if VOICE_AGENT_FUSION
+        let placesBlock = agentRole != .executor && runtimeHostToolDefinitions.contains(where: { $0.name == "yima_places" }) ? """
+
+        美食地图使用 yima_places：先 search 真实地点，缺城市、重名或分店不唯一时询问用户；只有明确收藏指令才用本会话真实 search_id/candidate_id 调用 save，查询不等于收藏。save 在当前页面弹出名称、完整地址与最终标签的核对窗口，只有用户点“确认收藏”后才写入并返回 saved；不能用口头收藏指令或页面跳转替代这次确认，标签仅使用用户明确提供的文字。后台须回前台解锁确认；取消、不可展示、过期或超时均不自动重试或再次弹窗。新搜索使旧候选失效。list/get 返回真实 place_id/revision，修改标签和删除需提供该版本，删除须有明确确认。收藏成功或标签更新本身不授权换页，核对弹窗关闭后默认留在当前页，简短告知真实结果；不因为保存完成就调用 show、navigate 或 app_navigation 换页。仅当本轮用户明确要求打开地图、展示地点或导航时才执行相应跳转。展示先读 app_navigation.get_state 再 show，仅 visible 才表示地图已展示；明确要求“收藏并展示”时，等确认保存成功后重新读取页面版本，再用回执的 place_id 展示该收藏，全批搜索仅用于用户要求查看搜索结果的场景。导航选唯一真实地点并提供当前页面版本，handoff_accepted 只表示交给苹果地图，不表示已开始导航。失败、过期、取消或未成功写入均不能说完成。
+        """ : ""
+        #else
+        let placesBlock = ""
+        #endif
         switch effectiveToolPolicy {
         case .orchestrator:
             return groupBlock + OrchestratorPrompt.render(
                 agentId: agentId,
                 memoryEnabled: memoryEnabled,
                 includeAgentDirectory: groupId == nil
-            ) + hardwareBlock
+            ) + hardwareBlock + placesBlock
         case .standalone:
             // Executors get the full operator prompt below — it was always
             // written for the thing that does the work — plus a short preamble
@@ -1961,7 +1969,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 ? OrchestratorPrompt.executorPreamble(taskId: sessionId ?? "") + executorAndStandalonePrompt + hardwareBlock
                 : groupBlock + executorAndStandalonePrompt
                     + (groupId == nil ? "\n\n" + AgentDirectoryTools.promptSection(canDispatch: false) : "")
-                    + hardwareBlock
+                    + hardwareBlock + placesBlock
         }
     }
 
