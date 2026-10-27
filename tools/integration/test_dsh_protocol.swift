@@ -30,6 +30,8 @@ struct DSHProtocolTests {
     @MainActor
     static func main() async throws {
         try journalTests()
+        try orderedContentTests()
+        fileReadOutputTests()
         try wireTests()
         try await httpTests()
         print("DSH offline protocol tests passed")
@@ -75,6 +77,8 @@ struct DSHProtocolTests {
         try reducer.apply(delta)
         try reducer.apply(delta)
         precondition(snapshot(reducer).entries.last?.text == "Hi", "Duplicate stream indices cannot double text")
+        let live = snapshot(reducer).entries.last!
+        precondition(live.turn == 1 && live.step == 1 && live.isStreaming)
         var gap = delta
         var frame = DSHWire.object(gap["frame"])
         frame["index"] = 2
@@ -87,6 +91,10 @@ struct DSHProtocolTests {
         try reducer.apply(assistant)
         try reducer.apply(assistant)
         precondition(snapshot(reducer).entries.count == 2, "Durable settlement replaces its streaming counterpart")
+        let settled = snapshot(reducer).entries.last!
+        precondition(settled.id == live.id && settled.parts.map(\.id) == live.parts.map(\.id),
+                     "Observed live settlement keeps message and content-block identities")
+        precondition(!settled.isStreaming && settled.sourceMessageID == "a-message")
         try reducer.apply(event(14, "turn/end", ["turn": 1]))
         precondition(!snapshot(reducer).isRunning)
         try expectFailure { try reducer.apply(event(16, "turn/start", ["turn": 2])) }
@@ -130,6 +138,120 @@ struct DSHProtocolTests {
         precondition(calls.count == 2 && calls[0].status == "completed" && calls[0].output == "done")
         precondition(calls[1].status == "unknown", "Missing historical results cannot imply completion or cancellation")
         precondition(snapshot(tools).entries.count == 1, "Attached tool output is not repeated as another chat message")
+    }
+
+    static func orderedContentTests() throws {
+        var reducer = DSHChatReducer(sessionID: "test-session")
+        let content: [[String: Any]] = [
+            ["type": "text", "text": "Before"],
+            ["type": "tool-call", "id": "call", "name": "read", "arguments": "path=a"],
+            ["type": "text", "text": "After"],
+            ["type": "reasoning", "text": "A later thought"]
+        ]
+        let message = event(10, "assistant/message", ["turn": 4, "step": 1,
+            "message": ["id": "reused-message-id", "content": content]])
+        let output = event(11, "tool/result", ["turn": 4, "step": 1, "message": [
+            "id": "result", "toolCallId": "call", "content": [["type": "text", "text": "Found"]]]])
+        let continuation = event(12, "assistant/message", ["turn": 4, "step": 2,
+            "message": ["id": "reused-message-id", "content": [
+                ["type": "text", "text": "Next step"],
+                ["type": "tool-call", "id": "reused-call-id", "name": "search", "arguments": "first"],
+                ["type": "text", "text": "Between duplicate tool IDs"],
+                ["type": "tool-call", "id": "reused-call-id", "name": "search", "arguments": "second"],
+                ["type": "text", "text": "Last paragraph"]]]])
+        let user = event(13, "user/message", ["id": "next-user", "source": ["kind": "user"],
+            "content": [["type": "text", "text": "Next turn"]]])
+        let nextTurn = event(14, "assistant/message", ["turn": 5, "step": 1,
+            "message": ["id": "next-assistant", "content": [["type": "text", "text": "Separate reply"]]]])
+        // Start in the middle of turn 4: the grouping identity comes from the entry,
+        // even though this page does not include its turn/start or first assistant step.
+        try reducer.apply(opening([continuation, user, nextTurn, event(15, "turn/end", ["turn": 5])],
+                                  cursor: 15, more: true))
+        let beforePage = snapshot(reducer).entries
+        precondition(beforePage[0].turn == 4 && beforePage[2].turn == 5 && beforePage[1].turn == nil)
+        let continuationID = beforePage[0].id
+        let continuationPartIDs = beforePage[0].parts.map(\.id)
+        try reducer.prepend(["records": [event(8, "turn/start", ["turn": 4]),
+            event(9, "user/message", ["id": "first-user", "source": ["kind": "user"], "content": []]),
+            message, output, continuation], "hasMore": false])
+        let entries = snapshot(reducer).entries
+        let first = entries.first { $0.step == 1 && $0.turn == 4 }!
+        let second = entries.first { $0.step == 2 && $0.turn == 4 }!
+        precondition(second.id == continuationID && second.parts.map(\.id) == continuationPartIDs,
+                     "Pagination and overlapping records preserve existing entry and part identities")
+        precondition(first.sourceMessageID == second.sourceMessageID && first.id != second.id,
+                     "Repeated server message IDs cannot overwrite distinct journal content")
+        precondition(Set(entries.map(\.id)).count == entries.count)
+        precondition(first.text == "BeforeAfter" && first.reasoning == "A later thought" && first.tools.count == 1,
+                     "Legacy aggregate fields remain compatible")
+        guard case .text("Before") = first.parts[0].kind,
+              case .tool(let tool) = first.parts[1].kind,
+              case .text("After") = first.parts[2].kind,
+              case .reasoning("A later thought") = first.parts[3].kind else {
+            preconditionFailure("Text, tool and reasoning parts must retain their source order")
+        }
+        precondition(tool.output == "Found" && tool.status == "completed",
+                     "Tool settlement updates both the aggregate tool and its ordered part")
+        precondition(first.tools[0].output == tool.output)
+        precondition(second.parts.count == 5 && second.tools.count == 2)
+        precondition(second.text == "Next stepBetween duplicate tool IDsLast paragraph")
+        precondition(Set(second.parts.map(\.id)).count == second.parts.count,
+                     "Repeated call IDs have distinct display identities without dropping surrounding text")
+
+        var retry = DSHChatReducer(sessionID: "test-session")
+        try retry.apply(opening([event(0, "assistant/attempt", ["turn": 1, "step": 1, "stream": [
+            ["type": "text-chunks", "index": 0, "texts": ["Earlier attempt"]]]])], cursor: 0,
+            stream: ["revision": 3, "activeAttempt": ["attemptId": "retry", "turn": 1, "step": 1,
+                "startedAfterSeq": 0, "nextIndex": 1, "stream": [
+                    ["type": "text-chunks", "index": 2, "texts": ["Live retry"]]]]]))
+        let retryEntries = snapshot(retry).entries
+        precondition(retryEntries.count == 2 && retryEntries.last?.isStreaming == true,
+                     "An earlier settled attempt in the same step cannot hide the current live retry")
+        let livePartID = retryEntries.last!.parts[0].id
+        try retry.apply(["type": "assistant-stream", "frame": ["type": "chunk", "attemptId": "retry",
+            "revision": 4, "index": 1, "chunk": ["type": "reasoning-delta", "index": 0, "text": "Earlier slot"]]])
+        precondition(snapshot(retry).entries.last?.parts.last?.id == livePartID,
+                     "A live part identity uses the stream block index, not its changing array position")
+
+        var orphan = DSHChatReducer(sessionID: "test-session")
+        let orphanResult = event(1, "tool/result", ["id": "orphan", "content": []])
+        try orphan.apply(opening([event(0, "turn/start", ["turn": 6]), orphanResult], cursor: 1))
+        precondition(snapshot(orphan).entries.first?.turn == 6)
+        try orphan.apply(opening([orphanResult], cursor: 1))
+        precondition(snapshot(orphan).entries.first?.turn == nil,
+                     "A partial page cannot invent the missing turn of an orphan tool result")
+    }
+
+    static func fileReadOutputTests() {
+        func envelope(_ content: String, path: String = "/项目/README.md", newline: String = "\n") -> String {
+            ["<path>\(path)</path>", "<type>file</type>", "<content>", content, "</content>"].joined(separator: newline)
+        }
+        let markdown = DSHFileReadOutput.parse(envelope("1: # 标题\n2: \n3: - 项目\n4:   保留缩进\n(End of file - total 4 lines)"))!
+        precondition(markdown.path == "/项目/README.md")
+        precondition(markdown.content == "# 标题\n\n- 项目\n  保留缩进")
+        precondition(markdown.notices == "(End of file - total 4 lines)", "EOF metadata is not file Markdown")
+        let immediate = DSHFileReadOutput.parse("<path>/README.md</path>\n<type>file</type>\n<content>1: # Immediate\n2: Body\n</content>")!
+        precondition(immediate.content == "# Immediate\nBody" && immediate.notices == nil,
+                     "The first numbered line may immediately follow the opening content tag")
+
+        let offset = DSHFileReadOutput.parse(envelope("40: ```xml\r\n41: <content>literal</content>\r\n42: ```\r\n43: 9: actual content\r\n44: ", newline: "\r\n"))!
+        precondition(offset.content == "```xml\n<content>literal</content>\n```\n9: actual content\n",
+                     "Remove one envelope line number, preserving Unicode, blank lines and embedded closing tags")
+        precondition(offset.notices == nil)
+        let notices = DSHFileReadOutput.parse(envelope("100: Partial text\n\n... output truncated ...\nUse offset=101 to continue."))!
+        precondition(notices.content == "Partial text")
+        precondition(notices.notices == "\n... output truncated ...\nUse offset=101 to continue.")
+        let empty = DSHFileReadOutput.parse(envelope(""))!
+        precondition(empty.content.isEmpty && empty.notices == nil)
+
+        for raw in ["1: # literal\n2: untouched", "<content>literal</content>",
+                    envelope("# Unnumbered file"), envelope("1: One\nUnknown line\n2: Two"),
+                    envelope("1: One\n3: Missing line"), envelope("1:no separator"),
+                    envelope("１: fullwidth number"), envelope("1: literal").replacingOccurrences(of: "<type>file</type>", with: "<type>directory</type>"),
+                    envelope("1: literal") + "\nUnexpected suffix",
+                    "<path>/README.md</path>\n<type>file</type>\n<content>\n1: incomplete"] {
+            precondition(DSHFileReadOutput.parse(raw) == nil, "Unknown or incomplete formats must fall back to untouched literal output")
+        }
     }
 
     static func wireTests() throws {

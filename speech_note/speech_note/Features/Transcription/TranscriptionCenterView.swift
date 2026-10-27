@@ -749,6 +749,8 @@ struct TranscriptionCenterView: View {
             return "设备发热较明显，已暂缓以保护硬件；降温后将自动恢复转写。"
         case "deferredUntilForeground":
             return "应用退至后台时暂缓，回到前台后将继续转写。"
+        case "deferredUntilRecordingStops":
+            return "优先保存当前录音，停止录音后继续转写。"
         case "deferredUntilMetalAvailable":
             return "Metal 图形加速通道排队中，稍候自动执行。"
         case "lockedPendingPurchase":

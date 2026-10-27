@@ -9,6 +9,8 @@
 - 继承设计：`DESIGN.md`、`docs/architecture/recording-core.md`、`docs/architecture/incremental-transcription.md`
 - 最后更新：2026-08-24
 
+2026-10-23 调度调整：录音期间只保存分片并持久排队，逐字稿转写在停止录音后执行；已有转写任务也让位于新录音，AI 功能保留。本文的分片算法与 lease 约束继续适用，最新采集优先及恢复规则见 [录音核心](recording-core.md#录音优先2026-10-23)。本轮尚未做真机长录验收。
+
 ## 背景与问题
 
 项目当前在 iPhone 15 Pro / iOS 26.5 使用 SenseVoice Small Q8_0、Silero VAD 和 CAM++。既有真机长录音表明，健康流水线处理一分钟音频约需 7.7–9.0 秒；但 2026-08-23 至 2026-08-24 的一次 51 分 48 秒真机样本恢复处理中，剩余 33 分 48 秒音频耗时 39 分 38 秒，约为每分钟音频 70.4 秒。

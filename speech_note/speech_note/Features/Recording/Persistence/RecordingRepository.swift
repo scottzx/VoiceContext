@@ -855,6 +855,8 @@ actor RecordingRepository {
 
     @discardableResult
     func reconcileChunksFromDisk(recordingID: UUID) throws -> [AudioChunk] {
+        let indexedChunks = try index.chunks(recordingID: recordingID)
+        var indexedIDs = Set(indexedChunks.map(\.id))
         let candidateFolderNames = [
             recordingID.uuidString.lowercased(),
             recordingID.uuidString.uppercased(),
@@ -877,7 +879,6 @@ actor RecordingRepository {
         ) else { return [] }
 
         struct DiscoveredFile {
-            let url: URL
             let relativePath: String
             let chunkID: UUID
             let creationDate: Date
@@ -894,6 +895,9 @@ actor RecordingRepository {
             let filename = fileURL.deletingPathExtension().lastPathComponent
             let uuidString = filename.hasPrefix("audio-") ? String(filename.dropFirst(6)) : filename
             guard let chunkID = UUID(uuidString: uuidString) else { continue }
+            // The journal/index owns the original sample and wall-clock bounds,
+            // including VAD silence, pauses, retention and continuation metadata.
+            guard !indexedIDs.contains(chunkID) else { continue }
 
             let fullPath = fileURL.path
             let relPath: String
@@ -914,21 +918,15 @@ actor RecordingRepository {
                 }
             }
 
-            let date = (try? fileURL.resourceValues(forKeys: [.creationDateKey]).creationDate)
-                ?? (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
-                ?? Date()
-
-            var frames: Int64 = 0
-            if let af = try? AVAudioFile(forReading: fileURL, commonFormat: .pcmFormatFloat32, interleaved: false) {
-                frames = Int64(af.length)
-            }
-            if frames <= 0 {
-                let size = (try? fileManager.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.int64Value ?? 0
-                frames = max(1600, size * 4)
-            }
+            guard let date = (try? fileURL.resourceValues(forKeys: [.creationDateKey]).creationDate)
+                ?? (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate),
+                  let audioFile = try? AVAudioFile(forReading: fileURL, commonFormat: .pcmFormatFloat32, interleaved: false),
+                  audioFile.length > 0,
+                  audioFile.processingFormat.sampleRate > 0 else { continue }
+            let frames = Int64((Double(audioFile.length) / audioFile.processingFormat.sampleRate * 16_000).rounded())
+            guard frames > 0 else { continue }
 
             discovered.append(DiscoveredFile(
-                url: fileURL,
                 relativePath: relPath,
                 chunkID: chunkID,
                 creationDate: date,
@@ -942,24 +940,35 @@ actor RecordingRepository {
             if lhs.minuteBaseSample != rhs.minuteBaseSample {
                 return lhs.minuteBaseSample < rhs.minuteBaseSample
             }
+            if lhs.creationDate != rhs.creationDate {
+                return lhs.creationDate < rhs.creationDate
+            }
             return lhs.relativePath < rhs.relativePath
         }
 
-        let recording = try index.recording(id: recordingID)
-        let recordingStartedAt = recording?.startedAt ?? discovered.first?.creationDate ?? Date()
-
-        var currentSampleCursor: Int64 = 0
+        var currentSampleCursor = indexedChunks.map(\.endSample).max() ?? 0
         var newAddedChunks: [AudioChunk] = []
 
         for item in discovered {
+            guard indexedIDs.insert(item.chunkID).inserted else { continue }
             let startSample = max(currentSampleCursor, item.minuteBaseSample)
             let endSample = startSample + item.frameCount
             currentSampleCursor = endSample
 
-            let startSec = Double(startSample) / 16_000.0
-            let endSec = Double(endSample) / 16_000.0
-            let startedAt = recordingStartedAt.addingTimeInterval(startSec)
-            let endedAt = recordingStartedAt.addingTimeInterval(endSec)
+            // An unjournaled crash tail has only minute-level sample placement
+            // and filesystem dates. Salvage readable audio without pretending
+            // those estimates reproduce its original capture timing.
+            let startedAt = item.creationDate
+            let endedAt = startedAt.addingTimeInterval(Double(item.frameCount) / 16_000)
+            try openGap(RecordingGap(
+                id: item.chunkID,
+                recordingID: recordingID,
+                reason: .recoveredAfterTermination,
+                startSample: startSample,
+                endSample: endSample,
+                startedAt: startedAt,
+                endedAt: endedAt
+            ), at: Date())
 
             let chunkToSave = AudioChunk(
                 id: item.chunkID,
@@ -973,11 +982,6 @@ actor RecordingRepository {
             )
             try addChunk(chunkToSave, at: endedAt)
             newAddedChunks.append(chunkToSave)
-        }
-
-        let allChunks = (try index.chunks(recordingID: recordingID)).sorted { $0.startSample < $1.startSample }
-        if let lastChunk = allChunks.last, let recording = try index.recording(id: recordingID), recording.state != .complete {
-            try changeState(recordingID: recordingID, to: .processing, endedAt: lastChunk.endedAt, at: Date())
         }
 
         return newAddedChunks

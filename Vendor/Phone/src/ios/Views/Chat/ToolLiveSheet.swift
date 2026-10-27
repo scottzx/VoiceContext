@@ -39,7 +39,7 @@ private let _maxRenderedLineLength = 2000
 /// Shell tool output can legitimately contain ANSI color codes, NUL bytes,
 /// partial UTF-8 and absurdly long single lines — feeding that directly
 /// into `Text` / `NSAttributedString` can hang CoreText for many seconds.
-fileprivate func sanitizeForDisplay(_ text: String) -> String {
+func sanitizeForDisplay(_ text: String) -> String {
     guard !text.isEmpty else { return text }
 
     var out = String()
@@ -186,6 +186,43 @@ fileprivate func attributedShellLine(_ text: String) -> AttributedString {
         ], range: m.range)
     }
     return AttributedString(mutable)
+}
+
+/// Shared command and output text, without terminal or device actions.
+struct ShellToolTextContent: View {
+    let command: String
+    let chunks: [(id: Int, text: String)]
+    var fontSize: CGFloat = 13
+    let commandColor: Color
+    let outputColor: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("$ \(command)")
+                .font(.system(size: fontSize, weight: .bold, design: .monospaced))
+                .foregroundColor(commandColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+
+            ForEach(chunks, id: \.id) { chunk in
+                Text(attributedShellLine(chunk.text))
+                    .font(.system(size: fontSize, design: .monospaced))
+                    .foregroundColor(outputColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+            }
+        }
+    }
+
+    static func chunkedLines(_ text: String, chunkSize: Int = 40) -> [(id: Int, text: String)] {
+        let sanitized = sanitizeForDisplay(text)
+        let allLines = sanitized.split(separator: "\n", omittingEmptySubsequences: false)
+        return stride(from: 0, to: max(allLines.count, 1), by: chunkSize).map { i in
+            let end = min(i + chunkSize, allLines.count)
+            return (i, allLines[i..<end].joined(separator: "\n"))
+        }
+    }
 }
 
 /// Wrapper that @ObservedObject's the ChatMessage so SwiftUI re-evaluates
@@ -1548,12 +1585,7 @@ struct ToolLiveSheet: View {
 
     /// Splits text into chunks of `chunkSize` lines for virtualized rendering.
     private static func chunkedLines(_ text: String, chunkSize: Int = 40) -> [(id: Int, text: String)] {
-        let sanitized = sanitizeForDisplay(text)
-        let allLines = sanitized.split(separator: "\n", omittingEmptySubsequences: false)
-        return stride(from: 0, to: max(allLines.count, 1), by: chunkSize).map { i in
-            let end = min(i + chunkSize, allLines.count)
-            return (i, allLines[i..<end].joined(separator: "\n"))
-        }
+        ShellToolTextContent.chunkedLines(text, chunkSize: chunkSize)
     }
 
     /// [T-ios-tool-result-lazy-render] Initial number of chunks to reveal for a
@@ -1650,20 +1682,8 @@ struct ToolLiveSheet: View {
                     // view reveal only an initial window and grow on scroll.
                     let chunks = isLive ? allChunks : Array(allChunks.prefix(max(revealedChunkCount, 1)))
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("$ \(cmd)")
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 14)
-                            .padding(.top, 14)
-
-                        ForEach(chunks, id: \.id) { chunk in
-                            Text(attributedShellLine(chunk.text))
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundColor(accentColor)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 14)
-                        }
+                        ShellToolTextContent(command: cmd, chunks: chunks,
+                                             commandColor: .white, outputColor: accentColor)
 
                         if !isLive {
                             loadMoreFooter(totalChunks: allChunks.count)

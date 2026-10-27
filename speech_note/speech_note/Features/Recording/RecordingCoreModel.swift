@@ -170,7 +170,6 @@ final class RecordingCoreModel {
     private let transcriptionScheduler: ForegroundTranscriptionScheduler
     private let backgroundTranscriptionContinuation: BackgroundTranscriptionContinuation
     private let diagnostics = RecordingDiagnostics()
-    private let realtimeTranscription: RealtimeTranscriptionPreferences
     private var refreshTask: Task<Void, Never>?
     private var pendingSpeakerFinalizationIDs: Set<UUID> = []
     private var speakerFinalizationDrainTask: Task<Void, Never>?
@@ -185,8 +184,7 @@ final class RecordingCoreModel {
         coordinator customCoordinator: RecordingSessionCoordinator? = nil,
         voiceprintArchiveURL: URL? = nil,
         voiceprintKeyProvider: any VoiceprintArchiveKeyProviding = VoiceprintArchiveKeyStore.shared,
-        voiceprintSyncConfiguration: EncryptedVoiceprintiCloudMirror.Configuration = .init(),
-        realtimeTranscription: RealtimeTranscriptionPreferences = RealtimeTranscriptionPreferences()
+        voiceprintSyncConfiguration: EncryptedVoiceprintiCloudMirror.Configuration = .init()
     ) throws {
         repository = try RecordingRepository(rootURL: rootURL)
         let transcriptStore = try TranscriptDocumentStore(rootURL: rootURL)
@@ -205,7 +203,6 @@ final class RecordingCoreModel {
         self.voiceprintArchiveURL = try voiceprintArchiveURL ?? VoiceprintArchiveStorage.defaultURL()
         self.voiceprintKeyProvider = voiceprintKeyProvider
         self.voiceprintSyncConfiguration = voiceprintSyncConfiguration
-        self.realtimeTranscription = realtimeTranscription
         coordinator = customCoordinator ?? RecordingSessionCoordinator(repository: repository, capture: recorder)
         let lifecycleGate = InferenceLifecycleGate()
         let inferenceService = SenseVoiceInferenceService(lifecycleGate: lifecycleGate)
@@ -479,13 +476,22 @@ final class RecordingCoreModel {
         }
         recorder.onMeteringUpdate = { [weak self] metrics in
             Task { @MainActor [weak self] in
-                self?.inputLevel = metrics.displayLevel
+                guard let self, !self.isInBackground,
+                      UIApplication.shared.applicationState == .active else { return }
+                self.inputLevel = metrics.displayLevel
             }
         }
         coordinator.onChunkClosed = { [weak self] recordingID, chunkID in
             guard let self else { return }
-            guard self.realtimeTranscription.isEnabled else { return }
+            // Queue durable work only. The capture gate defers execution until
+            // capture ends, including a stop from the Lock Screen controls.
             await self.enqueueChunkTranscription(recordingID: recordingID, chunkID: chunkID)
+        }
+        coordinator.onCaptureStopped = { [weak self] recordingID in
+            guard let self else { return }
+            await self.enqueueClosedChunksForTranscription(recordingID: recordingID)
+            await self.transcriptionScheduler.setCaptureActive(self.isStartingRecording || self.showsSessionChrome)
+            await self.backgroundTranscriptionContinuation.beginUserInitiatedTask()
         }
         #if VOICE_AGENT_FUSION
         let wakeWorker = meetingWakeWorker
@@ -597,7 +603,13 @@ final class RecordingCoreModel {
             return
         }
         isStartingRecording = true
-        defer { isStartingRecording = false }
+        defer {
+            isStartingRecording = false
+            Task { [weak self] in
+                guard let self else { return }
+                await self.transcriptionScheduler.setCaptureActive(self.isStartingRecording || self.showsSessionChrome)
+            }
+        }
         notice = nil
         // Refuse capture without an explicit start; still request permission only
         // after that click. Denied permission must not create a failed Recording.
@@ -612,6 +624,11 @@ final class RecordingCoreModel {
             return
         }
         do {
+            await transcriptionScheduler.setCaptureActive(true)
+            if let reason = RecordingAudioBridge.recordingStartBlockReason {
+                notice = reason
+                return
+            }
             let normalizedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines)
             let recordingID = try await coordinator.start(
                 isMeeting: isMeeting,
@@ -644,7 +661,13 @@ final class RecordingCoreModel {
             return
         }
         isStartingRecording = true
-        defer { isStartingRecording = false }
+        defer {
+            isStartingRecording = false
+            Task { [weak self] in
+                guard let self else { return }
+                await self.transcriptionScheduler.setCaptureActive(self.isStartingRecording || self.showsSessionChrome)
+            }
+        }
         notice = nil
         let permission = await MicrophoneAccess.requestPermissionIfNeeded()
         guard permission == .granted else {
@@ -657,6 +680,11 @@ final class RecordingCoreModel {
             return
         }
         do {
+            await transcriptionScheduler.setCaptureActive(true)
+            if let reason = RecordingAudioBridge.recordingStartBlockReason {
+                notice = reason
+                return
+            }
             let resumedID = try await coordinator.startAppend(recordingID: recordingID)
             activeRecordingID = resumedID
         } catch {
@@ -689,12 +717,8 @@ final class RecordingCoreModel {
 
     func stop() async {
         do {
-            // The final under-60s chunk is closed inside coordinator.stop()
-            // (via onChunkClosed). Realtime mode enqueues there; otherwise
-            // every closed chunk is queued here after capture ends.
-            let recordingID = try await coordinator.stop()
-            await enqueueClosedChunksForTranscription(recordingID: recordingID)
-            await backgroundTranscriptionContinuation.beginUserInitiatedTask()
+            // The shared completion callback also covers Lock Screen stops.
+            _ = try await coordinator.stop()
         } catch {
             notice = error.localizedDescription
         }
@@ -2502,6 +2526,9 @@ final class RecordingCoreModel {
         case .background:
             coordinator.applicationEnteredBackground()
             isInBackground = true
+            recorder.setMeteringUpdatesEnabled(false)
+            stopPolling()
+            inputLevel = nil
             let continuedProcessingRequested = backgroundTranscriptionContinuation.isExecutionRequested
             Task { [inferenceService, transcriptionScheduler] in
                 await transcriptionScheduler.enteredBackground()
@@ -2512,13 +2539,17 @@ final class RecordingCoreModel {
         case .active:
             coordinator.applicationBecameActive()
             isInBackground = false
+            recorder.setMeteringUpdatesEnabled(true)
+            if showsSessionChrome { startPolling() }
+            Task { await refresh() }
             enqueueSpeakerFinalization(recordingIDs: [])
             Task { [inferenceService, transcriptionScheduler] in
                 await inferenceService.enteredForeground()
                 await transcriptionScheduler.enteredForeground()
             }
-        default:
-            break
+        case .inactive:
+            recorder.setMeteringUpdatesEnabled(false)
+            stopPolling()
         }
     }
 
@@ -3093,8 +3124,6 @@ final class RecordingCoreModel {
         if enabled {
             if !captureIsActive || isInBackground {
                 reason = "请在前台会议录音中开启会中助手"
-            } else if !realtimeTranscription.isEnabled {
-                reason = "请先在录音设置中开启实时转写"
             } else if !TranscriptionModelStore.isReady {
                 reason = "请先下载并准备本地转写模型"
             } else if !MeetingWakeModelResources.isReady {
@@ -3377,11 +3406,16 @@ final class RecordingCoreModel {
             inputLevel = nil
             sessionProgress = nil
         }
-        Task { await refresh() }
+        Task { [weak self] in
+            guard let self else { return }
+            await self.transcriptionScheduler.setCaptureActive(self.isStartingRecording || self.showsSessionChrome)
+            await self.refresh()
+        }
     }
 
     private func startPolling() {
-        guard refreshTask == nil else { return }
+        guard !isInBackground, UIApplication.shared.applicationState == .active,
+              refreshTask == nil else { return }
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
@@ -3396,22 +3430,33 @@ final class RecordingCoreModel {
     }
 
     private func refresh() async {
+        guard !isInBackground, UIApplication.shared.applicationState == .active else { return }
         do {
-            recordings = try await repository.recordings()
+            let loadedRecordings = try await repository.recordings()
                 .sorted { $0.startedAt > $1.startedAt }
-            audioDurations = try await repository.allAudioDurations()
+            let loadedDurations = try await repository.allAudioDurations()
+            guard !isInBackground, UIApplication.shared.applicationState == .active,
+                  !Task.isCancelled else { return }
+            recordings = loadedRecordings
+            audioDurations = loadedDurations
         } catch {
             notice = "读取记录列表失败：\(error.localizedDescription)"
         }
 
         do {
-            folderCatalog = try await folderCatalogStore.load()
+            let loadedCatalog = try await folderCatalogStore.load()
+            guard !isInBackground, UIApplication.shared.applicationState == .active,
+                  !Task.isCancelled else { return }
+            folderCatalog = loadedCatalog
         } catch {
             notice = "读取文件夹失败：\(error.localizedDescription)"
         }
 
         do {
-            clientCatalog = try await clientCatalogStore.load()
+            let loadedCatalog = try await clientCatalogStore.load()
+            guard !isInBackground, UIApplication.shared.applicationState == .active,
+                  !Task.isCancelled else { return }
+            clientCatalog = loadedCatalog
         } catch {
             // Client catalog load failure does not block session
         }
@@ -3421,15 +3466,18 @@ final class RecordingCoreModel {
             recordingID = await latestRecordingID()
         }
         guard let recordingID else {
-            snapshot = Snapshot(
+            let loadedSnapshot = Snapshot(
                 appliedEventCount: await repository.appliedEventCount,
                 schemaVersion: await repository.schemaVersion
             )
+            guard !isInBackground, UIApplication.shared.applicationState == .active,
+                  !Task.isCancelled else { return }
+            snapshot = loadedSnapshot
             return
         }
         do {
             let recording = try await repository.recording(id: recordingID)
-            snapshot = Snapshot(
+            let loadedSnapshot = Snapshot(
                 recording: recording,
                 chunks: try await repository.chunks(recordingID: recordingID)
                     .sorted { $0.startSample < $1.startSample },
@@ -3444,16 +3492,22 @@ final class RecordingCoreModel {
                 let lastSample = RecordingPresentationProgress.lastFinalizedSample(
                     segmentEndSamples: transcript?.segments.map(\.endSample) ?? []
                 )
-                sessionProgress = RecordingPresentationProgress.resolve(
+                let loadedProgress = RecordingPresentationProgress.resolve(
                     recording: recording,
                     jobs: jobs,
                     liveCaptureState: coordinator.captureState,
                     lastFinalizedTranscriptSample: lastSample,
                     sampleRate: AACSegmentRecorder.targetSampleRate
                 )
+                guard !isInBackground, UIApplication.shared.applicationState == .active,
+                      !Task.isCancelled else { return }
+                sessionProgress = loadedProgress
             } else if activeRecordingID == nil {
                 sessionProgress = nil
             }
+            guard !isInBackground, UIApplication.shared.applicationState == .active,
+                  !Task.isCancelled else { return }
+            snapshot = loadedSnapshot
         } catch {
             notice = "读取索引失败：\(error.localizedDescription)"
         }

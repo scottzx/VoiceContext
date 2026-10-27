@@ -38,14 +38,17 @@ def package_ipa(app: Path, output: Path, bundle_id: str) -> dict:
         payload = work / "Payload"
         payload.mkdir()
         staged_app = payload / app.name
-        subprocess.run(["ditto", str(app), str(staged_app)], check=True)
+        subprocess.run(["ditto", "--norsrc", "--noextattr", str(app), str(staged_app)], check=True)
         subprocess.run(["codesign", "--verify", "--deep", "--strict", str(staged_app)], check=True)
         temporary_ipa = work / "app.ipa"
         subprocess.run(
-            ["ditto", "-c", "-k", "--keepParent", str(payload), str(temporary_ipa)],
+            ["ditto", "-c", "-k", "--norsrc", "--noextattr", "--keepParent", str(payload), str(temporary_ipa)],
             check=True,
         )
         with zipfile.ZipFile(temporary_ipa) as archive:
+            for member in archive.infolist():
+                if any(part.startswith("._") or part == "__MACOSX" for part in member.filename.split("/")):
+                    raise ValueError(f"IPA contains AppleDouble metadata: {member.filename}")
             bad_file = archive.testzip()
             if bad_file:
                 raise ValueError(f"IPA CRC check failed: {bad_file}")
@@ -55,6 +58,17 @@ def package_ipa(app: Path, output: Path, bundle_id: str) -> dict:
             executable = archive.getinfo(prefix + info["CFBundleExecutable"])
             if not (executable.external_attr >> 16) & stat.S_IXUSR:
                 raise ValueError("Packaged app executable lost its execute permission")
+            # Ordinary ZIP extraction exposes extra files that ditto may consume as metadata.
+            extracted = work / "extracted"
+            archive.extractall(extracted)
+            for member in archive.infolist():
+                mode = member.external_attr >> 16
+                if mode:
+                    (extracted / member.filename).chmod(stat.S_IMODE(mode))
+        subprocess.run(
+            ["codesign", "--verify", "--deep", "--strict", str(extracted / "Payload" / app.name)],
+            check=True,
+        )
         digest = hashlib.sha256()
         with temporary_ipa.open("rb") as source:
             for chunk in iter(lambda: source.read(1024 * 1024), b""):

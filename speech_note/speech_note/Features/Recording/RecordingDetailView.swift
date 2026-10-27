@@ -10,6 +10,7 @@ private typealias SpeakerBubbleGroup = RecordingDetailPlaybackPresentation.Speak
 struct RecordingDetailScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     let model: RecordingCoreModel
     let recordingID: UUID
     /// Optional list-search query used to highlight / scroll to the first hit.
@@ -377,7 +378,8 @@ struct RecordingDetailScreen: View {
             .overlay(alignment: .bottom) {
                 copiedToastOverlay
             }
-            .task(id: recordingID) {
+            .task(id: scenePhase == .active ? recordingID : nil) {
+                guard scenePhase == .active else { return }
                 await handlePeriodicRefresh()
             }
             .onDisappear {
@@ -429,6 +431,7 @@ struct RecordingDetailScreen: View {
             if timelinePlayer.isPlaying { scrollToActiveSegment(using: proxy) }
         }
         .onChange(of: timelinePlayer.seekRevision) { _, _ in
+            guard scenePhase == .active else { return }
             isFollowingPlayback = true
             scrollToActiveSegment(using: proxy, force: true)
         }
@@ -447,6 +450,7 @@ struct RecordingDetailScreen: View {
     private func handlePeriodicRefresh() async {
         while !Task.isCancelled {
             await loadDetail()
+            guard !Task.isCancelled else { return }
             let sleepSeconds: Double = isActivelyTranscribing ? 1 : 3
             try? await Task.sleep(for: .seconds(sleepSeconds))
         }
@@ -1002,6 +1006,25 @@ struct RecordingDetailScreen: View {
                     .foregroundStyle(YimaDesign.Color.recordingText)
             }
         }
+        .confirmationDialog(
+            "选择此句说话人",
+            isPresented: Binding(
+                get: { speakerAssignmentSegmentID != nil },
+                set: { if !$0 { speakerAssignmentSegmentID = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: speakerAssignmentSegmentID
+        ) { segmentID in
+            ForEach(editableSpeakerOptions) { option in
+                Button(option.title) {
+                    speakerAssignmentSegmentID = nil
+                    Task { await assignSpeaker(segmentID: segmentID, speaker: option.speaker) }
+                }
+            }
+            Button("取消", role: .cancel) { speakerAssignmentSegmentID = nil }
+        } message: { _ in
+            Text("仅显示已识别的单人说话人。")
+        }
     }
 
     private func failedJobsWarningBanner(failedJobs: [RecordingJob]) -> some View {
@@ -1085,6 +1108,8 @@ struct RecordingDetailScreen: View {
             return "设备发热较严重，已暂缓以保护硬件；降温后将自动恢复转写。"
         case "deferredUntilForeground":
             return "应用曾退至后台，回到前台后将继续转写。"
+        case "deferredUntilRecordingStops":
+            return "优先保存当前录音，停止录音后继续转写。"
         case "deferredUntilMetalAvailable":
             return "Metal 图形加速通道排队中，稍候自动执行。"
         case "lockedPendingPurchase":
@@ -1103,15 +1128,11 @@ struct RecordingDetailScreen: View {
                 .symbolEffect(.pulse, isActive: !reduceMotion && model.presentation == .recording)
             VStack(alignment: .leading, spacing: 2) {
                 Text(LocalizedStringKey(model.presentation == .paused ? "录音已暂停"
-                    : modelDownload.state == .ready ? "正在录音并实时转写…" : "正在录音"))
+                    : modelDownload.state == .ready ? "正在录音，结束后转写" : "正在录音"))
                     .font(YimaDesign.Typography.metadata.weight(.medium))
                     .foregroundStyle(YimaDesign.Color.ink)
-                if let progress = model.sessionProgress, modelDownload.state == .ready {
-                    Text(RecordingStatusStyle.progressDetailText(for: progress, isInBackground: model.isInBackground))
-                        .font(YimaDesign.Typography.compactMetadata.monospacedDigit())
-                        .foregroundStyle(YimaDesign.Color.muted)
-                } else if modelDownload.state == .ready {
-                    Text("每约 60 秒增量转写已关闭分片")
+                if modelDownload.state == .ready {
+                    Text("录音结束后自动转写已保存音频")
                         .font(YimaDesign.Typography.compactMetadata)
                         .foregroundStyle(YimaDesign.Color.muted)
                 }
@@ -1278,24 +1299,6 @@ struct RecordingDetailScreen: View {
                 } label: {
                     Label("复制单句文本", systemImage: "doc.on.doc")
                 }
-            }
-            .confirmationDialog(
-                "选择此句说话人",
-                isPresented: Binding(
-                    get: { speakerAssignmentSegmentID == bubble.id },
-                    set: { if !$0 { speakerAssignmentSegmentID = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                ForEach(editableSpeakerOptions) { option in
-                    Button(option.title) {
-                        speakerAssignmentSegmentID = nil
-                        Task { await assignSpeaker(segmentID: bubble.id, speaker: option.speaker) }
-                    }
-                }
-                Button("取消", role: .cancel) { speakerAssignmentSegmentID = nil }
-            } message: {
-                Text("仅显示已识别的单人说话人。")
             }
             .id(bubble.id)
 
@@ -1973,20 +1976,30 @@ struct RecordingDetailScreen: View {
     }
 
     private func loadDetail() async {
+        guard scenePhase == .active, !Task.isCancelled else { return }
         do {
-            if !didLoadMemo, let recording = try await model.repository.recording(id: recordingID) {
+            let recording = !didLoadMemo ? try await model.repository.recording(id: recordingID) : nil
+            let refreshedChunks = try await model.repository.chunks(recordingID: recordingID)
+                .sorted { $0.startSample < $1.startSample }
+            let refreshedAsset = try await model.importedAudioAsset(recordingID: recordingID)
+            let refreshedRanges = try await model.processingRanges(recordingID: recordingID)
+            let refreshedProgress = try await model.presentationProgress(for: recordingID)
+            let refreshedJobs = (try? await model.repository.jobs(recordingID: recordingID)) ?? []
+            let refreshedAttachments = (try? await model.recordingAttachments(recordingID: recordingID)) ?? []
+            guard scenePhase == .active, !Task.isCancelled else { return }
+
+            if !didLoadMemo, let recording {
                 let memo = recording.memo ?? ""
                 memoText = memo
                 savedMemoText = memo
                 didLoadMemo = true
             }
-            chunks = try await model.repository.chunks(recordingID: recordingID)
-                .sorted { $0.startSample < $1.startSample }
-            importedAsset = try await model.importedAudioAsset(recordingID: recordingID)
-            processingRanges = try await model.processingRanges(recordingID: recordingID)
-            progress = try await model.presentationProgress(for: recordingID)
-            jobs = (try? await model.repository.jobs(recordingID: recordingID)) ?? []
-            attachments = (try? await model.recordingAttachments(recordingID: recordingID)) ?? []
+            chunks = refreshedChunks
+            importedAsset = refreshedAsset
+            processingRanges = refreshedRanges
+            progress = refreshedProgress
+            jobs = refreshedJobs
+            attachments = refreshedAttachments
 
             let currentPlayableChunks = playableChunks
             let currentChunkIDs = currentPlayableChunks.map(\.id)
@@ -2002,15 +2015,20 @@ struct RecordingDetailScreen: View {
             }
             loadError = nil
         } catch {
+            guard scenePhase == .active, !Task.isCancelled else { return }
             loadError = "无法读取录音详情：\(error.localizedDescription)"
             return
         }
 
         do {
-            transcript = try await model.transcript(recordingID: recordingID)
-            speakerBindings = (try? await model.speakerBindings(recordingID: recordingID)) ?? []
+            let refreshedTranscript = try await model.transcript(recordingID: recordingID)
+            let refreshedBindings = (try? await model.speakerBindings(recordingID: recordingID)) ?? []
+            guard scenePhase == .active, !Task.isCancelled else { return }
+            transcript = refreshedTranscript
+            speakerBindings = refreshedBindings
             transcriptError = nil
         } catch {
+            guard scenePhase == .active, !Task.isCancelled else { return }
             transcript = nil
             transcriptError = "文稿无法读取：\(error.localizedDescription)"
         }
@@ -2055,6 +2073,7 @@ struct RecordingDetailScreen: View {
     }
 
     private func scrollToSearchHit(using proxy: ScrollViewProxy) {
+        guard scenePhase == .active else { return }
         guard !didAutoScrollToHit else { return }
         guard contentTab == .transcript else { return }
         let target = resolvedScrollTarget
@@ -2068,6 +2087,7 @@ struct RecordingDetailScreen: View {
     }
 
     private func scrollToActiveSegment(using proxy: ScrollViewProxy, force: Bool = false) {
+        guard scenePhase == .active else { return }
         guard isFollowingPlayback else { return }
         guard contentTab == .transcript else { return }
         guard let transcript else { return }

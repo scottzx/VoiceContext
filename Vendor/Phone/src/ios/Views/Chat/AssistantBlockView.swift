@@ -76,7 +76,8 @@ struct AssistantBlockView: View {
                                 commandStartTime: commandStartTime, onStop: onStop,
                                 toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
 
-                if let taskId = extractSubagentTaskId(from: block.content),
+                if message.remoteAssistantName == nil,
+                   let taskId = extractSubagentTaskId(from: block.content),
                    let req = SubagentApprovalStore.shared.request(for: taskId) {
                     if req.status == .pending {
                         HStack(spacing: 5) {
@@ -230,6 +231,7 @@ struct ToolCapsuleView: View {
     /// `JSONSerialization` there is exactly the per-frame work the menu gate
     /// exists to avoid. Other tools and `memory_get` never match.
     private var isRevocableMemoryWrite: Bool {
+        guard !vm.isDSH else { return false }
         guard case .memoryTool(let action) = block.kind, action == "memory_write" else { return false }
         guard let args = block.toolInputArgs else { return false }
         return !args.isEmpty
@@ -253,6 +255,7 @@ struct ToolCapsuleView: View {
     }
 
     private var a2aDelivery: GroupA2ADeliveryPayload? {
+        guard !vm.isDSH else { return nil }
         guard case .subagentTool(let action, _) = block.kind,
               action == "send_agent_message" else { return nil }
         return GroupA2ADeliveryPayload.decode(block.toolInputArgs)
@@ -270,18 +273,19 @@ struct ToolCapsuleView: View {
     /// snapshot text as a fallback source).
     private var toolDetailsClipboard: String {
         // Tool name from the block kind.
-        let toolName: String
+        let nativeToolName: String
         switch block.kind {
-        case .shellTool(let command): toolName = vm.isDSH ? command : "shell_execute"
-        case .fileReadTool:  toolName = "file_read"
-        case .fileWriteTool: toolName = "file_write"
-        case .fileEditTool:  toolName = "file_edit"
-        case .browserTool:   toolName = "browser_use"
-        case .readImageTool: toolName = "read_image"
-        case .memoryTool:    toolName = "memory"
-        case .subagentTool(let a, _): toolName = a
-        case .text, .thinking, .info: toolName = "unknown"
+        case .shellTool: nativeToolName = "shell_execute"
+        case .fileReadTool:  nativeToolName = "file_read"
+        case .fileWriteTool: nativeToolName = "file_write"
+        case .fileEditTool:  nativeToolName = "file_edit"
+        case .browserTool:   nativeToolName = "browser_use"
+        case .readImageTool: nativeToolName = "read_image"
+        case .memoryTool:    nativeToolName = "memory"
+        case .subagentTool(let a, _): nativeToolName = a
+        case .text, .thinking, .info: nativeToolName = "unknown"
         }
+        let toolName = block.remoteToolName ?? nativeToolName
 
         // Pretty-print the input JSON when possible; otherwise emit raw.
         let inputBlock: String

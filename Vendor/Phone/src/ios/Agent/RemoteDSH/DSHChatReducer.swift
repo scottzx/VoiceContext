@@ -12,6 +12,8 @@ struct DSHChatReducer {
     private var activeAttempt: String?
     private var activeTurn: Int?
     private var activeStep: Int?
+    private var activeStartedAfterSequence = -1
+    private var settlementIdentities: [Int: String] = [:]
     private var nextChunkIndex = 0
     private var streamRevision = 0
     private var blocks: [Int: [String: Any]] = [:]
@@ -46,6 +48,7 @@ struct DSHChatReducer {
                 activeAttempt = id
                 activeTurn = attempt["turn"] as? Int
                 activeStep = attempt["step"] as? Int
+                activeStartedAfterSequence = attempt["startedAfterSeq"] as? Int ?? nextCursor
                 nextChunkIndex = attempt["nextIndex"] as? Int ?? 0
                 for record in DSHWire.array(attempt["stream"]) { applyCompactRecord(record) }
             }
@@ -54,6 +57,9 @@ struct DSHChatReducer {
             guard let sequence = event["seq"] as? Int else { throw DSHClientError.invalidResponse }
             if sequence <= cursor { return }
             guard sequence == cursor + 1 else { throw DSHClientError.historyGap }
+            if isActiveSettlement(event), let attempt = activeAttempt {
+                settlementIdentities[sequence] = "live-" + attempt
+            }
             events[sequence] = event
             cursor = sequence
             if event["type"] as? String == "step/end" { clearAttempt() }
@@ -101,7 +107,6 @@ struct DSHChatReducer {
                                                      reasoningEffort: selected["reasoningEffort"] as? String)
         }
         var rows: [(Int, DSHChatEntry)] = []
-        var rowTurns: [String: Int] = [:]
         var toolResults: [String: DSHChatEntry] = [:]
         var openTurn: Int?
         var committedActiveAttempt = false
@@ -119,25 +124,29 @@ struct DSHChatReducer {
             if type == "user/message" {
                 let source = DSHWire.object(data["source"])
                 guard ["user", "user-question-reply"].contains(source["kind"] as? String ?? "") else { continue }
-                rows.append((sequence, entry(message: data, sequence: sequence, role: .user)))
+                rows.append((sequence, entry(message: data, identity: "event-\(sequence)", role: .user)))
             } else if type == "assistant/message" || type == "assistant/attempt" {
                 var message = DSHWire.object(data["message"])
+                var indexedContent: [(Int, [String: Any])]?
                 if message.isEmpty, let records = data["stream"] as? [[String: Any]] {
                     var partial = DSHChatReducer(sessionID: sessionID)
                     for record in records { partial.applyCompactRecord(record) }
-                    message = ["id": "attempt-\(sequence)", "content": partial.blocks.keys.sorted().compactMap { partial.blocks[$0] }]
+                    indexedContent = partial.blocks.keys.sorted().compactMap { index in
+                        partial.blocks[index].map { (index, $0) }
+                    }
+                    message = ["content": indexedContent?.map { $0.1 } ?? []]
                 }
                 if !message.isEmpty {
-                    let row = entry(message: message, sequence: sequence, role: .assistant)
+                    let row = entry(message: message, identity: settlementIdentities[sequence] ?? "event-\(sequence)",
+                                    role: .assistant, turn: data["turn"] as? Int, step: data["step"] as? Int,
+                                    indexedContent: indexedContent)
                     rows.append((sequence, row))
-                    rowTurns[row.id] = data["turn"] as? Int
                 }
-                if activeAttempt != nil, data["turn"] as? Int == activeTurn, data["step"] as? Int == activeStep {
-                    committedActiveAttempt = true
-                }
+                if isActiveSettlement(event) { committedActiveAttempt = true }
             } else if type == "tool/result" {
                 let message = DSHWire.object(data["message"]).isEmpty ? data : DSHWire.object(data["message"])
-                var row = entry(message: message, sequence: sequence, role: .tool)
+                var row = entry(message: message, identity: "event-\(sequence)", role: .tool,
+                                turn: data["turn"] as? Int ?? openTurn, step: data["step"] as? Int)
                 row.toolName = data["toolName"] as? String ?? message["toolCallId"] as? String
                 row.toolOutput = row.text
                 row.toolStatus = message["isError"] as? Bool == true ? "error" : "completed"
@@ -156,19 +165,27 @@ struct DSHChatReducer {
                 if let output = toolResults[tool.id] {
                     tool.status = output.toolStatus ?? "completed"
                     tool.output = output.text
-                } else if openTurn == nil || rowTurns[row.id] != openTurn {
+                } else if openTurn == nil || row.turn != openTurn {
                     tool.status = "unknown"
                     tool.output = NSLocalizedString("执行结果未确认", comment: "DSH remote chat")
                 }
                 return tool
             }
+            var tools = row.tools.makeIterator()
+            row.parts = row.parts.map { originalPart in
+                var part = originalPart
+                if case .tool = part.kind, let tool = tools.next() {
+                    part.kind = .tool(tool)
+                }
+                return part
+            }
             if let first = row.tools.first { row.toolStatus = first.status }
             return row
         }
         if activeAttempt != nil, !committedActiveAttempt {
-            var live = entry(message: ["id": "live-" + (activeAttempt ?? ""),
-                                       "content": blocks.keys.sorted().compactMap { blocks[$0] }],
-                             sequence: cursor + 1, role: .assistant)
+            let content = blocks.keys.sorted().compactMap { index in blocks[index].map { (index, $0) } }
+            var live = entry(message: [:], identity: "live-" + (activeAttempt ?? ""), role: .assistant,
+                             turn: activeTurn, step: activeStep, indexedContent: content)
             live.isStreaming = !streamSettled
             result.entries.append(live)
             result.isRunning = true
@@ -183,19 +200,34 @@ struct DSHChatReducer {
         }
     }
 
-    private func entry(message: [String: Any], sequence: Int, role: DSHChatRole) -> DSHChatEntry {
-        let content = DSHWire.array(message["content"])
-        var row = DSHChatEntry(id: message["id"] as? String ?? "event-\(sequence)", role: role)
+    private func entry(message: [String: Any], identity: String, role: DSHChatRole,
+                       turn: Int? = nil, step: Int? = nil,
+                       indexedContent: [(Int, [String: Any])]? = nil) -> DSHChatEntry {
+        let indexed = indexedContent ?? DSHWire.array(message["content"]).enumerated().map { ($0.offset, $0.element) }
+        let content = indexed.map { $0.1 }
+        var row = DSHChatEntry(id: identity, role: role)
+        row.sourceMessageID = message["id"] as? String
+        row.turn = turn
+        row.step = step
         row.text = DSHWire.text(content)
         row.reasoning = content.compactMap { $0["type"] as? String == "reasoning" ? $0["text"] as? String : nil }.joined()
-        let tools = content.filter { $0["type"] as? String == "tool-call" }
-        row.tools = tools.compactMap { tool in
-            guard let id = tool["id"] as? String, let name = tool["name"] as? String else { return nil }
-            return DSHChatTool(id: id, name: name, arguments: tool["arguments"] as? String ?? "")
+        for (index, block) in indexed {
+            let kind: DSHChatPartKind
+            switch block["type"] as? String {
+            case "text": kind = .text(block["text"] as? String ?? "")
+            case "reasoning": kind = .reasoning(block["text"] as? String ?? "")
+            case "tool-call":
+                guard let id = block["id"] as? String, let name = block["name"] as? String else { continue }
+                let tool = DSHChatTool(id: id, name: name, arguments: block["arguments"] as? String ?? "")
+                row.tools.append(tool)
+                kind = .tool(tool)
+            default: continue
+            }
+            row.parts.append(DSHChatPart(id: identity + ":part-\(index)", kind: kind))
         }
-        if let tool = tools.first {
-            row.toolName = tool["name"] as? String
-            row.toolOutput = tool["arguments"] as? String
+        if let tool = row.tools.first {
+            row.toolName = tool.name
+            row.toolOutput = tool.arguments
             row.toolStatus = "running"
         }
         return row
@@ -205,6 +237,7 @@ struct DSHChatReducer {
         activeAttempt = nil
         activeTurn = nil
         activeStep = nil
+        activeStartedAfterSequence = -1
         nextChunkIndex = 0
         blocks = [:]
         streamSettled = false
@@ -218,6 +251,7 @@ struct DSHChatReducer {
             activeAttempt = id
             activeTurn = frame["turn"] as? Int
             activeStep = frame["step"] as? Int
+            activeStartedAfterSequence = frame["startedAfterSeq"] as? Int ?? cursor
             streamRevision = revision
             return
         }
@@ -234,6 +268,14 @@ struct DSHChatReducer {
             if DSHWire.object(frame["outcome"])["kind"] as? String == "abandoned" { clearAttempt() }
             else { streamSettled = true }
         } else { throw DSHClientError.invalidResponse }
+    }
+
+    private func isActiveSettlement(_ event: [String: Any]) -> Bool {
+        guard activeAttempt != nil, let sequence = event["seq"] as? Int,
+              sequence > activeStartedAfterSequence,
+              ["assistant/message", "assistant/attempt"].contains(event["type"] as? String ?? "") else { return false }
+        let data = DSHWire.object(event["data"])
+        return data["turn"] as? Int == activeTurn && data["step"] as? Int == activeStep
     }
 
     private mutating func applyCompactRecord(_ record: [String: Any]) {

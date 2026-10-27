@@ -19,6 +19,7 @@
 | 首次导入提交 | `02956e269857e32335b16b4d5e6af999ff14c6e1` |
 | 首次导入的 OpenMinis 基线 | `09fc199928de0f26685e766c34e6d541c7a69e5a` |
 | 当前 iOS 合入基线 | `4ef29002e88db1e20e462ec2ff46916e8a7dcb45`（v1.13；保留本地适配）|
+| 最新已拉取的上游 main | `1a71df0f381cefde80bf912b723de6f9831bc177`（v1.15 + Tailscale 修复；2026-10-27 拉取，未合入）|
 
 首次导入包含 fork 的 AgentKit、硬件桥、云端子 Agent 等定制，不能将首次导入 SHA 改写成 OpenMinis SHA，也不能直接用官方源码覆盖现有目录。上游基线来自导入提交与原 `upstream/main` 的共同祖先；它不表示已跟上当前最新上游。
 
@@ -96,3 +97,27 @@ python3 tools/integration/verify_fusion.py --variant production
 本次为产品 fork 定制，不推进上游基线。`ContentView` 增加融合版会话来源切换；`AIChatView` / `AIChatViewModel` 保留本机路径并接入独立 `Agent/RemoteDSH` 客户端和展示 driver。消息列表复用原有渲染，远程工具使用只读详情，避免访问本地终端/文件；缓存增加来源、origin 与草稿别名隔离。生成器显式加入新增源文件。
 
 后续合并上游时保留这些分派、无本机执行/持久化副作用的边界及页面长表达式拆分。网络只使用 Tailscale；服务元数据和受保护凭据不属于上游同步数据。设计与验证见[接入设计](../design/dsh-remote-chat.md)和[实施检查](../testing/dsh-remote-chat.md)。
+
+## 2026-10-27 上游拉取记录（v1.14 / v1.15）
+
+已执行 `git fetch --no-tags openminis main`，`openminis/main` 由 `b4c0661` 前进到 `1a71df0`：
+
+- 上游提交：`1a71df0f381cefde80bf912b723de6f9831bc177`，`Merge pull request #495 from OpenMinis/android-1.15-tailscale-fix`。
+- 上游提交时间：2026-10-26 19:16:16 +08:00；这是提交时间，不是本次拉取时间。
+- 相对当前 iOS 合入基线 `4ef29002e88db1e20e462ec2ff46916e8a7dcb45`（v1.13）新增 36 个提交（其中非合并提交 33 个），基线仍是上游 main 的祖先。
+- 上游整仓差异 2806 个文件，新增 721,547 行、删除 95,948 行，含大量 Android 变更；此数字不代表融合产品需要移植的范围。
+- iOS 相关范围（`src/ios`、`src/apple`、`src/shared`、`deps`、`scripts`）差异 1055 个文件，新增 472,094 行、删除 83,641 行；其中 `src/ios` 单独 952 个文件。
+
+主要上游内容：
+
+- **v1.14**（`b4c0661`）：iOS 聊天 / 同步 / Intents / 本地化、Providers 与 thinking、备份恢复、iSH 推进到 1.14、脚本与依赖修复。
+- **v1.15**（`6eda552`）：iOS Agent / 聊天 / ask-user / 分享与界面、Providers / OAuth / thinking / 语音、备份恢复、iSH 推进到 1.15（含 AOJIT 运行时与沙箱）、构建脚本修复；Android 侧为 1.15 beta。
+- **Tailscale 出口节点修复**（`ee718c6`、`b518a7c`）：Go 侧网络行为调整，Android 版本 1.15。
+
+与本地融合的交叉点（尚未合入，仅评估）：
+
+- 上游对 `src/ios` 做了大规模目录拆分：`Views/Chat/AIChatView.swift` → `Views/Chat/AIChatView/*`、`Views/ContentView.swift` → `Views/ContentView/*`、`Views/Chat/SelectableMarkdownView.swift` → `Views/Chat/Markdown/*`。这些正是本产品 DSH 远程聊天、免费转写下载入口、美食地图融合所依赖的文件，冲突面比 v1.13 大。
+- 以 v1.13 基线为参照，上游改动的 971 个 iOS 共享路径中，本地与上游一致 212 个、本地已定制 81 个、本地尚不存在 678 个（即上游新增或改名后的新路径）。
+- 原生依赖：iSH 子模块由 `3f6384c` 前进到 `0fd17a1`（v1.15），设备静态库需重建；`deps/proot` 同步前进（Android 运行时，不在 iOS 范围）；`deps/rclone-mobile` 源码新增 51 个文件，`go.mod` 升级到 Go 1.25.5 并引入 `tailscale/wireguard-go`，rclone 仍固定 `v1.75.0`，`build_ish.sh` / `build_ffmpeg.sh` / `build_lame.sh` / `build_rclone_ios.sh` 均已修改。`src/ios/AOJITRestore` 为上游新增目录，内容是 Android 恢复用 APK，融合时需确认是否纳入。
+
+本次只执行 fetch 并核对差异，没有 merge、cherry-pick 或覆盖 `Vendor/Phone`；产品实际合入基线仍为 `4ef29002e88db1e20e462ec2ff46916e8a7dcb45`，`SOURCE_SNAPSHOT.json` 未改动。工作区分支 `codex/dsh-remote-chat` 上未提交的修改全部保留（拉取前后 `git status` 一致）。后续合入按上面「合入更新」流程执行。

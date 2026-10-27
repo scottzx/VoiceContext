@@ -334,6 +334,8 @@ final class AssistantBlock: Identifiable, ObservableObject {
     var toolUseId: String?
     /// Serialized JSON of the tool input arguments (for introspection in SessionMemoryView, etc.).
     var toolInputArgs: String?
+    /// Original remote tool name, independent of the native presentation kind.
+    var remoteToolName: String?
     /// Streaming file content for file_write tool (live content as it arrives).
     @Published var streamingFileContent: String?
     /// Whether a thinking block is expanded (persisted across cell reuse).

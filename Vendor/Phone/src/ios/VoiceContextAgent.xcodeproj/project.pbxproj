@@ -720,9 +720,9 @@
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>INFOPLIST_FILE</key>
 				<string>AgentWidget/Info.plist</string>
 				<key>SKIP_INSTALL</key>
@@ -3870,9 +3870,9 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>INFOPLIST_FILE</key>
 				<string>FileProvider/Info.plist</string>
 				<key>SKIP_INSTALL</key>
@@ -4332,7 +4332,6 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>5337E727578178C12FD1B2BD</string>
 				<string>C4D2C1B9CD178CA35151792C</string>
 				<string>650F962D6BF61F5B9E3149F4</string>
-				<string>6A9BC796FC8302ED88C6423E</string>
 				<string>74F60D9C7FF41168D2FC24F3</string>
 				<string>A3E840EFBADA576CFFFB0FA4</string>
 				<string>06A1E86753823D237F900C78</string>
@@ -6889,9 +6888,9 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>INFOPLIST_FILE</key>
 				<string>FileProvider/Info.plist</string>
 				<key>SKIP_INSTALL</key>
@@ -7513,9 +7512,9 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>INFOPLIST_FILE</key>
 				<string>ShareExtension/Info.plist</string>
 				<key>SKIP_INSTALL</key>
@@ -11035,9 +11034,9 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>INFOPLIST_FILE</key>
 				<string>ShareExtension/Info.plist</string>
 				<key>SKIP_INSTALL</key>
@@ -12945,7 +12944,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>buildSettings</key>
 			<dict>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>FRAMEWORK_SEARCH_PATHS</key>
@@ -12997,7 +12996,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
 				<string>YES</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>OTHER_SWIFT_FLAGS</key>
 				<string></string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -13900,9 +13899,9 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>INFOPLIST_FILE</key>
 				<string>AgentWidget/Info.plist</string>
 				<key>SKIP_INSTALL</key>
@@ -15763,7 +15762,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>buildSettings</key>
 			<dict>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>FRAMEWORK_SEARCH_PATHS</key>
@@ -15815,7 +15814,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
 				<string>YES</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>OTHER_SWIFT_FLAGS</key>
 				<string></string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -16117,7 +16116,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>buildSettings</key>
 			<dict>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY</key>
 				<string>YES</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -16125,7 +16124,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>SWIFT_VERSION</key>
 				<string>5.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>1</string>
 				<key>TEST_TARGET_NAME</key>
@@ -16247,7 +16246,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY</key>
 				<string>YES</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>SWIFT_VERSION</key>
 				<string>5.0</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
@@ -16273,7 +16272,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-noteTests</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 			</dict>
 			<key>name</key>
 			<string>Debug</string>
@@ -16547,7 +16546,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>buildSettings</key>
 			<dict>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY</key>
 				<string>YES</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -16555,7 +16554,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>SWIFT_VERSION</key>
 				<string>5.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>1</string>
 				<key>TEST_TARGET_NAME</key>
@@ -16718,7 +16717,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY</key>
 				<string>YES</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>SWIFT_VERSION</key>
 				<string>5.0</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
@@ -16744,7 +16743,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-noteTests</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 			</dict>
 			<key>name</key>
 			<string>Release</string>
@@ -16902,7 +16901,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note.VoiceRecording</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY</key>
 				<string>YES</string>
 				<key>SDKROOT</key>
@@ -16936,7 +16935,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>1</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>ENABLE_HARDENED_RUNTIME</key>
@@ -17113,7 +17112,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>buildSettings</key>
 			<dict>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>SUPPORTED_PLATFORMS</key>
@@ -17121,7 +17120,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note.RecordWidget</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
 				<string>一芥伙伴录音</string>
 				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
@@ -17249,7 +17248,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>32491BB7CFC9F5FE15DBA1D8</string>
 				<string>20084A2E9B2C3B63C7AF42E0</string>
 				<string>6691A4BA6DC0D39FD33AD129</string>
-				<string>9031E36F98811845C65F6F2B</string>
 				<string>E40B64FB49C52C874D208B90</string>
 				<string>B4E0E2190C3B8F200AC4F6CD</string>
 				<string>6A3667DA0B1B701550D97FF5</string>
@@ -17311,7 +17309,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>buildSettings</key>
 			<dict>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>SUPPORTED_PLATFORMS</key>
@@ -17319,7 +17317,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note.RecordWidget</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
 				<string>一芥伙伴录音</string>
 				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
@@ -17440,7 +17438,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note.VoiceRecording</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY</key>
 				<string>YES</string>
 				<key>SDKROOT</key>
@@ -17474,7 +17472,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>1</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>ENABLE_HARDENED_RUNTIME</key>
@@ -19059,24 +19057,6 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>650F962D6BF61F5B9E3149F4</string>
-		</dict>
-		<key>6A9BC796FC8302ED88C6423E</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>path</key>
-			<string>../../../../speech_note/speech_note/Features/Transcription/RealtimeTranscriptionPreferences.swift</string>
-			<key>sourceTree</key>
-			<string>SOURCE_ROOT</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-		</dict>
-		<key>9031E36F98811845C65F6F2B</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>6A9BC796FC8302ED88C6423E</string>
 		</dict>
 		<key>74F60D9C7FF41168D2FC24F3</key>
 		<dict>
@@ -21059,7 +21039,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>buildSettings</key>
 			<dict>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>FRAMEWORK_SEARCH_PATHS</key>
@@ -21111,7 +21091,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
 				<string>YES</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>OTHER_SWIFT_FLAGS</key>
 				<string></string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -21189,9 +21169,9 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>INFOPLIST_FILE</key>
 				<string>$(SRCROOT)/../../../../Integration/MinisShareDev.Info.plist</string>
 				<key>SKIP_INSTALL</key>
@@ -21245,9 +21225,9 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>INFOPLIST_FILE</key>
 				<string>$(SRCROOT)/../../../../Integration/AgentWidgetExtensionDev.Info.plist</string>
 				<key>SKIP_INSTALL</key>
@@ -21301,9 +21281,9 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>INFOPLIST_FILE</key>
 				<string>$(SRCROOT)/../../../../Integration/MinisFileProviderDev.Info.plist</string>
 				<key>SKIP_INSTALL</key>
@@ -21349,7 +21329,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note.dev.VoiceRecording</string>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY</key>
 				<string>YES</string>
 				<key>SDKROOT</key>
@@ -21383,7 +21363,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>1</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>ENABLE_HARDENED_RUNTIME</key>
@@ -21415,7 +21395,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>buildSettings</key>
 			<dict>
 				<key>MARKETING_VERSION</key>
-				<string>1.0</string>
+				<string>2.0</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>3HJ3R6SXAL</string>
 				<key>SUPPORTED_PLATFORMS</key>
@@ -21423,7 +21403,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>YiJie.speech-note.dev.RecordWidget</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>7</string>
+				<string>9</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
 				<string>一芥伙伴录音 Dev</string>
 				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>

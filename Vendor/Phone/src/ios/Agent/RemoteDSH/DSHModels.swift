@@ -25,6 +25,63 @@ struct DSHChatTool: Identifiable {
     var output: String?
 }
 
+/// The numbered text envelope returned by DSH read_file, not a general XML format.
+struct DSHFileReadOutput {
+    let path: String
+    let content: String
+    let notices: String?
+
+    static func parse(_ raw: String) -> DSHFileReadOutput? {
+        let text = raw.replacingOccurrences(of: "\r\n", with: "\n")
+        let header = "</path>\n<type>file</type>\n<content>"
+        guard text.hasPrefix("<path>"), let headerEnd = text.range(of: header),
+              let closing = text.range(of: "\n</content>", options: .backwards),
+              closing.lowerBound >= headerEnd.upperBound,
+              text[closing.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let path = String(text[text.index(text.startIndex, offsetBy: 6)..<headerEnd.lowerBound])
+        guard !path.isEmpty, !path.contains("\n") else { return nil }
+        var body = String(text[headerEnd.upperBound..<closing.lowerBound])
+        if body.hasPrefix("\n") { body.removeFirst() }
+        if body.isEmpty { return DSHFileReadOutput(path: path, content: "", notices: nil) }
+
+        var content: [String] = []
+        var notices: [String] = []
+        var previousLine: Int?
+        for line in body.components(separatedBy: "\n") {
+            if let colon = line.firstIndex(of: ":"), !line[..<colon].isEmpty,
+               line[..<colon].unicodeScalars.allSatisfy({ (48...57).contains($0.value) }),
+               let number = Int(line[..<colon]), number > 0 {
+                let afterColon = line.index(after: colon)
+                guard afterColon == line.endIndex || line[afterColon] == " ", notices.isEmpty else { return nil }
+                if let previousLine {
+                    guard previousLine < Int.max, number == previousLine + 1 else { return nil }
+                }
+                let start = afterColon == line.endIndex ? afterColon : line.index(after: afterColon)
+                content.append(String(line[start...]))
+                previousLine = number
+            } else {
+                // A numbered file's trailing EOF/truncation metadata stays visible separately.
+                // Mixed or unnumbered formats fall back to the original literal tool result.
+                guard previousLine != nil else { return nil }
+                notices.append(line)
+            }
+        }
+        return DSHFileReadOutput(path: path, content: content.joined(separator: "\n"),
+                                 notices: notices.isEmpty ? nil : notices.joined(separator: "\n"))
+    }
+}
+
+enum DSHChatPartKind {
+    case text(String)
+    case reasoning(String)
+    case tool(DSHChatTool)
+}
+
+struct DSHChatPart: Identifiable {
+    let id: String
+    var kind: DSHChatPartKind
+}
+
 struct DSHChatEntry: Identifiable {
     let id: String
     var role: DSHChatRole
@@ -35,6 +92,11 @@ struct DSHChatEntry: Identifiable {
     var toolOutput: String?
     var toolStatus: String?
     var tools: [DSHChatTool] = []
+    /// Authoritative display order; aggregate fields above remain available to existing callers.
+    var parts: [DSHChatPart] = []
+    var turn: Int?
+    var step: Int?
+    var sourceMessageID: String?
 }
 
 enum DSHInteractionKind { case approval, questions }

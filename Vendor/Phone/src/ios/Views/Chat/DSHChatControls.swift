@@ -3,38 +3,53 @@ import SwiftUI
 /// Compact remote state above the unchanged native composer.
 struct DSHConversationControls: View {
     @ObservedObject var vm: AIChatViewModel
+    var onHeightChange: (CGFloat) -> Void
     @State private var presentedInteraction: DSHInteraction?
+
+    private var showsControls: Bool {
+        vm.isLoadingSession || !vm.dshConnected || vm.isProcessing
+            || vm.dshHasMore || !vm.dshInteractions.isEmpty
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            Divider()
-            HStack(spacing: YimaDesign.Space.sm) {
-                Text(vm.dshStatusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                Spacer(minLength: 0)
-                if vm.dshHasMore {
-                    Button("更早消息") { vm.loadOlderDSHMessages() }
+            if showsControls {
+                Divider()
+                HStack(spacing: YimaDesign.Space.sm) {
+                    Text(vm.dshStatusText.isEmpty ? AppLocalized("正在连接…") : vm.dshStatusText)
                         .font(.caption)
-                        .frame(minHeight: YimaDesign.Layout.hitTarget)
-                        .disabled(vm.dshControlBusy || !vm.dshConnected)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                    if vm.dshHasMore {
+                        Button("更早消息") { vm.loadOlderDSHMessages() }
+                            .font(.caption)
+                            .frame(minHeight: YimaDesign.Layout.hitTarget)
+                            .disabled(vm.dshControlBusy || !vm.dshConnected)
+                    }
+                    if let interaction = vm.dshInteractions.first {
+                        Button("处理请求") { presentedInteraction = interaction }
+                            .font(.subheadline.weight(.medium))
+                            .frame(minHeight: YimaDesign.Layout.hitTarget)
+                            .disabled(vm.dshControlBusy || !vm.dshConnected)
+                            .accessibilityHint(interaction.title)
+                    } else if !vm.dshConnected && !vm.isLoadingSession && vm.hasCompletedInitialLoad {
+                        Button("重新连接") { Task { await vm.loadDSHSession() } }
+                            .font(.subheadline)
+                            .frame(minHeight: YimaDesign.Layout.hitTarget)
+                    }
                 }
-                if let interaction = vm.dshInteractions.first {
-                    Button("处理请求") { presentedInteraction = interaction }
-                        .font(.subheadline.weight(.medium))
-                        .frame(minHeight: YimaDesign.Layout.hitTarget)
-                        .disabled(vm.dshControlBusy || !vm.dshConnected)
-                        .accessibilityHint(interaction.title)
-                } else if !vm.dshConnected && !vm.isLoadingSession {
-                    Button("重新连接") { Task { await vm.loadDSHSession() } }
-                        .font(.subheadline)
-                        .frame(minHeight: YimaDesign.Layout.hitTarget)
-                }
+                .padding(.horizontal, YimaDesign.Layout.listInset)
+                .padding(.vertical, YimaDesign.Space.xs)
             }
-            .padding(.horizontal, YimaDesign.Layout.listInset)
         }
         .background(YimaDesign.Color.canvas)
+        .accessibilityIdentifier("dshConversationControls")
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            onHeightChange(height)
+        }
         .sheet(item: $presentedInteraction) { interaction in
             NavigationStack {
                 DSHInteractionView(vm: vm, interaction: interaction)
@@ -321,28 +336,155 @@ struct DSHReadOnlyToolSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var copied = false
 
+    private var input: String? {
+        guard let value = block.toolInputArgs?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        return Self.formattedJSON(value) ?? value
+    }
+
+    private var shellCommand: String? {
+        guard case .shellTool = block.kind,
+              let data = block.toolInputArgs?.data(using: .utf8),
+              let args = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let command = args["command"] as? String,
+              !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return command
+    }
+
+    private var fileOutput: DSHFileReadOutput? {
+        guard case .fileReadTool = block.kind else { return nil }
+        return DSHFileReadOutput.parse(block.content)
+    }
+
+    private var resultContent: String { fileOutput?.content ?? block.content }
+
+    private var usesMarkdown: Bool {
+        switch block.kind {
+        case .fileReadTool(let path):
+            if fileOutput == nil, block.content.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<path>") {
+                return false
+            }
+            let filePath = fileOutput?.path ?? path
+            return ["md", "markdown"].contains((filePath as NSString).pathExtension.lowercased())
+        case .shellTool, .fileWriteTool, .fileEditTool: return false
+        default: return true
+        }
+    }
+
+    private var resultMarkdown: String {
+        if let json = Self.formattedJSON(resultContent) { return "```json\n" + json + "\n```" }
+        return AIChatViewModel.dshDisplayText(resultContent)
+    }
+
+    private var emptyResult: String {
+        switch block.toolStatus {
+        case .success: return AppLocalized("工具已完成，没有输出。")
+        case .failed(let message): return message
+        case .cancelled: return AppLocalized("已取消")
+        case .running, .streaming: return AppLocalized("等待远程工具输出…")
+        case nil: return AppLocalized("执行结果未确认")
+        }
+    }
+
+    @ViewBuilder
+    private var resultView: some View {
+        if usesMarkdown || Self.formattedJSON(resultContent) != nil {
+            let markdown = resultMarkdown
+            SelectableMarkdownView(
+                markdown: markdown,
+                cachedContent: MarkdownContent(prepareMarkdownForRender(markdown)),
+                blockId: block.id
+            )
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(resultContent)
+                .font(.system(size: FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize), design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func shellResultView(_ command: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ShellToolTextContent(
+                command: sanitizeForDisplay(command),
+                chunks: ShellToolTextContent.chunkedLines(block.content),
+                fontSize: FontSettings.shared.scaledMessage(13),
+                commandColor: YimaDesign.Color.ink,
+                outputColor: YimaDesign.Color.ink
+            )
+            if block.content.isEmpty {
+                Text(emptyResult).font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+            }
+        }
+        .textSelection(.enabled)
+        .padding(.bottom, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(YimaDesign.Color.grouped)
+        .clipShape(RoundedRectangle(cornerRadius: YimaDesign.Radius.control))
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                Text(block.content.isEmpty ? AppLocalized("等待远程工具输出…") : block.content)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(YimaDesign.Layout.listInset)
+                VStack(alignment: .leading, spacing: YimaDesign.Layout.sectionGap) {
+                    if let command = shellCommand {
+                        shellResultView(command)
+                    }
+                    if let input {
+                        DisclosureGroup(shellCommand == nil ? AppLocalized("输入") : AppLocalized("原始参数")) {
+                            Text(input)
+                                .font(.system(size: FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize), design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .font(YimaDesign.Typography.section)
+                        .frame(minHeight: YimaDesign.Layout.hitTarget)
+                    }
+                    if shellCommand == nil {
+                        VStack(alignment: .leading, spacing: YimaDesign.Space.sm) {
+                            Text("结果").font(YimaDesign.Typography.section)
+                            if resultContent.isEmpty {
+                                Text(emptyResult).font(.body).foregroundStyle(.secondary)
+                            } else {
+                                resultView
+                            }
+                            if let notices = fileOutput?.notices {
+                                Text(notices).font(.caption).foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(YimaDesign.Layout.listInset)
             }
-            .navigationTitle(block.toolDescription)
+            .navigationTitle(block.toolSummary ?? block.toolDescription)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(copied ? "已复制" : "复制") {
-                        UIPasteboard.general.string = block.content
+                        UIPasteboard.general.string = [input, block.content.isEmpty ? nil : block.content]
+                            .compactMap { $0 }.joined(separator: "\n\n")
                         copied = true
                     }
+                    .disabled(input == nil && block.content.isEmpty)
                 }
             }
         }
         .tint(YimaDesign.Color.ink)
         .appFontScale()
+        .environment(\.chatSessionId, nil)
+        .environment(\.openURL, OpenURLAction { url in
+            ["http", "https"].contains(url.scheme?.lowercased() ?? "") ? .systemAction : .discarded
+        })
+    }
+
+    private static func formattedJSON(_ text: String) -> String? {
+        guard let data = text.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data),
+              let formatted = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) else { return nil }
+        return String(data: formatted, encoding: .utf8)
     }
 }

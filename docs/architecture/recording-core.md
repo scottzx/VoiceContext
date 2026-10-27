@@ -82,9 +82,17 @@ AVAudioEngine tap 只复制输入 PCM 到有界队列。串行 writer 负责计�
 
 ### 生命周期
 
-`RecordingSessionCoordinator` 是 capture、repository 和录音展示状态的协调边界。进入后台不停止 capture；系统中断将采集状态迁移为 `interrupted` 并打开 gap，结束时关闭 gap并按系统 `shouldResume` 决定是否恢复。锁屏停止通过 `MPRemoteCommandCenter.stopCommand` 暴露，最终可用性由真机验收。
+`RecordingSessionCoordinator` 是 capture、repository 和录音展示状态的协调边界。进入后台不停止 capture；系统中断将采集状态迁移为 `interrupted` 并打开 gap。中断结束且用户未暂停时，前后台均尝试恢复，只有麦克风恢复成功才关闭 gap；恢复失败保留具体 NSError 诊断。缺少结束通知时，回前台或用户手动继续仍可尝试激活，由系统判断麦克风是否可用。Live Activity 停止与 App 内停止共用收尾回调，完成尾段保存、补齐转写队列并按原后台设置申请执行许可；Remote Command 默认关闭。
 
 采集生命周期与处理生命周期彼此独立。用户停止后，coordinator 在最后 AudioChunk 和 journal 安全关闭后立即释放当前麦克风会话；该 Recording 的 VAD、转写、聚类或文档任务可以继续运行，但不得继续占用 `activeCaptureRecordingID`，也不得阻止新的 Recording 开始。
+
+### 录音优先（2026-10-23）
+
+- 用户确认只延后录音逐字稿转写，其他 AI 功能与会中语音指令保留。采集、暂停或中断期间，新旧录音的 ASR 队列均暂停执行；停止后继续。已关闭分片仍及时持久化并排队。
+- 起录只等待 ASR admission 关闭及 lease 失效，不等待无法及时取消的 native worker；旧 worker 保留到退出，阻止迟到提交及另一个 ASR 并发。快速起录后立即停止，也会在旧 worker 退出后续跑队列。
+- 锁屏或场景非 active 时暂停详情轮询、电平回调及自动滚动，回前台恢复；说话人选择使用一个共享弹窗，避免每句挂载独立弹窗。
+- 磁盘扫描保留已索引分片的真实时间、采样边界、pin 与 continuation 字段。只恢复可读未知尾块，文件日期和分钟级位置是近似值，使用 `recoveredAfterTermination` gap 标记；不可读文件保留给诊断，不用压缩字节数猜造时长。
+- 已完成主机回归、真实 AAC/SQLite/journal 恢复回归与 iPhoneOS 编译；尚未完成本轮真机锁屏长录、来电及路由变化验收。
 
 ## 数据与接口
 
@@ -134,7 +142,7 @@ AVAudioEngine tap 只复制输入 PCM 到有界队列。串行 writer 负责计�
 - 发布基线要求 iOS 18；当前可用真机若高于 iOS 18，只能形成补充证据，不能替代 iOS 18 兼容性结论。
 - 已知行为：session 激活/去激活会各产生一个 sample 0 / 末样本位置的 routeChange 点状 gap，属诚实记录，无需修复。
 - 用户暂停在当前绝对样本位置打开 `userPause` gap，恢复时在新的当前样本位置关闭；即使 pause 期间没有新增音频样本，该 gap 仍是下游 utterance carry 不可跨越的显式连续性边界。
-- 强杀时进行中的 chunk 按设计不可恢复（只有 closed chunk 入 journal），孤儿 m4a 会留在磁盘；是否在恢复时清理或 salvage 留待后续版本评估。
+- 强杀时进行中的 chunk 不保证可恢复。可读孤儿 m4a 会尽力恢复并标记近似时序；不可读文件保留在磁盘供完整性诊断，不声称已保存完整尾段。
 - 60 秒轮转把未关闭检查点窗口从约 5 分钟降至最多约 60 秒，但不等于承诺当前 active chunk 必然可恢复；发布验收必须分别报告 closed chunk 恢复与 orphan/salvage 行为。
 
 ## PM 追踪关系

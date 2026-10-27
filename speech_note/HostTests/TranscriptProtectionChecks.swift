@@ -19,7 +19,8 @@ struct TranscriptProtectionChecks {
         try await finalizationUsesLatestAndPreservesLegitimateEmptyCreation()
         try await TranscriptLegacyCompatibilityChecks.run()
         try await FreeTranscriptionCompatibilityChecks.run()
-        print("Transcript protection host checks passed (11 groups, including legacy and free transcription compatibility).")
+        try await RecordingTranscriptionDeferralChecks.run()
+        print("Transcript protection host checks passed (including capture deferral, legacy and free transcription compatibility).")
     }
 
     static let startedAt = Date(timeIntervalSince1970: 1_788_000_000)

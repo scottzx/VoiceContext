@@ -233,46 +233,135 @@ extension AIChatViewModel {
             isProcessing = false
             return
         }
+        // Match local chat: one assistant turn owns its interleaved text and tools.
+        // A user/question reply breaks the group even when the server keeps its turn ID.
+        var groups: [(key: String, role: ChatMessageRole, entries: [DSHChatEntry])] = []
+        var userBoundary = "window"
+        var seenEntries: Set<String> = []
+        for entry in snapshot.entries where seenEntries.insert(entry.id).inserted {
+            if entry.role == .user {
+                userBoundary = entry.id
+                groups.append(("user:\(entry.id)", .user, [entry]))
+            } else {
+                let key = entry.turn.map { "turn:\($0):after:\(userBoundary)" } ?? "row:\(entry.id)"
+                if groups.last?.key == key, groups.last?.role == .assistant {
+                    groups[groups.count - 1].entries.append(entry)
+                } else {
+                    groups.append((key, .assistant, [entry]))
+                }
+            }
+        }
         var next: [ChatMessage] = []
         var blocksChanged = false
+        var visibleMessageKeys: Set<String> = []
+        var visibleRawKeys: Set<String> = []
         var visibleBlockIDs: Set<String> = []
-        for entry in snapshot.entries {
-            let message = dshMessages[entry.id] ?? ChatMessage(
-                role: entry.role == .user ? .user : .assistant, content: ""
-            )
-            dshMessages[entry.id] = message
+        var usedNativeBlockIDs: Set<UUID> = []
+        var usedMessageIDs: Set<UUID> = []
+        func prepareNonThinkingBlock(_ id: String) {
+            // Settlement may compact part indices. Never mutate a shared
+            // thinking alias into text/a tool, or reuse an already placed block.
+            if let block = dshBlocks[id], block.kind == .thinking || usedNativeBlockIDs.contains(block.id) {
+                dshBlocks.removeValue(forKey: id)
+            }
+        }
+        for group in groups {
+            let key = "group:" + group.key
+            // Entry aliases preserve a visible turn when pagination prepends its
+            // first step or user boundary, changing the group's canonical key.
+            let candidates = group.entries.compactMap { dshMessages["entry:" + $0.id] } + [dshMessages[key]].compactMap { $0 }
+            let message = candidates.first { !usedMessageIDs.contains($0.id) }
+                ?? ChatMessage(role: group.role, content: "")
+            usedMessageIDs.insert(message.id)
+            dshMessages[key] = message
+            visibleMessageKeys.insert(key)
+            for entry in group.entries {
+                let alias = "entry:" + entry.id
+                dshMessages[alias] = message
+                visibleMessageKeys.insert(alias)
+            }
             message.remoteAssistantName = dshService?.name ?? "DSH"
-            if dshRawTexts[entry.id] != entry.text {
-                dshRawTexts[entry.id] = entry.text
-                message.content = Self.dshDisplayText(entry.text)
+            let rawText = group.entries.filter { $0.role != .tool }.map(\.text).joined(separator: "\n\n")
+            let messageRawKey = "message:" + message.id.uuidString
+            visibleRawKeys.insert(messageRawKey)
+            if dshRawTexts[messageRawKey] != rawText {
+                dshRawTexts[messageRawKey] = rawText
+                message.content = Self.dshDisplayText(rawText)
             }
             var blocks: [AssistantBlock] = []
-            if entry.role == .tool {
-                let id = entry.id + ":tool"
-                let block = dshToolBlock(id, name: entry.toolName ?? AppLocalized("远程工具"),
-                                         content: entry.toolOutput ?? entry.text, status: entry.toolStatus ?? "unknown")
+            var reasoningRun: [(id: String, text: String)] = []
+            func flushReasoning() {
+                guard let first = reasoningRun.first else { return }
+                // Parts are complete snapshots, not deltas. Rebuild the run so
+                // replay and reconnect cannot append the same thinking twice.
+                let text = reasoningRun.map(\.text).joined(separator: "\n\n")
+                let existing = reasoningRun.compactMap { dshBlocks[$0.id] }.first {
+                    $0.kind == .thinking && !usedNativeBlockIDs.contains($0.id)
+                }
+                dshBlocks[first.id] = existing ?? AssistantBlock(kind: .thinking, content: text)
+                let block = dshBlock(first.id, kind: .thinking, content: text)
+                block.thinkingContentBuffer = text
+                usedNativeBlockIDs.insert(block.id)
+                // Keep every member as an alias when pagination prepends an
+                // earlier reasoning part, preserving the visible block state.
+                for part in reasoningRun { dshBlocks[part.id] = block }
                 blocks.append(block)
-                visibleBlockIDs.insert(id)
-            } else if entry.role == .assistant {
-                if !entry.reasoning.isEmpty {
-                    let id = entry.id + ":thinking"
-                    let block = dshBlock(id, kind: .thinking, content: entry.reasoning)
-                    block.thinkingContentBuffer = entry.reasoning
+                reasoningRun.removeAll(keepingCapacity: true)
+            }
+            for entry in group.entries where entry.role != .user {
+                if entry.role == .tool {
+                    flushReasoning()
+                    let id = "orphan:" + entry.id
+                    guard visibleBlockIDs.insert(id).inserted else { continue }
+                    let tool = DSHChatTool(id: entry.id, name: entry.toolName ?? AppLocalized("远程工具"),
+                                          arguments: "", status: entry.toolStatus ?? "unknown",
+                                          output: entry.toolOutput ?? entry.text)
+                    prepareNonThinkingBlock(id)
+                    let block = dshToolBlock(id, tool: tool)
+                    usedNativeBlockIDs.insert(block.id)
                     blocks.append(block)
-                    visibleBlockIDs.insert(id)
+                    continue
                 }
-                if !entry.text.isEmpty {
-                    let id = entry.id + ":text"
-                    blocks.append(dshBlock(id, kind: .text, content: message.content))
-                    visibleBlockIDs.insert(id)
-                }
-                for tool in entry.tools {
-                    let id = entry.id + ":tool:" + tool.id
-                    let content = [tool.arguments, tool.output ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
-                    blocks.append(dshToolBlock(id, name: tool.name, content: content, status: tool.status))
-                    visibleBlockIDs.insert(id)
+                let parts = Self.dshParts(for: entry)
+                for (index, part) in parts.enumerated() {
+                    guard visibleBlockIDs.insert(part.id).inserted else { continue }
+                    switch part.kind {
+                    case .text(let text):
+                        flushReasoning()
+                        guard !text.isEmpty else { continue }
+                        prepareNonThinkingBlock(part.id)
+                        let rawKey = "part:" + part.id
+                        visibleRawKeys.insert(rawKey)
+                        let display: String
+                        if dshRawTexts[rawKey] == text, let existing = dshBlocks[part.id] {
+                            display = existing.content
+                        } else {
+                            dshRawTexts[rawKey] = text
+                            display = Self.dshDisplayText(text)
+                        }
+                        let block = dshBlock(part.id, kind: .text, content: display)
+                        let streaming = entry.isStreaming && index == parts.count - 1
+                        if streaming {
+                            if block.cachedMarkdown != nil { block.cachedMarkdown = nil }
+                            if block.cachedAttributedString != nil { block.cachedAttributedString = nil }
+                        } else if block.cachedAttributedString == nil {
+                            cacheAttributedString(for: block)
+                        }
+                        usedNativeBlockIDs.insert(block.id)
+                        blocks.append(block)
+                    case .reasoning(let text):
+                        guard !text.isEmpty else { continue }
+                        reasoningRun.append((part.id, text))
+                    case .tool(let tool):
+                        flushReasoning()
+                        prepareNonThinkingBlock(part.id)
+                        let block = dshToolBlock(part.id, tool: tool)
+                        usedNativeBlockIDs.insert(block.id)
+                        blocks.append(block)
+                    }
                 }
             }
+            flushReasoning()
             if message.blocks.map(\.id) != blocks.map(\.id) {
                 message.blocks = blocks
                 blocksChanged = true
@@ -283,6 +372,7 @@ extension AIChatViewModel {
             let pending = dshMessages["__pending__"] ?? ChatMessage(role: .assistant, content: "")
             pending.remoteAssistantName = dshService?.name ?? "DSH"
             dshMessages["__pending__"] = pending
+            visibleMessageKeys.insert("__pending__")
             next.append(pending)
         }
         let structureChanged = messages.map(\.id) != next.map(\.id)
@@ -297,11 +387,25 @@ extension AIChatViewModel {
                 needsSnapshotReloadOnResume = true
             }
         }
-        // Drop stale pagination/placeholder objects without changing stable IDs.
-        let visibleIDs = Set(snapshot.entries.map(\.id) + (snapshot.isRunning ? ["__pending__"] : []))
-        dshMessages = dshMessages.filter { visibleIDs.contains($0.key) }
-        dshRawTexts = dshRawTexts.filter { visibleIDs.contains($0.key) }
+        dshMessages = dshMessages.filter { visibleMessageKeys.contains($0.key) }
+        dshRawTexts = dshRawTexts.filter { visibleRawKeys.contains($0.key) }
         dshBlocks = dshBlocks.filter { visibleBlockIDs.contains($0.key) }
+    }
+
+    private static func dshParts(for entry: DSHChatEntry) -> [DSHChatPart] {
+        if !entry.parts.isEmpty { return entry.parts }
+        // Compatibility for old cached/offline snapshots without ordered parts.
+        var parts: [DSHChatPart] = []
+        if !entry.reasoning.isEmpty {
+            parts.append(DSHChatPart(id: entry.id + ":thinking", kind: .reasoning(entry.reasoning)))
+        }
+        if !entry.text.isEmpty {
+            parts.append(DSHChatPart(id: entry.id + ":text", kind: .text(entry.text)))
+        }
+        for (index, tool) in entry.tools.enumerated() {
+            parts.append(DSHChatPart(id: entry.id + ":tool:\(index):" + tool.id, kind: .tool(tool)))
+        }
+        return parts
     }
 
     private static let dshResourcePatterns = [
@@ -341,12 +445,37 @@ extension AIChatViewModel {
         }.joined(separator: "\n")
     }
 
-    private func dshToolBlock(_ id: String, name: String, content: String, status: String) -> AssistantBlock {
-        let block = dshBlock(id, kind: .shellTool(command: name), content: content)
-        switch status {
+    private func dshToolBlock(_ id: String, tool: DSHChatTool) -> AssistantBlock {
+        let args = tool.arguments.data(using: .utf8).flatMap {
+            (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+        } ?? [:]
+        let path = args["path"] as? String ?? args["file_path"] as? String ?? args["filename"] as? String ?? ""
+        let name = tool.name.components(separatedBy: "__").last?.components(separatedBy: ".").last?.lowercased() ?? tool.name
+        let kind: AssistantBlockKind
+        switch name {
+        case "file_read", "read", "read_file": kind = .fileReadTool(path: path)
+        case "file_write", "write", "write_file", "create_file": kind = .fileWriteTool(path: path)
+        case "file_edit", "edit", "edit_file", "apply_patch": kind = .fileEditTool(path: path)
+        case "browser_use", "browser": kind = .browserTool(action: args["action"] as? String ?? "")
+        case "read_image", "view_image": kind = .readImageTool(path: path)
+        case "memory_get", "memory_write", "search_chat_history": kind = .memoryTool(action: name)
+        case "spawn_subagent", "check_subagent", "message_subagent", "stop_subagent", "send_agent_message", "spawn_cloud_subagent":
+            kind = .subagentTool(action: name, taskTitle: args["task_title"] as? String ?? args["title"] as? String ?? "")
+        default: kind = .shellTool(command: args["command"] as? String ?? tool.name)
+        }
+        let block = dshBlock(id, kind: kind, content: tool.output ?? "")
+        block.remoteToolName = tool.name
+        block.toolUseId = tool.id
+        block.toolInputArgs = tool.arguments
+        block.toolSummary = args["tool_title"] as? String
+        // Remote paths are labels only, never phone image/browser resources.
+        block.imageFilePath = nil
+        block.browserURL = nil
+        switch tool.status {
         case "running", "pending": block.toolStatus = .running
         case "completed", "success": block.toolStatus = .success
         case "error", "failed": block.toolStatus = .failed(message: AppLocalized("远程工具执行失败"))
+        case "cancelled", "canceled": block.toolStatus = .cancelled
         default: block.toolStatus = nil
         }
         return block

@@ -27,6 +27,7 @@ enum LocationAccess {
 @MainActor final class RecordingCoreModel {
     enum Presentation { case idle, recording, paused, interrupted }
     let coordinator = Coordinator()
+    let transcriptionScheduler = CaptureTranscriptionScheduler()
     var presentation = Presentation.idle
     var isStartingRecording = false
     var showsSessionChrome: Bool { presentation != .idle }
@@ -34,6 +35,9 @@ enum LocationAccess {
     var activeRecordingID: UUID?
     func refresh() async {}
     func updateRecordingLocation(recordingID: UUID, locationName: String) async {}
+}
+@MainActor final class CaptureTranscriptionScheduler {
+    func setCaptureActive(_ active: Bool) async {}
 }
 @main struct RecordingVoiceGateChecks {
     @MainActor static func main() async {

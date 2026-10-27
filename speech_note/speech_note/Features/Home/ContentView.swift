@@ -1863,7 +1863,6 @@ struct SettingsScreen: View {
     @AppStorage(TranscriptionLanguageMode.preferenceKey) private var languageModeRaw =
         TranscriptionLanguageMode.default.rawValue
     @AppStorage(BackgroundTranscriptionPreferences.enabledKey) private var backgroundTranscriptionEnabled = false
-    @AppStorage(RealtimeTranscriptionPreferences.enabledKey) private var realtimeTranscriptionEnabled = true
     @AppStorage(ExportPackagePreferences.includesOriginalAudioKey) private var exportPackageIncludesOriginalAudio = false
     @State private var syncStatus = DocumentSyncStatusCenter.shared
     let model: RecordingCoreModel
@@ -1907,9 +1906,7 @@ struct SettingsScreen: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
-                    Toggle("录音时实时转写", isOn: $realtimeTranscriptionEnabled)
-                        .accessibilityIdentifier("settings-realtime-transcription")
-                    Text("开启后，每段录音一结束就开始转写。关闭后，等你停止录音再排队，录音过程更省电、也少抢性能。")
+                    Text("录音期间优先保存音频，停止录音后自动排队转写；AI 功能保持可用。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 

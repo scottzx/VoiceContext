@@ -46,6 +46,7 @@ actor ForegroundTranscriptionScheduler {
     private let now: @Sendable () -> Date
     private var isInBackground: Bool
     private var continuedBackgroundExecutionAllowed = false
+    private var captureActive = false
     private var recoveryBarrierActive = false
     private var drainTask: Task<Void, Never>?
     private var drainGeneration: UUID?
@@ -194,6 +195,29 @@ actor ForegroundTranscriptionScheduler {
         isInBackground = false
         await lifecycleGate.enteredForeground()
         startDrainingIfPossible()
+    }
+
+    /// Microphone capture has priority over both new and historical ASR work.
+    /// Invalidate the current attempt before the caller acquires the microphone,
+    /// without delaying capture for a native worker that cannot cancel promptly.
+    /// Retain its drain until it exits so another ASR cannot race it. AI tools
+    /// keep their independent admission.
+    func setCaptureActive(_ active: Bool) async {
+        guard captureActive != active else { return }
+        captureActive = active
+        if active {
+            drainTask?.cancel()
+            _ = try? await repository.invalidateRunningTranscriptionLeases(
+                reason: "deferredUntilRecordingStops", at: now()
+            )
+        } else if let task = drainTask {
+            Task { [weak self] in
+                await task.value
+                await self?.requestDrain()
+            }
+        } else {
+            startDrainingIfPossible()
+        }
     }
 
     /// iOS continued-processing integration may keep the same reliable queue
@@ -413,7 +437,7 @@ actor ForegroundTranscriptionScheduler {
     }
 
     private var canExecute: Bool {
-        !recoveryBarrierActive && (!isInBackground || continuedBackgroundExecutionAllowed)
+        !captureActive && !recoveryBarrierActive && (!isInBackground || continuedBackgroundExecutionAllowed)
     }
 
     private func drain(generation: UUID) async {
@@ -426,6 +450,7 @@ actor ForegroundTranscriptionScheduler {
 
         while canExecute, !Task.isCancelled, drainGeneration == generation {
             guard let job = try? await nextPendingJob() else { return }
+            guard canExecute, !Task.isCancelled, drainGeneration == generation else { return }
 
             switch admissionPolicy.evaluate() {
             case .admit:
@@ -443,6 +468,14 @@ actor ForegroundTranscriptionScheduler {
                 id: job.id,
                 at: claimedAt
             ) else { return }
+            guard canExecute, !Task.isCancelled, drainGeneration == generation else {
+                let reason = captureActive ? "deferredUntilRecordingStops" : "executionCancelled"
+                _ = try? await repository.finishExecutionLease(
+                    lease, state: .pending, lastError: reason,
+                    terminationReason: reason, at: now()
+                )
+                return
+            }
             do {
                 try await execute(lease)
             } catch let rejection as InferenceLifecycleGate.Rejection {
@@ -469,7 +502,8 @@ actor ForegroundTranscriptionScheduler {
                     return
                 }
                 if Task.isCancelled || !canExecute {
-                    let reason = isInBackground ? "deferredUntilForeground" : "executionCancelled"
+                    let reason = captureActive ? "deferredUntilRecordingStops"
+                        : isInBackground ? "deferredUntilForeground" : "executionCancelled"
                     _ = try? await repository.finishExecutionLease(
                         lease,
                         state: .pending,

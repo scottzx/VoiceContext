@@ -1,5 +1,9 @@
 import Foundation
 
+@MainActor final class EntryTranscriptionScheduler {
+    func setCaptureActive(_ active: Bool) async {}
+}
+
 struct Recording {
     let id = UUID()
     let startedAt: Date

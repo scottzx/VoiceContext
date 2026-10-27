@@ -1467,7 +1467,7 @@ struct RecordingCoreTests {
         #expect(chunks[0].endSample == 48_000)
     }
 
-    @Test @MainActor func returningToAppResumesCaptureAfterOtherAudioInterruption() async throws {
+    @Test @MainActor func backgroundCaptureResumesAfterOtherAudioInterruptionEnds() async throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let repository = try RecordingRepository(rootURL: root)
@@ -1495,8 +1495,8 @@ struct RecordingCoreTests {
             occurredAt: startedAt.addingTimeInterval(3),
             sampleIndex: 16_000
         ))
-        #expect(await presentationState(of: coordinator, becomes: .interrupted))
-        #expect(capture.resumeCount == 0)
+        #expect(await presentationState(of: coordinator, becomes: .recording))
+        #expect(capture.resumeCount == 1)
 
         coordinator.applicationBecameActive()
         #expect(await presentationState(of: coordinator, becomes: .recording))
@@ -3352,9 +3352,9 @@ struct RecordingCoreTests {
         let file1 = dir00.appendingPathComponent("audio-\(chunk1ID.uuidString.lowercased()).m4a")
         let file2 = dir01.appendingPathComponent("audio-\(chunk2ID.uuidString.lowercased()).m4a")
         let file3 = dir02.appendingPathComponent("audio-\(chunk3ID.uuidString.lowercased()).m4a")
-        try Data(repeating: 0x55, count: 4000).write(to: file1)
-        try Data(repeating: 0x55, count: 4000).write(to: file2)
-        try Data(repeating: 0x55, count: 4000).write(to: file3)
+        let fixture1 = try writeRecoveryAACFixture(at: file1)
+        let fixture2 = try writeRecoveryAACFixture(at: file2)
+        let fixture3 = try writeRecoveryAACFixture(at: file3)
 
         let restored = try await repository.reconcileChunksFromDisk(recordingID: recording.id)
         #expect(restored.count == 3)
@@ -3366,8 +3366,26 @@ struct RecordingCoreTests {
         #expect(indexedChunks[1].id == chunk2ID)
         #expect(indexedChunks[2].id == chunk3ID)
         #expect(indexedChunks[0].startSample == 0)
-        #expect(indexedChunks[1].startSample == indexedChunks[0].endSample)
-        #expect(indexedChunks[2].startSample == indexedChunks[1].endSample)
+        #expect(indexedChunks[1].startSample == 60 * 16_000)
+        #expect(indexedChunks[2].startSample == 120 * 16_000)
+        let fixtures = [fixture1, fixture2, fixture3]
+        for (chunk, fixture) in zip(indexedChunks, fixtures) {
+            #expect(fixture.frameCount == 16_000)
+            #expect(chunk.endSample == chunk.startSample + fixture.frameCount)
+            #expect(abs(chunk.startedAt.timeIntervalSince(fixture.createdAt)) < 0.000_001)
+            #expect(abs(chunk.endedAt.timeIntervalSince(fixture.createdAt) - 1) < 0.000_001)
+        }
+        let unchangedRecording = try #require(await repository.recording(id: recording.id))
+        #expect(unchangedRecording.state == .recording)
+        #expect(unchangedRecording.endedAt == nil)
+        let gaps = try await repository.gaps(recordingID: recording.id)
+        #expect(gaps.count == 3)
+        #expect(Set(gaps.map(\.id)) == Set(indexedChunks.map(\.id)))
+        #expect(gaps.allSatisfy { $0.reason == .recoveredAfterTermination })
+        let eventCount = await repository.appliedEventCount
+        #expect(try await repository.reconcileChunksFromDisk(recordingID: recording.id).isEmpty)
+        #expect(await repository.appliedEventCount == eventCount)
+        #expect(try await repository.chunks(recordingID: recording.id) == indexedChunks)
     }
 
     @Test func recoverUnfinishedPerformsDiskReconciliationAndTransitionsState() async throws {
@@ -3382,7 +3400,7 @@ struct RecordingCoreTests {
         let recFolder = root.appendingPathComponent("Recordings/\(recording.id.uuidString.lowercased())/audio/00/00")
         try FileManager.default.createDirectory(at: recFolder, withIntermediateDirectories: true)
         let file = recFolder.appendingPathComponent("audio-\(chunkID.uuidString.lowercased()).m4a")
-        try Data(repeating: 0x55, count: 4000).write(to: file)
+        let fixture = try writeRecoveryAACFixture(at: file)
 
         let result = try await repository.recoverUnfinished(at: startedAt.addingTimeInterval(60))
         #expect(result.interruptedRecordingIDs.contains(recording.id))
@@ -3393,6 +3411,40 @@ struct RecordingCoreTests {
         let chunks = try await repository.chunks(recordingID: recording.id)
         #expect(chunks.count == 1)
         #expect(chunks[0].id == chunkID)
+        #expect(chunks[0].startSample == 0)
+        #expect(fixture.frameCount == 16_000)
+        #expect(chunks[0].endSample == fixture.frameCount)
+        #expect(abs(chunks[0].startedAt.timeIntervalSince(fixture.createdAt)) < 0.000_001)
+        #expect(abs(chunks[0].endedAt.timeIntervalSince(fixture.createdAt) - 1) < 0.000_001)
+        #expect(updated.endedAt == chunks[0].endedAt)
+        let gaps = try await repository.gaps(recordingID: recording.id)
+        #expect(gaps.contains { $0.id == chunkID && $0.reason == .recoveredAfterTermination })
+        #expect(gaps.contains { $0.endSample == nil && $0.startSample == chunks[0].endSample })
+        let eventCount = await repository.appliedEventCount
+        let repeated = try await repository.recoverUnfinished(at: startedAt.addingTimeInterval(120))
+        #expect(repeated.interruptedRecordingIDs.isEmpty)
+        #expect(await repository.appliedEventCount == eventCount)
+    }
+
+    private func writeRecoveryAACFixture(at url: URL) throws -> (frameCount: Int64, createdAt: Date) {
+        let sampleRate = 16_000.0
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_000))
+        buffer.frameLength = 16_000
+        let samples = try #require(buffer.floatChannelData?[0])
+        samples.initialize(repeating: 0, count: Int(buffer.frameLength))
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: sampleRate,
+                AVNumberOfChannelsKey: 1,
+            ], commonFormat: .pcmFormatFloat32, interleaved: false)
+            try file.write(from: buffer)
+        }
+        let decoded = try AVAudioFile(forReading: url)
+        #expect(decoded.processingFormat.sampleRate == sampleRate)
+        let createdAt = try #require(url.resourceValues(forKeys: [.creationDateKey]).creationDate)
+        return (Int64(decoded.length), createdAt)
     }
 }
 

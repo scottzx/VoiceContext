@@ -1,5 +1,6 @@
 import Foundation
 import MediaPlayer
+import OSLog
 
 @MainActor
 protocol RecordingCapturing: AnyObject {
@@ -61,6 +62,8 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
     /// capture continues, so this callback is intentionally independent of
     /// the aggregate Recording state.
     var onChunkClosed: ((UUID, UUID) async -> Void)?
+    /// Runs once after microphone identity is released for every stop entry point.
+    var onCaptureStopped: ((UUID) async -> Void)?
 
     private let repository: RecordingRepository
     private let capture: RecordingCapturing
@@ -68,8 +71,11 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
     private let now: () -> Date
     private let persistChunk: ChunkPersistence
     private let enablesRemoteStopCommand: Bool
+    private let logger = Logger(subsystem: "com.yima.recording", category: "CaptureCoordinator")
+    private(set) var lastCaptureDiagnostic: AACSegmentRecorder.CaptureEvent.Diagnostic?
     /// Explicit user pause, distinct from a system audio interruption.
     private var userPausedCapture = false
+    private var systemInterruptionActive = false
     private let captureEventContinuation: AsyncStream<AACSegmentRecorder.CaptureEvent>.Continuation
     private var stateMachine: RecordingStateMachine?
     private var activeGapID: UUID?
@@ -80,6 +86,7 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
     private(set) var segmentPersistenceFailureMessage: String?
     private var stoppedCaptureEndedAt: Date?
     private var remoteStopTarget: Any?
+    private var captureLifetimeToken = UUID()
 
     init(
         repository: RecordingRepository,
@@ -111,7 +118,11 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
             // never race ahead of its interruption begin across actor hops.
             for await event in stream {
                 guard let self else { break }
-                try? await handleCaptureEvent(event)
+                do {
+                    try await handleCaptureEvent(event)
+                } catch {
+                    recordCaptureFailure(error, operation: "handleCaptureEvent.\(event.kind)")
+                }
             }
         }
         NotificationCenter.default.addObserver(
@@ -120,7 +131,7 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                await self?.resumeAfterInterruptionIfNeeded(forceResume: true)
+                await self?.resumeAfterInterruptionIfNeeded(trigger: "playbackReleased")
             }
         }
     }
@@ -139,6 +150,7 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
             languageMode: TranscriptionLanguageMode.current
         )
         activeRecordingID = recording.id
+        captureLifetimeToken = UUID()
         stateMachine = RecordingStateMachine(state: .recording)
         persistedSegmentIDs = []
         pendingSegments = [:]
@@ -147,6 +159,8 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         segmentPersistenceFailureMessage = nil
         stoppedCaptureEndedAt = nil
         userPausedCapture = false
+        systemInterruptionActive = false
+        lastCaptureDiagnostic = nil
         captureState = .preparing
         presentationState = .recording
         let directory = rootURL
@@ -190,6 +204,7 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         guard activeRecordingID == nil else { throw CoordinatorError.sessionAlreadyActive }
 
         activeRecordingID = recordingID
+        captureLifetimeToken = UUID()
         stateMachine = RecordingStateMachine(state: .recording)
         persistedSegmentIDs = Set(existingChunks.map(\.id))
         pendingSegments = [:]
@@ -198,6 +213,8 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         segmentPersistenceFailureMessage = nil
         stoppedCaptureEndedAt = nil
         userPausedCapture = false
+        systemInterruptionActive = false
+        lastCaptureDiagnostic = nil
         captureState = .preparing
         presentationState = .recording
 
@@ -254,10 +271,16 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         guard let recordingID = activeRecordingID, var machine = stateMachine else {
             throw CoordinatorError.noActiveSession
         }
-        // Capture first: never show 正在录音 if the microphone did not come back.
-        try capture.resume()
-        userPausedCapture = false
         let next = try machine.apply(.resume)
+        // Capture first: never show 正在录音 if the microphone did not come back.
+        do {
+            try capture.resume()
+        } catch {
+            recordCaptureFailure(error, operation: "resume")
+            throw error
+        }
+        userPausedCapture = false
+        systemInterruptionActive = false
         stateMachine = machine
         captureState = .recording
         presentationState = .recording
@@ -271,6 +294,7 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         guard let recordingID = activeRecordingID, var machine = stateMachine else {
             throw CoordinatorError.noActiveSession
         }
+        let lifetimeToken = captureLifetimeToken
 
         if machine.state == .stopping {
             guard let endedAt = stoppedCaptureEndedAt else {
@@ -279,7 +303,8 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
             return try await finalizeStoppedCapture(
                 recordingID: recordingID,
                 machine: machine,
-                endedAt: endedAt
+                endedAt: endedAt,
+                lifetimeToken: lifetimeToken
             )
         }
 
@@ -297,7 +322,8 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         return try await finalizeStoppedCapture(
             recordingID: recordingID,
             machine: machine,
-            endedAt: segment.endedAt
+            endedAt: segment.endedAt,
+            lifetimeToken: lifetimeToken
         )
     }
 
@@ -309,6 +335,7 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
             return
         }
         capture.cancel()
+        captureLifetimeToken = UUID()
         removeRemoteStopCommand()
         RecordingLiveActivityManager.shared.endActivity()
 
@@ -323,6 +350,7 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         activeGapID = nil
         stoppedCaptureEndedAt = nil
         userPausedCapture = false
+        systemInterruptionActive = false
         captureState = .idle
         presentationState = .idle
     }
@@ -330,7 +358,8 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
     private func finalizeStoppedCapture(
         recordingID: UUID,
         machine: RecordingStateMachine,
-        endedAt: Date
+        endedAt: Date,
+        lifetimeToken: UUID
     ) async throws -> UUID {
         var machine = machine
         do {
@@ -348,6 +377,10 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
             endedAt: endedAt,
             at: endedAt
         )
+        // Concurrent stop requests can both await journal I/O. Only the owner
+        // of this capture lifetime may release identity and notify completion.
+        guard captureLifetimeToken == lifetimeToken, activeRecordingID == recordingID else { return recordingID }
+        captureLifetimeToken = UUID()
         // The durable final chunk and legacy `.processing` projection are now
         // committed. Release only capture-owned identity; processing remains
         // addressable by its explicit Recording ID and durable jobs.
@@ -363,6 +396,7 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         // addressable via Recording ID + durable jobs; UI must not present
         // this as an active microphone session.
         presentationState = .idle
+        await onCaptureStopped?(recordingID)
         return recordingID
     }
 
@@ -447,30 +481,47 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
     func applicationBecameActive() {
         isApplicationInBackground = false
         Task { @MainActor [weak self] in
-            await self?.resumeAfterInterruptionIfNeeded(forceResume: true)
+            await self?.resumeAfterInterruptionIfNeeded(trigger: "applicationBecameActive", allowDuringSystemInterruption: true)
         }
     }
 
-    /// Other audio often ends the session interruption with `shouldResume == false`.
-    /// If the user did not pause, returning to the app should continue capture.
-    private func resumeAfterInterruptionIfNeeded(forceResume: Bool) async {
+    /// An ended interruption is the recovery signal, including in the background.
+    /// An interruption may have no matching end notification. Foreground/manual
+    /// recovery may try once; iOS still decides whether activation is permitted.
+    private func resumeAfterInterruptionIfNeeded(trigger: String, allowDuringSystemInterruption: Bool = false) async {
         guard let recordingID = activeRecordingID, var machine = stateMachine else { return }
-        guard machine.state == .interrupted else { return }
+        guard machine.state == .interrupted,
+              !systemInterruptionActive || allowDuringSystemInterruption else { return }
 
         if userPausedCapture {
             let next = try? machine.apply(.pause)
             stateMachine = machine
-            if let next {
-                try? await repository.changeState(recordingID: recordingID, to: next, at: now())
-            }
             captureState = .paused
             presentationState = .paused
             RecordingLiveActivityManager.shared.updateActivity(isPaused: true)
+            if let next {
+                do {
+                    try await repository.changeState(recordingID: recordingID, to: next, at: now())
+                } catch {
+                    recordCaptureFailure(error, operation: "persistUserPauseAfterInterruption")
+                }
+            }
             return
         }
 
-        guard forceResume || !isApplicationInBackground else { return }
-        try? await resume()
+        logger.info("[RecordingCapture] recovery attempt trigger=\(trigger, privacy: .public) background=\(self.isApplicationInBackground)")
+        do {
+            try await resume()
+            logger.info("[RecordingCapture] recovery succeeded trigger=\(trigger, privacy: .public)")
+        } catch {
+            recordCaptureFailure(error, operation: "recover.\(trigger)")
+        }
+    }
+
+    private func recordCaptureFailure(_ error: Error, operation: String) {
+        let diagnostic = AACSegmentRecorder.CaptureEvent.Diagnostic(operation: operation, error: error)
+        lastCaptureDiagnostic = diagnostic
+        logger.error("[RecordingCapture] \(diagnostic.description, privacy: .public)")
     }
 
     private func installCaptureCallbacks() {
@@ -588,7 +639,9 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
         guard let recordingID = activeRecordingID else { return }
         switch event.kind {
         case .interruptionBegan:
+            systemInterruptionActive = true
             guard var machine = stateMachine else { return }
+            guard machine.state == .recording || machine.state == .paused else { return }
             let next = try machine.apply(.interruptionBegan)
             stateMachine = machine
             // Reflect stopped capture before any journal I/O can suspend or fail.
@@ -603,8 +656,26 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
                 at: event.occurredAt
             )
         case let .interruptionEnded(shouldResume):
-            try await closeActiveGapIfNeeded(at: event.occurredAt, sample: event.sampleIndex)
-            await resumeAfterInterruptionIfNeeded(forceResume: shouldResume)
+            systemInterruptionActive = false
+            logger.info("[RecordingCapture] interruption ended shouldResume=\(shouldResume) background=\(self.isApplicationInBackground)")
+            // Keep the gap open until capture really resumes. A failed activation
+            // must not make diagnostics claim the missing audio already ended.
+            await resumeAfterInterruptionIfNeeded(trigger: "interruptionEnded.shouldResume=\(shouldResume)")
+        case .engineConfigurationChanged:
+            guard !systemInterruptionActive, !userPausedCapture,
+                  var machine = stateMachine, machine.state == .recording else { return }
+            let next = try machine.apply(.interruptionBegan)
+            stateMachine = machine
+            captureState = .interrupted
+            presentationState = .interrupted
+            RecordingLiveActivityManager.shared.updateActivity(isPaused: false, isInterrupted: true)
+            do {
+                try await repository.changeState(recordingID: recordingID, to: next, at: event.occurredAt)
+                try await openGap(recordingID: recordingID, reason: .routeChange, sample: event.sampleIndex, at: event.occurredAt)
+            } catch {
+                recordCaptureFailure(error, operation: "persistEngineConfigurationChange")
+            }
+            await resumeAfterInterruptionIfNeeded(trigger: "engineConfigurationChanged")
         case .routeChanged:
             try await recordPointGap(
                 recordingID: recordingID,
@@ -613,6 +684,10 @@ final class RecordingSessionCoordinator: RecordingLiveActivityCommandHandling {
                 at: event.occurredAt
             )
         case .writerBackpressure, .writeFailed:
+            if let diagnostic = event.diagnostic {
+                lastCaptureDiagnostic = diagnostic
+                logger.error("[RecordingCapture] \(diagnostic.description, privacy: .public)")
+            }
             try await recordPointGap(
                 recordingID: recordingID,
                 reason: .writeFailure,

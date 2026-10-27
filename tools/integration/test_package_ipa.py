@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -42,11 +43,11 @@ class PackageIPATests(unittest.TestCase):
         if command[0] == "codesign":
             self.codesign_commands.append(command)
             self.assertEqual(command[:-1], ["codesign", "--verify", "--deep", "--strict"])
-            staged_app = Path(command[-1])
-            self.assertEqual(staged_app.name, self.app.name)
-            self.assertEqual(staged_app.parent.name, "Payload")
-            self.assertEqual(staged_app.parents[2], self.output.parent.parent)
-            self.assertTrue(staged_app.is_dir())
+            verified_app = Path(command[-1])
+            self.assertEqual(verified_app.name, self.app.name)
+            self.assertEqual(verified_app.parent.name, "Payload")
+            self.assertIn(self.output.parent.parent, verified_app.parents)
+            self.assertTrue(verified_app.is_dir())
             self.assertTrue(kwargs["check"])
             return subprocess.CompletedProcess(command, 0)
         return self.real_run(command, *args, **kwargs)
@@ -63,7 +64,8 @@ class PackageIPATests(unittest.TestCase):
             second = package_ipa.package_ipa(self.app, self.output, self.bundle_id)
 
         self.assert_no_staging()
-        self.assertEqual(len(self.codesign_commands), 2)
+        self.assertEqual(len(self.codesign_commands), 4)
+        self.assertEqual(Path(self.codesign_commands[-1][-1]).parents[1].name, "extracted")
         self.assertNotEqual(first["sha256"], second["sha256"])
         self.assertEqual(second, {
             "ipa": str(self.output),
@@ -98,6 +100,75 @@ class PackageIPATests(unittest.TestCase):
                 package_ipa.package_ipa(self.app, self.output, self.bundle_id)
 
         self.assertEqual(self.output.read_bytes(), b"previous IPA")
+        self.assert_no_staging()
+
+    def test_appledouble_zip_is_rejected_before_replacing_old_ipa(self):
+        self.output.parent.mkdir(parents=True)
+        self.output.write_bytes(b"previous IPA")
+
+        def add_appledouble(command, *args, **kwargs):
+            result = self.run_with_fake_codesign(command, *args, **kwargs)
+            if command[:2] == ["ditto", "-c"]:
+                with zipfile.ZipFile(command[-1], "a") as archive:
+                    archive.writestr(f"Payload/{self.app.name}/._Info.plist", b"AppleDouble")
+            return result
+
+        with patch.object(package_ipa.subprocess, "run", side_effect=add_appledouble):
+            with self.assertRaisesRegex(ValueError, "AppleDouble"):
+                package_ipa.package_ipa(self.app, self.output, self.bundle_id)
+        self.assertEqual(self.output.read_bytes(), b"previous IPA")
+        self.assert_no_staging()
+
+    def test_final_archive_signature_failure_preserves_old_ipa(self):
+        self.output.parent.mkdir(parents=True)
+        self.output.write_bytes(b"previous IPA")
+
+        def reject_extracted_signature(command, *args, **kwargs):
+            result = self.run_with_fake_codesign(command, *args, **kwargs)
+            if command[0] == "codesign" and Path(command[-1]).parents[1].name == "extracted":
+                raise subprocess.CalledProcessError(1, command)
+            return result
+
+        with patch.object(package_ipa.subprocess, "run", side_effect=reject_extracted_signature):
+            with self.assertRaises(subprocess.CalledProcessError):
+                package_ipa.package_ipa(self.app, self.output, self.bundle_id)
+        self.assertEqual(self.output.read_bytes(), b"previous IPA")
+        self.assert_no_staging()
+
+    @unittest.skipUnless(sys.platform == "darwin", "Requires macOS code signing")
+    def test_signed_app_with_extended_attributes_survives_plain_zip_extraction(self):
+        # This is a host-only signature fixture; its executable is never run.
+        shutil.copyfile("/usr/bin/true", self.executable)
+        self.executable.chmod(0o755)
+        subprocess.run(["codesign", "--force", "--sign", "-", str(self.app)],
+                       check=True, capture_output=True)
+        resource = self.app / "embedded.mobileprovision"
+        attribute = "com.example.package-ipa"
+        subprocess.run(["xattr", "-w", attribute, "metadata", str(resource)], check=True)
+        subprocess.run(["codesign", "--verify", "--deep", "--strict", str(self.app)],
+                       check=True, capture_output=True)
+
+        # Reproduce the previous packager: valid source, invalid delivered ZIP contents.
+        payload = self.root / "unsafe/Payload"
+        payload.mkdir(parents=True)
+        subprocess.run(["ditto", str(self.app), str(payload / self.app.name)], check=True)
+        unsafe_ipa = self.root / "unsafe.ipa"
+        subprocess.run(["ditto", "-c", "-k", "--keepParent", str(payload), str(unsafe_ipa)], check=True)
+        extracted = self.root / "unsafe-extracted"
+        with zipfile.ZipFile(unsafe_ipa) as archive:
+            self.assertTrue(any(Path(name).name.startswith("._") for name in archive.namelist()))
+            archive.extractall(extracted)
+            for member in archive.infolist():
+                (extracted / member.filename).chmod((member.external_attr >> 16) & 0o777)
+        invalid = subprocess.run(["codesign", "--verify", "--deep", "--strict",
+                                  str(extracted / "Payload" / self.app.name)], capture_output=True)
+        self.assertNotEqual(invalid.returncode, 0)
+
+        package_ipa.package_ipa(self.app, self.output, self.bundle_id)
+        with zipfile.ZipFile(self.output) as archive:
+            self.assertFalse(any(Path(name).name.startswith("._") for name in archive.namelist()))
+        self.assertEqual(subprocess.run(["xattr", "-p", attribute, str(resource)],
+                                        check=True, capture_output=True).stdout.strip(), b"metadata")
         self.assert_no_staging()
 
     def test_bundle_identity_mismatch_is_rejected_before_packaging(self):

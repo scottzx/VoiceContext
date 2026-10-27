@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import Foundation
+import OSLog
 
 nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     nonisolated static let targetSampleRate: Double = 16_000
@@ -13,6 +14,8 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         case noInputFormat
         case audioConverterInitializationFailed
         case notRecording
+        case bufferCopyFailed
+        case writerBackpressure
 
         var errorDescription: String? {
             switch self {
@@ -20,6 +23,8 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
             case .noInputFormat: "当前音频路由没有可用输入格式。"
             case .audioConverterInitializationFailed: "无法将麦克风输入转换为 16 kHz 录音。"
             case .notRecording: "录音尚未开始。"
+            case .bufferCopyFailed: "无法复制麦克风音频缓冲区。"
+            case .writerBackpressure: "录音写入队列已满，当前音频缓冲区未能写入。"
             }
         }
     }
@@ -42,11 +47,39 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
             case routeChanged
             case writerBackpressure
             case writeFailed
+            case engineConfigurationChanged
+        }
+
+        nonisolated struct Diagnostic: Sendable, Equatable {
+            let operation: String
+            let domain: String
+            let code: Int
+            let message: String
+
+            init(operation: String, error: Error) {
+                let error = error as NSError
+                self.operation = operation
+                domain = error.domain
+                code = error.code
+                message = error.localizedDescription
+            }
+
+            var description: String {
+                "operation=\(operation) domain=\(domain) code=\(code) message=\(message)"
+            }
         }
 
         let kind: Kind
         let occurredAt: Date
         let sampleIndex: Int64
+        let diagnostic: Diagnostic?
+
+        init(kind: Kind, occurredAt: Date, sampleIndex: Int64, diagnostic: Diagnostic? = nil) {
+            self.kind = kind
+            self.occurredAt = occurredAt
+            self.sampleIndex = sampleIndex
+            self.diagnostic = diagnostic
+        }
     }
 
     var onSegmentClosed: (@Sendable (Segment) -> Void)?
@@ -68,7 +101,9 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     private let session = AVAudioSession.sharedInstance()
     private let writerQueue = DispatchQueue(label: "VoiceContext.AACSegmentWriter", qos: .userInitiated)
     private let statusLock = NSLock()
+    private let logger = Logger(subsystem: "com.yima.recording", category: "AACCapture")
     private var assistantPCMHandler: (@Sendable ([Float], Int64) -> Void)?
+    private var meteringUpdatesEnabled = true
     private var activeFile: AVAudioFile?
     private var activeID: UUID?
     private var activeURL: URL?
@@ -82,16 +117,21 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     private var assistantPacketReserveSamples: Double = 0
     private var assistantConverterReserveSamples: Double = 0
     private var tapInstalled = false
+    private var inputTapInstalled = false
     private var isCapturePaused = false
+    private var isSystemInterrupted = false
+    private var isRebuildingInput = false
     private var lastClosedSegment: Segment?
     private var interruptionObserver: NSObjectProtocol?
     private var routeChangeObserver: NSObjectProtocol?
+    private var configurationChangeObserver: NSObjectProtocol?
 
     private let maximumPendingPackets = 256
 
     deinit {
         interruptionObserver.map(NotificationCenter.default.removeObserver)
         routeChangeObserver.map(NotificationCenter.default.removeObserver)
+        configurationChangeObserver.map(NotificationCenter.default.removeObserver)
     }
 
     var currentSample: Int64 {
@@ -102,6 +142,10 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
     /// handler must only enqueue work; inference must not delay recording.
     func setAssistantPCMHandler(_ handler: (@Sendable ([Float], Int64) -> Void)?) {
         statusLock.withLock { assistantPCMHandler = handler }
+    }
+
+    func setMeteringUpdatesEnabled(_ enabled: Bool) {
+        statusLock.withLock { meteringUpdatesEnabled = enabled }
     }
 
     /// Conservative input boundary for assistant enable/speech windows. Unlike
@@ -132,7 +176,10 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         }
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        statusLock.withLock { isCapturePaused = false }
+        statusLock.withLock {
+            isCapturePaused = false
+            isSystemInterrupted = false
+        }
         try activateCaptureSession()
         var started = false
         defer { if !started { releaseCaptureSession() } }
@@ -183,14 +230,20 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         input.installTap(onBus: 0, bufferSize: 1_024, format: inputFormat) { [weak self] buffer, _ in
             self?.bufferFromAudioCallback(buffer)
         }
-        statusLock.withLock { tapInstalled = true }
+        statusLock.withLock {
+            tapInstalled = true
+            inputTapInstalled = true
+        }
         observeAudioSession()
         do {
             try engine.start()
             started = true
         } catch {
             input.removeTap(onBus: 0)
-            statusLock.withLock { tapInstalled = false }
+            statusLock.withLock {
+                tapInstalled = false
+                inputTapInstalled = false
+            }
             _ = writerQueue.sync { closeSegment(at: Date()) }
             releaseCaptureSession()
             throw error
@@ -205,7 +258,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         }
         guard wasRecording else { throw RecorderError.notRecording }
 
-        engine.inputNode.removeTap(onBus: 0)
+        removeInputTapIfNeeded()
         engine.stop()
         defer { releaseCaptureSession() }
         let segment = try writerQueue.sync {
@@ -231,7 +284,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         }
         guard wasRecording else { return }
 
-        engine.inputNode.removeTap(onBus: 0)
+        removeInputTapIfNeeded()
         engine.stop()
         writerQueue.sync {
             activeFile = nil
@@ -262,23 +315,83 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
 
     func resume() throws {
         guard statusLock.withLock({ tapInstalled }) else { throw RecorderError.notRecording }
-        statusLock.withLock { isCapturePaused = false }
-        try activateCaptureSession()
-        if !engine.isRunning {
-            try engine.start()
+        do {
+            try activateCaptureSession()
+            if !engine.isRunning {
+                try rebuildInputAfterEngineStopped()
+                try engine.start()
+            }
+            statusLock.withLock {
+                isCapturePaused = false
+                isSystemInterrupted = false
+            }
+        } catch {
+            let diagnostic = CaptureEvent.Diagnostic(operation: "resume", error: error)
+            logger.error("[RecordingCapture] \(diagnostic.description, privacy: .public)")
+            throw error
         }
+    }
+
+    private func removeInputTapIfNeeded() {
+        let shouldRemove = statusLock.withLock {
+            let installed = inputTapInstalled
+            inputTapInstalled = false
+            return installed
+        }
+        if shouldRemove { engine.inputNode.removeTap(onBus: 0) }
+    }
+
+    /// A stopped engine may have a new hardware format after a route change.
+    /// Keep the sample cursor and closed files; replace only the input pipeline.
+    private func rebuildInputAfterEngineStopped() throws {
+        statusLock.withLock { isRebuildingInput = true }
+        defer { statusLock.withLock { isRebuildingInput = false } }
+        engine.stop()
+        removeInputTapIfNeeded()
+        let input = engine.inputNode
+        let inputFormat = input.outputFormat(forBus: 0)
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            throw RecorderError.noInputFormat
+        }
+        try writerQueue.sync {
+            _ = closeSegment(at: Date())
+            guard let recordingFormat,
+                  let converter = AVAudioConverter(from: inputFormat, to: recordingFormat) else {
+                throw RecorderError.audioConverterInitializationFailed
+            }
+            audioConverter = converter
+            preRollBuffer.removeAll()
+            isVoiced = false
+            remainingHangoverSamples = 0
+            statusLock.withLock {
+                let ratio = recordingFormat.sampleRate / inputFormat.sampleRate
+                assistantPacketReserveSamples = 1_024 * ratio
+                assistantConverterReserveSamples = (
+                    Double(converter.primeInfo.leadingFrames) + Double(converter.primeInfo.trailingFrames)
+                ) * ratio + 32
+            }
+        }
+        input.installTap(onBus: 0, bufferSize: 1_024, format: inputFormat) { [weak self] buffer, _ in
+            self?.bufferFromAudioCallback(buffer)
+        }
+        statusLock.withLock { inputTapInstalled = true }
     }
 
     /// Restore the `.record` category after other audio. Engine start is owned
     /// by the session coordinator so UI only shows 正在录音 after resume succeeds.
     func restoreCaptureSessionIfOwned() {
-        guard statusLock.withLock({ tapInstalled }) else { return }
-        try? activateCaptureSession()
+        guard statusLock.withLock({ tapInstalled && !isCapturePaused && !isSystemInterrupted }) else { return }
+        do {
+            try activateCaptureSession()
+        } catch {
+            let diagnostic = CaptureEvent.Diagnostic(operation: "restoreCaptureSession", error: error)
+            logger.error("[RecordingCapture] \(diagnostic.description, privacy: .public)")
+        }
     }
 
     private func bufferFromAudioCallback(_ buffer: AVAudioPCMBuffer) {
         guard let packet = copy(buffer) else {
-            emit(.writeFailed)
+            emit(.writeFailed, operation: "copyInputBuffer", error: RecorderError.bufferCopyFailed)
             return
         }
         let assistantSampleEstimate = Double(packet.frameLength)
@@ -291,7 +404,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
             return true
         }
         guard accepted else {
-            emit(.writerBackpressure)
+            emit(.writerBackpressure, operation: "enqueueInputBuffer", error: RecorderError.writerBackpressure)
             return
         }
 
@@ -319,7 +432,8 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
             let frameCount = Int(converted.frameLength)
             let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
 
-            if let metrics = AudioInputMetrics.from(samples: samples.withUnsafeBufferPointer { $0 }) {
+            if statusLock.withLock({ meteringUpdatesEnabled }),
+               let metrics = AudioInputMetrics.from(samples: samples.withUnsafeBufferPointer { $0 }) {
                 onMeteringUpdate?(metrics)
             }
 
@@ -368,7 +482,7 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
                 }
             }
         } catch {
-            emit(.writeFailed)
+            emit(.writeFailed, operation: "convertOrWriteAudio", error: error)
         }
     }
 
@@ -568,15 +682,30 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
         ) { [weak self] _ in
             self?.emit(.routeChanged)
         }
+
+        configurationChangeObserver.map(NotificationCenter.default.removeObserver)
+        configurationChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self,
+                  self.statusLock.withLock({ self.tapInstalled && !self.isCapturePaused && !self.isSystemInterrupted && !self.isRebuildingInput }),
+                  !self.engine.isRunning else { return }
+            self.logger.warning("[RecordingCapture] engine configuration changed; capture engine stopped")
+            self.emit(.engineConfigurationChanged)
+        }
     }
 
     private func handleInterruption(_ notification: Notification) {
+        guard statusLock.withLock({ tapInstalled }) else { return }
         guard
             let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
             let type = AVAudioSession.InterruptionType(rawValue: rawType)
         else { return }
         switch type {
         case .began:
+            statusLock.withLock { isSystemInterrupted = true }
             writerQueue.sync {
                 _ = closeSegment(at: Date())
                 isVoiced = false
@@ -585,19 +714,26 @@ nonisolated final class AACSegmentRecorder: @unchecked Sendable {
             }
             emit(.interruptionBegan)
         case .ended:
+            statusLock.withLock { isSystemInterrupted = false }
             let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+            logger.info("[RecordingCapture] interruption ended shouldResume=\(shouldResume) sample=\(self.currentSample)")
             emit(.interruptionEnded(shouldResume: shouldResume))
         @unknown default:
             break
         }
     }
 
-    private func emit(_ kind: CaptureEvent.Kind) {
+    private func emit(_ kind: CaptureEvent.Kind, operation: String = "capture", error: Error? = nil) {
+        let diagnostic = error.map { CaptureEvent.Diagnostic(operation: operation, error: $0) }
+        if let diagnostic {
+            logger.error("[RecordingCapture] \(diagnostic.description, privacy: .public)")
+        }
         onCaptureEvent?(CaptureEvent(
             kind: kind,
             occurredAt: Date(),
-            sampleIndex: currentSample
+            sampleIndex: currentSample,
+            diagnostic: diagnostic
         ))
     }
 

@@ -38,6 +38,7 @@ enum YimaDesign { enum Color {
     var notice: String?
     var activeRecordingID: UUID?
     let coordinator = EntryCoordinator()
+    let transcriptionScheduler = EntryTranscriptionScheduler()
     func refresh() async { if activeRecordingID != nil { presentation = .recording } }
     func updateRecordingLocation(recordingID: UUID, locationName: String) async {}
 """ + "\n".join(declaration(marker) for marker in (
@@ -60,6 +61,9 @@ enum YimaDesign { enum Color {
     var segmentPersistenceFailureMessage: String?
     var stoppedCaptureEndedAt: Date?
     var userPausedCapture = false
+    var systemInterruptionActive = false
+    var lastCaptureDiagnostic: Int?
+    var captureLifetimeToken = UUID()
     var captureState: State = .idle
     var presentationState: State = .idle
     func installCaptureCallbacks() {}
@@ -72,6 +76,7 @@ enum YimaDesign { enum Color {
         "xcrun", "swiftc", "-swift-version", "5",
         "-module-cache-path", str(temporary / "module-cache"),
         str(source / "Recording/RecordingDetailPlaybackPresentation.swift"),
+        str(source / "Recording/RecordingAudioBridge.swift"),
         str(wrapper), str(session),
         str(root / "HostTests/RecordingEntryPlaybackChecks.swift"),
         str(root / "HostTests/RecordingStartFailureChecks.swift"),

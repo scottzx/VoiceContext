@@ -309,6 +309,8 @@ struct AIChatView: View {
     /// composer has nothing to scroll.
     @State private var inputAtScrollBottom: Bool = true
     @State private var inputBarHeight: CGFloat = 0
+    @State private var dshControlsHeight: CGFloat = 0
+    private var inputAreaHeight: CGFloat { inputBarHeight + (vm.isDSH ? dshControlsHeight : 0) }
     @State private var inputBarHeightDebounce: Task<Void, Never>?
     /// [T-voice-inputbar-anim-tail] The most recent ON-SCREEN composer height
     /// reported by onGeometryChange. The debounced commit reads THIS instead of
@@ -664,7 +666,9 @@ struct AIChatView: View {
                         }
                         VStack(spacing: 0) {
                             if vm.isDSH {
-                                DSHConversationControls(vm: vm)
+                                DSHConversationControls(vm: vm) { height in
+                                    if abs(dshControlsHeight - height) > 0.5 { dshControlsHeight = height }
+                                }
                             } else {
                                 FloatingApprovalBar(store: approvalStore, showSheet: $showApprovalSheet)
                             }
@@ -2492,7 +2496,7 @@ struct AIChatView: View {
                 },
                 maxContentWidth: maxContentWidth ?? 0,
                 floatingBarHeight: floatingBarHeight,
-                inputBarHeight: inputBarHeight
+                inputBarHeight: inputAreaHeight
             )
             // Empty/loading overlay for tap-to-dismiss-keyboard.
             // Placed BEFORE the directory timeline in the ZStack so the
@@ -2558,7 +2562,7 @@ struct AIChatView: View {
                 .padding(.trailing, 4)
                 .frame(maxWidth: maxContentWidth ?? .infinity, alignment: .trailing)
                 .padding(.horizontal, 12)
-                .padding(.bottom, inputBarHeight + (hasFloatingPreview ? 80 : 12))
+                .padding(.bottom, inputAreaHeight + (hasFloatingPreview ? 80 : 12))
                 .animation(.easeInOut(duration: 0.2), value: vm.isNearBottom)
                 .animation(.easeInOut(duration: 0.2), value: vm.isAtFirstTurn)
                 .animation(.easeInOut(duration: 0.2), value: hasFloatingPreview)
@@ -2578,7 +2582,7 @@ struct AIChatView: View {
             .padding(.trailing, 4)
             .frame(maxWidth: maxContentWidth ?? .infinity, alignment: .trailing)
             .padding(.horizontal, 12)
-            .padding(.bottom, inputBarHeight + (hasFloatingPreview ? 80 : 12) + 92)
+            .padding(.bottom, inputAreaHeight + (hasFloatingPreview ? 80 : 12) + 92)
             .animation(.easeInOut(duration: 0.2), value: hasFloatingPreview)
             .capsuleProtectedFrame("downloadButton")
         }
@@ -3609,21 +3613,10 @@ struct AIChatView: View {
         vm.inputCaret = caret
     }
 
-    private var inputBar: some View {
-        VStack(spacing: 0) {
-            if vm.isSuspended {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .tint(.yellow)
-                    Text("Waiting for other tasks to complete...")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
-                .background(Color.yellow.opacity(0.08))
-            }
-
+    // Bound the composer metadata chain: the 2.0 (9) device crashes exhausted
+    // the main-thread stack while instantiating inputBar's nested modifiers.
+    private var inputComposerContent: AnyView {
+        AnyView(
             VStack(spacing: 5) {
                 // Attachment preview chips — 3 per row
                 if !vm.attachments.isEmpty || vm.loadingVideoCount > 0 {
@@ -3713,6 +3706,25 @@ struct AIChatView: View {
                 }
             }
             #endif
+        )
+    }
+
+    private var inputBar: some View {
+        VStack(spacing: 0) {
+            if vm.isSuspended {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .tint(.yellow)
+                    Text("Waiting for other tasks to complete...")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(Color.yellow.opacity(0.08))
+            }
+
+            inputComposerContent
             .overlay(alignment: .topTrailing) {
                 // Only offer "Move to…" when there is actually something to
                 // move. hasInjectedShareContent is flipped true after EVERY
