@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # Build rclone as a static library for iOS and package it as an XCFramework.
 #
-# Produces deps/frameworks/Rclone.xcframework for physical iOS devices only.
+# Produces deps/frameworks/Rclone.xcframework with two slices:
+#   ios-arm64            (device)
+#   ios-arm64-simulator  (simulator)
+#
+# The simulator slice matters: libish_emu.a is device-only, which already
+# prevents building this app for the Simulator. rclone must not become a
+# SECOND reason — if the iSH constraint is ever lifted, this should not be
+# what blocks it.
 #
 # Which backends get linked is decided by deps/rclone-mobile/backends/backends.go,
 # not here. rclone itself is a go.mod dependency (pinned version), never
@@ -28,9 +35,10 @@ build_slice() {
 }
 
 build_slice iphoneos          "-miphoneos-version-min=16.0"        device
+build_slice iphonesimulator   "-mios-simulator-version-min=16.0"   simulator
 
 # c-archive emits librclone.h next to each .a; both slices share one header.
-for t in device; do
+for t in device simulator; do
   mkdir -p "$BUILD/$t/include"
   mv "$BUILD/$t/librclone.h" "$BUILD/$t/include/" 2>/dev/null || true
 done
@@ -38,6 +46,7 @@ done
 rm -rf "$OUT/Rclone.xcframework"
 xcodebuild -create-xcframework \
   -library "$BUILD/device/librclone.a"    -headers "$BUILD/device/include" \
+  -library "$BUILD/simulator/librclone.a" -headers "$BUILD/simulator/include" \
   -output "$OUT/Rclone.xcframework" >/dev/null
 
 echo "==> $OUT/Rclone.xcframework"

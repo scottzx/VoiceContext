@@ -307,11 +307,6 @@ static int location_handler(int argc, char **argv,
     return NOFF_EXIT_INVALID_ARGS;
 }
 
-// Direct native entry for the meeting assistant; no guest process or shell.
-int location_offload_execute_direct(int argc, char **argv, int stdout_fd, int stderr_fd) {
-    return location_handler(argc, argv, -1, stdout_fd, stderr_fd);
-}
-
 void location_offload_register(void) {
     int err = native_offload_add_handler("apple-location", location_handler);
     if (err == 0) {

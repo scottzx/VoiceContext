@@ -400,7 +400,7 @@ static int cmd_run(int argc, char **argv, int stdin_fd, int stdout_fd, int stder
     // would regress the providers that demand a non-empty instructions block.
     BOOL systemPromptWasInjected = NO;
     if (!systemPrompt) {
-        systemPrompt = @"You are being invoked as a sub-agent inside an app called Yima. "
+        systemPrompt = @"You are being invoked as a sub-agent inside an app called Minis. "
                        @"This is the calling environment, not your identity — keep your own "
                        @"model identity unchanged. You are handling a focused task delegated "
                        @"by the parent agent loop: answer the request directly and concisely, "

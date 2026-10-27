@@ -462,11 +462,6 @@ extension AIChatViewModel {
                     case "browser_use": .browserTool(action: "")
                     case "read_image": .readImageTool(path: "")
                     case "memory_write", "memory_get": .memoryTool(action: name)
-                    // Reading old conversation is a memory lookup as far as
-                    // the user is concerned; the capsule reads the same.
-                    case ChatHistorySearchTool.name: .memoryTool(action: name)
-                    case let n where SubagentTools.names.contains(n) || AgentDirectoryTools.names.contains(n):
-                        .subagentTool(action: n, taskTitle: "")
                     default: .shellTool(command: name)
                     }
                     if name == "file_write" || name == "file_edit" {
@@ -1344,8 +1339,8 @@ extension AIChatViewModel {
         return dict[key] as? String
     }
 
-    /// Parse tool use JSON into command, optional timeout, optional delay, and optional is_background.
-    func parseToolInput(from json: String) -> (command: String, timeout: TimeInterval, delay: TimeInterval, isBackground: Bool) {
+    /// Parse tool use JSON into command, optional timeout, and optional delay.
+    func parseToolInput(from json: String) -> (command: String, timeout: TimeInterval, delay: TimeInterval) {
         // Two failure modes are folded together: (a) JSON itself is invalid
         // (rare; would mean the provider's accumulated tool args were
         // truncated mid-stream) and (b) JSON parses fine but is missing the
@@ -1358,12 +1353,11 @@ extension AIChatViewModel {
         guard let data = json.data(using: .utf8),
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let command = dict["command"] as? String else {
-            return ("", defaultCommandTimeout, 0, false)
+            return ("", defaultCommandTimeout, 0)
         }
         let timeout = (dict["timeout"] as? NSNumber).map { TimeInterval($0.doubleValue) } ?? defaultCommandTimeout
         let delay = (dict["delay"] as? NSNumber).map { TimeInterval($0.doubleValue) } ?? 0
-        let isBackground = (dict["is_background"] as? Bool) ?? false
-        return (command, timeout, delay, isBackground)
+        return (command, timeout, delay)
     }
 
 }

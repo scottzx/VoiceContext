@@ -204,16 +204,6 @@ struct CollectionViewMessageListV3: UIViewControllerRepresentable {
 // MARK: - V3 Bridged Cell Views (no GeometryReader)
 
 /// Header: "✦ Minis" label at the top of each assistant turn.
-/// Name comes from SOUL.md (user-editable in Soul Settings); the
-/// sparkles glyph is fixed — custom emoji is no longer supported,
-/// matching the Soul Settings UI.
-///
-/// In a GROUP transcript the turn carries a `senderAgentId`, and the header
-/// shows that member's own emoji, name and accent instead. This one view is
-/// the entire visual difference between a group and a 1:1 conversation:
-/// consecutive assistant turns already render as separate header + blocks
-/// spans (loadSession breaks the merge chain when the speaker changes), so
-/// naming the speaker here is all a reader needs to follow the room.
 /// Name comes from SOUL.md (user-editable in Soul Settings).
 ///
 /// [T-ios-assistant-header-open-soul] Tapping the row opens Soul Settings.
@@ -223,15 +213,6 @@ private struct BridgedAssistantHeaderV3: View {
     @ObservedObject var message: ChatMessage
     var maxWidth: CGFloat = 0
     @State private var soulMeta: SoulMetadata = SoulStore.cachedMetadata
-    /// Republishes when an agent is renamed or recolored mid-conversation.
-    @ObservedObject private var agents = AgentStore.shared
-
-    /// The speaking member, when this turn came from one.
-    private var speaker: AgentProfile? {
-        guard let id = message.senderAgentId else { return nil }
-        return agents.agents.first { $0.id == id }
-    }
-
     /// [T-ios-assistant-header-open-soul] Injected, NOT read from the
     /// environment.
     ///
@@ -245,51 +226,25 @@ private struct BridgedAssistantHeaderV3: View {
     var onOpenSoulSettings: (() -> Void)?
     var body: some View {
         HStack(spacing: 6) {
-            if let name = message.remoteAssistantName {
-                Image(systemName: "server.rack")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(ChatColors.secondaryText)
-                Text(name)
-                    .font(YimaDesign.Typography.section)
-                    .foregroundStyle(ChatColors.primaryText)
-            } else if let speaker {
-                Text(speaker.emoji.isEmpty ? "🤖" : speaker.emoji)
-                    .font(.system(size: 18))
-                    .frame(width: 22, height: 22)
-                    .background(ChatColors.secondaryBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                Text(speaker.name)
-                    .font(YimaDesign.Typography.section)
-                    .foregroundStyle(ChatColors.primaryText)
-                if !speaker.title.isEmpty {
-                    Text(speaker.title)
-                        .font(.caption2)
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(ChatColors.secondaryBg)
-                        .clipShape(Capsule())
-                        .foregroundStyle(.secondary)
-                }
-            } else if message.senderAgentId != nil {
-                // Spoke in this room, then left it. The line stays readable
-                // rather than silently reattributing to the app identity.
-                Image(systemName: "person.crop.circle.badge.xmark")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                Text(String(localized: "已退出的成员"))
-                    .font(YimaDesign.Typography.section)
-                    .foregroundStyle(.secondary)
-            } else {
-                if soulMeta.icon.isEmpty {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(ChatColors.secondaryText)
-                } else {
-                    SoulIconView(icon: soulMeta.icon, size: 18)
-                }
-                Text(soulMeta.name.isEmpty ? "Yima" : soulMeta.name)
-                    .font(YimaDesign.Typography.section)
-                    .foregroundStyle(ChatColors.primaryText)
-            }
+            // [T-soul-custom-icon] Honours a user-chosen emoji or image;
+            // falls back to the gradient sparkle when unset, so headers for
+            // users who never customized are pixel-identical to before.
+            // 18pt keeps the measured 28pt row height below intact — the
+            // icon is square by construction (SoulIconImage.encode crops),
+            // so an image cannot make this row taller than a glyph does.
+            SoulIconView(
+                icon: soulMeta.icon,
+                size: 18,
+                sparkleGradient: LinearGradient(
+                    colors: [Color(red: 0.72, green: 0.69, blue: 0.59),
+                             Color(red: 0.6, green: 0.6, blue: 0.55)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            Text(soulMeta.name.isEmpty ? "Minis" : soulMeta.name)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(ChatColors.primaryText)
         }
         // [T-ios-assistant-header-open-soul] Hit area and tap, applied to the
         // icon+name HStack only — NOT to the full-width row below it.
@@ -302,22 +257,30 @@ private struct BridgedAssistantHeaderV3: View {
         // `contentShape` makes the whole icon+name box (including the 6pt gap)
         // hittable rather than only the glyph and text pixels.
         //
-        .frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
+        // On the 44pt HIG target: the row is deliberately NOT grown to 44pt.
+        // The comment above records that this header measures 28pt and that
+        // the cell height is UIKit-self-sized, so enlarging the frame would
+        // shift every assistant message in the transcript — the task explicitly
+        // asks not to disturb layout. Instead the touch target is widened
+        // horizontally (the tappable box spans icon + gap + full name, well
+        // over 44pt across) and the 28pt height is left alone. That is the
+        // trade the surrounding code forces; growing it would need the height
+        // constant re-measured, which is out of scope here.
         .contentShape(Rectangle())
         .onTapGesture { onOpenSoulSettings?() }
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(message.remoteAssistantName == nil ? .isButton : [])
-        .accessibilityLabel(message.remoteAssistantName ?? AppLocalized("Open Soul settings"))
-        .accessibilityHint(message.remoteAssistantName == nil ? AppLocalized("Change the assistant's name, icon and personality") : "")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(AppLocalized("Open Soul settings"))
+        .accessibilityHint(AppLocalized("Change the assistant's name, icon and personality"))
         .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
             soulMeta = SoulStore.cachedMetadata
         }
-        .padding(.top, YimaDesign.Space.xs)
+        .padding(.top, 4)
         .padding(.bottom, 0)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxWidth: maxWidth > 0 ? maxWidth : .infinity, alignment: .leading)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, YimaDesign.Layout.listInset)
+        .padding(.horizontal, 16)
         .opacity(message.isCompactedHistory ? 0.5 : 1.0)
         .accessibilityIdentifier("assistantHeader")
     }
@@ -342,7 +305,6 @@ private struct BridgedAssistantBlockV3: View {
         case .browserTool: return "assistantBrowserBlock"
         case .readImageTool: return "assistantReadImageBlock"
         case .memoryTool: return "assistantMemoryBlock"
-        case .subagentTool: return "assistantSubagentBlock"
         case .info: return "assistantInfoBlock"
         }
     }
@@ -370,7 +332,7 @@ private struct BridgedAssistantBlockV3: View {
         )
         .frame(maxWidth: maxWidth > 0 ? maxWidth : nil, alignment: .leading)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, YimaDesign.Layout.listInset)
+        .padding(.horizontal, 16)
         .opacity(message.isCompactedHistory ? 0.5 : 1.0)
         .accessibilityIdentifier(blockAccessibilityId)
         // Context menu on zero-size overlay so it doesn't inflate self-sizing
@@ -1429,7 +1391,7 @@ extension CollectionViewMessageListV3 {
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] block in
-                    guard let self, let vm = self.vm else { return }
+                    guard let self else { return }
                     if let block {
                         let toolBlocks = message.blocks.filter { $0.toolStatus != nil }
                         self.sheetPresenter.sheetData = ToolSheetPresenter.SheetData(
@@ -1437,8 +1399,7 @@ extension CollectionViewMessageListV3 {
                             block: block,
                             toolBlocks: toolBlocks,
                             toolSnapshots: bridge.toolSnapshots,
-                            browserPool: bridge.browserPool,
-                            isRemote: vm.isDSH
+                            browserPool: bridge.browserPool
                         )
                     }
                     // Dismiss is handled by sheetPresenter.onDismiss (set in attach)
@@ -1484,7 +1445,7 @@ extension CollectionViewMessageListV3 {
             bridge.isActiveMessage = isActive
             bridge.commandStartTime = vm.commandStartTime
             bridge.onStop = isActive ? { [weak self] in self?.onStop?() } : nil
-            bridge.browserPool = vm.isDSH ? nil : vm.browserTabPool
+            bridge.browserPool = vm.browserTabPool
             bridge.toolSnapshots = vm.toolSnapshots
             bridge.autoRetryAttempt = isLast ? vm.autoRetryAttempt : 0
             bridge.autoRetryCountdown = isLast ? vm.autoRetryCountdown : 0
@@ -1559,7 +1520,7 @@ extension CollectionViewMessageListV3 {
                 self.compactSummaryPresenter.summary = summary
             }
 
-            if vm.isDSH || message.isCompactedHistory || message.role == .compactDivider || message.role == .systemInfo {
+            if message.isCompactedHistory || message.role == .compactDivider || message.role == .systemInfo {
                 bridge.onRetry = nil; bridge.onEdit = nil; bridge.onCompact = nil
                 bridge.onDeleteFrom = nil
             } else if !vm.isProcessing && !vm.isCompacting {
@@ -2424,10 +2385,12 @@ extension CollectionViewMessageListV3 {
             // [T-bridge-message-ui-leak] Single UI-collection sink for EVERY
             // path that pushes messages to the list (loadSession, live inject,
             // compact rebuild, snapshot reload, rebind…). Filter the internal
-            // role-alternation bridge (#579) and synthetic async task notices here so they can never surface as a
-            // chat bubble regardless of which path produced it.
-            let messages = rawMessages.contains(where: { $0.isInternalBridge || $0.isAsyncTaskNotice })
-                ? rawMessages.filter { !$0.isInternalBridge && !$0.isAsyncTaskNotice }
+            // role-alternation bridge (#579) here so it can never surface as a
+            // chat bubble regardless of which path produced it — replacing the
+            // former reliance on a single filter inside loadSession, which other
+            // rebuild paths bypassed (the leak seen 2026-07-24).
+            let messages = rawMessages.contains(where: { $0.isInternalBridge })
+                ? rawMessages.filter { !$0.isInternalBridge }
                 : rawMessages
 
             // Content changed (new/removed messages) — the up-button's turn-walk
@@ -2802,7 +2765,8 @@ extension CollectionViewMessageListV3 {
 
                     switch item {
                     case .assistantHeader:
-                        layout.setEstimatedHeight(Self.assistantHeaderHeight, at: i)
+                        // Header is always a fixed "sparkles Minis" label row (measured: 28pt)
+                        layout.setEstimatedHeight(28, at: i)
 
                     case .assistantFooter:
                         // Prominent banners (error/resume/typing) measure
@@ -2912,7 +2876,7 @@ extension CollectionViewMessageListV3 {
                                 layout.setEstimatedHeight(est, at: i)
                             }
                         case .thinking:
-                            // Estimator follows the minimum 44pt header and wrapper padding,
+                            // Estimator returns 36pt collapsed (matches header-only rendering),
                             // or header + capped content height when expanded. Hard-coded 88
                             // caused a -48pt correction per cell on first render, producing a
                             // contentSize-shrink jitter chain when scrolling through history.
@@ -2920,13 +2884,14 @@ extension CollectionViewMessageListV3 {
                             layout.setEstimatedHeight(est, at: i)
                         case .readImageTool:
                             // In V3 block cells, readImageTool renders as a
-                            // ToolCapsuleView, same as other tool types.
-                            layout.setEstimatedHeight(Self.toolRowHeight, at: i)
+                            // ToolCapsuleView (36pt), same as other tool types.
+                            layout.setEstimatedHeight(36, at: i)
                         case .info:
                             let infoLines = max(1, block.content.components(separatedBy: "\n").count)
                             layout.setEstimatedHeight(CGFloat(20 + infoLines * 16), at: i)
                         default:
-                            layout.setEstimatedHeight(Self.toolRowHeight, at: i)
+                            // Tool capsules (execute, browser, etc.) are 36pt
+                            layout.setEstimatedHeight(36, at: i)
                         }
 
                     case .wholeMessage(let msgId):
@@ -3186,7 +3151,6 @@ extension CollectionViewMessageListV3 {
                         case .browserTool: "browser_use"
                         case .readImageTool: "read_image"
                         case .memoryTool: "memory"
-                        case .subagentTool(let a, _): a
                         default: "unknown"
                         }
                         AppLogger(category: "ToolLC").info("[ToolLifecycle] RENDERED_CHATUI toolId=\(block.toolUseId?.prefix(20) ?? "nil") tool=\(toolName) sid=\(sid) appState=\(appState) suspended=\(suspended) isProcessing=\(processing) caller=\(caller)")
@@ -3374,7 +3338,7 @@ extension CollectionViewMessageListV3 {
         /// coarse estimate). Cached by content|width|fontsize.
         ///
         /// Layout constants mirror AIChatView.userRow:
-        ///   - font: .system(size: scaledMessage(YimaDesign.Typography.bodySize))
+        ///   - font: .system(size: scaledMessage(16.5))
         ///   - bubble: .padding(.horizontal,14) .padding(.vertical,10)  → +20 height, -28 width
         ///   - row:   HStack { Spacer(minLength: 60); VStack(spacing:6){ attachments?; bubble } }
         ///   - cell:  .padding(.horizontal, 16) on the whole row
@@ -3401,7 +3365,7 @@ extension CollectionViewMessageListV3 {
             // over-estimate per row on EVERY image bubble, and a row-count
             // disagreement near width boundaries. `70` appeared nowhere in the
             // rendering code; it was estimator-only drift.
-            let fontSize = FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)
+            let fontSize = FontSettings.shared.scaledMessage(16.5)
             // [T-ios-queued-bubble-withdraw-width] A QUEUED message renders a
             // withdraw button beside the bubble:
             //
@@ -3649,22 +3613,9 @@ extension CollectionViewMessageListV3 {
             }
         }
 
-        private static var assistantHeaderHeight: CGFloat {
-            max(YimaDesign.Layout.hitTarget, UIFont.preferredFont(forTextStyle: .headline).lineHeight) + YimaDesign.Space.xs
-        }
-
-        private static var toolRowHeight: CGFloat {
-            max(YimaDesign.Layout.hitTarget, UIFont.preferredFont(forTextStyle: .caption1).lineHeight)
-        }
-
-        private static var thinkingHeaderHeight: CGFloat {
-            max(YimaDesign.Layout.hitTarget, UIFont.preferredFont(forTextStyle: .caption1).lineHeight + 20)
-        }
-
         static func estimateItemHeight(_ item: MessageListItem, messages: [ChatMessage], width: CGFloat) -> CGFloat {
-            let scale = FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)
-            let lineHeight = UIFont.systemFont(ofSize: scale).lineHeight
-                + YimaDesign.Document.lineSpacing * scale / YimaDesign.Typography.bodySize
+            let scale = FontSettings.shared.scaledMessage(16)
+            let lineHeight = scale * 1.4
             // [T-ios-user-attach-estimate-mismatch] The former `hPad` local died
             // with the `.user` branch's coarse tile arithmetic — the attachment
             // block now comes from UserAttachmentTileMetrics, which derives its
@@ -3715,7 +3666,7 @@ extension CollectionViewMessageListV3 {
                 case .assistant: return 200
                 }
             case .assistantHeader:
-                return Self.assistantHeaderHeight
+                return 28
             case .assistantBlock(let msgId, let blockId):
                 guard let msg = messages.first(where: { $0.id == msgId }),
                       let block = msg.blocks.first(where: { $0.id == blockId }) else { return 44 }
@@ -3741,16 +3692,19 @@ extension CollectionViewMessageListV3 {
                     }
                     return Self.estimateTextBlockHeight(block.content, width: width, scale: scale, lineHeight: lineHeight)
                 case .thinking:
-                    let headerH = Self.thinkingHeaderHeight + 4 // block-wrapper padding
+                    // Header (icon 14pt or label 13pt) + vPad 10·2 + capsule border ≈ 36pt,
+                    // + 4pt block-wrapper vertical padding = 40 (same calibration as tool
+                    // capsules, [T-ios-decel-inv-estimate-calibration]).
+                    // When expanded, content area adds up to 300pt of inner text + 10pt bottom pad.
+                    let headerH: CGFloat = 40
                     guard block.isThinkingExpanded, !block.content.isEmpty else {
                         return headerH
                     }
                     let innerWidth = max(width - 24, 100)         // 12pt horizontal pad each side
-                    let innerFont = UIFont.preferredFont(forTextStyle: .subheadline)
-                    let innerLineHeight = innerFont.lineHeight + YimaDesign.Document.lineSpacing
+                    let innerLineHeight: CGFloat = 13 * 1.4 + 3   // .lineSpacing(3) on 13pt font
                     let lines = block.content.split(separator: "\n", omittingEmptySubsequences: false)
                     var textH: CGFloat = 0
-                    let cpl = max(1, innerWidth / (innerFont.pointSize * 0.55))
+                    let cpl = max(1, innerWidth / 7)              // ~7pt per CJK/wide glyph at 13pt
                     for line in lines {
                         let wrapped = max(1, ceil(CGFloat(line.count) / cpl))
                         textH += wrapped * innerLineHeight
@@ -3758,11 +3712,17 @@ extension CollectionViewMessageListV3 {
                     let contentH = min(textH + 10, 300)            // ScrollView capped at 300pt
                     let total = headerH + contentH
                     return total
-                case .readImageTool: return Self.toolRowHeight
+                // [T-ios-decel-inv-estimate-calibration] Tool capsules measure exactly
+                // 36pt: ToolCapsuleView has NO vertical padding (unlike .text/.thinking,
+                // which add .padding(.vertical, 2) → +4). The debug.scrollMetrics ring
+                // proved the split: with 40 here, every real tool capsule corrected
+                // 40→36 (-4) mid-decel; the +4 growths that motivated 40 were actually
+                // collapsed THINKING blocks (handled above with headerH = 40).
+                case .readImageTool: return 36
                 case .info:
                     let lineCount = max(1, block.content.components(separatedBy: "\n").count)
                     return CGFloat(20 + lineCount * 16)
-                default: return Self.toolRowHeight
+                default: return 36  // Tool capsules (execute, browser, etc.): no wrapper pad
                 }
             case .assistantFooter:
                 return 4
@@ -5299,7 +5259,6 @@ private final class ToolSheetPresenter: ObservableObject {
         let toolBlocks: [AssistantBlock]
         let toolSnapshots: [ToolSnapshotItem]
         let browserPool: BrowserTabPool?
-        let isRemote: Bool
     }
 
     @Published var sheetData: SheetData?
@@ -5329,16 +5288,12 @@ private struct SheetOverlayView: View {
         Color.clear
             .frame(width: 0, height: 0)
             .sheet(item: $toolPresenter.sheetData) { data in
-                if data.isRemote {
-                    DSHReadOnlyToolSheet(block: data.block)
-                } else {
                 ToolLiveSheet(
                     toolBlocks: data.toolBlocks,
                     initialIdx: data.toolBlocks.firstIndex(where: { $0.id == data.block.id }) ?? 0,
                     toolSnapshots: data.toolSnapshots,
                     browserPool: data.browserPool
                 )
-                }
             }
             .onChange(of: toolPresenter.sheetData?.id) { newVal in
                 if newVal == nil {

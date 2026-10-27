@@ -175,18 +175,6 @@ final class DebugJSONRPC: @unchecked Sendable {
             return try handleWriteFile(params: params)
         case "debug.shellExecute":
             return try await handleShellExecute(params: params)
-        case "debug.hardware.roster":
-            return await MainActor.run { HardwareBridgeDebugRPC.roster(params: params) }
-        case "debug.hardware.state":
-            return await MainActor.run { HardwareBridgeDebugRPC.state(params: params) }
-        case "debug.hardware.manifest":
-            return await MainActor.run { HardwareBridgeDebugRPC.manifest() }
-        case "debug.group.list":
-            return await GroupChatDebugRPC.list()
-        case "debug.group.route":
-            return await GroupChatDebugRPC.route(params: params)
-        case "debug.group.run":
-            return await GroupChatDebugRPC.run(params: params)
         case "debug.appInfo":
             return handleAppInfo(params: params)
         case "debug.backup.export":
@@ -1246,7 +1234,7 @@ final class DebugJSONRPC: @unchecked Sendable {
             query.sortDescriptors = [NSSortDescriptor(key: key, ascending: sortAscending)]
         }
         let zoneID = CKRecordZone.ID(zoneName: zoneName)
-        let container = CKContainer(identifier: AgentBuildIdentity.iCloudContainerID)
+        let container = CKContainer(identifier: "iCloud.com.openminis.app")
         do {
             let result = try await container.privateCloudDatabase.records(
                 matching: query,
@@ -1300,7 +1288,7 @@ final class DebugJSONRPC: @unchecked Sendable {
     /// (minis-shared / minis-devices / minis-secrets) when migration
     /// counters look suspect.
     private func handleSyncAllZones() async -> Any {
-        let container = CKContainer(identifier: AgentBuildIdentity.iCloudContainerID)
+        let container = CKContainer(identifier: "iCloud.com.openminis.app")
         do {
             let zones = try await container.privateCloudDatabase.allRecordZones()
             return [
@@ -1348,7 +1336,7 @@ final class DebugJSONRPC: @unchecked Sendable {
     ///   recordTypes (optional): override the default per-zone type
     ///     list. Useful for ad-hoc probes.
     private func handleSyncZoneStats(params: [String: Any]) async -> Any {
-        let containerId = AgentBuildIdentity.iCloudContainerID
+        let containerId = "iCloud.com.openminis.app"
         let container = CKContainer(identifier: containerId)
         let db = container.privateCloudDatabase
 
@@ -1848,7 +1836,7 @@ final class DebugJSONRPC: @unchecked Sendable {
         // where the FileProvider extension writes its diagnostic log.
         if stripped.hasPrefix("AppGroup/") {
             let fm = FileManager.default
-            if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: AgentBuildIdentity.appGroupID) {
+            if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: "group.com.openminis.app") {
                 let relative = String(stripped.dropFirst("AppGroup/".count))
                 return relative.isEmpty ? container : container.appendingPathComponent(relative)
             }

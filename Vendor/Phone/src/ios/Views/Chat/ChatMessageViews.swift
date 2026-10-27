@@ -47,7 +47,7 @@ struct MessageContextMenuPreview: View {
             // width comes from the ScrollView's width (the outer .frame below),
             // which starts at the cap and shrinks to the measured content.
             Text(shown)
-                .font(.system(size: FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)))
+                .font(.system(size: FontSettings.shared.scaledMessage(16.5)))
                 .foregroundStyle(ChatColors.primaryText)
                 .multilineTextAlignment(.leading)
                 .padding(16)
@@ -247,9 +247,6 @@ struct ChatMessageRow: View {
                 parts.append("Image: \(path)")
             case .memoryTool(let action):
                 parts.append("Memory: \(action)\n\(block.content)")
-            case .subagentTool(let action, let taskTitle):
-                let label = taskTitle.isEmpty ? action : "\(action): \(taskTitle)"
-                parts.append("Task: \(label)\n\(block.content)")
             case .thinking:
                 if !block.content.isEmpty { parts.append("[Thinking]\n\(block.content)") }
             case .info:
@@ -367,30 +364,6 @@ struct ChatMessageRow: View {
         return text
     }
 
-    /// Group-turn prompts and direct A2A envelopes are stored as user-role
-    /// rows so the recipient model's history still alternates correctly. They
-    /// are not human-authored bubbles, though, and may contain Markdown written
-    /// by another assistant. Route only these synthetic rows through the same
-    /// renderer used by ordinary assistant text.
-    private var userMessageUsesMarkdown: Bool {
-        AgentInboundMessageClassifier.shouldRenderMarkdown(userDisplayText)
-    }
-
-    @ViewBuilder
-    private var userMessageContent: some View {
-        if userMessageUsesMarkdown {
-            SelectableMarkdownView(
-                markdown: userDisplayText,
-                messageId: message.id
-            )
-            .fixedSize(horizontal: false, vertical: true)
-        } else {
-            Text(userDisplayText)
-                .font(.system(size: FontSettings.shared.scaledMessage(YimaDesign.Typography.bodySize)))
-                .foregroundStyle(message.isQueued ? ChatColors.secondaryText : ChatColors.primaryText)
-        }
-    }
-
     private var userRow: some View {
         HStack {
             Spacer(minLength: 60)
@@ -406,7 +379,9 @@ struct ChatMessageRow: View {
 
                 if !userDisplayText.isEmpty {
                     HStack(spacing: 6) {
-                        userMessageContent
+                        Text(userDisplayText)
+                            .font(.system(size: FontSettings.shared.scaledMessage(16.5)))
+                            .foregroundStyle(message.isQueued ? ChatColors.secondaryText : ChatColors.primaryText)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .modifier(UserBubbleSurface(isQueued: message.isQueued))
@@ -484,7 +459,7 @@ struct ChatMessageRow: View {
                 MessageContextMenuPreview(text: message.content)
             }
         }
-        .padding(.horizontal, YimaDesign.Layout.listInset)
+        .padding(.horizontal, 16)
         .padding(.vertical, 4)
         // [T-ios-delete-from-message] Suffix deletion is irreversible and takes
         // the following replies with it, so it gets an explicit confirmation
@@ -507,9 +482,16 @@ struct ChatMessageRow: View {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(ChatColors.secondaryText)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color(red: 0.72, green: 0.69, blue: 0.59),
+                                     Color(red: 0.6, green: 0.6, blue: 0.55)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
                 AssistantSoulName()
-                    .font(YimaDesign.Typography.section)
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(ChatColors.primaryText)
             }
             .padding(.top, 4)
@@ -579,7 +561,7 @@ struct ChatMessageRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, YimaDesign.Layout.listInset)
+        .padding(.horizontal, 16)
         .padding(.vertical, 6)
         // [T-ios-geometry-observer-crash] THE crasher from the v1.8b13 IPS:
         // onChange(of: geo.frame(in: .global)) wrote state inside the
@@ -814,3 +796,5 @@ struct ChatMessageRow: View {
     // copy per view is what let the four call sites drift apart in the first
     // place.
 }
+
+

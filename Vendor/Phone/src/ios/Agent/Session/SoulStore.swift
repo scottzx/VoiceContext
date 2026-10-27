@@ -510,7 +510,7 @@ struct SoulMetadata: Equatable {
     var displayEmoji: String { "✨" }
 
     static let `default` = SoulMetadata(
-        name: "Yima",
+        name: "Minis",
         // Default emoji is intentionally empty — the UI uses the fixed
         // `displayEmoji` sparkle and serialize() no longer writes the
         // `emoji:` line. Kept on the struct only so the parser can
@@ -651,56 +651,6 @@ enum SoulStore {
         AIChatViewModel.minisMemoryPersistentDir.appendingPathComponent("SOUL.md")
     }
 
-    // MARK: - Per-agent resolution
-    //
-    // SOUL.md used to be a device-wide singleton. Now each AgentProfile owns
-    // one. The DEFAULT agent deliberately keeps the legacy path: its file is
-    // the one Settings → Soul edits, the one `minis-config` writes, and the
-    // one the iCloud SoulV2 record round-trips. Repointing it would have
-    // orphaned every upgrading user's personality and broken sync, so the
-    // split is by agent id, not by moving files.
-
-    /// Where `agentId`'s persona file lives. `nil` (or the default agent)
-    /// resolves to the legacy device-wide path.
-    static func fileURL(for agentId: String?) -> URL {
-        guard let agentId, agentId != AgentProfile.defaultAgentId else { return fileURL }
-        return AgentProfile.soulURL(for: agentId)
-    }
-
-    /// Where `agentId`'s memory (GLOBAL.md + daily logs) lives. Same
-    /// default-agent carve-out as `fileURL(for:)`.
-    static func memoryDir(for agentId: String?) -> URL {
-        guard let agentId, agentId != AgentProfile.defaultAgentId else {
-            return AIChatViewModel.minisMemoryPersistentDir
-        }
-        return AgentProfile.memoryDir(for: agentId)
-    }
-
-    static func load(for agentId: String?) -> SoulFile? {
-        let url = fileURL(for: agentId)
-        guard FileManager.default.fileExists(atPath: url.path),
-              let data = try? Data(contentsOf: url),
-              let str = String(data: data, encoding: .utf8) else { return nil }
-        return SoulMDParser.parse(str)
-    }
-
-    /// Persist an agent's persona. The default agent routes through `save(_:)`
-    /// so it keeps the cache refresh, the change notification and the iCloud
-    /// dirty-marking that path already owns.
-    @MainActor
-    static func save(_ file: SoulFile, for agentId: String?) throws {
-        guard let agentId, agentId != AgentProfile.defaultAgentId else {
-            try save(file)
-            return
-        }
-        let url = fileURL(for: agentId)
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        let text = SoulMDParser.serialize(file)
-        try text.data(using: .utf8)?.write(to: url, options: .atomic)
-        NotificationCenter.default.post(name: .soulMdChanged, object: agentId)
-    }
-
     // MARK: - Body length rules (unified token count)
     //
     // The personality body has a single hard cap of 2000 tokens, applied
@@ -805,7 +755,7 @@ enum SoulStore {
     /// style / lang) is seeded.
     static let defaultContent: String = """
     ---
-    name: "Yima"
+    name: "Minis"
     style: ""
     lang: "auto"
     ---
@@ -970,40 +920,17 @@ enum SystemPromptBuilder {
     /// We never substitute a default body into the prompt — the identity
     /// sentence alone is the safe fallback when SOUL.md is missing or
     /// empty, matching pre-SOUL behavior.
-    /// The agent's own name as the model should refer to itself — SOUL.md's
-    /// `name` field, falling back to the shipped default. Split out of
-    /// `identitySection` so a prompt that wants ONLY the name (lite mode's,
-    /// which cannot afford the personality body and the SOUL edit hint) does
-    /// not have to re-derive the same fallback chain.
-    static func agentDisplayName(for agentId: String? = nil) -> String {
-        displayName(from: SoulStore.load(for: agentId))
-    }
-
-    /// Name resolution for a SOUL file already in hand — `identitySection`
-    /// loads the file for the personality body anyway, and SoulStore.load
-    /// hits disk on every call.
-    private static func displayName(from file: SoulFile?) -> String {
-        let n = (file?.metadata.name ?? SoulMetadata.default.name)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return n.isEmpty ? SoulMetadata.default.name : n
-    }
-
-    struct IdentityPolicy {
-        var fallbackName: String? = nil
-        var identityTemplate: String? = nil
-        var usesDefaultPersona = true
-        var includesPersonaEditHint = true
-    }
-
-    static func identitySection(for agentId: String? = nil, policy: IdentityPolicy = .init()) -> String {
-        let file = !policy.usesDefaultPersona && (agentId == nil || agentId == AgentProfile.defaultAgentId)
-            ? nil : SoulStore.load(for: agentId)
-        let storedName = file?.metadata.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let name = storedName.isEmpty ? (policy.fallbackName ?? displayName(from: file)) : storedName
+    static func identitySection() -> String {
+        let file = SoulStore.load()
+        let name: String = {
+            let n = (file?.metadata.name ?? SoulMetadata.default.name)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return n.isEmpty ? "Minis" : n
+        }()
         let style: String = (file?.metadata.style ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let identity = (policy.identityTemplate ?? identityTemplate).replacingOccurrences(of: "{name}", with: name)
+        let identity = identityTemplate.replacingOccurrences(of: "{name}", with: name)
         let identityTrimmed = identity.trimmingCharacters(in: .whitespaces)
 
         // [T-soul-hint] Fixed hint telling the model how SOUL fields can be
@@ -1011,7 +938,7 @@ enum SystemPromptBuilder {
         // the model never says "I can't change my personality". This hint
         // is system-owned text and is NOT counted against the user-facing
         // SOUL body length limit (#356 / 500 EN words / 800 CN chars).
-        let soulEditHint = !policy.includesPersonaEditHint ? "" :
+        let soulEditHint =
             "---\n" +
             "SOUL.md fields (name / icon / style / lang / body) can be edited two ways:\n" +
             "1. Tool: call `minis-config` to propose changes (user must approve).\n" +
@@ -1102,12 +1029,12 @@ enum SystemPromptBuilder {
 @MainActor
 struct AssistantSoulName: View {
     @State private var name: String = SoulStore.cachedMetadata.name.isEmpty
-        ? "Yima" : SoulStore.cachedMetadata.name
+        ? "Minis" : SoulStore.cachedMetadata.name
     var body: some View {
         Text(name)
             .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
                 let n = SoulStore.cachedMetadata.name
-                name = n.isEmpty ? "Yima" : n
+                name = n.isEmpty ? "Minis" : n
             }
     }
 }

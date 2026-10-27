@@ -1,20 +1,11 @@
 import SwiftUI
 
 struct OffloadPermissionDialogModifier: ViewModifier {
-    let enabled: Bool
     @ObservedObject private var manager = OffloadPermissionManager.shared
-
-    private var visibleRequest: Binding<PermissionRequest?> {
-        Binding(get: { enabled ? manager.pendingRequest : nil }, set: { if enabled { manager.pendingRequest = $0 } })
-    }
 
     func body(content: Content) -> some View {
         content
-            .sheet(item: visibleRequest, onDismiss: {
-                #if VOICE_AGENT_FUSION
-                NotificationCenter.default.post(name: Notification.Name("Yima.offloadPermissionDismissed"), object: nil)
-                #endif
-            }) { request in
+            .sheet(item: $manager.pendingRequest) { request in
                 OffloadPermissionDialogContent(request: request)
                     // Both detents — long arg lists were getting pushed below
                     // the medium detent's bottom edge with the Allow / Deny
@@ -131,7 +122,7 @@ private struct OffloadPermissionDialogContent: View {
 }
 
 extension View {
-    func offloadPermissionDialog(enabled: Bool = true) -> some View {
-        modifier(OffloadPermissionDialogModifier(enabled: enabled))
+    func offloadPermissionDialog() -> some View {
+        modifier(OffloadPermissionDialogModifier())
     }
 }

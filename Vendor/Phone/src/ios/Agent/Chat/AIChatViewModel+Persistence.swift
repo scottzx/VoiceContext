@@ -13,7 +13,6 @@ extension AIChatViewModel {
     /// implementation, the two writers can disagree and the reorder
     /// detector trips on every iCloud fetch after a send.
     static func computeOrderHash(of messages: [RawMessage]) -> Int {
-        guard !messages.isEmpty else { return 0 }
         var hasher = Hasher()
         for m in messages {
             hasher.combine(m.id)
@@ -23,7 +22,6 @@ extension AIChatViewModel {
     }
 
     func reloadMessagesFromDB(reason: String = "unspecified") async {
-        guard !isDSH else { return }
         guard let sessionId else {
             logger.info("[ReloadTrace] skip reason=\(reason) sid=nil")
             return
@@ -70,12 +68,9 @@ extension AIChatViewModel {
             logger.info("[ReloadTrace] DEFER reason=\(reason) sid=\(sessionId.prefix(8)) — canResume with unpersisted candidate (blocks=\(candidate.blocks.count) > committed=\(self.committedBlockCount)); not overwriting in-memory interrupted content")
             return
         }
-        guard let fingerprint = await ChatStore.shared.sessionMessageFingerprint(sessionId: sessionId) else {
-            logger.error("[ReloadTrace] fingerprint failed reason=\(reason) sid=\(sessionId.prefix(8))")
-            return
-        }
+        let dbMessages = await ChatStore.shared.loadMessages(sessionId: sessionId)
         // [T-stream-empty-banner-trace race fix] Re-check after the
-        // `await sessionMessageFingerprint` suspension: a `send()` invocation
+        // `await loadMessages` suspension: a `send()` invocation
         // queued just behind us on the main thread can have flipped
         // `isProcessing` to true and appended a placeholder assistant
         // message while we were waiting on disk I/O. If we proceed
@@ -89,18 +84,18 @@ extension AIChatViewModel {
         // pick this up after `isProcessing` returns to false.
         if isProcessing || isCompacting {
             self.pendingSyncReloadOnIdle = true
-            logger.info("[ReloadTrace] DEFER-AFTER-AWAIT reason=\(reason) sid=\(sessionId.prefix(8)) isProcessing=\(self.isProcessing) isCompacting=\(self.isCompacting) — race detected after fingerprint await, will reload on idle")
+            logger.info("[ReloadTrace] DEFER-AFTER-AWAIT reason=\(reason) sid=\(sessionId.prefix(8)) isProcessing=\(self.isProcessing) isCompacting=\(self.isCompacting) — race detected after loadMessages await, will reload on idle")
             return
         }
-        let lastDbSortOrder = fingerprint.maxSortOrder
-        let dbCount = fingerprint.count
+        let lastDbSortOrder = dbMessages.last?.sortOrder ?? 0
+        let dbCount = dbMessages.count
         // Reload when new messages exist beyond our baseline. The second condition
         // handles synced sessions that were initially empty (lastKnownDbSortOrder == 0)
         // — messages arriving via iCloud should trigger a reload in that case too.
         // Also reload when messages were removed (e.g. retry deletion propagated from
         // another device) — detected by DB count being less than the known baseline.
         let hasNewMessages = lastDbSortOrder > lastKnownDbSortOrder
-        let wasEmptyNowHasMessages = lastKnownDbSortOrder == 0 && dbCount > 0 && messages.count <= 1
+        let wasEmptyNowHasMessages = lastKnownDbSortOrder == 0 && !dbMessages.isEmpty && messages.count <= 1
         let hasRemovedMessages = dbCount < lastKnownDbCount
         // Detect a silent sort_order rewrite by another sync path (e.g.
         // iCloud HEAL when LWW skipped the message but sort_order
@@ -108,7 +103,7 @@ extension AIChatViewModel {
         // in-memory ChatMessage array stays in the old order forever
         // because lastDbSortOrder is unchanged. Hash the sequence of
         // (id, sortOrder) pairs and compare against the last seen.
-        let hash = fingerprint.orderHash
+        let hash = Self.computeOrderHash(of: dbMessages)
         let hasReorderedMessages = hash != lastKnownDbOrderHash && lastKnownDbOrderHash != 0
         if hasNewMessages || wasEmptyNowHasMessages || hasRemovedMessages || hasReorderedMessages {
             let branch: String
@@ -140,7 +135,6 @@ extension AIChatViewModel {
     /// For UI, we merge consecutive assistant + tool-result turns into a single ChatMessage,
     /// matching how they appeared during the live session.
     func loadSession() async {
-        if isDSH { await loadDSHSession(); return }
         guard let sessionId else { return }
 
         let sinceAppear = (CFAbsoluteTimeGetCurrent() - Self.onAppearTimestamp) * 1000
@@ -201,59 +195,6 @@ extension AIChatViewModel {
         // vm.memoryEnabled from the DB/global default, and which session.
         AppLogger(category: "MemDiag").info("[MemDiag] loadSession sid=\(sessionId.prefix(8)) → vm.memoryEnabled=\(self.memoryEnabled)")
 
-        // [T-lite-mode-small-local-models] Per-session chat mode. Stored on
-        // the row (seeded from the global default at creation), so opening an
-        // old conversation restores the mode it was held in rather than the
-        // one the composer happens to be showing.
-        chatMode = await ChatStore.shared.getChatMode(sessionId: sessionId)
-
-        // Resolve which Agent owns this session, and in what role. Both feed
-        // prompt assembly and tool-set construction, so they must be settled
-        // before the first runAgentLoop. A row with no agent_id predates the
-        // Agent migration (or was created outside AgentStore) and keeps the
-        // historical full-toolset behavior via the `.standalone` default.
-        if let row = await ChatStore.shared.getSession(sessionId) {
-            // Restore the interaction policy after cache eviction or relaunch.
-            if AgentRuntimePolicies.policy(for: row.source).restoresSourceOnLoad {
-                sessionSource = row.source
-            }
-            agentId = row.agentId
-            agentRole = (row.spawnRole == "subagent") ? .executor : .main
-            if let aid = row.agentId, let owner = await ChatStore.shared.getAgent(aid) {
-                resolvedToolPolicy = owner.toolPolicy
-            } else {
-                resolvedToolPolicy = .standalone
-            }
-
-            // Group linkage. A transcript row points at its group by
-            // session_id; a member's private thread points at the group's
-            // session through parent_session_id.
-            switch row.spawnRole {
-            case GroupSessionRole.group:
-                isGroupTranscript = true
-                let group = await ChatStore.shared.groupForSession(sessionId)
-                groupId = group?.id
-                // Resolved once here rather than per keystroke: the `@` picker
-                // reads it on every character typed.
-                if let group {
-                    groupMembers = await GroupStore.shared.members(of: group)
-                } else {
-                    groupMembers = []
-                }
-            case GroupSessionRole.member:
-                isGroupTranscript = false
-                if let parent = row.parentSessionId {
-                    let group = await ChatStore.shared.groupForSession(parent)
-                    groupId = group?.id
-                } else {
-                    groupId = nil
-                }
-            default:
-                isGroupTranscript = false
-                groupId = nil
-            }
-        }
-
         // Clear stale compact/pending state from previous lifecycle
         skipCompactCheck = false
         if isCompacting {
@@ -281,7 +222,6 @@ extension AIChatViewModel {
         // Track the highest sortOrder and count so iCloud sync reload triggers for new or removed messages.
         lastKnownDbSortOrder = rawMessages.last?.sortOrder ?? 0
         lastKnownDbCount = rawMessages.count
-        lastKnownDbOrderHash = Self.computeOrderHash(of: rawMessages)
         // [T-ios-token-usage-reload-per-iteration] Zero the session token
         // accumulators BEFORE the empty-session early return below, so switching
         // this vm from a non-empty session to an empty one doesn't leave the old
@@ -317,16 +257,12 @@ extension AIChatViewModel {
         let showThinking = ProviderConfigStore.shared.inferenceConfig(for: sessionId)?.thinkingLevel.isEnabled ?? false
 
         for raw in rawMessages {
-            // A group transcript is a display/routing projection. Its member
-            // agents run in their own private sessions, so this full API-context
-            // copy is never consumed. Avoid rebuilding it for long rooms.
-            if !isGroupTranscript {
-                // Phase B: stamp the DB row id into dbMessageId so compact can
-                // resolve boundaries by id after restore.
-                var agentMsg = raw.toAgentMessage(mediaResolver: resolver)
-                agentMsg.dbMessageId = raw.id
-                loadedHistory.append(agentMsg)
-            }
+            // Always rebuild agent history (every message matters for API context).
+            // Phase B: stamp the DB row id into dbMessageId so compact can resolve
+            // boundaries by id after restore.
+            var agentMsg = raw.toAgentMessage(mediaResolver: resolver)
+            agentMsg.dbMessageId = raw.id
+            loadedHistory.append(agentMsg)
 
             // [T-bridge-message-ui-leak] The #579 role-alternation bridge is
             // LLM-context-only: it stays in loadedHistory (appended above, so
@@ -341,13 +277,6 @@ extension AIChatViewModel {
                 continue
             }
 
-            // Synthetic async_task_notice tool-use is LLM-context-only.
-            // It stays in loadedHistory but is hidden in the UI message list.
-            if raw.isAsyncTaskNotice {
-                currentAssistant = nil
-                continue
-            }
-
             if raw.role == .user && raw.isToolResultOnly {
                 // Tool-result user messages: apply results to the current assistant's tool blocks
                 if let assistant = currentAssistant {
@@ -358,15 +287,6 @@ extension AIChatViewModel {
             }
 
             if raw.role == .assistant {
-                // Consecutive assistant rows are normally one agent-loop turn
-                // streamed across several rows, so they merge into one UI
-                // message. In a group they are usually DIFFERENT members
-                // speaking in sequence, and merging those would splice two
-                // people's words into one bubble under one name. A change of
-                // speaker breaks the chain.
-                if let assistant = currentAssistant, assistant.senderAgentId != raw.senderAgentId {
-                    currentAssistant = nil
-                }
                 if let assistant = currentAssistant {
                     // Continuation of an agent loop — append new blocks to
                     // existing assistant message AND extend the source-sort
@@ -441,21 +361,6 @@ extension AIChatViewModel {
             loadedUIMessages.append(msg)
         }
 
-        // Group transcripts store mentions canonically as `<@id>` so routing
-        // and renames stay exact; the reader sees names. The stored rows and
-        // `agentHistory` are untouched — only these display copies change, and
-        // only for a room.
-        if isGroupTranscript, !groupMembers.isEmpty {
-            for uiMsg in loadedUIMessages {
-                let rendered = GroupMentionRouter.render(uiMsg.content, members: groupMembers)
-                if rendered != uiMsg.content { uiMsg.content = rendered }
-                for block in uiMsg.blocks where block.kind == .text {
-                    let renderedBlock = GroupMentionRouter.render(block.content, members: groupMembers)
-                    if renderedBlock != block.content { block.content = renderedBlock }
-                }
-            }
-        }
-
         // [BlocksLost] MERGE TRACE — log every text block of the last assistant
         // message so we can confirm whether the final 839-char (or whatever)
         // block actually made it through the merge.
@@ -504,9 +409,7 @@ extension AIChatViewModel {
         //
         // Fallback chain for legacy markers (no firstKeptMessageId):
         //   firstKeptMessageId → boundaryMessageId → firstKeptSortOrder
-        let compactMarker = remoteDeviceId == nil && !isGroupTranscript
-            ? await ChatStore.shared.latestCompactMarker(sessionId: sessionId)
-            : nil
+        let compactMarker = remoteDeviceId == nil ? await ChatStore.shared.latestCompactMarker(sessionId: sessionId) : nil
         self.cachedLatestMarker = compactMarker
         if let marker = compactMarker {
             logger.info("[Compact] ━━━ Phase 2.5: restore (Phase B id-first) ━━━")
@@ -728,23 +631,17 @@ extension AIChatViewModel {
         // badge baseline to the current assistant-turn count. Without this, a
         // late/duplicate endBackgroundProcessing() after read (baseline still
         // at its -1 init) would see turns > -1 and re-badge with no new content.
-        lastBadgedAssistantTurnCount = isGroupTranscript
-            ? rawMessages.reduce(0) { $0 + ($1.role == .assistant ? 1 : 0) }
-            : loadedHistory.reduce(0) { $0 + ($1.role == .assistant ? 1 : 0) }
+        lastBadgedAssistantTurnCount = loadedHistory.reduce(0) { $0 + ($1.role == .assistant ? 1 : 0) }
 
         let phase25Elapsed = (CFAbsoluteTimeGetCurrent() - phase2aStart) * 1000 - phase2aElapsed
         let phase2sigStart = CFAbsoluteTimeGetCurrent()
 
-        // Restore Gemini thought signatures from persisted tool calls. Group
-        // transcripts never enter an agent loop; their members use private
-        // sessions, so this metadata would be another unused full scan.
+        // Restore Gemini thought signatures from persisted tool calls
         pendingThoughtSignatures = [:]
-        if !isGroupTranscript {
-            for raw in rawMessages {
-                for part in raw.parts {
-                    if case .toolUse(let tu) = part, let sig = tu.thoughtSignature {
-                        pendingThoughtSignatures[tu.toolUseId] = ToolCallMetadata(thoughtSignature: sig)
-                    }
+        for raw in rawMessages {
+            for part in raw.parts {
+                if case .toolUse(let tu) = part, let sig = tu.thoughtSignature {
+                    pendingThoughtSignatures[tu.toolUseId] = ToolCallMetadata(thoughtSignature: sig)
                 }
             }
         }
@@ -770,25 +667,16 @@ extension AIChatViewModel {
         // Phase 3: Extract tool snapshots
         let snapshotStart = CFAbsoluteTimeGetCurrent()
         var loadedSnapshots: [ToolSnapshotItem] = []
-        var toolUsesByID: [String: (name: String, input: String)] = [:]
-        for raw in rawMessages {
-            for part in raw.parts {
-                if case .toolUse(let toolUse) = part {
-                    toolUsesByID[toolUse.toolUseId] = (toolUse.name, toolUse.input)
-                }
-            }
-        }
         for raw in rawMessages {
             for part in raw.parts {
                 if case .toolResult(let tr) = part, let snap = tr.snapshot {
-                    let toolUse = toolUsesByID[tr.toolUseId]
-                    let toolName = toolUse?.name ?? "tool"
+                    let toolName = Self.findToolName(for: tr.toolUseId, in: rawMessages)
                     // For file_write: ensure snapshot contains file content, not just tool result
                     let finalSnap: ToolSnapshot
                     if toolName == "file_write",
                        let text = snap.text, text.hasPrefix("Wrote to ") || text.hasPrefix("Appended to ") {
                         // Old-format snapshot — recover file content from ToolUse input or disk
-                        let fileContent = Self.recoverFileWriteContent(from: toolUse?.input)
+                        let fileContent = Self.recoverFileWriteContent(for: tr.toolUseId, in: rawMessages)
                         if let fileContent, !fileContent.isEmpty {
                             let lines = fileContent.components(separatedBy: "\n")
                             let preview = lines.prefix(200).joined(separator: "\n")
@@ -1013,13 +901,31 @@ extension AIChatViewModel {
         }
     }
 
+    /// Find the tool name for a given toolUseId by scanning all messages for a matching toolUse part.
+    private static func findToolName(for toolUseId: String, in messages: [RawMessage]) -> String {
+        for msg in messages {
+            for part in msg.parts {
+                if case .toolUse(let tu) = part, tu.toolUseId == toolUseId {
+                    return tu.name
+                }
+            }
+        }
+        return "tool"
+    }
+
     /// Recover original file content for a file_write tool from persisted ToolUse input.
-    private static func recoverFileWriteContent(from input: String?) -> String? {
-        guard let input,
-              let data = input.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return nil }
-        return dict["content"] as? String
+    private static func recoverFileWriteContent(for toolUseId: String, in messages: [RawMessage]) -> String? {
+        for msg in messages {
+            for part in msg.parts {
+                if case .toolUse(let tu) = part, tu.toolUseId == toolUseId, tu.name == "file_write" {
+                    guard let data = tu.input.data(using: .utf8),
+                          let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let content = dict["content"] as? String else { return nil }
+                    return content
+                }
+            }
+        }
+        return nil
     }
 
     /// Apply tool results from a tool-result RawMessage onto an assistant ChatMessage's tool blocks.
@@ -1107,7 +1013,6 @@ extension AIChatViewModel {
     /// Creates a session if needed and returns its ID.
     @discardableResult
     func ensureSessionReturningId() async -> String {
-        if isDSH { return sessionId ?? "" }
         if let sid = sessionId {
             logger.info("🔑DRAFT [vm=\(self.vmInstanceId)] ensureSession already has sessionId=\(sid)")
             return sid
@@ -1128,10 +1033,6 @@ extension AIChatViewModel {
         // the flag.
         memoryEnabled = await ChatStore.shared.getMemoryEnabled(sessionId: session.id)
         AppLogger(category: "MemDiag").info("[MemDiag] ensureSession sid=\(session.id.prefix(8)) → vm.memoryEnabled=\(self.memoryEnabled)")
-        // [T-lite-mode-small-local-models] Same read-back for the chat mode:
-        // createSession wrote the global default into the new row, and a
-        // draft VM never runs loadSession.
-        chatMode = await ChatStore.shared.getChatMode(sessionId: session.id)
         // Tracker migration: if this vm was marked active under its draftId,
         // swap that entry to the real session id. draftId is kept on the vm
         // itself (sidebar UX still references it until the proxy row is
@@ -1252,7 +1153,7 @@ extension AIChatViewModel {
     ///
     ///   1. **Default group** — if `defaultPrimaryGroupId` is set AND the
     ///      group resolves to at least one available (enabled + credentialed,
-    ///      non-hidden) text-output member, use it.
+    ///      non-hidden) member, use it. Existing behaviour — unchanged.
     ///   2. **Last-used model** — read the most recently updated session via
     ///      `ChatStore.listSessions()` (skipping the one we just created and
     ///      any whose modelId no longer maps to a usable entry on this
@@ -1281,8 +1182,7 @@ extension AIChatViewModel {
         // Tier 1 — default group (current behaviour).
         if let groupId = overrideGroupId ?? store.defaultPrimaryGroupId,
            let group = store.group(for: groupId),
-           let entry = Self.resolveInitialPrimaryGroupEntry(group: group, sessionId: sessionId, store: store) {
-            let entryId = entry.id
+           let entryId = ModelGroupRouter.resolve(group: group, sessionId: sessionId, store: store) {
             let primarySource = SessionModelSource.group(groupId: groupId, resolvedEntryId: entryId)
 
             // Resolve sub source
@@ -1355,23 +1255,6 @@ extension AIChatViewModel {
         logger.warning("[NewSessionDefault] tier=3 latest-provider MISS sid=\(sessionId.prefix(8)) — no enabled+credentialed provider with a usable text model; session left without binding (resolveCurrentEntry will fall back to global config)")
     }
 
-    /// Keep initial chat routing within a group's text models, even if a
-    /// speech/image model was accidentally added before them. Used by meeting
-    /// assistant availability checks as well as new-session binding.
-    static func resolveInitialPrimaryGroupEntry(
-        group: ModelGroup, sessionId: String, store: ProviderConfigStore
-    ) -> ModelEntry? {
-        var textGroup = group
-        textGroup.memberEntryIds = group.memberEntryIds.filter { entryId in
-            guard let entry = store.entry(for: entryId) else { return false }
-            return isTextOutputModel(entry.model)
-        }
-        guard let entryId = ModelGroupRouter.resolve(group: textGroup, sessionId: sessionId, store: store) else {
-            return nil
-        }
-        return store.entry(for: entryId)
-    }
-
     /// [T-newchat-default-model-fallback-ios] Tier-2 helper: scan the most
     /// recent sessions and return the first ModelEntry on this device that
     /// matches one of their stored `modelId`s and is currently usable
@@ -1393,7 +1276,7 @@ extension AIChatViewModel {
             // Find ALL entries on this device matching the recorded modelId,
             // then prefer one whose instance is currently usable.
             let candidates = store.modelEntries.filter { entry in
-                entry.model.id == mid && !entry.isHidden && isTextOutputModel(entry.model)
+                entry.model.id == mid && !entry.isHidden
             }
             if candidates.isEmpty { continue }
             if let usable = candidates.first(where: { entry in
@@ -1417,10 +1300,12 @@ extension AIChatViewModel {
     ///
     /// "Newest" = last position in the in-memory array (instances/entries
     /// are appended on add, so the tail is the most recent addition).
-    /// Explicit modality metadata must include text output; additional output
-    /// modalities do not exclude a multimodal chat model. A nil override is
-    /// assumed text-capable for legacy/provider models without metadata.
-    static func resolveLatestProviderTextEntry(store: ProviderConfigStore) -> ModelEntry? {
+    /// Text-output is determined by `modalityOverride`: an entry is treated
+    /// as text-capable unless its modalityOverride is explicitly one of the
+    /// pure non-text output modalities (imageOutput / audioOutput /
+    /// videoOutput) — same logic as the picker's `nonTextOutputLabel`. A
+    /// nil modalityOverride is assumed text-capable, matching the picker.
+    private static func resolveLatestProviderTextEntry(store: ProviderConfigStore) -> ModelEntry? {
         // Walk providers newest-first.
         for instance in store.instances.reversed() {
             guard instance.isEnabled, instance.hasAnyCredential else {
@@ -1440,12 +1325,18 @@ extension AIChatViewModel {
         return nil
     }
 
-    /// Shared by initial group routing and both new-session fallback tiers.
-    /// Explicit text output also permits multimodal output; absent metadata
-    /// keeps the historical assumption that the model supports chat.
+    /// [T-newchat-default-model-fallback-ios] True when `model` produces text
+    /// output — i.e. NOT a pure image / audio / video generation model. Used
+    /// by the tier-3 fallback to exclude `gpt-image-2`, TTS models, etc.
+    /// from auto-selection on a fresh install. nil modalityOverride = assume
+    /// text (most models don't override, and historically text-output is the
+    /// default for chat models).
     private static func isTextOutputModel(_ model: LLMModel) -> Bool {
         guard let modality = model.modalityOverride else { return true }
-        return modality.contains(.textOutput)
+        if modality.contains(.imageOutput) { return false }
+        if modality.contains(.audioOutput) { return false }
+        if modality.contains(.videoOutput) { return false }
+        return true
     }
 
     /// Apply a ModelGroup's session defaults (thinking level) to the given session.

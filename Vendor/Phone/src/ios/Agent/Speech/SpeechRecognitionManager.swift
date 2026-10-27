@@ -215,9 +215,11 @@ final class SpeechRecognitionManager: ObservableObject {
         recognitionTask?.cancel()
         recognitionTask = nil
 
-        guard AudioSessionCoordinator.shared.beginAndWait(.capture) else {
-            throw NSError(domain: "VoiceContext.Audio", code: 2, userInfo: [NSLocalizedDescriptionKey: "正在录音，暂不可使用语音输入。"])
-        }
+        let audioSession = AVAudioSession.sharedInstance()
+        // No `.duckOthers`: capturing the mic shouldn't quiet other apps' audio
+        // (it sometimes stayed ducked after recording stopped).
+        try audioSession.setCategory(.record, mode: .measurement)
+        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
@@ -311,7 +313,7 @@ final class SpeechRecognitionManager: ObservableObject {
         recognitionTask = nil
         state = .idle
 
-        AudioSessionCoordinator.shared.end(.capture)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     private func computeRMS(buffer: AVAudioPCMBuffer) -> Float {

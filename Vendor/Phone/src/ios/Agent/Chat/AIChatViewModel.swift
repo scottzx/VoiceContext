@@ -86,103 +86,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// If non-nil, this VM is in read-only mode viewing a remote device's session.
     var remoteDeviceId: String?
 
-    /// Remote DSH owns execution and persistence; this VM only presents its state.
-    var dshService: DSHService?
-    var dshClient: DSHClient?
-    var dshFollowTask: Task<Void, Never>?
-    var dshGeneration = UUID()
-    var dshMessages: [String: ChatMessage] = [:]
-    var dshRawTexts: [String: String] = [:]
-    var dshBlocks: [String: AssistantBlock] = [:]
-    @Published var dshInteractions: [DSHInteraction] = []
-    @Published var dshModels: [DSHModelOption] = []
-    @Published var dshACPConfiguration: [String: Any] = [:]
-    @Published var dshModelSelection: DSHModelSelection?
-    @Published var dshAgentPreset: String?
-    @Published var dshHasMore = false
-    @Published var dshSending = false
-    @Published var dshConnected = false
-    @Published var dshControlBusy = false
-    @Published var dshStatusText = ""
-    @Published var dshTitle = ""
-    var isDSH: Bool { dshService != nil }
-    var presentationSessionID: String? {
-        guard let service = dshService else { return sessionId }
-        if let sessionId { return ViewModelCache.dshKey(serviceID: service.id, sessionID: sessionId) }
-        return draftId.map { ViewModelCache.dshDraftKey(serviceID: service.id, draftID: $0) }
-    }
-
-    // MARK: - Agent identity
-    //
-    // Which persistent Agent this session belongs to, and which role the loop
-    // is playing for it. Together these pick the persona (`SoulStore` resolves
-    // SOUL.md per agent), the system prompt variant, and — critically — the
-    // tool set. A `.main` session on an orchestrator agent is never handed
-    // shell/browser/write tools, which is what keeps its long-lived transcript
-    // free of tool output. See `makeAgentTools(role:)`.
-    //
-    // `nil` agentId means "not yet resolved" and behaves exactly like the
-    // pre-Agent build (default agent, full toolset), so any code path that
-    // creates a VM without going through AgentStore still works.
-    var agentId: String?
-    var agentRole: AgentRunRole = .main
-
-    // MARK: Group chat
-    //
-    // Two different things carry a group id, and the difference matters:
-    //
-    //  - On a GROUP TRANSCRIPT vm (`isGroupTranscript` true), `agentId` is nil
-    //    and this vm never runs the agent loop at all — `send()` hands the
-    //    message to GroupChatOrchestrator instead. It exists purely so the
-    //    whole chat UI can be reused for a conversation with several speakers.
-    //  - On a MEMBER vm, `agentId` is that member and the loop runs normally;
-    //    the group id only tells prompt assembly to add the room's rules and
-    //    tool assembly to withhold the roster tools.
-    var groupId: String?
-    /// True on the vm that owns the room's transcript.
-    var isGroupTranscript = false
-    /// The room's cast, for the `@` picker on a group transcript. Resolved by
-    /// `loadSession()` and refreshed when the roster changes.
-    @Published var groupMembers: [GroupMember] = []
-
-    /// The room's rules and cast, prepended to this member's own persona while
-    /// it is taking group turns.
-    ///
-    /// Cached as a string rather than assembled in `baseSystemPrompt` because
-    /// building it needs the group and every member profile — async lookups
-    /// that a synchronous computed property cannot do. GroupChatOrchestrator
-    /// sets it just before each turn, which is also the only moment it could
-    /// have changed.
-    var groupPromptBlock: String?
-
-    var runtimePolicy: AgentRuntimePolicy { AgentRuntimePolicies.policy(for: sessionSource) }
-
-    /// Whether GLOBAL.md and the recent daily logs get injected into this
-    /// turn's system prompt. Lite mode drops them for the same reason it drops
-    /// the memory tools: the injection is unbounded user prose, and the point
-    /// of the mode is a context a 2B model can still hold.
-    var injectsMemoryFragments: Bool { memoryEnabled && !liteModeActive }
-
-    /// Effective tool ceiling for this VM. Executors always get the full
-    /// toolset regardless of what their parent agent is allowed — they are the
-    /// ones actually doing the work.
-    var effectiveToolPolicy: AgentToolPolicy {
-        if agentRole == .executor { return .standalone }
-        return runtimePolicy.toolPolicyOverride ?? resolvedToolPolicy
-    }
-
-    /// Cached copy of the owning agent's policy, refreshed by `loadSession()`.
-    /// Defaults to `.standalone` so an unresolved VM keeps historical behavior.
-    var resolvedToolPolicy: AgentToolPolicy = .standalone
-
-    #if VOICE_AGENT_FUSION
-    /// Captured once by the runner when accepting an explicit voice request.
-    /// Tool dispatch must not obtain a fresh generation for an older turn.
-    var appNavigationVoiceGeneration: UInt64?
-    /// Execution authority is independent of a visible navigation binding.
-    var toolExecutionGeneration: UInt64?
-    #endif
-
     /// Short unique ID for this ViewModel instance (for debugging lifecycle).
     let vmInstanceId = UUID().uuidString.prefix(6)
 
@@ -276,8 +179,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// foreground (after having been backgrounded) gets the suspension hint.
     private static let bgHintBrowserThreshold: TimeInterval = 5 * 60
 
-    init(dshService: DSHService? = nil) {
-        self.dshService = dshService
+    init() {
         logger.info("🔄SESSION [vm=\(self.vmInstanceId)] init — new AIChatViewModel created")
 
         fontChangeObserver = NotificationCenter.default.addObserver(
@@ -344,7 +246,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 // subscriber bound and be lost, starving
                 // consumeDeferredSnapshotIfNeeded (the in-app switch-back
                 // path) of the flag it exists to consume.
-                let sid = self.presentationSessionID
+                let sid = self.sessionId
                 let gatePassed = (sid != nil && Self.activeSessionId == sid)
                 let needsFlag = self.needsSnapshotReloadOnResume
                 logger.info("[BlocksLost] didBecomeActive gate sid=\(sid?.prefix(8) ?? "nil") vm=\(self.vmInstanceId) activeSessionId=\(Self.activeSessionId?.prefix(8) ?? "nil") gatePassed=\(gatePassed) needsFlag=\(needsFlag)")
@@ -370,7 +272,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         detachedLoopEndObserver = NotificationCenter.default.addObserver(
             forName: .sessionAgentLoopDidEnd, object: nil, queue: .main
         ) { [weak self] notification in
-            guard let self, !self.isDSH, let sid = self.sessionId else { return }
+            guard let self, let sid = self.sessionId else { return }
             guard let notifSid = notification.object as? String, notifSid == sid else { return }
             guard Self.activeSessionId == sid else { return }
             guard !self.isProcessing else { return }
@@ -383,7 +285,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         syncChangeObserver = NotificationCenter.default.addObserver(
             forName: .cloudSyncDidFetchChanges, object: nil, queue: .main
         ) { [weak self] _ in
-            guard let self, !self.isDSH, let sid = self.sessionId else { return }
+            guard let self, let sid = self.sessionId else { return }
             // Only the foreground-visible VM reacts. ViewModelCache holds
             // every session the user has ever opened in this launch, and
             // each instance is a notification subscriber — without this
@@ -414,7 +316,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         activityTrackingCancellable = $isProcessing
             .removeDuplicates()
             .sink { [weak self] processing in
-                guard let self, !self.isDSH else { return }
+                guard let self else { return }
                 // Key selection:
                 //   - Before the draft has a real session (sessionId == nil),
                 //     fall back to draftId so the sidebar proxy row still
@@ -590,7 +492,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     func markLongBackgroundBrowserTasks() {
         defer { bgHintBackgroundEntryDate = nil }
         guard let _ = bgHintBackgroundEntryDate else { return }
-        guard !BackgroundKeepAliveManager.shared.canContinueBackgroundExecution else { return }
+        guard !BackgroundKeepAliveManager.shared.enhancedBackgroundEffective else { return }
         let now = Date()
         for msg in messages where msg.role == .assistant {
             for block in msg.blocks {
@@ -637,17 +539,15 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 logger.info("🔑DRAFT [vm=\(self.vmInstanceId)] inputText CLEARED (was \(oldValue.count)ch) sessionId=\(self.sessionId ?? "nil") draftId=\(self.draftId ?? "nil") isProcessing=\(self.isProcessing)")
                 #endif
             }
-            if !isDSH {
-                updateSlashMenuState()
-                updateMentionMenuState()
-            }
+            updateSlashMenuState()
+            updateMentionMenuState()
         }
     }
     /// Caret position (character offset) published by the input text view.
     /// Used by the `@` mention detector to locate the active token.
     @Published var inputCaret: Int = 0 {
         didSet {
-            if !isDSH { updateMentionMenuState() }
+            updateMentionMenuState()
             // If the caret arrived at the desired location, clear the pending
             // request so subsequent edits aren't forced back.
             if let p = pendingCaret, p == inputCaret {
@@ -666,7 +566,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     @Published var isProcessing = false {
         didSet {
             _deinitSnapshot = "isProcessing=\(isProcessing) session=\(sessionId ?? "nil") draft=\(draftId ?? "nil")"
-            if isDSH { return }
             if isProcessing && !oldValue {
                 // Agent loop starting — defer iCloud sync sends until completion
                 Task { await ChatStore.shared.setSyncSendDeferred(true) }
@@ -764,12 +663,13 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     }
                     logger.info("[BlocksLost] DEFERRED retrySnapshot — \(reason) at loop end. sid=\(sessionId?.prefix(8) ?? "nil") vm=\(vmInstanceId) transitionWindow=\(inTransitionWindow) totalBlocks=\(totalBlocks) lastMsgBlocks=\(lastBlocks) msgCount=\(messages.count)")
                 }
-                // When an agent loop finishes, post .sessionAgentLoopDidEnd
-                // so AsyncTaskNoticeManager and other listeners can drain pending notices.
-                if let sid = sessionId {
-                    if Self.activeSessionId != sid {
-                        logger.info("[BlocksLost] DETACHED loop end — posting reload for sid=\(sid.prefix(8)) (active=\(Self.activeSessionId?.prefix(8) ?? "nil"))")
-                    }
+                // [T-ios-detached-vm-loop-end] When an agent loop finishes on
+                // a VM that is NOT the currently-displayed one (user navigated
+                // away mid-loop), the final DB writes are invisible to the
+                // displayed VM. Post a notification so the active VM for this
+                // session reloads from DB and picks up the new data.
+                if let sid = sessionId, Self.activeSessionId != sid {
+                    logger.info("[BlocksLost] DETACHED loop end — posting reload for sid=\(sid.prefix(8)) (active=\(Self.activeSessionId?.prefix(8) ?? "nil"))")
                     NotificationCenter.default.post(name: .sessionAgentLoopDidEnd, object: sid)
                 }
                 // Also drain any skill-filesystem rescan that the AI's
@@ -782,7 +682,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             }
         }
     }
-    @Published var isNoticeDriven = false
     /// [T-ios-group-pause-badge-restamp] Set only while a load / pre-warm is
     /// flipping `canResume` because the persisted tail STILL looks interrupted —
     /// i.e. the session was already paused and we are re-deriving that fact, not
@@ -795,7 +694,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
     @Published var canResume = false {
         didSet {
-            if isDSH { return }
             // [T-session-paused-badge-active-false-positive] Drive the session-
             // list PAUSED badge directly off canResume — the authoritative "this
             // session is interrupted (tap Resume)" flag and the single chokepoint
@@ -1018,29 +916,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     var skipCompactCheck = false
     /// When false, memory_write tool calls are skipped (returns "Memory disabled") in this session.
     @Published var memoryEnabled = true
-
-    // MARK: Chat mode
-    //
-    /// [T-lite-mode-small-local-models] How much scaffolding this session
-    /// hands the model. Seeded from the global default so a draft VM (which
-    /// never runs `loadSession`) already reflects the last pick; `loadSession`
-    /// / `ensureSession` then replace it with the session's stored value.
-    @Published var chatMode: ChatMode = ChatModePreferences.globalDefault
-
-    /// Whether the lite prompt + shell-only toolset actually apply this turn.
-    ///
-    /// The mode is a property of the conversation the USER is having, so it is
-    /// deliberately confined to that conversation. A dispatched executor, a
-    /// group member's turn and a hardware/meeting voice session all run their own
-    /// sessions created by code the user never sees; each of those would
-    /// otherwise inherit the global default and be silently stripped of the
-    /// tools its caller expects it to have.
-    var liteModeActive: Bool {
-        chatMode == .lite
-            && agentRole == .main
-            && groupId == nil
-            && runtimePolicy.allowsLiteMode
-    }
 
     // MARK: - Session Stats
     /// Accumulated streaming duration (seconds) for output token speed calculation.
@@ -1279,7 +1154,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Set when `isProcessing` transitions to false but `retrySnapshotReloadSignal`
     /// cannot fire because `streamingUIUpdatesSuspended` is true. Cleared when the
     /// suspend lifts — at that point the snapshot rebuild is safe and is replayed.
-    var needsSnapshotReloadOnResume = false
+    private var needsSnapshotReloadOnResume = false
 
     /// [T-ios-ui-blocks-lost-suspend-resume] Fired on the main thread whenever
     /// `streamingUIUpdatesSuspended` transitions from true → false, from ANY
@@ -1768,8 +1643,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     private var canSpeakNow: Bool {
         // Enabled AND not muted AND not capturing. `canPlay` folds in the temporary
         // mute (capsule speaker) on top of the full on/off `isEnabled`.
-        runtimePolicy.allowsAutomaticSpeech && VoiceOutputState.shared.canPlay
-            && !VoiceModePreference.shared.isCapturing && !AudioSessionCoordinator.shared.isRecording
+        VoiceOutputState.shared.canPlay && !VoiceModePreference.shared.isCapturing
     }
 
     /// True when a configured cloud TTS model is selected (not the offline System
@@ -1944,70 +1818,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         return _cachedTimeString
     }
 
-    /// The system prompt for this turn, selected by role.
-    ///
-    /// Every assemble site in runAgentLoop reads this one property, so the
-    /// orchestrator/executor split lands everywhere (including the provider-
-    /// fallback re-assembly) without touching those sites.
     private var baseSystemPrompt: String {
-        if agentRole != .executor, let prompt = runtimePolicy.prompt {
-            let context = isNoticeDriven ? "" : groupPromptBlock.map { $0 + "\n" } ?? ""
-            return context + prompt(agentId, memoryEnabled, isNoticeDriven)
-        }
-        // [T-lite-mode-small-local-models] Lite mode replaces the whole
-        // prompt rather than trimming it: the operator prompt's value is that
-        // its parts reinforce each other, and half of it is instructions for
-        // tools a lite turn does not register. `liteModeActive` has already
-        // excluded executors, group turns and hardware sessions.
-        if liteModeActive {
-            return LiteModePrompt.render(agentId: agentId, timeString: approximateTimeString)
-        }
-        // In a group the room's rules come first, before the agent's own
-        // persona and tool instructions: "you are one of several voices here"
-        // has to frame everything below it, not read as an afterthought.
-        let groupBlock = groupPromptBlock.map { $0 + "\n" } ?? ""
-        let hardwareBlock = sessionSource == "hardware" ? """
-
-        \nHardware voice response mode:
-        - Reply in the same language as the user and lead with the answer.
-        - Default to 1-3 short sentences. For Chinese, aim for no more than about 80 characters.
-        - Avoid Markdown, tables, long lists, headings, and unnecessary preambles because the reply is shown on a small screen and spoken aloud.
-        - Keep essential safety warnings and required steps. Be longer only when the user explicitly asks for detail or correctness requires it.
-        """ : ""
-        #if VOICE_AGENT_FUSION
-        let placesBlock = agentRole != .executor && runtimeHostToolDefinitions.contains(where: { $0.name == "yima_places" }) ? """
-
-        美食地图使用 yima_places：先 search 真实地点，缺城市、重名或分店不唯一时询问用户；只有明确收藏指令才用本会话真实 search_id/candidate_id 调用 save，查询不等于收藏。save 在当前页面弹出名称、完整地址与最终标签的核对窗口，只有用户点“确认收藏”后才写入并返回 saved；不能用口头收藏指令或页面跳转替代这次确认，标签仅使用用户明确提供的文字。后台须回前台解锁确认；取消、不可展示、过期或超时均不自动重试或再次弹窗。新搜索使旧候选失效。list/get 返回真实 place_id/revision，修改标签和删除需提供该版本，删除须有明确确认。收藏成功或标签更新本身不授权换页，核对弹窗关闭后默认留在当前页，简短告知真实结果；不因为保存完成就调用 show、navigate 或 app_navigation 换页。仅当本轮用户明确要求打开地图、展示地点或导航时才执行相应跳转。展示先读 app_navigation.get_state 再 show，仅 visible 才表示地图已展示；明确要求“收藏并展示”时，等确认保存成功后重新读取页面版本，再用回执的 place_id 展示该收藏，全批搜索仅用于用户要求查看搜索结果的场景。导航选唯一真实地点并提供当前页面版本，handoff_accepted 只表示交给苹果地图，不表示已开始导航。失败、过期、取消或未成功写入均不能说完成。
-        """ : ""
-        #else
-        let placesBlock = ""
-        #endif
-        switch effectiveToolPolicy {
-        case .orchestrator:
-            return groupBlock + OrchestratorPrompt.render(
-                agentId: agentId,
-                memoryEnabled: memoryEnabled,
-                includeAgentDirectory: groupId == nil
-            ) + hardwareBlock + placesBlock
-        case .standalone:
-            // Executors get the full operator prompt below — it was always
-            // written for the thing that does the work — plus a short preamble
-            // telling them they are headless and who consumes their answer.
-            // The roster section is the mirror image: it goes only to a `.main`
-            // session, which is the only role that is handed those tools (see
-            // makeAgentTools), and never to an executor that could not act on it.
-            return agentRole == .executor
-                ? OrchestratorPrompt.executorPreamble(taskId: sessionId ?? "") + executorAndStandalonePrompt + hardwareBlock
-                : groupBlock + executorAndStandalonePrompt
-                    + (groupId == nil ? "\n\n" + AgentDirectoryTools.promptSection(canDispatch: false) : "")
-                    + hardwareBlock + placesBlock
-        }
-    }
-
-    /// The historical full-capability prompt. Unchanged apart from resolving
-    /// SOUL.md per agent; it is what `.standalone` agents and every dispatched
-    /// executor run on.
-    private var executorAndStandalonePrompt: String {
         // [T-soul-md] Layer 1 is rendered by SystemPromptBuilder, which
         // owns the "You are <name>, a capable AI assistant running on an
         // iOS device ..." identity sentence (parametric on SOUL.md's
@@ -2015,7 +1826,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // Personality section from SOUL.md's body. The original wording
         // is preserved inside SystemPromptBuilder.identityTemplate so we
         // don't regress model behavior that depended on it.
-        let prompt = SystemPromptBuilder.identitySection(for: agentId)
+        SystemPromptBuilder.identitySection()
             + "You should proactively use shell commands to accomplish the user's tasks — installing packages (apk add), "
             + "writing and running scripts, managing files, networking, and any other operations a Linux terminal can perform.\n\n"
             + "Available tools:\n"
@@ -2044,23 +1855,16 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             + "- file_edit: Edit existing files with exact string replacement (old_string → new_string). Preferred over file_write for modifications — always file_read first.\n"
             + "- browser_use: Web browsing (navigate, screenshot, click, type, get_text, scroll, scroll_and_collect, get_readable, get_backbone, fetch, etc.). "
             + "Starts with a desktop Safari user agent. Use screenshot to see the page.\n"
-            // [T-agent-subagent-memory-readonly] memory_write is not registered
-            // for an executor (see makeAgentTools), so it must not be described
-            // here either — a listed tool the model cannot call is a guaranteed
-            // failed call and a confused turn.
-            + (agentRole == .executor
-                ? ""
-                : "- memory_write: Save a memory entry to today's daily log (YYYY-MM-DD.md). Use proactively to note user preferences, project patterns, and important context.\n")
+            + "- memory_write: Save a memory entry to today's daily log (YYYY-MM-DD.md). Use proactively to note user preferences, project patterns, and important context.\n"
             + "- memory_get: Recall memories with keyword search. Check memory at the start of new topics to leverage past knowledge.\n\n"
             + "Current time (approximate): \(approximateTimeString) (\(TimeZone.current.identifier)). "
             + "Device languages: \((UserDefaults.standard.object(forKey: "AppleLanguages") as? [String] ?? Locale.preferredLanguages).joined(separator: ", ")).\n\n"
-            + "Directories under /var/minis/ (bidirectional read/write between shell and app):\n"
+            + "Shared directory /var/minis/ (bidirectional read/write between shell and app):\n"
             + "  /var/minis/attachments/ — Media files (images, audio, video). Display inline with ![desc](minis://attachments/filename).\n"
-            + "  /var/minis/workspace/   — Scratch space for THIS session only, like /tmp: private to this conversation and discarded with it. Download, unpack, build and experiment here. Nothing another session or agent needs may be left here — it cannot see it.\n"
-            + "  /var/minis/offloads/    — Auto-saved large outputs. Read with file_read. Also per-session.\n"
-            + "  /var/minis/browser/     — Browser screenshots and extracts. Also per-session.\n"
-            + "  /var/minis/shared/      — The ONLY cross-session storage: artifacts, documents and anything that must outlive this conversation. Organize by project or topic (e.g. shared/myproject/, shared/datasets/). Copy finished work here from workspace; do not use it as scratch.\n"
-            + "  /var/minis/shared/tasks/<task_id>/ — Where a dispatched background task delivers its files, so the assistant that dispatched it can read them.\n"
+            + "  /var/minis/workspace/   — Working files (scripts, data, configs). Link with [name](minis://workspace/filename).\n"
+            + "  /var/minis/offloads/    — Auto-saved large outputs. Read with file_read.\n"
+            + "  /var/minis/browser/     — Browser screenshots and extracts.\n"
+            + "  /var/minis/shared/      — Cross-session shared storage for artifacts and documents. Organize by project or topic (e.g. shared/myproject/, shared/datasets/). Do NOT store temporary files here.\n"
             + "  /var/minis/memory/GLOBAL.md    — Persistent global memory (read-only, user-maintained via Settings).\n"
             + "  /var/minis/memory/YYYY-MM-DD.md — Daily memory log.\n"
             + "  /var/minis/mounts/<name>/ — User-mounted external folders from iOS Files (e.g. an Obsidian vault, Downloads, another app's iCloud container). Presence and names vary per user. Check this directory first when the task references external/user files. Some mounts may be read-only; write tools will reject writes with a clear error.\n\n"
@@ -2183,12 +1987,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             + "Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended, so in-app scheduled scripts may not run as expected. "
             + "For recurring tasks that must fire beyond the current conversation, tell the user to set up an automation in Apple Shortcuts — it is the only reliable way to trigger periodic execution on iOS. "
             + "(Waiting or polling WITHIN the current turn is different — that is what shell_execute `delay` chains are for, per the shell_execute notes above.)"
-        #if VOICE_AGENT_FUSION
-        return prompt + "\n\nYima custom functions:\n"
-            + "yima-extensions manages the same saved custom function shortcuts shown at the top of Extensions. Run `yima-extensions --help` before first use. Commands: list; get --id; add --name --url; update --id with --name, --url, or --clear-logo; move --id --position (zero-based final position from list); delete --id. Updates retain an uploaded logo unless --clear-logo is supplied. New entries use the name's first character. Only change or delete shortcuts when the user's request authorizes it. URLs must include http:// or https:// and any required port; localhost refers to this iPhone, so services on another device need a reachable LAN or Tailscale address. Saving a shortcut does not start its service.\n"
-        #else
-        return prompt
-        #endif
     }
 
     /// [T-memory-toggle-gates-injection-and-tools-ios]
@@ -2202,29 +2000,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// we land an authoritative override at the end of the prompt so the
     /// model knows the tools won't be registered, the memory files won't
     /// be injected, and what to tell the user if they ask about memory.
-    func memoryStatusFragment(tools: [AgentToolDefinition]) -> String {
-        // [T-lite-mode-small-local-models] Nothing to override in lite mode —
-        // its prompt never mentions memory_get / memory_write, so a paragraph
-        // explaining which of them are registered is pure noise in a context
-        // deliberately kept short.
-        if liteModeActive { return "" }
-        let allowed = agentRole == .executor ? nil : runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven)
-        let memoryTools = Set(tools.map(\.name)).intersection(["memory_get", "memory_write"])
-            .intersection(allowed ?? ["memory_get", "memory_write"])
-        let policyDisablesMemory = allowed.map { $0.isDisjoint(with: ["memory_get", "memory_write"]) } ?? false
-        if policyDisablesMemory || (memoryEnabled && memoryTools.isEmpty) {
-            return "\n\nMemory tools are unavailable for this round. Use the existing context and verified results; do not start memory operations."
-        }
-        if memoryEnabled && memoryTools != ["memory_get", "memory_write"] && agentRole != .executor {
-            return "\n\nMemory tools available for this round: \(memoryTools.sorted().joined(separator: ", ")). Other memory operations are not registered."
-        }
+    private var memoryStatusFragment: String {
         if memoryEnabled {
-            // [T-agent-subagent-memory-readonly] This footer is authoritative —
-            // it overrides anything said earlier in the prompt — so it must not
-            // promise a subagent a memory_write it was never handed.
-            if agentRole == .executor {
-                return "\n\nMemory status: READ-ONLY for this task. GLOBAL.md and recent daily logs have been injected above (if non-empty) and memory_get is available, but memory_write is NOT registered — do not attempt to call it. Anything worth remembering goes in your final answer; the assistant that dispatched you decides what to save."
-            }
             return "\n\nMemory status: ENABLED for this session. GLOBAL.md and recent daily logs have been injected above (if non-empty), and memory_get / memory_write are available in the tool list."
         } else {
             return "\n\nMemory status: DISABLED for this session. "
@@ -2240,7 +2017,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
     /// Session ID for persistence integration. Set by the view on appear.
     var sessionId: String? {
-        didSet { if !isDSH { browserTabPool.sessionId = sessionId } }
+        didSet { browserTabPool.sessionId = sessionId }
     }
 
     /// The draft ID assigned by the parent view (e.g. "__new__<UUID>").
@@ -2249,11 +2026,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
     /// Source tag written to the session record on creation (e.g. "shortcut").
     var sessionSource: String?
-
-    /// Turn-lifecycle hooks in force for this session. Resolved once per turn
-    /// in `runAgentLoop`; nil until the first turn runs. With no bindings
-    /// configured — the default — every entry point on it is a no-op.
-    var hooks: HookRunner?
 
     /// [T-shortcut-duplicate-completion-notification] Suppresses the *generic*
     /// background-completion notification for this run, because a Shortcuts
@@ -2431,49 +2203,14 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Credential validity is checked at send time, not here — avoids blocking the
     /// send button due to Keychain/OAuth state that SwiftUI can't observe.
     var isReady: Bool {
-        if isDSH { return !isLoadingSession && dshConnected && !dshSending && !dshControlBusy }
-        return ProviderConfigStore.shared.instances.contains { $0.isEnabled }
+        ProviderConfigStore.shared.instances.contains { $0.isEnabled }
     }
 
     // MARK: - Send Message
 
-    /// Sessions driven by something other than a person at the composer, and so
-    /// with no way to answer a "compact before sending?" prompt. A group
-    /// member's thread is one: the orchestrator is mid-round waiting on it.
-    var isHeadlessSession: Bool {
-        runtimePolicy.headless
-    }
-
     func send() {
-        if isDSH { sendDSHMessage(); return }
         // Read-only mode — cannot send messages
         guard remoteDeviceId == nil else { return }
-
-        // A group transcript belongs to no single agent and never runs the
-        // agent loop. The user's line goes into the room and
-        // GroupChatOrchestrator decides which members answer — which is what
-        // lets the whole chat UI be reused for a conversation with several
-        // speakers without an AIChatViewModel ever having to hold two agents.
-        if isGroupTranscript, let groupId {
-            let typed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !typed.isEmpty else { return }
-            // The composer is plain text, so the user edits `@市场专家`; the
-            // room stores `<@id>`. Resolving here, once, against the live
-            // roster is what makes a mention survive a later rename — and it
-            // is the same thing Telegram does with a typed @username at send
-            // time. Anything already in token form is left alone.
-            let text = GroupMentionRouter.encode(typed, members: groupMembers)
-            inputText = ""
-            // Attachments are deliberately NOT cleared: a room carries text
-            // only for now, and silently swallowing a file the user attached
-            // would look like it was delivered. Leaving the chips in the
-            // composer is the honest signal that it was not.
-            // The orchestrator persists the message and pushes it into
-            // `messages`, so it lands in the transcript exactly once whether it
-            // came from here or from the hardware bridge.
-            GroupChatOrchestrator.shared.userDidSend(groupId: groupId, text: text)
-            return
-        }
 
         // [T-ios-retry-keyboard] A real send clears the retry origin, so the
         // flag can never leak from a retried turn into the next fresh one and
@@ -2540,11 +2277,11 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             case .ok:
                 break
             case .needsCompact:
-                if isHeadlessSession || autoCompactEnabled {
-                    // Shortcut and hardware sessions can't show UI prompts;
-                    // auto-compact opt-in [T-chat-auto-compact-opt-in] rides
-                    // the same no-prompt path — compact and send without asking.
-                    logger.info("[Context] Near capacity — auto-compacting (\(isHeadlessSession ? "headless session" : "autoCompactEnabled"))")
+                if sessionSource == "shortcut" || autoCompactEnabled {
+                    // Shortcut sessions can't show UI prompts; auto-compact
+                    // opt-in [T-chat-auto-compact-opt-in] rides the same
+                    // no-prompt path — compact and send without asking.
+                    logger.info("[Context] Near capacity — auto-compacting (\(sessionSource == "shortcut" ? "shortcut session" : "autoCompactEnabled"))")
                     pendingSendText = text
                     pendingSendAttachments = pendingAttachments
                     inputText = ""
@@ -2560,9 +2297,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 logger.info("[Context] Near capacity — prompting user to compact before send")
                 return
             case .exhausted:
-                if isHeadlessSession {
-                    // Shortcut and hardware sessions can't show UI — set inline error
-                    logger.info("[Context] Exhausted — headless session cannot continue")
+                if sessionSource == "shortcut" {
+                    // Shortcut sessions can't show UI — set inline error
+                    logger.info("[Context] Exhausted — shortcut session cannot continue")
                     let errMsg = ChatMessage(role: .assistant, content: "", blocks: [])
                     errMsg.error = AppLocalized("Context full. Start a new session to continue.")
                     messages.append(errMsg)
@@ -2923,7 +2660,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
             // Concurrency gate: wait for a processing slot
             let concurrency = SessionConcurrencyManager.shared
-            self.isSuspended = concurrency.isAtCapacity
+            self.isSuspended = concurrency.runningSessions.count >= concurrency.maxConcurrent
             do {
                 try await concurrency.acquireSlot(sessionId: sid)
                 self.isSuspended = false
@@ -2993,16 +2730,15 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // doesn't mistake our own persisted messages for remote ones.
             // The in-memory += 1 tracking can drift if messages are batched or retried.
             if let sid = self.sessionId {
-                if let fingerprint = await ChatStore.shared.sessionMessageFingerprint(sessionId: sid) {
-                    self.lastKnownDbSortOrder = fingerprint.maxSortOrder
-                    self.lastKnownDbCount = fingerprint.count
-                    // T-baseline-hash-drift: also refresh the order hash so
-                    // the next iCloud notification does not mistake our own
-                    // INSERT for a remote reorder. This path deliberately reads
-                    // no parts_json; a long conversation should not be decoded
-                    // again merely to update its cache baseline.
-                    self.lastKnownDbOrderHash = fingerprint.orderHash
-                }
+                let dbMessages = await ChatStore.shared.loadMessages(sessionId: sid)
+                self.lastKnownDbSortOrder = dbMessages.last?.sortOrder ?? self.lastKnownDbSortOrder
+                self.lastKnownDbCount = dbMessages.count
+                // T-baseline-hash-drift: also refresh lastKnownDbOrderHash —
+                // otherwise reloadMessagesFromDB's hasReorderedMessages check
+                // sees the old (pre-INSERT) hash vs the new (post-INSERT)
+                // row set, flags a fake reorder, and fires loadSession()
+                // (spinner ON ~460ms) on the next iCloud fetch notification.
+                self.lastKnownDbOrderHash = Self.computeOrderHash(of: dbMessages)
             }
 
             logger.info("🔄SESSION [vm=\(self.vmInstanceId)] send DONE session=\(self.sessionId ?? "nil")")
@@ -3012,109 +2748,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         }
     }
 
-    /// Resume the agent loop after synthetic async tool results (e.g. background task completion)
-    /// have been injected into the session's history in the DB.
-    @discardableResult
-    func resumeNoticeDrivenLoop() async -> Bool {
-        guard !isProcessing else { return false }
-        guard let sid = sessionId else { return false }
-
-        autoRetryAttempt = 0
-        autoRetryCountdown = 0
-        canResume = false
-        committedBlockCount = 0
-        prevCommittedBlockCount = 0
-        userDidCancel = false
-        isNoticeDriven = true
-        isProcessing = true
-        errorMessage = nil
-
-        logger.info("🔄SESSION [vm=\(self.vmInstanceId)] resumeNoticeDrivenLoop START session=\(sid)")
-
-        ensureKernelBooted()
-        beginBackgroundProcessing()
-
-        currentTask = Task { [weak self] in
-            guard let self else { return }
-
-            while self.kernelStatus == .booting {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
-
-            if case .failed(let msg) = self.kernelStatus {
-                self.errorMessage = "Kernel not available: \(msg)"
-                self.isNoticeDriven = false
-                self.isProcessing = false
-                self.endBackgroundProcessing()
-                return
-            }
-
-            let concurrency = SessionConcurrencyManager.shared
-            self.isSuspended = concurrency.isAtCapacity
-            do {
-                try await concurrency.acquireSlot(sessionId: sid)
-                self.isSuspended = false
-            } catch {
-                self.isSuspended = false
-                self.isNoticeDriven = false
-                self.isProcessing = false
-                self.endBackgroundProcessing()
-                return
-            }
-            defer {
-                concurrency.releaseSlot(sessionId: sid)
-            }
-
-            do {
-                try await self.runAgentLoop()
-            } catch is CancellationError {
-                logger.info("[NoticeLoop] Agent loop cancelled")
-                self.handleUserCancelledCleanup()
-            } catch {
-                let rawDesc = String(describing: error)
-                logger.error("[NoticeLoop] Agent loop error: \(rawDesc)")
-                if self.userDidCancel {
-                    self.handleUserCancelledCleanup()
-                } else {
-                    let displayDesc = Self.friendlyErrorMessage((error as? LocalizedError)?.errorDescription ?? rawDesc)
-                    if let last = self.messages.last(where: { $0.role == .assistant }) {
-                        last.error = displayDesc
-                    } else {
-                        self.errorMessage = displayDesc
-                    }
-                }
-            }
-
-            if self.userDidCancel { self.handleUserCancelledCleanup() }
-
-            guard !Task.isCancelled else {
-                self.isNoticeDriven = false
-                self.isProcessing = false
-                self.endBackgroundProcessing()
-                return
-            }
-
-            await self.drainQueuedPrompts()
-
-            if let fingerprint = await ChatStore.shared.sessionMessageFingerprint(sessionId: sid) {
-                self.lastKnownDbSortOrder = fingerprint.maxSortOrder
-                self.lastKnownDbCount = fingerprint.count
-                self.lastKnownDbOrderHash = fingerprint.orderHash
-            }
-
-            self.isNoticeDriven = false
-            self.isProcessing = false
-            self.endBackgroundProcessing()
-            logger.info("🔄SESSION [vm=\(self.vmInstanceId)] resumeNoticeDrivenLoop DONE session=\(sid)")
-        }
-
-        return true
-    }
-
     /// Retry the next agent loop iteration (continue from where the error occurred,
     /// keeping all previously completed tool blocks and conversation history).
     func retry() {
-        guard !isDSH else { return }
         guard !isProcessing else { return }
         guard let lastMsg = messages.last, lastMsg.role == .assistant else { return }
 
@@ -3225,7 +2861,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // Concurrency gate: wait for a processing slot
             let retrySid = self.sessionId ?? "unknown"
             let concurrency = SessionConcurrencyManager.shared
-            self.isSuspended = concurrency.isAtCapacity
+            self.isSuspended = concurrency.runningSessions.count >= concurrency.maxConcurrent
             do {
                 try await concurrency.acquireSlot(sessionId: retrySid)
                 self.isSuspended = false
@@ -3291,7 +2927,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Resume an interrupted agent loop. Injects a "Continue" user message
     /// into agentHistory so the model knows to pick up where it left off.
     func resume() {
-        if isDSH { Task { await loadDSHSession() }; return }
         guard !isProcessing, canResume else { return }
         // [T-ios-orphan-user-tail GH#262/#263] A tail of "user turn with no
         // reply at all" has no assistant row to resume INTO — the reply never
@@ -3373,7 +3008,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
             let resumeSid = self.sessionId ?? "unknown"
             let concurrency = SessionConcurrencyManager.shared
-            self.isSuspended = concurrency.isAtCapacity
+            self.isSuspended = concurrency.runningSessions.count >= concurrency.maxConcurrent
             do {
                 try await concurrency.acquireSlot(sessionId: resumeSid)
                 self.isSuspended = false
@@ -3581,7 +3216,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     }
 
     func retryFromMessage(_ messageId: UUID, replacementAttachments: [InputAttachment]? = nil) {
-        guard !isDSH else { return }
         guard !isProcessing else { return }
         // [T-ios-retry-keyboard] Re-running from an existing user message is a
         // retry, not a new send.
@@ -3716,7 +3350,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// (`keepUpTo - 1`), so the surviving history ends on the PREVIOUS
     /// assistant turn — still a valid, self-consistent context.
     func deleteFromMessage(_ messageId: UUID) {
-        guard !isDSH else { return }
         guard !isProcessing else { return }
         // Same truncation guard as retry: a deferred iCloud-sync reload landing
         // mid-truncation would rebuild `messages` from a stale DB snapshot and
@@ -3894,7 +3527,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // Concurrency gate: wait for a processing slot
             let retryFromSid = self.sessionId ?? "unknown"
             let concurrency = SessionConcurrencyManager.shared
-            self.isSuspended = concurrency.isAtCapacity
+            self.isSuspended = concurrency.runningSessions.count >= concurrency.maxConcurrent
             do {
                 try await concurrency.acquireSlot(sessionId: retryFromSid)
                 self.isSuspended = false
@@ -3972,7 +3605,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// truncating at the preceding user message — delegate to
     /// retryFromMessage(precedingUser) and skip the sub-message rewrite.
     func retryFromToolBlock(blockId: UUID) {
-        guard !isDSH else { return }
         guard !isProcessing else { return }
 
         // Locate the assistant UI message + the target block's index within it.
@@ -4215,7 +3847,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// The next call to send() will truncate the conversation from this message
     /// and re-run the agent loop with the edited content.
     func editMessage(_ messageId: UUID) {
-        guard !isDSH else { return }
         guard !isProcessing else { return }
         guard let idx = messages.firstIndex(where: { $0.id == messageId }),
               messages[idx].role == .user else { return }
@@ -4277,17 +3908,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     }
 
     func cancel() {
-        if isDSH { cancelDSHTurn(); return }
-        // Stop on a group transcript stops the ROOM, not a loop — this vm has
-        // none. The member currently speaking finishes into its own session
-        // (interrupting it mid-write would leave a torn transcript there), but
-        // nothing further is posted to the room.
-        if isGroupTranscript, let groupId {
-            GroupChatOrchestrator.shared.cancel(groupId: groupId)
-            isProcessing = false
-            return
-        }
-
         let lastBlocks = (messages.last?.role == .assistant) ? messages.last!.blocks.count : -1
         let lastRole = messages.last.map { $0.role == .assistant ? "assistant" : "user" } ?? "nil"
         logger.info("⏹️ cancel() START session=\(self.sessionId ?? "nil") isProcessing=\(self.isProcessing) lastRole=\(lastRole) lastBlocks=\(lastBlocks) currentTask=\(self.currentTask != nil)")
@@ -4398,13 +4018,12 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             }
 
             if let sid = self.sessionId {
-                if let fingerprint = await ChatStore.shared.sessionMessageFingerprint(sessionId: sid) {
-                    self.lastKnownDbSortOrder = fingerprint.maxSortOrder
-                    self.lastKnownDbCount = fingerprint.count
-                    // T-baseline-hash-drift: see send DONE path for why hash
-                    // must be refreshed alongside count/sortOrder.
-                    self.lastKnownDbOrderHash = fingerprint.orderHash
-                }
+                let dbMessages = await ChatStore.shared.loadMessages(sessionId: sid)
+                self.lastKnownDbSortOrder = dbMessages.last?.sortOrder ?? self.lastKnownDbSortOrder
+                self.lastKnownDbCount = dbMessages.count
+                // T-baseline-hash-drift: see send DONE path for why hash
+                // must be refreshed alongside count/sortOrder.
+                self.lastKnownDbOrderHash = Self.computeOrderHash(of: dbMessages)
             }
             self.isProcessing = false
             self.endBackgroundProcessing()
@@ -4791,7 +4410,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 case .browserTool: return "browser"
                 case .readImageTool: return "readImage"
                 case .memoryTool: return "memory"
-                case .subagentTool: return "task"
                 case .info: return "info"
                 }
             }()
@@ -5119,22 +4737,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // [T-ios-empty-after-toolresult-reminder] Fresh turn → allow one reminder retry.
         didInjectEmptyToolReminderThisRun = false
 
-        // [Hooks] Resolve this turn's bindings and open the turn ledger. Done
-        // here rather than in send() so every entry into the loop — send,
-        // retry, resume, the notice-driven revival — gets a fresh ledger and
-        // the wake source that actually applies to it.
-        let hooks = HookRunner.resolve(sessionID: sessionId ?? "", agentID: agentId)
-        hooks.beginTurn(
-            sessionSource: sessionSource,
-            isNoticeDriven: isNoticeDriven,
-            isExecutor: agentRole == .executor
-        )
-        hooks.onSystemRow = { [weak self] text, icon in
-            self?.appendSystemInfo(text, icon: icon)
-        }
-        self.hooks = hooks
-        hooks.absorb(hooks.turnWillStart())
-
         // Resolve provider from ProviderConfigStore
         guard let entry = resolveCurrentEntry() else {
             let errMsg = ChatMessage(role: .assistant, content: "", blocks: [])
@@ -5179,12 +4781,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 activeGroupId = gid
             }
         }
-        var tools = makeAgentTools()
-        // This keeps the existing streaming/concurrent implementation in
-        // charge for now, while the exact provider-independent tool contract
-        // used by a future shared-engine path is built on every real run.
-        let sharedRunTools = sharedAgentRunToolDefinitions(from: tools)
-        AgentRequestTrace.shared.step("agentLoop.sharedRunSeam", detail: "toolDefinitions=\(sharedRunTools.count)")
+        let tools = makeAgentTools()
 
         var userSystemPrompt = baseSystemPrompt
         let activeModel = ProviderConfigStore.shared.entry(for: entry.id)?.model ?? selectedModel
@@ -5197,12 +4794,12 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
         // Inject enabled skill metadata into system prompt
         if let sid = sessionId,
-           let skillFragment = SkillStore.shared.skillPromptFragment(for: sid, liteMode: liteModeActive) {
+           let skillFragment = SkillStore.shared.skillPromptFragment(for: sid) {
             userSystemPrompt += "\n\n" + skillFragment
         }
 
         // [T-mcp-integration-ios] Inject Top-20 enabled MCP server metadata.
-        if !liteModeActive, let sid = sessionId,
+        if let sid = sessionId,
            let mcpFragment = MCPStore.shared.systemPromptSnippet(for: sid) {
             userSystemPrompt += "\n\n" + mcpFragment
         }
@@ -5217,16 +4814,17 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // session so a repro shows whether loadSession seeded it from the
         // global default.
         AppLogger(category: "MemDiag").info("[MemDiag] inject-decision sid=\(self.sessionId?.prefix(8) ?? "nil") vm.memoryEnabled=\(self.memoryEnabled)")
-        if injectsMemoryFragments {
-            if let memoryFragment = Self.loadGlobalMemoryFragment(agentId: agentId) {
+        if memoryEnabled {
+            if let memoryFragment = Self.loadGlobalMemoryFragment() {
                 userSystemPrompt += "\n\n" + memoryFragment
             }
-            if let dailyFragment = Self.loadRecentDailyMemoryFragment(agentId: agentId) {
+            if let dailyFragment = Self.loadRecentDailyMemoryFragment() {
                 userSystemPrompt += "\n\n" + dailyFragment
             }
         }
-        // The authoritative memory footer is added per provider request using
-        // that round's actual tool list, including delivery-only repair.
+        // Authoritative memory-status footer (overrides any earlier
+        // baseSystemPrompt mentions when memory is disabled).
+        userSystemPrompt += memoryStatusFragment
 
         let promptBuildMs = (CFAbsoluteTimeGetCurrent() - loopSetupStart) * 1000
         logger.info("⏱️ [runAgentLoop] prompt build elapsed=\(String(format: "%.1f", promptBuildMs))ms history=\(self.agentHistory.count)")
@@ -5393,35 +4991,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // that keeps hitting the threshold can't compact forever; when the cap
         // is reached and we're still near capacity, the loop stops as exhausted.
         var compactionsThisLoop = 0
-        var replyDeliveryRound = false
-
-        // [T-meeting-answer-user-recovery] A configured explicit delivery
-        // remains incomplete at a clean stop until its tool is called. Recover once with a
-        // delivery-only tool surface, using the results already in history.
-        func requestReplyDelivery(after stopReason: AgentStopReason?, allowEmptyEndTurn: Bool = false) async -> Bool {
-            guard agentRole != .executor, let delivery = runtimePolicy.replyDelivery else { return false }
-            guard !replyDeliveryRound,
-                  stopReason == .endTurn, (!canResume || allowEmptyEndTurn), !userDidCancel,
-                  promptQueue.isEmpty,
-                  runtimePolicy.replyDelivery?.canRequest(sessionId) == true else {
-                logger.info("[ReplyDelivery] No recovery: recoveryRound=\(replyDeliveryRound) stop=\(String(describing: stopReason)) resumable=\(canResume) cancelled=\(userDidCancel) queued=\(promptQueue.count) replyOpen=\(runtimePolicy.replyDelivery?.canRequest(sessionId) == true)")
-                return false
-            }
-            replyDeliveryRound = true
-            var reminder = AgentMessage(role: .user, parts: [.text(delivery.reminder)])
-            guard let persistedID = await persistAgentMessage(reminder) else { return false }
-            reminder.dbMessageId = persistedID
-            agentHistory.append(reminder)
-            guard !Task.isCancelled, !userDidCancel,
-                  runtimePolicy.replyDelivery?.canRequest(sessionId) == true else { return false }
-            // Dispatch validates against this same list, so even hallucinated
-            // Apple/write/spawn calls cannot repeat business work in recovery.
-            tools = [delivery.definition]
-            if allowEmptyEndTurn { canResume = false }
-            logger.info("[ReplyDelivery] Missing configured reply delivery at clean stop; requesting one delivery-only round")
-            return true
-        }
-
         loopLabel: while turnCount < Self.maxAgentTurns {
             defer { turnCount += 1 }
             // [LoopHeartbeat] (#181) One line per loop iteration. If the loop
@@ -5573,29 +5142,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 break loopLabel
             }
 
-            hooks.beginRound(turnCount)
-
-            // [Hooks] Deliver any reminder a turnWillStart hook asked for. It
-            // rides as a user-role text part, which mergeConsecutiveSameRole
-            // folds into the prompt it annotates — the same shape the loop's
-            // own empty-response reminder uses.
-            for reminder in hooks.drainReminders() {
-                agentHistory.append(AgentMessage(role: .user, parts: [.text(reminder)]))
-            }
-
-            // [Hooks] The tool surface for THIS round. `tools` is the session's
-            // full toolset, computed once above; a toolsWillBeSent hook may
-            // narrow what the model is shown for one round (e.g. "open with a
-            // reply, not a tool call") without the loop knowing the rule. Only
-            // the request sites below use `roundTools` — tool EXECUTION and
-            // preflight keep the full `tools`, because those validate arguments
-            // against a schema and must not be affected by visibility.
-            let roundTools = hooks.tools(tools)
-            let requiredToolName = replyDeliveryRound ? runtimePolicy.replyDelivery?.definition.name : nil
-            if runtimePolicy.replyDelivery != nil {
-                logger.info("[ReplyDelivery] Request round=\(turnCount) requiredTool=\(requiredToolName ?? "auto") tools=\(roundTools.map(\.name).joined(separator: ","))")
-            }
-
             CrashReporter.shared.setLastAPI(provider: provider.name, model: activeModelForOffload.id)
             logger.info("Calling \(provider.name) API (streaming) with \(self.agentHistory.count) messages")
             // [StreamDiag] (#181) Monotonic request sequence, so a
@@ -5691,9 +5237,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 provider: provider,
                 messages: contextHistory,
                 baseSystemPrompt: baseSystemPrompt,
-                systemPrompt: userSystemPrompt + memoryStatusFragment(tools: roundTools),
-                tools: roundTools,
-                requiredToolName: requiredToolName,
+                systemPrompt: userSystemPrompt,
+                tools: tools,
                 model: activeModel,
                 lastContextTokens: turnUsage.latestContextTokens,
                 chatMessage: messages[msgIdx],
@@ -5726,11 +5271,11 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     userSystemPrompt += "\n\n" + behaviorFragment
                 }
                 if let sid = sessionId,
-                   let skillFragment = SkillStore.shared.skillPromptFragment(for: sid, liteMode: liteModeActive) {
+                   let skillFragment = SkillStore.shared.skillPromptFragment(for: sid) {
                     userSystemPrompt += "\n\n" + skillFragment
                 }
                 // [T-mcp-integration-ios] Inject Top-20 enabled MCP metadata.
-                if !liteModeActive, let sid = sessionId,
+                if let sid = sessionId,
                    let mcpFragment = MCPStore.shared.systemPromptSnippet(for: sid) {
                     userSystemPrompt += "\n\n" + mcpFragment
                 }
@@ -5738,14 +5283,15 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 // the gate from the first injection site — fallback to a
                 // new provider must respect the per-session memoryEnabled
                 // toggle the same way the initial system prompt did.
-                if injectsMemoryFragments {
-                    if let memoryFragment = Self.loadGlobalMemoryFragment(agentId: agentId) {
+                if memoryEnabled {
+                    if let memoryFragment = Self.loadGlobalMemoryFragment() {
                         userSystemPrompt += "\n\n" + memoryFragment
                     }
-                    if let dailyFragment = Self.loadRecentDailyMemoryFragment(agentId: agentId) {
+                    if let dailyFragment = Self.loadRecentDailyMemoryFragment() {
                         userSystemPrompt += "\n\n" + dailyFragment
                     }
                 }
+                userSystemPrompt += memoryStatusFragment
                 fallbackTrigger += 1
                 if !fallbackReasons.isEmpty {
                     // Resync the assistant message index by its stable id before
@@ -5784,13 +5330,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // HTTP 200) and the endTurn-with-zero-output path (OpenAI gpt-5.5
             // on long contexts: `finish_reason=stop` with no text/tool/reasoning).
             func isEmptyResponse(_ r: StreamResult) -> Bool {
-                // [T-meeting-empty-answer-delivery] A clean empty stop with pending delivery
-                // goes straight to the bounded reply-only round below. Retrying
-                // it here would re-offer business tools and delay that delivery.
-                if agentRole != .executor, r.stopReason == .endTurn, !r.isStreamInterrupted,
-                   runtimePolicy.replyDelivery?.canRequest(sessionId) == true {
-                    return false
-                }
                 let hasReasoning = !(r.reasoningContent ?? "").isEmpty
                 return r.assistantText.isEmpty && r.toolEntries.isEmpty
                     && !hasReasoning && !r.isStreamInterrupted
@@ -5858,9 +5397,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     let reminderStream = try await streamWithAutoRetry(
                         provider: provider,
                         messages: applyRequestImageBudget(historyWithEmptyToolResultReminder()),
-                        systemPrompt: userSystemPrompt + memoryStatusFragment(tools: roundTools),
-                        tools: roundTools,
-                        requiredToolName: requiredToolName,
+                        systemPrompt: userSystemPrompt,
+                        tools: tools,
                         maxTokens: dynamicMaxTokens(provider: provider, model: activeModel, lastContextTokens: turnUsage.latestContextTokens),
                         chatMessage: messages[msgIdx]
                     )
@@ -5931,9 +5469,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         provider: provider,
                         messages: applyRequestImageBudget(effectiveAgentHistory()),
                         baseSystemPrompt: baseSystemPrompt,
-                        systemPrompt: userSystemPrompt + memoryStatusFragment(tools: roundTools),
-                        tools: roundTools,
-                        requiredToolName: requiredToolName,
+                        systemPrompt: userSystemPrompt,
+                        tools: tools,
                         model: activeModel,
                         lastContextTokens: turnUsage.latestContextTokens,
                         chatMessage: messages[msgIdx],
@@ -5954,9 +5491,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         let retryStream = try await streamWithAutoRetry(
                             provider: provider,
                             messages: applyRequestImageBudget(effectiveAgentHistory()),
-                            systemPrompt: userSystemPrompt + memoryStatusFragment(tools: roundTools),
-                            tools: roundTools,
-                            requiredToolName: requiredToolName,
+                            systemPrompt: userSystemPrompt,
+                            tools: tools,
                             maxTokens: dynamicMaxTokens(provider: provider, model: activeModel, lastContextTokens: turnUsage.latestContextTokens),
                             chatMessage: messages[msgIdx]
                         )
@@ -6007,9 +5543,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                             provider: provider,
                             messages: applyRequestImageBudget(effectiveAgentHistory()),
                             baseSystemPrompt: baseSystemPrompt,
-                            systemPrompt: userSystemPrompt + memoryStatusFragment(tools: roundTools),
-                            tools: roundTools,
-                            requiredToolName: requiredToolName,
+                            systemPrompt: userSystemPrompt,
+                            tools: tools,
                             model: activeModel,
                             lastContextTokens: turnUsage.latestContextTokens,
                             chatMessage: messages[msgIdx],
@@ -6024,7 +5559,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
             let streamEnd = Date()
             let assistantText = streamResult.assistantText
-            var toolEntries = streamResult.toolEntries
+            let toolEntries = streamResult.toolEntries
             let stopReason = streamResult.stopReason
             turnUsage = streamResult.turnUsage
             logger.info("📐 Context after API: latestContextTokens=\(turnUsage.latestContextTokens) (in:\(turnUsage.inputTokens) cache_read:\(turnUsage.cacheReadTokens) cache_create:\(turnUsage.cacheCreationTokens))")
@@ -6148,7 +5683,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // what we actually send to Anthropic (summary-prepended view).
             if provider is AnthropicAgentProvider, let sid = sessionId {
                 keepAliveHistory = effectiveAgentHistory()
-                keepAliveSystemPrompt = userSystemPrompt + memoryStatusFragment(tools: roundTools)
+                keepAliveSystemPrompt = userSystemPrompt
                 keepAliveTools = tools
                 keepAliveEntry = ProviderConfigStore.shared.entry(for: activeEntryId ?? "")
                 logger.info("🔥 cache keep-alive: snapshot updated — session=\(sid.prefix(8)) history=\(self.agentHistory.count) tools=\(tools.count) sysPromptLen=\(userSystemPrompt.count) enhancedCache=\(self.enhancedCacheEnabled) cacheRead=\(turnUsage.cacheReadTokens) cacheCreate=\(turnUsage.cacheCreationTokens)")
@@ -6248,23 +5783,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 } else {
                     remainingSpeak = ""
                 }
-                // Notice-driven turn quiescence check: if the agent answered with (pass)
-                // and called no tools, drop the temporary message, stop speech, and skip persistence.
-                if isNoticeDriven && GroupMentionRouter.isPass(streamResult.assistantText) {
-                    logger.info("[NoticeLoop] Agent returned (pass) for notice-driven turn — suppressing visible message and skipping persistence.")
-                    stopSpeech()
-                    await MainActor.run {
-                        if msgIdx < messages.count {
-                            messages.remove(at: msgIdx)
-                        }
-                    }
-                    if assistantAgentIdx < agentHistory.count {
-                        agentHistory.remove(at: assistantAgentIdx)
-                    }
-                    hitTurnLimit = false
-                    break
-                }
-
                 if !remainingSpeak.isEmpty { speakQueued(remainingSpeak) }
                 let interruptCount = await MainActor.run { messages[msgIdx].streamInterruptCount }
                 let uiBlockCount = await MainActor.run { msgIdx < messages.count ? messages[msgIdx].blocks.count : -1 }
@@ -6292,22 +5810,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     }
                 }
                 hitTurnLimit = false
-
-                // [T-meeting-answer-user-recovery-no-tool] Persist the model's
-                // existing result before asking for explicit public delivery.
-                // A normal empty stop after a successful query also owes an
-                // answer; its empty-response banner alone must not veto repair.
-                let cleanEmptyEndTurn = stopReason == .endTurn && !streamResult.isStreamInterrupted
-                    && assistantText.isEmpty && (streamResult.reasoningContent ?? "").isEmpty
-                if !streamResult.isStreamInterrupted,
-                   await requestReplyDelivery(after: stopReason, allowEmptyEndTurn: cleanEmptyEndTurn) {
-                    messages[msgIdx].error = nil
-                    if assistantAgentIdx < agentHistory.count, let persistedID = agentHistory[assistantAgentIdx].dbMessageId {
-                        await ChatStore.shared.updateMessageErrorInfo(messageId: persistedID, errorInfo: nil)
-                    }
-                    continue
-                }
-                if replyDeliveryRound { break }
 
                 // [T-ios-queued-message-continues-prev-turn] The current turn's
                 // tool loop has fully converged (no tool calls this iteration) and
@@ -6361,24 +5863,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             var toolResultParts: [AgentContentPart] = []
             var pendingSnapshots: [String: (toolName: String, snapshot: ToolSnapshot)] = [:]
             var cancelledDuringToolExecution = false
-
-            if shouldUseSharedAgentRunEngine(for: toolEntries) {
-                let sharedOutcomes = try await executeSharedAgentRunToolBatch(
-                    entries: toolEntries,
-                    msgIdx: msgIdx,
-                    tools: tools,
-                    sharedTools: sharedRunTools
-                )
-                for outcome in sharedOutcomes {
-                    toolResultParts.append(outcome.resultPart)
-                    if let snapshotEntry = outcome.snapshotEntry { pendingSnapshots[outcome.toolId] = snapshotEntry }
-                    if let snapshotItem = outcome.snapshotItem { toolSnapshots.append(snapshotItem) }
-                    cancelledDuringToolExecution = cancelledDuringToolExecution || outcome.cancelled
-                }
-                // The shared engine has completed this batch. Leave the mature
-                // concurrent dispatcher below to handle only remaining paths.
-                toolEntries.removeAll()
-            }
 
             // Image budget for this batch of tool results.
             //
@@ -6554,39 +6038,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 break
             }
 
-            // [T-meeting-answer-user-recovery-tool-close] One recovery request
-            // ends after its tool receipts are durable, even if the model asks
-            // for other tools. Leave queued user turns to the fresh-run drain.
-            if !Task.isCancelled, let delivery = runtimePolicy.replyDelivery,
-               delivery.didDeliver(sessionId), toolResultParts.contains(where: {
-                   if case .toolResult(_, let name, _, let failed, _, _, _, _) = $0 {
-                       return name == delivery.definition.name && !failed
-                   }
-                   return false
-               }) {
-                var completion = AgentMessage(role: .assistant, parts: [.text(RawMessage.publicReplyCompletionText)])
-                if let persistedID = await persistAgentMessage(completion) {
-                    completion.dbMessageId = persistedID
-                    agentHistory.append(completion)
-                }
-                canResume = false
-                if msgIdx < messages.count { messages[msgIdx].isAwaitingModelResponse = false }
-                hitTurnLimit = false
-                break
-            }
-            if replyDeliveryRound {
-                messages[msgIdx].isAwaitingModelResponse = false
-                hitTurnLimit = false
-                break
-            }
-            if !streamResult.isStreamInterrupted,
-               await requestReplyDelivery(after: stopReason) { continue }
-            if replyDeliveryRound {
-                messages[msgIdx].isAwaitingModelResponse = false
-                hitTurnLimit = false
-                break
-            }
-
             // [T-ios-queued-message-interrupt-on-toolclose] If the user queued a
             // prompt while tools were running, interrupt as soon as the CURRENT
             // tool call closes (its tool_result is now built + persisted) — don't
@@ -6656,33 +6107,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     }
                     canResume = true
                 }
-
-                // [Hooks] Last chance to refuse the turn end. A turnWillEnd hook
-                // that returns a reminder gets ONE more round: the reminder is
-                // appended as a user turn (the loop's own resume shape) and the
-                // loop continues instead of breaking. The per-binding continue
-                // budget lives in HookRunner, so a rule the model keeps not
-                // satisfying stops forcing rounds rather than pinning the loop
-                // against maxAgentTurns.
-                //
-                // Deliberately AFTER the error/canResume handling above: a turn
-                // that ended because the stream dropped or ran out of tokens is
-                // already broken, and asking the model for one more round would
-                // stack a hook's reminder on top of a failure the user needs to
-                // see. Hooks only get to argue with a clean end_turn.
-                if stopReason == .endTurn,
-                   let reminder = hooks.turnWillEnd(assistantText: assistantText) {
-                    // Mark this round's blocks committed before continuing, the
-                    // same boundary the queue-interrupt path sets: a mid-stream
-                    // retry in the extra round must clear only the new tail, not
-                    // the text the model already produced and the user can see.
-                    prevCommittedBlockCount = committedBlockCount
-                    committedBlockCount = messages[msgIdx].blocks.count
-                    self.committedBlockCount = committedBlockCount
-                    agentHistory.append(AgentMessage(role: .user, parts: [.text(reminder)]))
-                    continue
-                }
-
                 hitTurnLimit = false
                 break
             }
@@ -6951,11 +6375,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// local @State and resets the flag back to false on observation.
     @Published var clearChatConfirmRequested = false
 
-    /// Set by `/hooks` to ask the view to present the hook list. Same
-    /// request-flag pattern as `clearChatConfirmRequested` above: the view
-    /// mirrors it into local @State and resets it.
-    @Published var hookSettingsRequested = false
-
     /// Text saved before showing slash menu over existing input.
     /// When non-nil, the menu was opened via the "/" button while text existed —
     /// executing a command should restore this text instead of clearing it.
@@ -6983,7 +6402,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
     /// Set thinking level — persists if session exists, otherwise holds in memory.
     func setThinkingLevel(_ level: ThinkingLevel) {
-        guard !isDSH else { return }
         let maxLevel = resolveCurrentEntry()?.effectiveMaxThinkingLevel ?? .xhigh
         let clamped = level == .off ? level : min(level, maxLevel)
         if let sid = sessionId {
@@ -7074,3 +6492,4 @@ enum LLMProviderError: LocalizedError {
         }
     }
 }
+

@@ -1,5 +1,4 @@
 import SwiftUI
-import VoiceRecording
 import ObjectiveC
 import FileProvider
 import UserNotifications
@@ -87,8 +86,8 @@ struct MinisApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @AppStorage("appearanceMode") private var appearanceMode: Int = 0
     @AppStorage("appLanguage") private var appLanguage: String = ""
-    @StateObject private var recordings = VoiceRecordingWorkspace()
     @StateObject private var shareCoordinator = ShareCoordinator.shared
+    @ObservedObject private var fontSettings = FontSettings.shared
     @ObservedObject private var configConfirmGate = ConfigConfirmationGate.shared
     /// [review S14] Drives the root-level restore sheet for a `.minisbak`
     /// opened from outside the app.
@@ -141,55 +140,11 @@ struct MinisApp: App {
         // confident, only once per chat, and never over a hand-filed session
         // (setFolderIfUnfiled). Android defaults ON to match.
         UserDefaults.standard.register(defaults: ["autoGroupingEnabled": true])
-        FusionAudio.install()
         // [T-voice-input-mode-preference-ios] Pin the lazy static to the real
         // launch instant.
         _ = Self.processLaunchedAt
         #if DEBUG
         try? debugServer.start(port: 8321)
-        if ProcessInfo.processInfo.arguments.contains("--recording-activity-probe") {
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(2))
-                await RecordingLiveActivityProbe.run()
-            }
-        }
-        if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--asr-migration-probe=") }) {
-            let stage = String(argument.dropFirst("--asr-migration-probe=".count))
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(2))
-                await ASRMigrationProbe.run(stage: stage)
-            }
-        }
-        if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--inspect-shared=") }) {
-            let terms = argument.dropFirst("--inspect-shared=".count)
-                .split(separator: ",")
-                .map { String($0) }
-                .filter { !$0.isEmpty }
-            if !terms.isEmpty {
-                DispatchQueue.global(qos: .utility).async {
-                    SharedFolderReadOnlyInspector.run(terms: terms)
-                }
-            }
-        }
-        if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--inspect-shared-file=") }) {
-            let path = String(argument.dropFirst("--inspect-shared-file=".count))
-            if !path.isEmpty {
-                DispatchQueue.global(qos: .utility).async {
-                    SharedFolderReadOnlyInspector.preview(relativePath: path)
-                }
-            }
-        }
-        if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--inspect-shared-preview=") }) {
-            let terms = argument.dropFirst("--inspect-shared-preview=".count)
-                .split(separator: ",")
-                .map { String($0) }
-                .filter { !$0.isEmpty }
-            if !terms.isEmpty {
-                DispatchQueue.global(qos: .utility).async {
-                    SharedFolderReadOnlyInspector.previewFirstMatch(terms: terms)
-                }
-            }
-        }
         #endif
         // Install the NSTextContainer setSize: reentrancy guard before any
         // UITextView gets created. Breaks the iOS 26 TextKit1 fillLayoutHole
@@ -201,16 +156,9 @@ struct MinisApp: App {
         // HangDetector dump path will print them when a stall fires.
         AttributeQueryRecorder.install()
         // Enable in-app language override for String(localized:) and UIKit strings
-        FusionPreferences.migrateLanguage()
-        #if VOICE_AGENT_FUSION
-        VoiceAgentConfiguration.install()
-        #endif
         Bundle.enableLanguageOverride()
         let lang = UserDefaults.standard.string(forKey: "appLanguage") ?? ""
         Bundle.setLanguage(lang.isEmpty ? nil : lang)
-        // Log flavor identity early (full pack install runs in
-        // registerFileProviderDomain before SoulStore.ensureExists).
-        _ = FlavorRegistry.current
         // [T-ios-soul-name-sidebar-stale] Pre-load cachedMetadata synchronously so
         // ContentView's `@State soulName` gets the real SOUL.md name on its very
         // first render instead of the `.default` stub ("Minis"). Without this the
@@ -230,21 +178,13 @@ struct MinisApp: App {
         AgentLiveActivityManager.shared.cleanupStaleActivities(source: "MinisApp.init")
         // Start screen-awake controller — it will observe running tasks
         // + the user's opt-in flag and toggle the idle timer accordingly.
-        Task { @MainActor in
-            KeepScreenAwakeController.shared.start()
-            await AsyncTaskNoticeManager.shared.recoverPendingNotices()
-            // Rows still saying `running` after a relaunch are tasks whose run
-            // died with the process. Reconciling them writes their real outcome
-            // and posts the notice that run never got to post; each one drains
-            // itself, so this goes after the pending sweep.
-            await SubagentCoordinator.shared.recoverOrphanedTasks()
-        }
+        Task { @MainActor in KeepScreenAwakeController.shared.start() }
     }
 
     var body: some Scene {
         WindowGroup {
             ZStack {
-                VoiceContextRootView(recordings: recordings)
+                ContentView()
                     .overlay(alignment: .top) {
                         BackgroundInterruptionBanner()
                     }
@@ -335,7 +275,7 @@ struct MinisApp: App {
                     appearanceMode == 1 ? .light : appearanceMode == 2 ? .dark : nil
                 )
                 .environment(\.locale, appLanguage.isEmpty ? .current : Locale(identifier: appLanguage))
-                .appFontScale()
+                .dynamicTypeSize(fontSettings.appBaseScale.dynamicTypeSize)
                 .onOpenURL { url in
                     shareLog.info("[Share] onOpenURL: \(url.absoluteString)")
                     guard !SessionLockStore.shared.appIsLocked else {
@@ -465,9 +405,6 @@ struct MinisApp: App {
                     // Start watching shared/skills/memory subtrees so iSH writes
                     // and FileBrowserView mutations propagate to the Files app.
                     AppGroupChangeWatcher.shared.start()
-                    // Optional one-way mirror. This only writes a Finder-visible
-                    // iCloud Drive copy; it never imports data from iCloud.
-                    SharedFolderICloudMirror.shared.start()
                     // Activate security scopes for user-mounted external folders
                     // (e.g. Obsidian vault in iCloud Drive). Held for app lifetime.
                     MountedFoldersManager.shared.activateAll()
@@ -504,8 +441,6 @@ struct MinisApp: App {
     // MARK: - Lifecycle Logging
 
     private func handleScenePhaseChange(_ phase: ScenePhase) {
-        SharedFolderWebDAVServer.shared.handleScenePhase(phase)
-        SharedFolderICloudMirror.shared.handleScenePhase(phase)
         switch phase {
         case .active:
             let remaining = UIApplication.shared.backgroundTimeRemaining
@@ -722,7 +657,7 @@ struct MinisApp: App {
 
     private static let fileProviderDomain = NSFileProviderDomain(
         identifier: NSFileProviderDomainIdentifier("com.openminis.app.files"),
-        displayName: "Yima"
+        displayName: "Minis"
     )
 
     /// Bumped when we need to force-rebuild the FileProvider domain on next launch
@@ -792,10 +727,6 @@ struct MinisApp: App {
             try? fm.createDirectory(at: root.appendingPathComponent(sub, isDirectory: true),
                                     withIntermediateDirectories: true)
         }
-        // Flavor Role Pack first: may seed SOUL.md from the vertical pack
-        // on first launch. Must run before ensureExists() so the pack wins
-        // over the generic Minis defaultContent.
-        RolePackInstaller.installIfNeeded()
         // [T-soul-md] Seed SOUL.md with default content on first launch so
         // the Soul settings page and chat bubble identity have something
         // to render before the user customizes anything. Never overwrites
@@ -1114,7 +1045,7 @@ struct MinisApp: App {
     private static func migrateSharedDirToAppGroup() {
         let fm = FileManager.default
         let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        let container = fm.containerURL(forSecurityApplicationGroupIdentifier: AgentBuildIdentity.appGroupID)!
+        let container = fm.containerURL(forSecurityApplicationGroupIdentifier: "group.com.openminis.app")!
 
         let migrations: [(source: URL, dest: URL, label: String)] = [
             // Legacy Library/MinisChat/shared → new shared
@@ -1155,7 +1086,7 @@ struct MinisApp: App {
     /// targets logged during MOUNT setup.
     private static func logFPSyncTracePaths() {
         let fm = FileManager.default
-        let groupID = AgentBuildIdentity.appGroupID
+        let groupID = "group.com.openminis.app"
         let containerURL = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID)
         let containerPath = containerURL?.path ?? "<nil>"
         let resolvedContainer = containerURL?.resolvingSymlinksInPath().path ?? "<nil>"

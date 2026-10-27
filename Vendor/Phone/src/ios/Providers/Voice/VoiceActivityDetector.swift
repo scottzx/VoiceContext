@@ -156,17 +156,9 @@ final class VoiceActivityDetector: NSObject {
     init(configuration: Configuration = Configuration()) {
         self.configuration = configuration
         super.init()
-        recordingPreemption = NotificationCenter.default.addObserver(
-            forName: Notification.Name("VoiceContext.recordingWillStart"), object: nil, queue: .main
-        ) { [weak self] _ in self?.stop() }
     }
 
-    private var recordingPreemption: NSObjectProtocol?
-
-    deinit {
-        if let recordingPreemption { NotificationCenter.default.removeObserver(recordingPreemption) }
-        unregisterSessionObservers()
-    }
+    deinit { unregisterSessionObservers() }
 
     // MARK: - Control
 
@@ -520,9 +512,6 @@ final class VoiceActivityDetector: NSObject {
         MainActor.assumeIsolated {
             BackgroundKeepAliveManager.shared.suspendSilentAudioForMedia(caller: "VAD.capture")
             applied = AudioSessionCoordinator.shared.beginAndWait(.capture)
-        }
-        guard applied else {
-            throw NSError(domain: "VoiceContext.Audio", code: 2, userInfo: [NSLocalizedDescriptionKey: "正在录音，请结束录音后再使用语音输入。 "])
         }
         let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         VoiceLog.log("[VoiceInputDebug] AVAudioSession: begin(.capture) applied=\(applied) waited=\(String(format: "%.0f", ms))ms")

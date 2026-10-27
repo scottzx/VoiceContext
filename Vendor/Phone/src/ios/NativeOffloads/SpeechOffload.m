@@ -308,17 +308,17 @@ static int cmd_transcribe(int argc, char **argv, int stdout_fd, BOOL compact, BO
         long waitResult = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(waitTimeout * NSEC_PER_SEC)));
         timedOut = (waitResult != 0);
     } else {
-        __block void (^stopCapture)(void) = nil;
-        __block id preemptionObserver = nil;
-        __block BOOL ownsAudio = NO;
+        // Set up audio engine and recognition request (mic source)
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (!vc_audio_begin(1)) {
-                recognitionError = [NSError errorWithDomain:@"VoiceContext.Audio" code:1
-                    userInfo:@{NSLocalizedDescriptionKey: @"会议录音期间不能启动另一份麦克风录音，或音频会话未能就绪。"}];
-                dispatch_semaphore_signal(sem);
-                return;
-            }
-            ownsAudio = YES;
+            AVAudioSession *audioSession = [AVAudioSession sharedInstance];
+            NSError *sessionError = nil;
+            [audioSession setCategory:AVAudioSessionCategoryRecord
+                                 mode:AVAudioSessionModeMeasurement
+                              options:AVAudioSessionCategoryOptionDuckOthers
+                                error:&sessionError];
+            [audioSession setActive:YES withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
+                              error:&sessionError];
+
             AVAudioEngine *audioEngine = [[AVAudioEngine alloc] init];
             SFSpeechAudioBufferRecognitionRequest *request = [[SFSpeechAudioBufferRecognitionRequest alloc] init];
             request.shouldReportPartialResults = YES;
@@ -397,22 +397,6 @@ static int cmd_transcribe(int argc, char **argv, int stdout_fd, BOOL compact, BO
                 return;
             }
 
-            stopCapture = ^{
-                [audioEngine stop];
-                if (tapInstalled) {
-                    [inputNode removeTapOnBus:0];
-                    tapInstalled = NO;
-                }
-                [request endAudio];
-            };
-            preemptionObserver = [[NSNotificationCenter defaultCenter]
-                addObserverForName:@"VoiceContext.recordingWillStart" object:nil queue:nil
-                usingBlock:^(NSNotification *note) {
-                    stopCapture();
-                    recognitionError = [NSError errorWithDomain:@"VoiceContext.Audio" code:1
-                        userInfo:@{NSLocalizedDescriptionKey: @"语音输入已停止，优先保证会议录音。"}];
-                    dispatch_semaphore_signal(sem);
-                }];
             [audioEngine prepare];
             NSError *startError = nil;
             [audioEngine startAndReturnError:&startError];
@@ -425,7 +409,9 @@ static int cmd_transcribe(int argc, char **argv, int stdout_fd, BOOL compact, BO
             // Stop after duration
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(duration * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{
-                if (stopCapture) stopCapture();
+                [audioEngine stop];
+                [inputNode removeTapOnBus:0];
+                [request endAudio];
 
                 // Give recognition a moment to finalize
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
@@ -438,11 +424,6 @@ static int cmd_transcribe(int argc, char **argv, int stdout_fd, BOOL compact, BO
         // Wait for duration + processing time
         long waitResult = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)((duration + 10) * NSEC_PER_SEC)));
         timedOut = (waitResult != 0);
-        dispatch_sync(dispatch_get_main_queue(), ^{
-            if (preemptionObserver) [[NSNotificationCenter defaultCenter] removeObserver:preemptionObserver];
-            if (stopCapture) { stopCapture(); stopCapture = nil; }
-            if (ownsAudio) vc_audio_end(1);
-        });
     }
 
     if (timedOut && !finalText) {
@@ -453,7 +434,7 @@ static int cmd_transcribe(int argc, char **argv, int stdout_fd, BOOL compact, BO
         return NOFF_EXIT_ERROR;
     }
 
-    if (recognitionError && (!finalText || [recognitionError.domain isEqualToString:@"VoiceContext.Audio"])) {
+    if (recognitionError && !finalText) {
         NSDictionary *err = noff_json_error(TOOL_NAME, @"transcribe",
                                              NOFF_ERR_INTERNAL_ERROR,
                                              recognitionError.localizedDescription ?: @"Recognition failed");

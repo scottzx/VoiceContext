@@ -173,12 +173,8 @@ final class GeminiProvider: LLMProvider {
         systemPrompt: String?,
         maxTokens: Int,
         tools: [[String: Any]],
-        requiredToolName: String? = nil,
         thinkingLevel: ThinkingLevel = .off
     ) async throws -> AsyncThrowingStream<GeminiStreamEvent, Error> {
-        if let requiredToolName, !tools.contains(where: { $0["name"] as? String == requiredToolName }) {
-            throw LLMError.providerError(message: "The required reply tool is not available in this request.")
-        }
         var body: [String: Any] = ["contents": contents]
 
         if let sys = systemPrompt, !sys.isEmpty {
@@ -195,14 +191,7 @@ final class GeminiProvider: LLMProvider {
 
         if !tools.isEmpty {
             body["tools"] = [["functionDeclarations": tools]]
-            if let requiredToolName {
-                body["toolConfig"] = ["functionCallingConfig": [
-                    "mode": "ANY",
-                    "allowedFunctionNames": [requiredToolName],
-                ]]
-            } else {
-                body["toolConfig"] = ["functionCallingConfig": ["mode": "AUTO"]]
-            }
+            body["toolConfig"] = ["functionCallingConfig": ["mode": "AUTO"]]
         }
 
         let request = try await buildRequest(path: "streamGenerateContent?alt=sse", body: body)

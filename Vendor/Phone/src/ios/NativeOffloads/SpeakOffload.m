@@ -107,10 +107,19 @@ static AVSpeechSynthesizer *sharedSynthesizer(void) {
     return _synthesizer;
 }
 
-// The fusion coordinator owns AVAudioSession IPC on its own queue.
-// Synthesizer start/stop and recording preemption are serialized on main.
+// [T-audiosession-setactive-watchdog] Serial queue owning every blocking
+// AVAudioSession / AVSpeechSynthesizer call in this tool. Serial so session
+// setup and the speak/stop calls that depend on it cannot interleave or be
+// reordered; off-main so a wedged mediaserverd stalls only this shell command
+// instead of tripping the 10s scene-update watchdog and killing the app.
 static dispatch_queue_t speak_session_queue(void) {
-    return dispatch_get_main_queue();
+    static dispatch_queue_t q = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        q = dispatch_queue_create("com.openminis.speakoffload.session",
+                                  DISPATCH_QUEUE_SERIAL);
+    });
+    return q;
 }
 
 // ── Subcommands ──
@@ -201,22 +210,40 @@ static int cmd_speak(int argc, char **argv, int stdin_fd, int stdout_fd, int std
     // static happens on speak_session_queue below, never from this thread.
     SpeakOffloadDelegate *delegate = [[SpeakOffloadDelegate alloc] init];
 
-    __block id preemptionObserver = nil;
+    // [T-audiosession-setactive-watchdog] Configure the audio session and start
+    // speaking on a dedicated serial queue — NOT the main thread.
+    //
+    // This block used to run under noff_dispatch_main_sync. `setCategory` /
+    // `setActive` forward to mediaserverd over an NSXPCConnection and wait for a
+    // SYNCHRONOUS reply; when that daemon is slow the caller is parked for the
+    // whole round-trip. On the main thread that means the 10s scene-update
+    // watchdog kills the app (0x8BADF00D) — the same crash shape reported
+    // against AudioSessionCoordinator (incident EFB2E09B) and MediaOffload's
+    // now-playing path (incident 7FAE5E8E). Neither AVAudioSession nor
+    // AVSpeechSynthesizer is a UIKit view, so the main-thread hop was never
+    // required; it only donated the app's liveness to a blocking IPC.
+    //
+    // Serial (not concurrent, not a bare global-queue async) so the ordering the
+    // old code relied on still holds: category → active → speak, and successive
+    // `apple-speak speak` invocations cannot interleave their session setup.
+    // The wait below is what actually sequences the command, so dispatching
+    // async here does not let the CLI return early.
     dispatch_async(speak_session_queue(), ^{
-        if (!vc_audio_begin(2)) {
-            delegate.error = [NSError errorWithDomain:@"VoiceContext.Audio" code:2
-                userInfo:@{NSLocalizedDescriptionKey: @"会议录音期间暂不播报，或音频会话未能就绪。"}];
-            dispatch_semaphore_signal(delegate.semaphore);
-            return;
+        // Activate audio session for playback (matches BackgroundKeepAliveManager)
+        AVAudioSession *session = [AVAudioSession sharedInstance];
+        NSError *sessionErr = nil;
+        [session setCategory:AVAudioSessionCategoryPlayback
+                        mode:AVAudioSessionModeDefault
+                     options:AVAudioSessionCategoryOptionMixWithOthers
+                       error:&sessionErr];
+        if (sessionErr) {
+            NSLog(@"apple-speak: failed to set audio session category: %@", sessionErr);
+            sessionErr = nil;
         }
-        preemptionObserver = [[NSNotificationCenter defaultCenter]
-            addObserverForName:@"VoiceContext.recordingWillStart" object:nil queue:nil
-            usingBlock:^(NSNotification *note) {
-                delegate.error = [NSError errorWithDomain:@"VoiceContext.Audio" code:2
-                    userInfo:@{NSLocalizedDescriptionKey: @"播报已停止，优先保证会议录音。"}];
-                [sharedSynthesizer() stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
-                dispatch_semaphore_signal(delegate.semaphore);
-            }];
+        [session setActive:YES error:&sessionErr];
+        if (sessionErr) {
+            NSLog(@"apple-speak: failed to activate audio session: %@", sessionErr);
+        }
 
         // [T-ios-tts-delegate-uaf] Publish the delegate from THIS queue, so the
         // release of the one it replaces is ordered against every other
@@ -235,19 +262,6 @@ static int cmd_speak(int argc, char **argv, int stdin_fd, int stdout_fd, int std
     // Wait for completion with 60 second timeout
     long result = dispatch_semaphore_wait(delegate.semaphore,
                                            dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC));
-
-    dispatch_sync(speak_session_queue(), ^{
-        if (preemptionObserver) {
-            [[NSNotificationCenter defaultCenter] removeObserver:preemptionObserver];
-            if (result != 0) [sharedSynthesizer() stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
-            vc_audio_end(2);
-        }
-    });
-    if (delegate.error) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"speak", NOFF_ERR_NOT_AVAILABLE,
-            delegate.error.localizedDescription), compact, quiet);
-        return NOFF_EXIT_NOT_AVAILABLE;
-    }
 
     NSString *status = (result == 0) ? @"completed" : @"timeout";
 

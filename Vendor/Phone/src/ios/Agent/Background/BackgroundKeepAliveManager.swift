@@ -94,20 +94,10 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
     /// keep-alive (the mechanism that prevents background-task expiry) only
     /// plays when Background Speak is also on (see `evaluateSilentAudio`).
     /// So "master on but Background Speak off" still gets interrupted — and
-    /// must be treated as "enhanced background NOT effective" even when
-    /// another active audio source permits continued background execution.
+    /// must be treated as "enhanced background NOT effective" everywhere we
+    /// decide whether to count interruptions / surface the reminder banner.
     var enhancedBackgroundEffective: Bool {
         enhancedBackgroundEnabled && backgroundSpeakEnabled
-    }
-
-    /// Active voice capture also supplies the background audio execution mode.
-    /// A reserved but paused microphone does not keep the process running.
-    var canContinueBackgroundExecution: Bool {
-        #if VOICE_AGENT_FUSION
-        enhancedBackgroundEffective || XiaolanVoiceController.shared.isCapturingVoice
-        #else
-        enhancedBackgroundEffective
-        #endif
     }
 
     /// When enabled, posts local notifications when agent tasks start and complete.
@@ -1140,12 +1130,6 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
     // MARK: - Silent Audio Keep-Alive
 
     private func evaluateSilentAudio(caller: String = #function) {
-        #if VOICE_AGENT_FUSION
-        if MainActor.assumeIsolated({ AudioSessionCoordinator.shared.isIndependentVoiceEnabled }) {
-            stopSilentAudio(reason: "independent voice microphone")
-            return
-        }
-        #endif
         // Self-heal a leaked suspendCount. suspend/resume should pair, but
         // task cancellation, network timeouts mid-playback, etc. occasionally
         // skip the resume call. If keepalive should be active and silent
@@ -1342,9 +1326,6 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
     }
 
     private func startSilentAudio(reason: String = "evaluate") {
-        #if VOICE_AGENT_FUSION
-        guard !MainActor.assumeIsolated({ AudioSessionCoordinator.shared.isIndependentVoiceEnabled }) else { return }
-        #endif
         guard !silentAudioActive else { return }
         // Starting up means we definitely don't want any queued stop to fire.
         cancelPendingSilentAudioStop(reason: "startSilentAudio")
@@ -1714,7 +1695,7 @@ final class BackgroundInterruptionTracker: ObservableObject {
     /// surfaces the banner once the running count reaches `remindInterval`.
     func checkOnForeground() {
         guard wasInterrupted,
-              !BackgroundKeepAliveManager.shared.canContinueBackgroundExecution else {
+              !BackgroundKeepAliveManager.shared.enhancedBackgroundEffective else {
             wasInterrupted = false
             return
         }

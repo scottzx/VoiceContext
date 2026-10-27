@@ -116,12 +116,8 @@ final class AntigravityProvider: LLMProvider {
         systemPrompt: String?,
         maxTokens: Int,
         tools: [[String: Any]],
-        requiredToolName: String? = nil,
         thinkingLevel: ThinkingLevel = .off
     ) async throws -> AsyncThrowingStream<GeminiStreamEvent, Error> {
-        if let requiredToolName, !tools.contains(where: { $0["name"] as? String == requiredToolName }) {
-            throw LLMError.providerError(message: "The required reply tool is not available in this request.")
-        }
         var inner: [String: Any] = ["contents": contents]
 
         if let sys = systemPrompt, !sys.isEmpty {
@@ -138,14 +134,7 @@ final class AntigravityProvider: LLMProvider {
 
         if !tools.isEmpty {
             inner["tools"] = [["functionDeclarations": tools]]
-            if let requiredToolName {
-                inner["toolConfig"] = ["functionCallingConfig": [
-                    "mode": "ANY",
-                    "allowedFunctionNames": [requiredToolName],
-                ]]
-            } else {
-                inner["toolConfig"] = ["functionCallingConfig": ["mode": "AUTO"]]
-            }
+            inner["toolConfig"] = ["functionCallingConfig": ["mode": "AUTO"]]
         }
 
         let envelope = wrapEnvelope(inner)

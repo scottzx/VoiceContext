@@ -69,7 +69,6 @@ class GlobalAudioPlayer: ObservableObject {
 
     /// Load and play a URL. If already playing this URL, just ensures playback. If a different URL, stops current and loads new.
     func play(url: URL) {
-        guard !AudioSessionCoordinator.shared.isRecording else { return }
         if activeFileURL == url {
             // Same file — restart from beginning if finished, otherwise resume
             if !isPlaying {
@@ -109,7 +108,7 @@ class GlobalAudioPlayer: ObservableObject {
                 self.rate = 1.0
                 // Start playing immediately. Declaring `.mediaAttachment` preempts
                 // reply TTS (mutually exclusive) and applies the playback profile.
-                guard AudioSessionCoordinator.shared.beginAndWait(.mediaAttachment) else { return }
+                AudioSessionCoordinator.shared.begin(.mediaAttachment)
                 p.play()
                 self.isPlaying = true
                 self.startTimer()
@@ -124,7 +123,7 @@ class GlobalAudioPlayer: ObservableObject {
             isPlaying = false
             timer?.invalidate()
         } else {
-            guard AudioSessionCoordinator.shared.beginAndWait(.mediaAttachment) else { return }
+            AudioSessionCoordinator.shared.begin(.mediaAttachment)
             p.play()
             p.rate = rate
             isPlaying = true

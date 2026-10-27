@@ -11,41 +11,97 @@ import Foundation
 
 // MARK: - SyncedSession
 
-extension SyncedSession: Syncable {
+struct SyncedSession: Syncable {
+    var id: String
+    var title: String?
+    var category: String?
+    var modelId: String
+    var createdAt: Date
+    var updatedAt: Date
+    var memoryEnabled: Int          // 0/1
+    var modelBinding: String?
+    var pinnedAt: Date?
+    var folderId: String?
+
     static let syncMetadata: SyncTypeMetadata<SyncedSession> = {
         typealias F = FieldDescriptor<SyncedSession>
-        return SyncTypeMetadata(
-            recordType: SyncedSession.recordType,
-            idKeyPath: \.id,
-            scope: .perObject(\.id),
+        return SyncTypeMetadata<SyncedSession>(
+            recordType: "SessionV2",
+            idKeyPath: \SyncedSession.id,
+            scope: .perObject(\SyncedSession.id),
             fields: [
-                F.string("sessionId", \.id),
-                F.optionalString("title", \.title),
-                F.optionalString("category", \.category),
-                F.string("modelId", \.modelId),
-                F.date("createdAt", \.createdAt),
-                F.date("updatedAt", \.updatedAt),
-                F.int("memoryEnabled", \.memoryEnabled),
-                F.optionalString("modelBinding", \.modelBinding),
-                F.optionalDate("pinnedAt", \.pinnedAt),
+                F.string("sessionId",        \SyncedSession.id),
+                F.optionalString("title",    \SyncedSession.title),
+                F.optionalString("category", \SyncedSession.category),
+                F.string("modelId",          \SyncedSession.modelId),
+                F.date("createdAt",          \SyncedSession.createdAt),
+                F.date("updatedAt",          \SyncedSession.updatedAt),
+                F.int("memoryEnabled",       \SyncedSession.memoryEnabled),
+                F.optionalString("modelBinding", \SyncedSession.modelBinding),
+                F.optionalDate("pinnedAt",   \SyncedSession.pinnedAt),
                 // Optional field added the same way pinnedAt was (no version
                 // bump): old devices ignore the unknown CKRecord field on read
                 // and omit it on write, both of which decode as nil here.
-                F.optionalString("folderId", \.folderId),
+                F.optionalString("folderId", \SyncedSession.folderId),
             ],
-            conflictPolicy: .lastWriteWinsByField(\.updatedAt),
+            conflictPolicy: .lastWriteWinsByField(\SyncedSession.updatedAt),
             version: 1
         )
     }()
+
+    static func from(_ s: ChatSession, memoryEnabled: Bool, modelBinding: String?) -> SyncedSession {
+        SyncedSession(
+            id: s.id,
+            title: s.title,
+            category: s.category,
+            modelId: s.modelId,
+            createdAt: s.createdAt,
+            updatedAt: s.updatedAt,
+            memoryEnabled: memoryEnabled ? 1 : 0,
+            modelBinding: modelBinding,
+            pinnedAt: s.pinnedAt,
+            folderId: s.folderId
+        )
+    }
 }
 
-extension SyncedMessage: Syncable {
+// MARK: - SyncedMessage
+
+struct SyncedMessage: Syncable {
+    var id: String
+    var sessionId: String
+    var role: String
+    var partsJson: String           // JSON-encoded [ContentPart]
+    var tokenUsageJson: String?
+    var reasoningContent: String?
+    var streamInterruptCount: Int
+    /// Best-effort hint only. Receivers MUST derive their own sort_order from
+    /// (created_at, id) rank — see `ChatStore.mergeRemoteMessage`. Trusting
+    /// the wire integer leaks ordering bugs across devices with differing
+    /// message counts.
+    var sortOrder: Int
+    var createdAt: Date
+    var updatedAt: Date
+    /// [T-token-attribution-snapshot] Which model actually produced this
+    /// message. Optional so a device on an older build — which sends none of
+    /// these — still decodes: `optionalString` returns nil for a missing key
+    /// rather than throwing, so no protocol version bump is needed.
+    ///
+    /// A receiver must treat nil as "no information", never as "empty": see the
+    /// COALESCE guards in `ChatStore.mergeRemoteMessage`, without which an
+    /// older device echoing a message back would wipe a newer device's
+    /// correctly-recorded attribution.
+    var modelId: String?
+    var modelDisplayName: String?
+    var providerType: String?
+    var providerInstanceId: String?
+
     static let syncMetadata: SyncTypeMetadata<SyncedMessage> = {
         typealias F = FieldDescriptor<SyncedMessage>
-        return SyncTypeMetadata(
-            recordType: SyncedMessage.recordType,
-            idKeyPath: \.id,
-            scope: .perParent(parentType: SyncedSession.recordType, \.sessionId),
+        return SyncTypeMetadata<SyncedMessage>(
+            recordType: "MessageV2",
+            idKeyPath: \SyncedMessage.id,
+            scope: .perParent(parentType: "SessionV2", \SyncedMessage.sessionId),
             fields: [
                 F.string("messageId",                 \SyncedMessage.id),
                 F.string("sessionId",                 \SyncedMessage.sessionId),
@@ -62,11 +118,38 @@ extension SyncedMessage: Syncable {
                 F.optionalString("providerType",      \SyncedMessage.providerType),
                 F.optionalString("providerInstanceId", \SyncedMessage.providerInstanceId),
             ],
-            conflictPolicy: .lastWriteWinsByField(\.updatedAt),
+            conflictPolicy: .lastWriteWinsByField(\SyncedMessage.updatedAt),
             version: 1
         )
     }()
+
+    /// Builds a SyncedMessage from a RawMessage. `updatedAt` defaults to
+    /// `createdAt` when the local DB doesn't track an explicit message
+    /// updated_at column for this row (legacy rows pre-migration).
+    static func from(_ m: RawMessage, updatedAt: Date) -> SyncedMessage {
+        let partsJson: String = (try? String(data: JSONEncoder().encode(m.parts), encoding: .utf8)) ?? "[]"
+        let tokenUsageJson: String? = m.tokenUsage.flatMap {
+            (try? JSONEncoder().encode($0)).flatMap { String(data: $0, encoding: .utf8) }
+        }
+        return SyncedMessage(
+            id: m.id,
+            sessionId: m.sessionId,
+            role: m.role.rawValue,
+            partsJson: partsJson,
+            tokenUsageJson: tokenUsageJson,
+            reasoningContent: m.reasoningContent,
+            streamInterruptCount: m.streamInterruptCount,
+            sortOrder: m.sortOrder,
+            createdAt: m.createdAt,
+            updatedAt: updatedAt,
+            modelId: m.modelId,
+            modelDisplayName: m.modelDisplayName,
+            providerType: m.providerType,
+            providerInstanceId: m.providerInstanceId
+        )
+    }
 }
+
 // MARK: - SyncedCompactMarker
 
 struct SyncedCompactMarker: Syncable {

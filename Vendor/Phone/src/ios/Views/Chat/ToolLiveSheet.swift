@@ -39,7 +39,7 @@ private let _maxRenderedLineLength = 2000
 /// Shell tool output can legitimately contain ANSI color codes, NUL bytes,
 /// partial UTF-8 and absurdly long single lines — feeding that directly
 /// into `Text` / `NSAttributedString` can hang CoreText for many seconds.
-func sanitizeForDisplay(_ text: String) -> String {
+fileprivate func sanitizeForDisplay(_ text: String) -> String {
     guard !text.isEmpty else { return text }
 
     var out = String()
@@ -186,43 +186,6 @@ fileprivate func attributedShellLine(_ text: String) -> AttributedString {
         ], range: m.range)
     }
     return AttributedString(mutable)
-}
-
-/// Shared command and output text, without terminal or device actions.
-struct ShellToolTextContent: View {
-    let command: String
-    let chunks: [(id: Int, text: String)]
-    var fontSize: CGFloat = 13
-    let commandColor: Color
-    let outputColor: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("$ \(command)")
-                .font(.system(size: fontSize, weight: .bold, design: .monospaced))
-                .foregroundColor(commandColor)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-
-            ForEach(chunks, id: \.id) { chunk in
-                Text(attributedShellLine(chunk.text))
-                    .font(.system(size: fontSize, design: .monospaced))
-                    .foregroundColor(outputColor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-            }
-        }
-    }
-
-    static func chunkedLines(_ text: String, chunkSize: Int = 40) -> [(id: Int, text: String)] {
-        let sanitized = sanitizeForDisplay(text)
-        let allLines = sanitized.split(separator: "\n", omittingEmptySubsequences: false)
-        return stride(from: 0, to: max(allLines.count, 1), by: chunkSize).map { i in
-            let end = min(i + chunkSize, allLines.count)
-            return (i, allLines[i..<end].joined(separator: "\n"))
-        }
-    }
 }
 
 /// Wrapper that @ObservedObject's the ChatMessage so SwiftUI re-evaluates
@@ -734,8 +697,6 @@ struct ToolLiveSheet: View {
             return "read_image(\(truncateParam(path)))"
         case .memoryTool(let action):
             return "\(truncateParam(action))"
-        case .subagentTool(let action, let taskTitle):
-            return taskTitle.isEmpty ? action : "\(action)(\(truncateParam(taskTitle)))"
         case .info:
             return ""
         }
@@ -755,7 +716,6 @@ struct ToolLiveSheet: View {
         case .browserTool: Image(systemName: "globe")
         case .readImageTool: Image(systemName: "photo")
         case .memoryTool: Image(systemName: "brain.head.profile")
-        case .subagentTool: Image(systemName: "person.2.badge.gearshape")
         case .info: Image(systemName: "arrow.triangle.2.circlepath")
         case .text: Image(systemName: "text.alignleft")
         case .thinking: Image("ThinkingIcon")
@@ -1585,7 +1545,12 @@ struct ToolLiveSheet: View {
 
     /// Splits text into chunks of `chunkSize` lines for virtualized rendering.
     private static func chunkedLines(_ text: String, chunkSize: Int = 40) -> [(id: Int, text: String)] {
-        ShellToolTextContent.chunkedLines(text, chunkSize: chunkSize)
+        let sanitized = sanitizeForDisplay(text)
+        let allLines = sanitized.split(separator: "\n", omittingEmptySubsequences: false)
+        return stride(from: 0, to: max(allLines.count, 1), by: chunkSize).map { i in
+            let end = min(i + chunkSize, allLines.count)
+            return (i, allLines[i..<end].joined(separator: "\n"))
+        }
     }
 
     /// [T-ios-tool-result-lazy-render] Initial number of chunks to reveal for a
@@ -1682,8 +1647,20 @@ struct ToolLiveSheet: View {
                     // view reveal only an initial window and grow on scroll.
                     let chunks = isLive ? allChunks : Array(allChunks.prefix(max(revealedChunkCount, 1)))
                     VStack(alignment: .leading, spacing: 0) {
-                        ShellToolTextContent(command: cmd, chunks: chunks,
-                                             commandColor: .white, outputColor: accentColor)
+                        Text("$ \(cmd)")
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 14)
+                            .padding(.top, 14)
+
+                        ForEach(chunks, id: \.id) { chunk in
+                            Text(attributedShellLine(chunk.text))
+                                .font(.system(size: 13, design: .monospaced))
+                                .foregroundColor(accentColor)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                        }
 
                         if !isLive {
                             loadMoreFooter(totalChunks: allChunks.count)
@@ -2000,17 +1977,16 @@ struct ToolLiveSheet: View {
 
     private var toolTitle: String {
         switch block.kind {
-        case .shellTool: return "Yima is using Shell"
-        case .fileReadTool: return "Yima is reading File"
-        case .fileWriteTool: return "Yima is using Editor"
-        case .fileEditTool: return "Yima is editing File"
-        case .browserTool: return "Yima is using Browser"
-        case .readImageTool: return "Yima is reading Image"
-        case .memoryTool: return "Yima is using Memory"
-        case .subagentTool: return "Yima is running a task"
-        case .info: return "Yima"
-        case .text: return "Yima"
-        case .thinking: return "Yima"
+        case .shellTool: return "Minis is using Shell"
+        case .fileReadTool: return "Minis is reading File"
+        case .fileWriteTool: return "Minis is using Editor"
+        case .fileEditTool: return "Minis is editing File"
+        case .browserTool: return "Minis is using Browser"
+        case .readImageTool: return "Minis is reading Image"
+        case .memoryTool: return "Minis is using Memory"
+        case .info: return "Minis"
+        case .text: return "Minis"
+        case .thinking: return "Minis"
         }
     }
 
@@ -2041,7 +2017,6 @@ struct ToolLiveSheet: View {
         case .browserTool: return .blue
         case .readImageTool: return .purple
         case .memoryTool: return .pink
-        case .subagentTool: return .teal
         case .info: return .secondary
         case .text: return .primary
         case .thinking: return .blue
@@ -2382,7 +2357,6 @@ private struct ToolPreviewThumbnail: View {
         case .browserTool: return .blue
         case .readImageTool: return .purple
         case .memoryTool: return .pink
-        case .subagentTool: return .teal
         case .info: return .secondary
         case .text: return .primary
         case .thinking: return .blue

@@ -35,15 +35,13 @@ static NSString *const HELP_TEXT =
      "LIST OPTIONS:\n"
      "  --completed          Show only completed reminders\n"
      "  --incomplete         Show only incomplete reminders\n"
-     "  --list <name>        Filter by exact, unique reminder list name\n"
+     "  --list <name>        Filter by reminder list name\n"
      "  --limit <N>          Maximum number of results\n"
      "\n"
      "CREATE OPTIONS:\n"
      "  --title <title>      Reminder title (required)\n"
-     "  --due <datetime>     Valid ISO 8601 date/time or relative -Nd/-Nh/-Nm\n"
-     "                       Date-only values have no time; due does not add an alarm.\n"
-     "  --list <name>        Exact, unique writable reminder list name\n"
-     "                       Missing, ambiguous, empty, or read-only lists fail.\n"
+     "  --due <datetime>     Due date (ISO 8601 or relative)\n"
+     "  --list <name>        Reminder list name\n"
      "  --priority <0-9>     Priority level\n"
      "  --notes <text>       Reminder notes\n"
      "  --parent-id <id>     (Unsupported) Subtasks have no public EventKit API\n"
@@ -62,11 +60,6 @@ static NSString *const HELP_TEXT =
      "                       --recur-until.\n"
      "  --clear-recur        (update only) make the reminder non-repeating\n"
      "  Same flag names and semantics as `apple-calendar create`.\n"
-     "\n"
-     "READBACK:\n"
-     "  Successful list/create/update results include actual list_id, due,\n"
-     "  due_components, due_has_time, timezone, alarms, and has_timed_alarm. Notifications\n"
-     "  depend on system settings; due alone does not imply a timed alert.\n"
      "\n"
      "LOCATION OPTIONS (create/update) — alert on arriving at / leaving a place:\n"
      "  --lat <deg>          Latitude, WGS-84 decimal degrees. Requires --lng.\n"
@@ -157,11 +150,6 @@ static int reminders_handler(int argc, char **argv,
                                          [NSString stringWithFormat:@"Unknown command '%@'. Valid commands: list, create, update, complete, delete. Use --help for details.", subcmd]);
     noff_emit_json(stdout_fd, err, compact, quiet);
     return NOFF_EXIT_INVALID_ARGS;
-}
-
-// Direct native entry for the meeting assistant; no guest process or shell.
-int reminders_offload_execute_direct(int argc, char **argv, int stdout_fd, int stderr_fd) {
-    return reminders_handler(argc, argv, -1, stdout_fd, stderr_fd);
 }
 
 void reminders_offload_register(void) {

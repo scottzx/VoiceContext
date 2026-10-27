@@ -11,11 +11,6 @@
 #define NativeOffloadUtils_h
 
 #import <Foundation/Foundation.h>
-#include <stdbool.h>
-
-// Fusion audio ownership: 1 = shell microphone, 2 = shell speech output.
-bool vc_audio_begin(int32_t kind);
-void vc_audio_end(int32_t kind);
 
 // ── Error codes ──
 extern NSString *const NOFF_ERR_AUTHORIZATION_DENIED;

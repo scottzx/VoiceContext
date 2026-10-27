@@ -60,13 +60,6 @@ final class ChatMessage: Identifiable, ObservableObject {
     @Published var isCompactedHistory = false
     /// True when this compact divider is still loading (LLM generating summary).
     @Published var isCompactLoading = false
-    /// In a group transcript: which member spoke this turn. Nil in every 1:1
-    /// conversation, where the single agent is implied. The message-list header
-    /// reads this to draw the speaker's own emoji, name and accent instead of
-    /// the app-wide SOUL identity.
-    var senderAgentId: String?
-    /// Display identity supplied by a remote session, independent of local SOUL.
-    var remoteAssistantName: String?
     /// SF Symbol name for systemInfo rows (e.g. "brain.head.profile", "arrow.down.right.and.arrow.up.left").
     var systemIcon: String?
     /// LLM-generated compact summary (for display in info sheet on compact divider).
@@ -94,9 +87,6 @@ final class ChatMessage: Identifiable, ObservableObject {
         self.isQueued = isQueued
     }
 
-    /// True when this message is a synthetic async_task_notice that must never render as a chat bubble.
-    var isSyntheticNotice: Bool = false
-
     /// [T-bridge-message-ui-leak] True when this UI message is the internal
     /// role-alternation bridge (#579) that must never render as a chat bubble.
     /// The bridge is filtered out of the DB-reload path (loadSession), but a
@@ -116,19 +106,6 @@ final class ChatMessage: Identifiable, ObservableObject {
             return true
         }
         return false
-    }
-
-    /// True when this UI message is an async task notice (synthetic tool_use) that should be hidden in UI.
-    var isAsyncTaskNotice: Bool {
-        if isSyntheticNotice { return true }
-        guard role == .assistant else { return false }
-        if blocks.isEmpty { return false }
-        return blocks.allSatisfy { block in
-            if case .subagentTool(let action, _) = block.kind {
-                return action == ChatPersistenceSchema.asyncTaskNoticeToolName
-            }
-            return false
-        }
     }
 
     /// [T-ios-typing-indicator-scope] Whether the typing indicator should be
@@ -334,8 +311,6 @@ final class AssistantBlock: Identifiable, ObservableObject {
     var toolUseId: String?
     /// Serialized JSON of the tool input arguments (for introspection in SessionMemoryView, etc.).
     var toolInputArgs: String?
-    /// Original remote tool name, independent of the native presentation kind.
-    var remoteToolName: String?
     /// Streaming file content for file_write tool (live content as it arrives).
     @Published var streamingFileContent: String?
     /// Whether a thinking block is expanded (persisted across cell reuse).
@@ -388,9 +363,6 @@ final class AssistantBlock: Identifiable, ObservableObject {
             return (!path.isEmpty && name != "/" && name.contains(".")) ? name : "Read image"
         case .memoryTool(let action):
             return action.isEmpty ? "Memory" : action
-        case .subagentTool(let action, let taskTitle):
-            if !taskTitle.isEmpty { return taskTitle }
-            return action.isEmpty ? "Task" : action
         case .info:
             return ""
         }
@@ -407,11 +379,6 @@ enum AssistantBlockKind: Equatable {
     case browserTool(action: String)
     case readImageTool(path: String)
     case memoryTool(action: String)
-    /// A dispatch tool call (spawn/check/message/stop_subagent). Rendered as a
-    /// task card rather than a tool row: it is the ONLY trace a delegated task
-    /// leaves in an orchestrator's transcript, so it carries the task title and
-    /// doubles as the way into the subagent's own session.
-    case subagentTool(action: String, taskTitle: String)
     case info
 }
 

@@ -9,9 +9,6 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import WebKit
-#if VOICE_AGENT_FUSION
-import VoiceRecording
-#endif
 
 private let minisLogger = AppLogger(category: "MinisURL")
 
@@ -27,15 +24,8 @@ private final class CachedViewModel: ObservableObject {
     /// observes all @Published changes through the @StateObject.
     private var cancellable: AnyCancellable?
 
-    init(sessionId: String?, draftId: String? = nil, dshService: DSHService? = nil, initialPrompt: String? = nil) {
-        if let dshService {
-            let result = ViewModelCache.shared.getOrCreateDSH(
-                service: dshService, sessionID: sessionId,
-                draftID: draftId ?? "__new__\(UUID().uuidString)"
-            )
-            self.vm = result.vm
-            self.isNew = result.isNew
-        } else if let sessionId {
+    init(sessionId: String?) {
+        if let sessionId {
             let (cached, isNew) = ViewModelCache.shared.getOrCreate(for: sessionId)
             self.vm = cached
             self.isNew = isNew
@@ -55,7 +45,6 @@ private final class CachedViewModel: ObservableObject {
         } else {
             let draft = ViewModelCache.shared.createDraft()
             self.vm = draft
-            if let initialPrompt { draft.inputText = initialPrompt }
             self.isNew = true
             minisLogger.info("🔑DRAFT CachedViewModel.init DRAFT vm=\(draft.vmInstanceId)")
         }
@@ -79,21 +68,21 @@ private final class CachedViewModel: ObservableObject {
 // MARK: - Color Palette (clean light theme)
 
 enum ChatColors {
-    static let background = YimaDesign.Color.canvas
-    static let secondaryBg = YimaDesign.Color.grouped
-    static let inputIconBg = YimaDesign.Color.grouped
-    static let inputIconBorder = YimaDesign.Color.line
-    static let inputBg = YimaDesign.Color.surface
-    static let inputBorder = YimaDesign.Color.line
-    static let primaryText = YimaDesign.Color.ink
-    static let secondaryText = YimaDesign.Color.muted
-    static let tertiaryText = YimaDesign.Color.tertiary
-    static let userBubble = YimaDesign.Color.grouped
-    static let toolBg = YimaDesign.Color.surface
-    static let toolBorder = YimaDesign.Color.line
-    static let accent = YimaDesign.Color.ink
-    static let sendButton = YimaDesign.Color.ink
-    static let sendButtonDisabled = YimaDesign.Color.tertiary
+    static let background = Color(UIColor.systemBackground)
+    static let secondaryBg = Color(UIColor.secondarySystemBackground)
+    static let inputIconBg = Color(UIColor.secondarySystemBackground)
+    static let inputIconBorder = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.35, alpha: 1) : UIColor(white: 0, alpha: 0) })
+    static let inputBg = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.12, alpha: 1) : .white })
+    static let inputBorder = Color(UIColor.separator)
+    static let primaryText = Color(UIColor.label)
+    static let secondaryText = Color(UIColor.secondaryLabel)
+    static let tertiaryText = Color(UIColor.tertiaryLabel)
+    static let userBubble = Color(UIColor.tertiarySystemFill)
+    static let toolBg = Color(UIColor.tertiarySystemGroupedBackground)
+    static let toolBorder = Color(UIColor.separator).opacity(0.5)
+    static let accent = Color(UIColor.label)
+    static let sendButton = Color(UIColor.label)
+    static let sendButtonDisabled = Color(UIColor.quaternaryLabel)
 }
 
 // MARK: - System Resource Monitor
@@ -183,34 +172,10 @@ struct AIChatView: View {
     var draftId: String? = nil
     /// If non-nil, this is a read-only view of a remote device's session.
     var remoteDeviceId: String? = nil
-    var dshService: DSHService? = nil
     /// Model group to bind when creating a new session (from long-press FAB).
     var initialGroupId: String? = nil
-    /// Header data already available at the navigation source. Seeding the
-    /// view with it avoids briefly rendering the SOUL name while SQLite is
-    /// still resolving the same session row.
-    private let initialHeaderTitle: String?
-    /// Optional context action supplied by partner/group containers. Keeping
-    /// it inside the page header makes the whole header move as one unit.
-    private let headerActionSystemImage: String?
-    private let headerActionAccessibilityLabel: String?
-    private let onHeaderAction: (() -> Void)?
-    private let showsPageHeader: Bool
-    private let showsHeaderBackButton: Bool
     @EnvironmentObject var shareCoordinator: ShareCoordinator
     @StateObject private var cached: CachedViewModel
-    /// Tab bar visibility for this screen. The full-screen chat hides it, and
-    /// the header's Back button hands it back BEFORE popping.
-    ///
-    /// [T-ios-tabbar-return-lag] A static `.toolbar(.hidden, for: .tabBar)`
-    /// leaves the bar's return to the host list's implicit default, which is
-    /// only applied when the list is shown again — so on pop the bar animated
-    /// back after the list was already on screen (the reported "bottom nav
-    /// appears late"). Flipping this to `.visible` before `dismiss()` removes
-    /// the hiding declaration while the pop starts, so the bar rides the
-    /// transition. `@State` is required: a plain property would not re-render
-    /// this view before the pop, which is the whole point.
-    @State private var tabBarVisibility: Visibility = .hidden
 
     /// The actual ViewModel — always derived from the @StateObject to avoid
     /// the @ObservedObject re-init-on-body-recompute problem.
@@ -229,33 +194,11 @@ struct AIChatView: View {
         )
     }
 
-    init(
-        sessionId: String? = nil,
-        draftId: String? = nil,
-        dshService: DSHService? = nil,
-        remoteDeviceId: String? = nil,
-        initialGroupId: String? = nil,
-        initialSession: ChatSession? = nil,
-        initialHeaderTitle: String? = nil,
-        headerActionSystemImage: String? = nil,
-        headerActionAccessibilityLabel: String? = nil,
-        onHeaderAction: (() -> Void)? = nil,
-        showsPageHeader: Bool = true,
-        showsHeaderBackButton: Bool = true,
-        initialPrompt: String? = nil
-    ) {
+    init(sessionId: String? = nil, draftId: String? = nil, remoteDeviceId: String? = nil, initialGroupId: String? = nil) {
         self.sessionId = sessionId
         self.draftId = draftId
-        self.dshService = dshService
         self.remoteDeviceId = remoteDeviceId
         self.initialGroupId = initialGroupId
-        self.initialHeaderTitle = initialHeaderTitle
-        self.headerActionSystemImage = headerActionSystemImage
-        self.headerActionAccessibilityLabel = headerActionAccessibilityLabel
-        self.onHeaderAction = onHeaderAction
-        self.showsPageHeader = showsPageHeader
-        self.showsHeaderBackButton = showsHeaderBackButton
-        _titlePillSession = State(initialValue: initialSession)
         // [T-ios-aichatview-eager-cachedvm] Build the CachedViewModel INSIDE the
         // StateObject autoclosure so SwiftUI only constructs it the first time
         // this view's StateObject is created — NOT on every struct re-init.
@@ -272,7 +215,7 @@ struct AIChatView: View {
         // re-init a no-op when the StateObject already exists. CachedViewModel.init
         // logs its own creation (🔑DRAFT), so the redundant per-init [SessionLoad]
         // line is dropped.
-        _cached = StateObject(wrappedValue: CachedViewModel(sessionId: sessionId, draftId: draftId, dshService: dshService, initialPrompt: initialPrompt))
+        _cached = StateObject(wrappedValue: CachedViewModel(sessionId: sessionId))
         AIChatViewModel.onAppearTimestamp = CFAbsoluteTimeGetCurrent()
     }
     @StateObject private var oauth = ClaudeOAuthManager.shared
@@ -285,23 +228,12 @@ struct AIChatView: View {
     @StateObject private var speechManager = SpeechRecognitionManager.shared
     @ObservedObject private var mentionIndex = FileMentionIndex.shared
     @ObservedObject private var configStore = ProviderConfigStore.shared
-    @ObservedObject private var agentStore = AgentStore.shared
-    @ObservedObject private var groupStore = GroupStore.shared
     @ObservedObject private var fontSettings = FontSettings.shared
     @ObservedObject private var deepLink = DeepLinkCoordinator.shared
-    @ObservedObject private var approvalStore = SubagentApprovalStore.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var showApprovalSheet: Bool = false
     @State private var inputFocused: Bool = false
-    @State private var isKeyboardVisible: Bool = false
     @State private var inputHasSelection: Bool = false
     @State private var inputIsScrollable: Bool = false
-
-    /// True when the user is actively inputting and the software keyboard is visible on screen.
-    private var isHeaderHiddenForKeyboard: Bool {
-        inputFocused && isKeyboardVisible
-    }
-
     /// [T-ios-composer-swipe-send-at-bottom] True when the composer's text is
     /// scrolled to its end (or is short enough not to scroll). Combined with
     /// `inputIsScrollable` to decide whether a vertical drag belongs to the
@@ -309,8 +241,6 @@ struct AIChatView: View {
     /// composer has nothing to scroll.
     @State private var inputAtScrollBottom: Bool = true
     @State private var inputBarHeight: CGFloat = 0
-    @State private var dshControlsHeight: CGFloat = 0
-    private var inputAreaHeight: CGFloat { inputBarHeight + (vm.isDSH ? dshControlsHeight : 0) }
     @State private var inputBarHeightDebounce: Task<Void, Never>?
     /// [T-voice-inputbar-anim-tail] The most recent ON-SCREEN composer height
     /// reported by onGeometryChange. The debounced commit reads THIS instead of
@@ -408,7 +338,6 @@ struct AIChatView: View {
     @State private var showDocumentPicker = false
     @State private var showMoveToSheet = false
     @State private var showClearChatConfirm = false
-    @State private var showHookSettings = false
     /// [T-new-chat-menu-entry] Confirmation gate for "New Chat" from the "…"
     /// menu while the current session is still streaming: stopping the task is
     /// destructive enough to warrant an explicit confirm.
@@ -424,11 +353,6 @@ struct AIChatView: View {
         nonmutating set { voiceMode.isVoiceActive = newValue }
     }
     @StateObject private var voiceVM = VoiceInputViewModel()
-    @ObservedObject private var voiceSelection = VoiceSelectionStore.shared
-    @State private var showVoiceConfigMenu = false
-    @State private var showVoiceLanguagePicker = false
-    @State private var showVoiceModelSelector = false
-    @State private var showTranscriptionModelDownload = false
     /// Global read-replies state — observed so the voice-mode "Read replies" toggle
     /// reflects enabled/muted in lockstep with the global voice-output capsule.
     @ObservedObject private var voiceOutput = VoiceOutputState.shared
@@ -451,8 +375,7 @@ struct AIChatView: View {
     /// True while unsent share-extension content is in the input bar.
     @State private var hasInjectedShareContent = false
     @State private var showModelPicker = false
-    /// iOS 16 fallback for the chat-mode menu (Menu misaligns in this row on 16).
-    @State private var showChatModeDialog = false
+    @State private var showThinkingLevelSheet = false
     @State private var showSessionSkills = false
     @State private var showSessionMCPs = false
     @State private var showSessionMemory = false
@@ -473,6 +396,7 @@ struct AIChatView: View {
     /// Tracks how much of recognizedText has already been appended to inputText.
     @State private var lastRecognizedLength: Int = 0
     /// Intent-based auto-scroll: stays true until the user actively scrolls up
+    @State private var topSafeAreaInset: CGFloat = 59
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @Environment(\.scenePhase) private var scenePhase
 
@@ -524,6 +448,9 @@ struct AIChatView: View {
     /// `lockStore.isVisuallyLocked(sid)` rather than recomputing the
     /// 4-guard expression independently).
     @ObservedObject private var lockStore = SessionLockStore.shared
+    /// Opacity for the fallback capsule highlight (animated 3× pulse on model switch).
+    @State private var fallbackPulseOpacity: Double = 0
+
     /// Snapshot of the current session's title + category, refreshed when the
     /// session updates (e.g. auto-generated title arrives). Nil until first load.
     @State private var titlePillSession: ChatSession?
@@ -532,13 +459,12 @@ struct AIChatView: View {
     /// Default chat title for sessions without a generated title. Sourced
     /// from SOUL.md (`name`), falls back to "Minis". Refreshed on .soulMdChanged.
     @State private var soulName: String = SoulStore.cachedMetadata.name.isEmpty
-        ? "Yima" : SoulStore.cachedMetadata.name
+        ? "Minis" : SoulStore.cachedMetadata.name
 
     /// True when any sheet or fullScreenCover is presented (suppress auto-focus to avoid keyboard bugs).
     private var hasOverlayPresented: Bool {
         showFileBrowser || showBrowserSheet || showTerminal || showCamera
             || showPhotoPicker || showDocumentPicker || showModelPicker
-            || showTranscriptionModelDownload
     }
 
     /// Tracks whether this ChatView is the currently visible screen.
@@ -568,10 +494,6 @@ struct AIChatView: View {
     @State private var missingMinisFileName: String?
 
     var body: some View {
-        chatLifecycleContent
-    }
-
-    private var chatMainContent: some View {
         ZStack {
             // Messages — floating tool preview overlaid at bottom
             messagesArea
@@ -665,13 +587,8 @@ struct AIChatView: View {
                                 }
                         }
                         VStack(spacing: 0) {
-                            if vm.isDSH {
-                                DSHConversationControls(vm: vm) { height in
-                                    if abs(dshControlsHeight - height) > 0.5 { dshControlsHeight = height }
-                                }
-                            } else {
-                                FloatingApprovalBar(store: approvalStore, showSheet: $showApprovalSheet)
-                            }
+                            floatingToolPreview
+                                .shadow(color: Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0, alpha: 0.25) : UIColor(white: 0, alpha: 0) }), radius: 6, x: 0, y: 4)
                             #if DEBUG
                             if isReadOnly {
                                 forkBanner
@@ -743,7 +660,7 @@ struct AIChatView: View {
                     .allowsHitTesting(false)
                 }
                 .overlay {
-                    if !vm.isDSH { SessionLockGateOverlay(sessionId: vm.sessionId) }
+                    SessionLockGateOverlay(sessionId: vm.sessionId)
                 }
                 .onChange(of: vm.isLoadingSession) { newValue in
                     // [SpinnerTrace] Every transition of the
@@ -755,11 +672,10 @@ struct AIChatView: View {
                 }
 
             // Full-screen kernel boot overlay
-            if !vm.isDSH { kernelBootOverlay }
+            kernelBootOverlay
         }
         .background(ChatColors.background)
         .onDrop(of: [.image, .movie, .fileURL, .data], isTargeted: $isDropTargeted) { providers in
-            guard !vm.isDSH else { return false }
             handleDropProviders(providers)
             return true
         }
@@ -772,32 +688,36 @@ struct AIChatView: View {
                     .allowsHitTesting(false)
             }
         }
-        .environment(\.chatSessionId, vm.isDSH ? nil : vm.sessionId)
-        // The navigation chrome belongs to this destination instead of the
-        // UINavigationBar. Back, title and actions therefore share one frame
-        // from the first render and travel together during interactive pop.
-        .toolbar(.hidden, for: .navigationBar)
-        // [T-ios-tabbar-return-lag] State-driven rather than a static `.hidden`:
-        // the header's Back button flips this to `.visible` before popping so the
-        // bar returns with the pop transition.
-        .toolbar(tabBarVisibility, for: .tabBar)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if showsPageHeader && !isHeaderHiddenForKeyboard {
-                chatPageHeader
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .animation(.easeInOut(duration: 0.25), value: isHeaderHiddenForKeyboard)
-        .background {
-            if showsHeaderBackButton {
-                MinisInteractivePopBridge()
-                    .frame(width: 0, height: 0)
-            }
-        }
-    }
-
-    private var chatConversationPresentations: some View {
-        chatMainContent
+        .environment(\.chatSessionId, vm.sessionId)
+        .modifier(NavBarStyleModifier(topSafeAreaInset: $topSafeAreaInset))
+        .navigationBarTitleDisplayMode(.inline)
+        // [T-ios-navbar-toolbar-host] The ENTIRE toolbar now lives inside an
+        // equatable-gated host child. Root cause of the mid-streaming "..."
+        // menu refresh (4th attempt, this one from instrumentation): with
+        // .toolbar attached on this (per-token re-evaluated) chain, the
+        // ToolbarContent builder itself re-ran on EVERY streaming tick
+        // (NavbarEval toolbarPass=34/stream) and handed the bridge a brand-new
+        // ToolbarContent value each time — which it re-pushed to the
+        // UINavigationItem, refreshing the OPEN UIMenu, even while both inner
+        // Equatable gates provably held (titleEval=3, menuEval=2). Hosting the
+        // toolbar in a child whose body is gated on the displayed inputs means
+        // the builder simply never re-runs during a stream: no new
+        // ToolbarContent, nothing to re-push, and the native SwiftUI Menu
+        // (with the system's round Liquid-Glass chrome) can stay.
+        // .equatable() is MANDATORY here, not an optimization hint: device
+        // instrumentation (2026-07-17 23:53, == FALSE count 0 while
+        // hostEval == toolbarPass) proved SwiftUI does NOT consult a plain
+        // Equatable conformance for this generic closure-holding view in the
+        // .background position — the gate silently never engaged. EquatableView
+        // wrapping is the only guaranteed path to ==.
+        .background(
+            ChatToolbarHost(key: chatToolbarKey, title: {
+                chatNavPrincipalContent
+            }, trailing: {
+                trailingMenu
+            })
+            .equatable()
+        )
         .sheet(item: $titlePillEditSession) { session in
             SessionEditSheet(session: session) { newTitle, newCategory in
                 Task {
@@ -928,16 +848,6 @@ struct AIChatView: View {
                 vm.clearChatConfirmRequested = false
             }
         }
-        // Same bridge for "/hooks".
-        .onChange(of: vm.hookSettingsRequested) { requested in
-            if requested {
-                showHookSettings = true
-                vm.hookSettingsRequested = false
-            }
-        }
-        .sheet(isPresented: $showHookSettings) {
-            HookSettingsView(sessionId: vm.sessionId, agentId: vm.agentId)
-        }
         .alert(AppLocalized("Compact Above"), isPresented: Binding(
             get: { compactConfirmMessageId != nil },
             set: { if !$0 { compactConfirmMessageId = nil } }
@@ -958,10 +868,6 @@ struct AIChatView: View {
         .environment(\.openImageGallery, OpenImageGalleryAction { presentation in
             imageGallery = presentation
         })
-    }
-
-    private var chatMediaPresentations: some View {
-        chatConversationPresentations
         .fullScreenCover(item: $previewImageFile) { fileURL in
             MinisImageFilePreviewView(fileURL: fileURL)
         }
@@ -989,34 +895,6 @@ struct AIChatView: View {
             // (e.g. /skill tap) so the keyboard pops up immediately and
             // the user can keep typing without an extra tap on the field.
             inputFocused = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
-            let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
-            if let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
-                let isVisible = frame.height > 100 && frame.minY < UIScreen.main.bounds.height
-                withAnimation(.easeInOut(duration: duration)) {
-                    isKeyboardVisible = isVisible
-                }
-            } else {
-                withAnimation(.easeInOut(duration: duration)) {
-                    isKeyboardVisible = true
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { note in
-            let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
-            withAnimation(.easeInOut(duration: duration)) {
-                isKeyboardVisible = false
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { note in
-            let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
-            if let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
-                let isVisible = frame.height > 100 && frame.minY < UIScreen.main.bounds.height
-                withAnimation(.easeInOut(duration: duration)) {
-                    isKeyboardVisible = isVisible
-                }
-            }
         }
         .modifier(ChatInputAppendListener(vm: vm, inputFocused: $inputFocused))
         .modifier(RerunFromToolBlockListener(vm: vm))
@@ -1066,7 +944,6 @@ struct AIChatView: View {
         // to new subscribers on first attach — without it, a chat view
         // created after a previous OSC capture would re-present a stale URL.
         .onReceive(MinisOpenURLBroker.shared.$pendingURL.dropFirst().compactMap { $0 }) { url in
-            guard !vm.isDSH else { return }
             if MinisOpenURLBroker.isWebScheme(url.scheme) {
                 // Skip when a topmost host wants to present the web preview
                 // itself: ToolLiveSheet (`toolSheetVisible`) or the
@@ -1104,10 +981,6 @@ struct AIChatView: View {
                 }
             })
         }
-    }
-
-    private var chatToolPresentations: some View {
-        chatMediaPresentations
         .sheet(isPresented: $showFileBrowser) {
             NavigationStack {
                 let base = RootfsManager.shared.dataPath
@@ -1121,12 +994,8 @@ struct AIChatView: View {
         }
         .sheet(isPresented: $showModelPicker) {
             NavigationStack {
-                if vm.isDSH {
-                    DSHModelPickerView(vm: vm)
-                } else {
-                    SessionModelPicker(sessionId: vm.sessionId) {
-                        await vm.ensureSessionReturningId()
-                    }
+                SessionModelPicker(sessionId: vm.sessionId) {
+                    await vm.ensureSessionReturningId()
                 }
             }
             .presentationDetents([.large])
@@ -1154,9 +1023,6 @@ struct AIChatView: View {
         }
         .sheet(isPresented: $showSessionMemory) {
             SessionMemoryView(vm: cached.vm)
-        }
-        .sheet(isPresented: $showApprovalSheet) {
-            SubagentApprovalSheetView(store: approvalStore, isPresented: $showApprovalSheet)
         }
         .sheet(isPresented: $showMoveToSheet) {
             MoveToSessionSheet(currentSessionId: vm.sessionId) { targetId in
@@ -1334,17 +1200,130 @@ struct AIChatView: View {
                 minisLogger.error("File import failed: \(error.localizedDescription)")
             }
         }
-    }
-
-    private var chatLifecycleContent: some View {
-        chatToolPresentations
-        .onAppear(perform: handleChatAppearance)
+        .onAppear {
+            let sinceInit = (CFAbsoluteTimeGetCurrent() - AIChatViewModel.onAppearTimestamp) * 1000
+            minisLogger.info("[SessionLoad] onAppear T+\(String(format: "%.0f", sinceInit))ms isNew=\(cached.isNew) msgs=\(vm.messages.count)")
+            // [T-inputbar-stale-across-reentry] Re-arm the leading-edge seed on
+            // EVERY appear. AIChatView is keyed `.id(sessionId)` in ContentView,
+            // so re-entering the SAME session reuses the same SwiftUI identity
+            // and its @State survives — `inputBarHeight` keeps whatever (possibly
+            // wrong) value it last held, and because `didSeedInputBarHeight` is
+            // still true the synchronous seed never re-fires. If the composer's
+            // geometry doesn't change on re-entry, onGeometryChange emits no new
+            // callback either, so nothing ever reconciles it: a too-tall height
+            // survives indefinitely across re-renders. Clearing the flag makes
+            // the next (guaranteed) geometry callback re-seed authoritatively.
+            didSeedInputBarHeight = false
+            inputBarHeightDebounce?.cancel()
+            inputBarHeightDebounce = nil
+            AppLogger(category: "InputBarLayout").info("inputBarHeight re-arm seed on appear (was \(inputBarHeight))")
+            vm.sessionId = sessionId
+            vm.draftId = draftId
+            vm.remoteDeviceId = remoteDeviceId
+            vm.initialGroupId = initialGroupId
+            // Snapshot total session count once so the New-Chat onboarding
+            // grid only appears for first-time users (no prior sessions).
+            // [T-ios-session-coldload-listsessions-block] Use the bare
+            // COUNT(*) query, NOT listSessions().count — the latter ran 4
+            // un-indexable parts_json LIKE subqueries per session (~0.5s cold
+            // on a 100k-message DB) and, on the serialized ChatStore actor,
+            // head-of-line-blocked the loadSession() dispatched below, which
+            // was the reported ~3s cold-open stall. The comment used to claim
+            // "single SQLite COUNT" — now the code actually does one.
+            if totalSessionCount == nil {
+                Task.detached(priority: .utility) {
+                    let count = await ChatStore.shared.sessionCount()
+                    await MainActor.run { totalSessionCount = count }
+                }
+            }
+            if let sessionId { AIChatViewModel.activeSessionId = sessionId }
+            vm.ensureKernelBooted()
+            if let sessionId {
+                if cached.isNew || (vm.messages.isEmpty && !vm.isLoadingSession) {
+                    // Load session if: (a) VM is freshly created, or (b) cache hit but messages
+                    // are empty — this can happen on iOS 16 where NavigationStack may recreate
+                    // @StateObject unexpectedly, causing isNew=false but an empty VM.
+                    minisLogger.info("🔄SESSION AIChatView.onAppear loading session \(sessionId) isNew=\(cached.isNew) msgs=\(vm.messages.count)")
+                    // [T-ios-session-coldload-listsessions-block] .userInitiated
+                    // so the actual session-open work wins the serialized
+                    // ChatStore actor queue over background sidebar-refresh
+                    // listSessions() scans that would otherwise starve it.
+                    Task(priority: .userInitiated) {
+                        // Phase A: auto-repair any sortOrder / legacy marker anomalies
+                        // before loading. Cheap no-op if the session is healthy.
+                        _ = await ChatStore.shared.repairSessionIfNeeded(sessionId: sessionId)
+                        await vm.loadSession()
+                    }
+                } else if vm.messages.isEmpty && vm.isLoadingSession {
+                    // iOS 16 edge case: a previous view instance started loadSession()
+                    // but this view appeared before it completed. Wait for it to finish,
+                    // then reload if messages are still empty (objectWillChange may have
+                    // fired between old and new CachedViewModel subscriptions).
+                    minisLogger.info("🔄SESSION AIChatView.onAppear WAITING for in-flight load session=\(sessionId)")
+                    Task {
+                        // Wait for the in-flight load to complete (poll at short intervals)
+                        for _ in 0..<20 {
+                            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                            if !vm.isLoadingSession { break }
+                        }
+                        // If messages are still empty after the load completed, retry
+                        if vm.messages.isEmpty && !vm.isLoadingSession {
+                            minisLogger.warning("🔄SESSION AIChatView.onAppear RETRY load — messages still empty after in-flight load for \(sessionId)")
+                            await vm.loadSession()
+                        }
+                    }
+                } else {
+                    let reuseStart = CFAbsoluteTimeGetCurrent()
+                    minisLogger.info("🔄SESSION AIChatView.onAppear REUSING cached vm for \(sessionId) isProcessing=\(vm.isProcessing) msgs=\(vm.messages.count)")
+                    // Remount minis for this session (in case another session took over)
+                    vm.mountMinis(for: sessionId)
+                    // While the user was off this view, an iCloud / LAN
+                    // sync may have landed new messages (or applied a
+                    // tombstone). reloadMessagesFromDB internally compares
+                    // SQLite count + max(sort_order) + (id, sort_order)
+                    // hash against the VM's last-known baseline and only
+                    // re-renders on diff. Skip when isProcessing — the
+                    // active stream owns messages right now and a reload
+                    // would clobber the in-flight assistant turn.
+                    if !vm.isProcessing && !vm.isCompacting {
+                        Task { @MainActor in await vm.reloadMessagesFromDB(reason: "AIChatView.onAppear-reuse") }
+                    }
+                    vm.consumeDeferredSnapshotIfNeeded()
+                    let mountElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
+                    // Cached VM already has messages — trigger scroll-to-bottom
+                    // since isLoadingSession won't transition and its onChange won't fire.
+                    if !vm.messages.isEmpty {
+                        vm.forceScrollToBottom.send()
+                    }
+                    let totalElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
+                    minisLogger.info("[SessionLoad] \(sessionId) — REUSE: \(String(format: "%.1f", totalElapsed))ms [mount: \(String(format: "%.1f", mountElapsed)) | msgs: \(vm.messages.count)]")
+                }
+            } else {
+                minisLogger.info("🔄SESSION AIChatView.onAppear nil sessionId — draft mode")
+                // Draft session — auto-focus input for immediate typing
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    guard !hasOverlayPresented, isChatViewVisible else { return }
+                    inputFocused = true
+                }
+            }
+            minisLogger.info("[Share] AIChatView.onAppear: sessionId=\(sessionId ?? "nil") bufferVersion=\(shareCoordinator.bufferVersion) hasBuffer=\(shareCoordinator.pendingShareBuffer != nil)")
+            injectPendingShareIfNeeded()
+            injectPendingTransferIfNeeded()
+            isChatViewVisible = true
+            refreshTitlePillSession()
+            // Notify workflow that THIS view is mounted + visible. If
+            // the workflow is waiting for our session id, it will
+            // transition to chatReady — our state observer below picks
+            // that up and flips `showCamera`. Transient draft views
+            // (sessionId=nil) won't match the workflow's target and
+            // are correctly skipped.
+            tryMarkWorkflowChatReady(reason: "onAppear")
+        }
         .observingQuickActions(modifier: quickActionObserver)
         .onChange(of: vm.sessionId) { _ in
             refreshTitlePillSession()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sessionDidUpdate)) { note in
-            guard !vm.isDSH else { return }
             guard let sid = vm.sessionId,
                   let updatedId = note.object as? String,
                   updatedId == sid else { return }
@@ -1356,7 +1335,6 @@ struct AIChatView: View {
             injectPendingShareIfNeeded()
         }
         .onDisappear {
-            if vm.isDSH { vm.detachDSHSession() }
             isChatViewVisible = false
             // [T-voice-inputbar-collapse-selfheal] The health probe must not
             // outlive the view — its report would describe a composer that no
@@ -1397,18 +1375,23 @@ struct AIChatView: View {
             // Capsule auto-shows whenever audio is loaded — no manual activation needed.
             minisLogger.info("🔑DRAFT AIChatView.onDisappear vm=\(vm.vmInstanceId) sessionId=\(sessionId ?? "nil") draftId=\(draftId ?? "nil") vm.sessionId=\(vm.sessionId ?? "nil") vm.isProcessing=\(vm.isProcessing)")
         }
-        // [T-voice-bg-fg-gap] REMOVED (voice-input redesign): this used to force-
-        // ignore the keyboard safe area and force-resign the responder while
-        // voice mode was active, because the old InlineVoiceInputView's editable
-        // transcript field could be torn out of the view tree mid-layout-pass,
-        // leaving a zombie keyboard inset. PastableTextView now stays mounted in
-        // both text and voice mode (never torn out), and is legitimately
-        // focusable/editable at any time — including while voiceInputActive is
-        // true — so "voice mode ⇒ no legitimate keyboard" no longer holds, and
-        // force-resigning here would fight a keyboard the user genuinely opened.
-        // Re-test lock/background-during-recording on device if a bottom-gap
-        // regression reappears; the original device-log incident is documented
-        // in git history at this call site.
+        // [T-voice-bg-fg-gap] Structural immunity: while the voice panel is up
+        // and the transcript editor is NOT open, there is no legitimate keyboard
+        // in this subtree — so ignore the keyboard safe-area entirely in that
+        // state. Device log 2026-07-17 12:12 showed the panel shifting from
+        // y=686…778 to y=638…730 (exactly 48pt, the keyboard-accessory height)
+        // during the didEnterBackground layout pass: iOS re-asserted a keyboard
+        // inset while snapshotting, the app suspended before the matching hide
+        // was processed, and no keyboard event fires on foreground return — the
+        // zombie inset persisted and the panel floated (the reported bottom
+        // gap). Ignoring the keyboard edge in this state makes ANY such stale
+        // inset harmless; edit mode (edges: []) keeps normal avoidance so the
+        // panel still lifts above the keyboard while editing, and text mode is
+        // untouched.
+        .ignoresSafeArea(
+            .keyboard,
+            edges: (voiceInputActive && !voiceVM.isEditingTranscript) ? .bottom : []
+        )
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 // [T-voice-inputbar-fg-stale-debounce] iOS changes safe area
@@ -1424,13 +1407,112 @@ struct AIChatView: View {
                 // one for an already-visible view.
                 inputBarHeightDebounce?.cancel()
                 inputBarHeightDebounce = nil
+                // [T-voice-inputbar-collapse-selfheal] …EXCEPT when the composer
+                // has stopped reporting geometry altogether, which is the one
+                // state the note above cannot cover.
+                //
+                // Device 2026-08-18 01:29 (iPhone 17 Pro, no lock, no manual app
+                // switch): a transcript landed and collapsed the panel band in a
+                // single frame (transcriptContentHeight 262→42, an intermediate
+                // panel frame reaching y=1119 on an 874pt window). The system
+                // then drove six inactive↔active cycles in 20s on its own
+                // (snapshot / audio-session interruption right after
+                // `end(.capture)`), each logging `hadResponder=true`. After
+                // `inputBarHeight settled=282.0` at 01:29:15.597 the composer's
+                // onGeometryChange NEVER fired again: its SwiftUI host survived
+                // with alpha=1 and zero subviews (confirmed live via
+                // debug.viewTree — FloatingBarHostingView nkids=0), so the whole
+                // bottom of the screen was empty black with no input bar.
+                //
+                // Nothing could wake it: this subtree deliberately ignores the
+                // keyboard safe area while the voice panel is up
+                // ([T-voice-bg-fg-gap], see the .ignoresSafeArea above), so the
+                // inset churn that would normally force a re-layout is filtered
+                // out by design, and onGeometryChange is the ONLY writer of
+                // inputBarHeight. The user's own workaround — leave the session
+                // and re-enter — worked precisely because `.onAppear` re-arms
+                // the seed ([T-inputbar-stale-across-reentry]); this is that
+                // same recovery, applied without making the user find it.
+                //
+                // Re-arm only when the composer is provably not reporting: the
+                // last on-screen sample disagrees with the committed height, or
+                // no sample was ever recorded. In the healthy case both values
+                // match and this is a no-op, so the mid-animation hazard the
+                // note above warns about is not reintroduced — a re-seed can
+                // only happen where the alternative is a permanently wrong (or
+                // missing) bar.
+                let committedH = inputBarHeight
+                let latestH = latestInputBarFrameH
+                let sinceReport = inputBarLastGeometryAt.map { CFAbsoluteTimeGetCurrent() - $0 } ?? -1
+                if didSeedInputBarHeight,
+                   latestH <= 0 || abs(latestH - committedH) > 0.5 {
+                    didSeedInputBarHeight = false
+                    AppLogger(category: "InputBarLayout").info("[voice-bgfg] scene active — composer geometry stale (committed=\(committedH) latest=\(latestH) lastReport=\(String(format: "%.1f", sinceReport))s ago); re-arming seed so the next callback re-measures")
+                }
+
+                // [T-voice-inputbar-collapse-selfheal] Re-arming only makes the
+                // seed ELIGIBLE to fire; it cannot make a host that has stopped
+                // reporting geometry start again. In the observed failure that
+                // host had zero subviews and emitted nothing for minutes, so
+                // verify the wake-up actually happened and say so loudly when it
+                // did not — this is the line that tells the next investigation
+                // "the self-heal ran and was not enough" instead of leaving them
+                // to re-derive it from a silent log.
+                inputBarHealthProbe?.cancel()
+                let probeBaseline = inputBarGeometryTick
+                inputBarHealthProbe = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(900))
+                    guard !Task.isCancelled else { return }
+                    let ticked = inputBarGeometryTick != probeBaseline
+                    let age = inputBarLastGeometryAt.map { CFAbsoluteTimeGetCurrent() - $0 } ?? -1
+                    if ticked {
+                        AppLogger(category: "InputBarLayout").info("[InputBarHealth] OK after foreground — composer re-reported geometry (h=\(latestInputBarFrameH) committed=\(inputBarHeight))")
+                    } else {
+                        AppLogger(category: "InputBarLayout").error("[InputBarHealth] STALLED — no geometry callback 900ms after foreground. committed=\(inputBarHeight) latest=\(latestInputBarFrameH) lastReport=\(String(format: "%.1f", age))s ago voice=\(voiceInputActive) editing=\(voiceVM.isEditingTranscript) seeded=\(didSeedInputBarHeight). The composer host is not laying out; expect a blank bottom area. Leaving and re-entering the session rebuilds it.")
+                    }
+                }
+                // [T-voice-bg-fg-gap] Foreground reseal: if we return to a
+                // voice-mode-not-editing state, no responder should be armed.
+                // Releasing here is a no-op when nothing is focused and clears
+                // any responder UIKit resurrected during the background pass.
+                if voiceInputActive && !voiceVM.isEditingTranscript {
+                    let keyWindow = UIApplication.shared.connectedScenes
+                        .compactMap { $0 as? UIWindowScene }
+                        .flatMap(\.windows)
+                        .first(where: \.isKeyWindow)
+                    if let keyWindow, keyWindow.endEditing(true) {
+                        AppLogger(category: "InputBarLayout").info("[voice-bgfg] scene active — released a resurrected responder (voice mode, not editing)")
+                    }
+                }
+            }
+            if phase != .active, voiceInputActive, !voiceVM.isEditingTranscript {
+                // [T-voice-bg-fg-gap] Complete any in-flight keyboard dismissal
+                // BEFORE the snapshot/suspend layout pass — but ONLY in the
+                // voice-mode-not-editing state, where no responder is ever
+                // legitimate (text mode keeps its focused composer across app
+                // switches; edit mode keeps its editor keyboard — resigning
+                // those would be a visible regression). If the edit→send
+                // teardown's dismiss animation is still running when the app
+                // backgrounds, iOS can freeze the window mid-dismissal with a
+                // partial keyboard inset that survives into the next foreground.
+                // Synchronous resign + no-animation layout guarantees the window
+                // geometry is final before UIKit snapshots it.
+                let keyWindow = UIApplication.shared.connectedScenes
+                    .compactMap { $0 as? UIWindowScene }
+                    .flatMap(\.windows)
+                    .first(where: \.isKeyWindow)
+                if let keyWindow {
+                    let hadResponder = keyWindow.endEditing(true)
+                    UIView.performWithoutAnimation { keyWindow.layoutIfNeeded() }
+                    AppLogger(category: "InputBarLayout").info("[voice-bgfg] scene \(phase == .inactive ? "inactive" : "background") — forced keyboard-dismiss completion (hadResponder=\(hadResponder)) voice=\(voiceInputActive) editing=\(voiceVM.isEditingTranscript)")
+                }
             }
             if phase != .active, speechManager.state == .recording {
                 speechManager.stopRecording()
             }
         }
         .onChange(of: deepLink.showTerminal) { show in
-            if show && !vm.isDSH {
+            if show {
                 terminalInitCommand = deepLink.terminalInitCommand
                 showTerminal = true
                 deepLink.showTerminal = false
@@ -1443,7 +1525,7 @@ struct AIChatView: View {
         // blind user must still hear that the reply ended regardless of an
         // unrelated keyboard preference. The outcome closure is evaluated at
         // the end edge so it sees the final cancel/error state.
-        .announceChatTurnEnd(isProcessing: vm.isProcessing) { () -> ChatTurnOutcome in
+        .announceChatTurnEnd(isProcessing: vm.isProcessing) {
             if vm.userDidCancel { return .stopped }
             if vm.errorMessage != nil { return .failed }
             return .finished
@@ -1509,142 +1591,6 @@ struct AIChatView: View {
         .environmentObject(vm)
     }
 
-    private func handleChatAppearance() {
-        let sinceInit = (CFAbsoluteTimeGetCurrent() - AIChatViewModel.onAppearTimestamp) * 1000
-        minisLogger.info("[SessionLoad] onAppear T+\(String(format: "%.0f", sinceInit))ms isNew=\(cached.isNew) msgs=\(vm.messages.count)")
-        // [T-inputbar-stale-across-reentry] Re-arm the leading-edge seed on
-        // EVERY appear. AIChatView is keyed `.id(sessionId)` in ContentView,
-        // so re-entering the SAME session reuses the same SwiftUI identity
-        // and its @State survives — `inputBarHeight` keeps whatever (possibly
-        // wrong) value it last held, and because `didSeedInputBarHeight` is
-        // still true the synchronous seed never re-fires. If the composer's
-        // geometry doesn't change on re-entry, onGeometryChange emits no new
-        // callback either, so nothing ever reconciles it: a too-tall height
-        // survives indefinitely across re-renders. Clearing the flag makes
-        // the next (guaranteed) geometry callback re-seed authoritatively.
-        didSeedInputBarHeight = false
-        inputBarHeightDebounce?.cancel()
-        inputBarHeightDebounce = nil
-        AppLogger(category: "InputBarLayout").info("inputBarHeight re-arm seed on appear (was \(inputBarHeight))")
-        if vm.isDSH {
-            handleDSHChatAppearance()
-            return
-        }
-        vm.sessionId = sessionId
-        vm.draftId = draftId
-        vm.remoteDeviceId = remoteDeviceId
-        vm.initialGroupId = initialGroupId
-        // Snapshot total session count once so the New-Chat onboarding
-        // grid only appears for first-time users (no prior sessions).
-        // [T-ios-session-coldload-listsessions-block] Use the bare
-        // COUNT(*) query, NOT listSessions().count — the latter ran 4
-        // un-indexable parts_json LIKE subqueries per session (~0.5s cold
-        // on a 100k-message DB) and, on the serialized ChatStore actor,
-        // head-of-line-blocked the loadSession() dispatched below, which
-        // was the reported ~3s cold-open stall. The comment used to claim
-        // "single SQLite COUNT" — now the code actually does one.
-        if totalSessionCount == nil {
-            Task.detached(priority: .utility) {
-                let count = await ChatStore.shared.sessionCount()
-                await MainActor.run { totalSessionCount = count }
-            }
-        }
-        if let sessionId { AIChatViewModel.activeSessionId = sessionId }
-        vm.ensureKernelBooted()
-        if let sessionId {
-            if cached.isNew || (vm.messages.isEmpty && !vm.isLoadingSession) {
-                // Load session if: (a) VM is freshly created, or (b) cache hit but messages
-                // are empty — this can happen on iOS 16 where NavigationStack may recreate
-                // @StateObject unexpectedly, causing isNew=false but an empty VM.
-                minisLogger.info("🔄SESSION AIChatView.onAppear loading session \(sessionId) isNew=\(cached.isNew) msgs=\(vm.messages.count)")
-                // [T-ios-session-coldload-listsessions-block] .userInitiated
-                // so the actual session-open work wins the serialized
-                // ChatStore actor queue over background sidebar-refresh
-                // listSessions() scans that would otherwise starve it.
-                Task(priority: .userInitiated) {
-                    // Phase A: auto-repair any sortOrder / legacy marker anomalies
-                    // before loading. Cheap no-op if the session is healthy.
-                    _ = await ChatStore.shared.repairSessionIfNeeded(sessionId: sessionId)
-                    await vm.loadSession()
-                }
-            } else if vm.messages.isEmpty && vm.isLoadingSession {
-                // iOS 16 edge case: a previous view instance started loadSession()
-                // but this view appeared before it completed. Wait for it to finish,
-                // then reload if messages are still empty (objectWillChange may have
-                // fired between old and new CachedViewModel subscriptions).
-                minisLogger.info("🔄SESSION AIChatView.onAppear WAITING for in-flight load session=\(sessionId)")
-                Task {
-                    // Wait for the in-flight load to complete (poll at short intervals)
-                    for _ in 0..<20 {
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                        if !vm.isLoadingSession { break }
-                    }
-                    // If messages are still empty after the load completed, retry
-                    if vm.messages.isEmpty && !vm.isLoadingSession {
-                        minisLogger.warning("🔄SESSION AIChatView.onAppear RETRY load — messages still empty after in-flight load for \(sessionId)")
-                        await vm.loadSession()
-                    }
-                }
-            } else {
-                let reuseStart = CFAbsoluteTimeGetCurrent()
-                minisLogger.info("🔄SESSION AIChatView.onAppear REUSING cached vm for \(sessionId) isProcessing=\(vm.isProcessing) msgs=\(vm.messages.count)")
-                // Remount minis for this session (in case another session took over)
-                vm.mountMinis(for: sessionId)
-                // While the user was off this view, an iCloud / LAN
-                // sync may have landed new messages (or applied a
-                // tombstone). reloadMessagesFromDB internally compares
-                // SQLite count + max(sort_order) + (id, sort_order)
-                // hash against the VM's last-known baseline and only
-                // re-renders on diff. Skip when isProcessing — the
-                // active stream owns messages right now and a reload
-                // would clobber the in-flight assistant turn.
-                if !vm.isProcessing && !vm.isCompacting {
-                    Task { @MainActor in await vm.reloadMessagesFromDB(reason: "AIChatView.onAppear-reuse") }
-                }
-                vm.consumeDeferredSnapshotIfNeeded()
-                let mountElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
-                // Cached VM already has messages — trigger scroll-to-bottom
-                // since isLoadingSession won't transition and its onChange won't fire.
-                if !vm.messages.isEmpty {
-                    vm.forceScrollToBottom.send()
-                }
-                let totalElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
-                minisLogger.info("[SessionLoad] \(sessionId) — REUSE: \(String(format: "%.1f", totalElapsed))ms [mount: \(String(format: "%.1f", mountElapsed)) | msgs: \(vm.messages.count)]")
-            }
-        } else {
-            minisLogger.info("🔄SESSION AIChatView.onAppear nil sessionId — draft mode")
-            // Draft session — auto-focus input for immediate typing
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                guard !hasOverlayPresented, isChatViewVisible else { return }
-                inputFocused = true
-            }
-        }
-        minisLogger.info("[Share] AIChatView.onAppear: sessionId=\(sessionId ?? "nil") bufferVersion=\(shareCoordinator.bufferVersion) hasBuffer=\(shareCoordinator.pendingShareBuffer != nil)")
-        injectPendingShareIfNeeded()
-        injectPendingTransferIfNeeded()
-        isChatViewVisible = true
-        refreshTitlePillSession()
-        // Notify workflow that THIS view is mounted + visible. If
-        // the workflow is waiting for our session id, it will
-        // transition to chatReady — our state observer below picks
-        // that up and flips `showCamera`. Transient draft views
-        // (sessionId=nil) won't match the workflow's target and
-        // are correctly skipped.
-        tryMarkWorkflowChatReady(reason: "onAppear")
-    }
-
-    private func handleDSHChatAppearance() {
-        isChatViewVisible = true
-        if vm.dshTitle.isEmpty { vm.dshTitle = initialHeaderTitle ?? "" }
-        if let service = vm.dshService {
-            AIChatViewModel.activeSessionId = vm.sessionId.map {
-                ViewModelCache.dshKey(serviceID: service.id, sessionID: $0)
-            } ?? ViewModelCache.dshDraftKey(serviceID: service.id, draftID: vm.draftId ?? "draft")
-        }
-        vm.consumeDeferredSnapshotIfNeeded()
-        Task { await vm.loadDSHSession() }
-    }
-
     // MARK: - Home Screen Quick Actions
 
     /// Stable id this view represents in the navigation stack. For
@@ -1657,7 +1603,7 @@ struct AIChatView: View {
     private var quickActionObserver: QuickActionObserverModifier {
         QuickActionObserverModifier(
             sessionId: quickActionMatchId,
-            isVisible: isChatViewVisible && !vm.isDSH,
+            isVisible: isChatViewVisible,
             onWaitingMatch: { tryMarkWorkflowChatReady(reason: "modifier-waiting") },
             onChatReady: { action in applyQuickAction(action) }
         )
@@ -1668,7 +1614,6 @@ struct AIChatView: View {
     /// Idempotent: workflow ignores the call unless its target id
     /// matches and the state is `waitingForChatMount`.
     private func tryMarkWorkflowChatReady(reason: String) {
-        guard !vm.isDSH else { return }
         guard let sid = quickActionMatchId, isChatViewVisible else { return }
         if case .waitingForChatMount(_, let target) = QuickActionWorkflow.shared.state, target == sid {
             minisLogger.info("[QuickAction] tryMarkWorkflowChatReady reason=\(reason) sid=\(sid)")
@@ -1680,7 +1625,6 @@ struct AIChatView: View {
     /// `chatReady` state. Flips the relevant @State so SwiftUI mounts
     /// the camera sheet / starts speech recognition.
     private func applyQuickAction(_ action: ChatLaunchAction) {
-        guard !vm.isDSH else { return }
         minisLogger.info("[QuickAction] applyQuickAction action=\(String(describing: action)) showCamera=\(showCamera) hasOverlay=\(hasOverlayPresented) chatVisible=\(isChatViewVisible)")
         // Guard against late deliveries to a view that already
         // disappeared — workflow re-publishes chatReady on retry and
@@ -1693,10 +1637,6 @@ struct AIChatView: View {
         }
         switch action {
         case .startVoice:
-            guard ensureLocalVoiceModels() else {
-                QuickActionWorkflow.shared.markCoverPresented()
-                return
-            }
             // Mirror the mic button's action: ask for speech +
             // microphone permission, then start recording. Drop
             // input-focus so the keyboard doesn't fight the speech
@@ -1761,7 +1701,6 @@ struct AIChatView: View {
     }
 
     private func injectPendingShareIfNeeded() {
-        guard !vm.isDSH else { return }
         // [T-share-routes-to-background-session] Only the session the share was
         // ROUTED TO may consume it. Both entry points (onAppear and the
         // bufferVersion observer) funnel through here, so the check sits at the
@@ -1844,7 +1783,6 @@ struct AIChatView: View {
     // MARK: - Pending Transfer Injection
 
     private func injectPendingTransferIfNeeded() {
-        guard !vm.isDSH else { return }
         guard let transfer = ViewModelCache.pendingTransfer else { return }
 
         // [T-ios-moveto-transfer-race] Only the intended target may consume the
@@ -1900,25 +1838,6 @@ struct AIChatView: View {
 
     @ViewBuilder
     private var trailingMenu: some View {
-        if vm.isDSH {
-            Menu {
-                Button {
-                    Task { await vm.loadDSHSession() }
-                } label: { Label("重新连接", systemImage: "arrow.clockwise") }
-                Button {
-                    guard let service = vm.dshService else { return }
-                    NotificationCenter.default.post(
-                        name: Notification.Name("Yima.dshNewChatRequested"), object: service.id.uuidString
-                    )
-                } label: { Label("新建聊天", systemImage: "square.and.pencil") }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .foregroundStyle(.primary)
-                    .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel(String(localized: "More"))
-        } else {
         // [T-ios-navbar-uikit-menu] FINAL: UIKit-owned button+menu. The
         // SwiftUI route is exhausted — with .equatable() the toolbar host
         // provably stopped ALL ToolbarContent rebuilds (device log
@@ -1977,7 +1896,6 @@ struct AIChatView: View {
             // reads the same key at request-build time, so the flip applies
             // to the very next Codex request.
             setFastMode: { enabled in codexFastModeEnabled = enabled },
-            onChooseModel: { showModelPicker = true },
             onTokenUsage: { showTokenUsage = true },
             // LastAPIRequestBody + copySessionDataToClipboard are DEBUG-only (the
             // menu buttons that invoke these closures are #if DEBUG too); guard the
@@ -2002,7 +1920,6 @@ struct AIChatView: View {
                 #endif
             }
         )
-        }
     }
 
     // MARK: - New Chat (menu entry)
@@ -2073,71 +1990,16 @@ struct AIChatView: View {
         }
     }
 
-    // MARK: - Navigation Title
-
-    /// Destination-owned header. Its three regions have one stable HStack,
-    /// avoiding UIKit's asynchronous principal-item measurement entirely.
-    private var chatPageHeader: some View {
-        let canEditTitle = canEditChatHeaderTitle
-        let editAction: (() -> Void)? = canEditTitle ? {
-            if let session = titlePillSession { titlePillEditSession = session }
-        } : nil
-
-        return MinisPageHeader(
-            title: chatHeaderTitle,
-            onTitleTap: editAction,
-            titleBlurRadius: titleIsVisuallyLocked ? 8 : 0,
-            leading: {
-                if showsHeaderBackButton {
-                    MinisHeaderIconButton(
-                        systemName: "chevron.left",
-                        accessibilityLabel: String(localized: "Back"),
-                        action: {
-                            // [T-ios-tabbar-return-lag] Hand the tab bar back
-                            // before the pop — see `tabBarVisibility`.
-                            tabBarVisibility = .visible
-                            dismiss()
-                        }
-                    )
-                }
-            },
-            trailing: {
-                HStack(spacing: 0) {
-                    #if VOICE_AGENT_FUSION
-                    VoiceRecordingStatusControl()
-                    #endif
-                    if let systemImage = headerActionSystemImage,
-                       let action = onHeaderAction {
-                        Button(action: action) {
-                            Image(systemName: systemImage)
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(.primary)
-                                .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(
-                            headerActionAccessibilityLabel
-                                ?? String(localized: "More")
-                        )
-                    }
-
-                    trailingMenu
-                        .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
-                }
-            }
-        )
-        .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
-            let name = SoulStore.cachedMetadata.name
-            soulName = name.isEmpty ? "Yima" : name
-        }
-        .animation(.easeInOut(duration: 0.15), value: titleIsVisuallyLocked)
-    }
+    // MARK: - Navigation Title + Model Selector
 
     /// [T-ios-navbar-toolbar-host] Principal toolbar content, extracted from
-    /// the old inline ToolbarItem so ChatToolbarHost can render it. The item
-    /// reserves the full safe title band and aligns its contents to the
-    /// leading edge; long titles still truncate before the trailing menu.
+    /// the old inline ToolbarItem so ChatToolbarHost can render it. Layout
+    /// preserved verbatim:
+    /// [T-navbar-title-centering] iOS 18 and below let the principal toolbar
+    /// item shrink to its content width and anchor it left-of-center; iOS 19+
+    /// centers natively — wrap in an infinite-width HStack with bookend
+    /// Spacers on legacy iOS, and cap the width to (screen − ~140pt chrome)
+    /// so long titles truncate instead of pushing through the trailing menu.
     @ViewBuilder
     private var chatNavPrincipalContent: some View {
         // Cap the title width to (screen − chrome) on ALL versions.
@@ -2157,16 +2019,18 @@ struct AIChatView: View {
         // a fix of it: the top-crop of the snapshot itself is UIKit-level and
         // out of SwiftUI's reach.
         let cap = max(120, UIScreen.main.bounds.width - 140)
-        // Give short and long titles the same full-width principal slot.
-        // Using maxWidth here let short titles collapse to their intrinsic
-        // width, which made "leading" alignment visually indistinguishable
-        // from centered text.
-        titleView
-            // The principal band's leading edge sits directly beside the
-            // system back-button glass. Reserve a stable gutter so the title
-            // never draws underneath that control while keeping the band's
-            // total width (and trailing-menu clearance) unchanged.
-            .frame(width: cap, alignment: .leading)
+        if #available(iOS 19, *) {
+            titleView
+                .frame(maxWidth: cap)
+        } else {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                titleView
+                    .frame(maxWidth: cap)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+        }
     }
 
     /// [T-ios-navbar-toolbar-host] Everything the toolbar DISPLAYS (principal
@@ -2206,43 +2070,6 @@ struct AIChatView: View {
             && (instance.customBaseURL?.isEmpty ?? true)
     }
 
-    /// Resolve the header title from the kind of conversation being shown.
-    /// The persisted row title remains the source for ordinary conversations;
-    /// partner and group sessions use their canonical roster identities.
-    private var chatHeaderTitle: String {
-        if vm.isDSH { return vm.dshTitle.isEmpty ? (initialHeaderTitle ?? dshService?.name ?? "DSH") : vm.dshTitle }
-        if titlePillSession?.spawnRole == GroupSessionRole.group || vm.isGroupTranscript {
-            let group = vm.groupId.flatMap { groupStore.group($0) }
-                ?? titlePillSession.flatMap { session in
-                    groupStore.groups.first { $0.sessionId == session.id }
-                }
-            if let group {
-                let activeMemberCount = group.memberIds.filter { agentStore.agent($0) != nil }.count
-                let memberCount = agentStore.isReady ? activeMemberCount : group.memberIds.count
-                return "\(group.title)（\(memberCount)人）"
-            }
-        }
-
-        if let agentId = titlePillSession?.agentId ?? vm.agentId,
-           let agent = agentStore.agent(agentId) {
-            return agent.name
-        }
-
-        let sessionTitle = titlePillSession?.title?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return sessionTitle.flatMap { $0.isEmpty ? nil : $0 }
-            ?? initialHeaderTitle
-            ?? soulName
-    }
-
-    /// Partner and group identities are managed from their own edit screens.
-    /// Keep the historical title editor only for ordinary conversations.
-    private var canEditChatHeaderTitle: Bool {
-        guard !vm.isDSH else { return false }
-        guard let session = titlePillSession else { return false }
-        return session.agentId == nil && session.spawnRole != GroupSessionRole.group
-    }
-
     /// [T-ios-navbar-principal-streaming-stability] Snapshot of everything
     /// titleView displays — must stay in lockstep with titleView's reads
     /// (see NavTitleKey doc). Cheap to compute per body pass.
@@ -2250,34 +2077,338 @@ struct AIChatView: View {
         #if DEBUG
         NavbarEvalStats.toolbarPass += 1
         #endif
+        let display = SessionModelDisplay(store: configStore, draftGroupId: vm.initialGroupId)
+        let resolved = display.resolvedDetail(for: vm.sessionId)
+        let sessionTitle: String? = (titlePillSession?.title?.trimmingCharacters(in: .whitespacesAndNewlines))
+            .flatMap { $0.isEmpty ? nil : $0 }
         return NavTitleKey(
-            sessionTitle: chatHeaderTitle,
-            canEditTitle: canEditChatHeaderTitle,
+            sessionTitle: sessionTitle,
+            canEditTitle: titlePillSession != nil,
             soulName: soulName,
+            modelName: display.displayName(for: vm.sessionId),
+            isGroupBound: display.isGroupBound(for: vm.sessionId),
+            showFastBolt: codexFastModeEnabled && activeModelSupportsFastMode,
+            resolvedText: resolved.map { "\($0.providerLabel) · \($0.modelName)" },
+            hasBinding: vm.sessionId != nil && configStore.binding(for: vm.sessionId!) != nil,
+            hasProviders: !configStore.instances.isEmpty,
+            showThinkingBadge: !vm.availableThinkingLevels.isEmpty
+                && (vm.currentThinkingLevel.isEnabled || vm.currentModelSupportsReasoning),
+            thinkingLevelName: vm.currentThinkingLevel.displayName,
+            fallbackTrigger: vm.fallbackTrigger,
+            fallbackPulse: fallbackPulseOpacity,
             titleLocked: titleIsVisuallyLocked
         )
     }
 
     private var titleView: some View {
-        let headerTitle = chatHeaderTitle
-        let canEditTitle = canEditChatHeaderTitle
-        let editAction: (() -> Void)? = canEditTitle ? {
-            if let session = titlePillSession { titlePillEditSession = session }
-        } : nil
+        let display = SessionModelDisplay(store: configStore, draftGroupId: vm.initialGroupId)
+        let modelName = display.displayName(for: vm.sessionId)
+        let isGroupBound = display.isGroupBound(for: vm.sessionId)
+        let resolved = display.resolvedDetail(for: vm.sessionId)
+        let hasBinding = vm.sessionId != nil && configStore.binding(for: vm.sessionId!) != nil
+        let hasProviders = !configStore.instances.isEmpty
 
-        return MinisNavigationHeader(
-            title: headerTitle,
-            alignment: .leading,
-            leadingInset: 20,
-            onTitleTap: editAction
-        )
-        .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
-            let name = SoulStore.cachedMetadata.name
-            soulName = name.isEmpty ? "Yima" : name
+        let isAuthed = hasBinding || hasProviders
+
+        let legacyLayout = !ProcessInfo.processInfo.isiOSAppOnMac && {
+            if #available(iOS 26, *) { return false }
+            return true
+        }()
+
+        // Use the current session's title in place of the default name
+        // when one exists (auto-generated or user-renamed). Tap opens the
+        // same SessionEditSheet used from the home screen so users can
+        // rename / re-categorize without leaving the chat. Falls back to
+        // the SOUL.md `name` (or "Minis") for draft sessions or before a
+        // title has been generated.
+        let sessionTitle: String? = (titlePillSession?.title?.trimmingCharacters(in: .whitespacesAndNewlines))
+            .flatMap { $0.isEmpty ? nil : $0 }
+        let canEditTitle = titlePillSession != nil
+
+        // [NavTitleClip 2026-05-16] On iOS 26 the principal toolbar
+        // container clipped the top of the title and the bottom of the
+        // resolved-detail subtitle when a 3-line stack was used. Adding
+        // a small top inset shifts the whole VStack downward into the
+        // visible band; the toolbar happily renders it without
+        // truncation. Legacy (iOS < 26) layout already used a -6 stack
+        // spacing trick and doesn't need the inset.
+        //
+        // [NavTitleDescenderClip 2026-05-18] Tighten the outer VStack
+        // from 0 to -2pt on iOS 26 so the three rows pack more closely
+        // and free up vertical room for descenders ("g", "p", "y") on
+        // the resolved-detail line (e.g. "Fake Hang 1" was clipping the
+        // final "1" / "g" baseline at the navbar bottom). -2pt is the
+        // sweet spot: overlap is invisible at 9pt body text but recovers
+        // ~2pt of descender clearance below the third row.
+        // [T-navbar-title-clip 2026-05-21] After shrinking the legacy
+        // title to 13pt the stack was tall enough to clear the top of
+        // the navbar but visually it now sat *too high* — the title
+        // row clipped at the status-bar edge while the model-name row
+        // had a tall empty gap below it before the navbar's bottom
+        // separator. Root cause: SwiftUI doesn't strictly center the
+        // `.principal` item on iOS 16-18; it baseline-aligns to the
+        // navigation bar's title text baseline. Padding the OUTER
+        // stack downward (`.padding(.top, …)` on the VStack itself)
+        // pushes the whole title region down within the band without
+        // changing its rendered height. Legacy-only — iOS 26 already
+        // sits correctly in the liquid-glass band.
+        // [T-navbar-title-model-gap 2026-07-18] Legacy spacing -8 → -3. The
+        // 2026-05-20 tightening overlapped row 2 into the title's line box by
+        // 8pt — more than the 13pt font's entire descender zone (~3.1pt), so
+        // any title containing g/p/y/z visually fused with the model pill
+        // (only descender-less titles like "Minis" hid it). -3 keeps a ~2pt
+        // visible gap for descender titles. HEIGHT-NEUTRAL: the 5pt spent
+        // here is reclaimed inside row 2 (provider-row bottom clearance
+        // 4 → 1 and group vertical padding 3 → 2 on legacy), so the stack's
+        // total height — the thing the May-18/19/20 clip saga fought — is
+        // unchanged and the top-clip fix does not regress.
+        return VStack(spacing: legacyLayout ? -3 : -2) {
+            Button {
+                if let s = titlePillSession { titlePillEditSession = s }
+            } label: {
+                // [T-navbar-title-size 2026-05-18] iOS 18 and below render
+                // the principal toolbar in a tighter band than iOS 26's
+                // liquid-glass navbar — long CJK titles (e.g. a
+                // "Download and merge Twitter video" style CJK string)
+                // overflowed at 16pt on iPhone Mini/SE and
+                // wrapped under the trailing "…" button. Drop one point
+                // on legacy iOS so they fit cleanly; keep the iOS 26
+                // size unchanged.
+                Text(sessionTitle ?? soulName)
+                    // [T-navbar-title-size 2026-05-18 / -19 / -20] iOS 16-18
+                    // principal toolbar is a fixed ~44pt band sitting just
+                    // below the status bar with very little reserved padding.
+                    // A 3-line title stack at 16pt/.caption2/9pt overflowed
+                    // the band's top against the status-bar / Dynamic Island
+                    // cutoff (a tall CJK glyph clipped its top, then "?"
+                    // appeared because the glyph rect was outside the navbar
+                    // viewport). Iterative tightening:
+                    //   2026-05-18: 16 → 15pt + `padding(.top, 2)`
+                    //   2026-05-19: 15 → 13.5pt + `minimumScaleFactor(0.85)`
+                    //                 + `fixedSize(...)` + `padding(.top, 3)`
+                    //   2026-05-20: 13.5 → 13pt + drop padding(.top) to 0 +
+                    //                 outer VStack spacing -6 → -8. Earlier
+                    //                 attempts to push the stack DOWN with
+                    //                 more padding.top failed because SwiftUI
+                    //                 vertically CENTERS the .principal item
+                    //                 in the navbar — extra height clips
+                    //                 BOTH top and bottom equally, not just
+                    //                 the bottom. Net result: shrink the
+                    //                 total stack height instead, so it
+                    //                 naturally has breathing room above
+                    //                 and below.
+                    // iOS 26 path unchanged (16pt works inside liquid-glass).
+                    .font(.system(size: legacyLayout ? 13 : 16, weight: .semibold))
+                    .minimumScaleFactor(legacyLayout ? 0.85 : 1.0)
+                    .foregroundStyle(ChatColors.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+                    // [NavTitleTopClip 2026-07-23] Was 4pt on iOS 26 to shove
+                    // the title into the visible band, but combined with the
+                    // now-centered 46pt frame it pushed the title's top past
+                    // the clip line again. 4 → 2: the centered frame already
+                    // positions the stack correctly, and 2pt keeps a little
+                    // breathing room above the semibold cap height without
+                    // re-introducing the top crop.
+                    .padding(.top, legacyLayout ? 0 : 2)
+                    .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
+                        let n = SoulStore.cachedMetadata.name
+                        soulName = n.isEmpty ? "Minis" : n
+                    }
+            }
+            .buttonStyle(.plain)
+            .disabled(!canEditTitle)
+
+            // [T-navbar-group-provider-gap 2026-07-25] Legacy row gap 1 → -1:
+            // on iOS 16-18 the provider·model line (row 2) sat flush against
+            // the navbar band's bottom edge (field screenshot: group name and
+            // row 2 had a visibly larger gap than row 2 had bottom clearance).
+            // Tightening ONLY the group↔provider gap moves row 2 up inside
+            // the band, giving the last line breathing room from the bottom.
+            // -1 still leaves ~2pt visual space (caption2's descender zone +
+            // the 9pt row's cap headroom); the calibrated title↔group overlap
+            // (outer -3) and the group pill's vertical padding are untouched.
+            // iOS 26 keeps spacing 1 — the liquid-glass band has no crowding.
+            VStack(spacing: legacyLayout ? -1 : 1) {
+                HStack(spacing: 4) {
+                    Button {
+                        showModelPicker = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(isAuthed ? Color.green : Color.orange)
+                                .frame(width: 6, height: 6)
+                            if isGroupBound {
+                                Image(systemName: "square.stack.3d.up")
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(ChatColors.tertiaryText)
+                            }
+                            Text(modelName)
+                                .font(.caption2)
+                                .foregroundStyle(ChatColors.secondaryText)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(ChatColors.tertiaryText)
+                        }
+                        .layoutPriority(-1)
+                    }
+                    .buttonStyle(.plain)
+                    // [T-ios-voiceover-labels] This label is assembled from a
+                    // status dot, an optional group glyph, the model name and a
+                    // chevron. Left alone VoiceOver reads those as disconnected
+                    // fragments ("square stack 3d up", "chevron down"), so
+                    // combine the row into one element and state what it is.
+                    // The connection state and group binding are carried as the
+                    // VALUE rather than folded into the label, so VoiceOver
+                    // keeps them distinguishable from the control's name.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text("Model", comment: "VoiceOver label for the model picker button"))
+                    .accessibilityValue(Text(
+                        isGroupBound
+                            ? (isAuthed
+                                ? AppLocalized("\(modelName), group, signed in", comment: "VoiceOver value: model picker, group-bound, authenticated")
+                                : AppLocalized("\(modelName), group, not signed in", comment: "VoiceOver value: model picker, group-bound, not authenticated"))
+                            : (isAuthed
+                                ? AppLocalized("\(modelName), signed in", comment: "VoiceOver value: model picker, authenticated")
+                                : AppLocalized("\(modelName), not signed in", comment: "VoiceOver value: model picker, not authenticated"))
+                    ))
+                    .accessibilityHint(Text("Opens the model picker", comment: "VoiceOver hint for the model picker button"))
+                    .accessibilityAddTraits(.isButton)
+                }
+
+                if let detail = resolved {
+                    // Row 2: "provider · model" + the thinking-level badge as a
+                    // SEPARATE tappable sibling (not nested in the model-picker
+                    // Button) so the badge opens ThinkingLevelSheetView while the
+                    // text still opens the model picker — mirroring how row 1's
+                    // model-name Button and badge were laid out. The model name
+                    // truncates first (layoutPriority(-1) + lineLimit(1)); the
+                    // badge keeps its intrinsic size and always shows in full.
+                    HStack(spacing: 4) {
+                        // [T-codex-fast-mode] Circular-background ⚡ badge in
+                        // front of the resolved model line (row 3) while Fast
+                        // Mode is active (Codex OAuth only). User-requested
+                        // placement: this row names the actual model; row 2
+                        // may show a group name instead.
+                        if codexFastModeEnabled && activeModelSupportsFastMode {
+                            // Sized to the row's 9pt text cap height so the
+                            // badge reads as an inline glyph, not a button.
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 5, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 9, height: 9)
+                                .background(Circle().fill(Color.orange))
+                                // Match the row text's descender clearance so
+                                // the badge centers on the same visual band.
+                                .padding(.bottom, legacyLayout ? 1 : 4)
+                        }
+                        Button {
+                            showModelPicker = true
+                        } label: {
+                            Text("\(detail.providerLabel) · \(detail.modelName)")
+                                .font(.system(size: 9))
+                                .foregroundStyle(ChatColors.secondaryText)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                // [NavTitleClip 2026-05-16] Reserve clearance
+                                // under the resolved-detail line so the final
+                                // glyph descenders ("g","p","y") don't touch
+                                // the navbar's bottom safe-area cutoff on
+                                // iOS 26. 2 → 4pt: 2 wasn't enough when text
+                                // included descenders ("Fake Hang 1" clipped
+                                // the lowered "1" stroke).
+                                // [T-navbar-title-model-gap] Legacy needs only
+                                // 1pt — the 4pt clearance is an iOS 26
+                                // liquid-glass-band requirement; on 16-18 it
+                                // was pure height waste, now traded into the
+                                // title→model gap (see the outer VStack).
+                                .padding(.bottom, legacyLayout ? 1 : 4)
+                                // Force vertical sizing to fit the full
+                                // glyph including descender so the line's
+                                // own frame doesn't crop before the navbar
+                                // gets a chance to lay it out.
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(-1)
+                        }
+                        .buttonStyle(.plain)
+                        // Show the badge whenever thinking is enabled, and ALSO
+                        // when it's Off but the active model supports deep
+                        // thinking — the icon + "Off" pill is then a discoverable
+                        // entry point for turning it on (tap opens the level
+                        // sheet). The Off pill is gated on
+                        // `currentModelSupportsReasoning` so non-reasoning models
+                        // don't grow a dead toggle; an enabled level still shows
+                        // unconditionally (user may have opted in on an
+                        // unknown-capability model).
+                        if !vm.availableThinkingLevels.isEmpty,
+                           vm.currentThinkingLevel.isEnabled || vm.currentModelSupportsReasoning {
+                            thinkingLevelBadge
+                                .fixedSize()
+                                // Match the model-name line's descender
+                                // clearance so the badge sits on the same
+                                // baseline band and isn't clipped at the
+                                // navbar's bottom cutoff.
+                                // [T-navbar-title-model-gap] Match the
+                                // provider text's legacy clearance.
+                                .padding(.bottom, legacyLayout ? 1 : 4)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            // [T-navbar-title-model-gap] 3 → 2 on legacy: part of the
+            // height-neutral trade that funds the wider title→model gap.
+            .padding(.vertical, legacyLayout ? 2 : 3)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.red.opacity(0.35 * fallbackPulseOpacity))
+            )
+            .onChange(of: vm.fallbackTrigger) { _ in
+                // 3× pulse: fade in then out, repeated 3 times
+                fallbackPulseOpacity = 0
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    fallbackPulseOpacity = 1
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    withAnimation(.easeInOut(duration: 0.35)) { fallbackPulseOpacity = 0 }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    withAnimation(.easeInOut(duration: 0.35)) { fallbackPulseOpacity = 1 }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.05) {
+                    withAnimation(.easeInOut(duration: 0.35)) { fallbackPulseOpacity = 0 }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+                    withAnimation(.easeInOut(duration: 0.35)) { fallbackPulseOpacity = 1 }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.75) {
+                    withAnimation(.easeInOut(duration: 0.35)) { fallbackPulseOpacity = 0 }
+                }
+            }
         }
+        // [T-navbar-title-clip 2026-05-21] Nudge the whole legacy title
+        // stack down so the first row clears the status-bar / Dynamic
+        // Island band. iOS 16-18 baseline-aligns the `.principal` item
+        // to the toolbar title baseline — adding top padding on the
+        // OUTER stack shifts its rendered position downward without
+        // resizing any individual row. iOS 26 leaves at 0 (liquid
+        // glass centers correctly).
+        .padding(.top, legacyLayout ? 6 : 0)
         // iOS 26+: fix height to match liquid-glass navbar; older OS: let it size naturally
         .modifier(NavTitleFrameModifier())
-        // Blur the title while the session
+        // [T-navbar-title-fontsize] Lock the entire principal-toolbar
+        // title stack to the standard (.large) Dynamic Type size. Users
+        // with system / app font scaling cranked up were having the
+        // model name + "provider · model" subtitle overflow the navbar
+        // band and clip. The numeric sizes used above (16/.caption2/9)
+        // still scale with Dynamic Type by default; clamping the
+        // environment here freezes them at the design baseline without
+        // having to rewrite every Text modifier individually.
+        .dynamicTypeSize(.large)
+        // Blur the title (and model/provider subtitle) while the session
         // is locked, mirroring the chat body's SessionLockGateOverlay.
         // `SessionLockStore.isVisuallyLocked` is the single source of
         // truth — the same helper drives the gate overlay and the chat
@@ -2287,18 +2418,57 @@ struct AIChatView: View {
         .animation(.easeInOut(duration: 0.15), value: titleIsVisuallyLocked)
     }
 
+    @ViewBuilder
+    private var thinkingLevelBadge: some View {
+        let level = vm.currentThinkingLevel
+        // Sits on nav-bar row 2 (the 9pt "provider · model" line). Kept a
+        // touch smaller than that text (8pt / 6px icon) so it stays the most
+        // compact label in the title and never larger than the "is thinking…"
+        // intensity pill in the message list.
+        //
+        // Also rendered when the level is Off (reasoning-capable model with
+        // thinking disabled): the pill then reads icon + "Off" as a tap target
+        // for enabling deep thinking. Dim the icon in that state — matches the
+        // 0.4 Off-row convention in ThinkingLevelSheetView.
+        HStack(spacing: 2) {
+            Image("ThinkingIcon")
+                .resizable()
+                .frame(width: 6, height: 6)
+                .opacity(level.isEnabled ? 1.0 : 0.4)
+            Text(level.displayName)
+                .font(.system(size: 8, weight: .medium))
+        }
+        .foregroundStyle(ChatColors.secondaryText)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(Color.secondary.opacity(0.10)))
+        .onTapGesture {
+            showThinkingLevelSheet = true
+        }
+        .sheet(isPresented: $showThinkingLevelSheet) {
+            ThinkingLevelSheetView(
+                currentLevel: level,
+                availableLevels: vm.availableThinkingLevels,
+                onSelect: { newLevel in
+                    vm.setThinkingLevel(newLevel)
+                    showThinkingLevelSheet = false
+                }
+            )
+            .presentationDetents([.medium])
+        }
+    }
+
     /// True when the current session's navbar title must render blurred —
     /// observed via `@ObservedObject lockStore` so toggles to the lock
     /// state push a re-render of the toolbar synchronously with the gate.
     private var titleIsVisuallyLocked: Bool {
-        guard !vm.isDSH, let sid = vm.sessionId, !sid.isEmpty else { return false }
+        guard let sid = vm.sessionId, !sid.isEmpty else { return false }
         return lockStore.isVisuallyLocked(sid)
     }
 
     // MARK: - Session Title Snapshot
 
     private func refreshTitlePillSession() {
-        guard !vm.isDSH else { return }
         guard let sid = vm.sessionId else {
             titlePillSession = nil
             return
@@ -2313,9 +2483,7 @@ struct AIChatView: View {
                 guard sid == vm.sessionId else { return }
                 if next?.id != titlePillSession?.id
                     || next?.title != titlePillSession?.title
-                    || next?.category != titlePillSession?.category
-                    || next?.agentId != titlePillSession?.agentId
-                    || next?.spawnRole != titlePillSession?.spawnRole {
+                    || next?.category != titlePillSession?.category {
                     // Direct replace — animating the toolbar title makes the
                     // old "Minis" string slide before the real title swaps
                     // in, which looks broken. SwiftUI's default crossfade
@@ -2461,28 +2629,28 @@ struct AIChatView: View {
             CollectionViewMessageListV3(
                 vm: vm,
                 inputFocused: inputFocused,
-                onRetryMessage: vm.isDSH ? nil : { vm.retryFromMessage($0); vm.forceScrollToBottom.send() },
-                onRetryLast: vm.isDSH ? nil : { vm.retry(); vm.forceScrollToBottom.send() },
+                onRetryMessage: { vm.retryFromMessage($0); vm.forceScrollToBottom.send() },
+                onRetryLast: { vm.retry(); vm.forceScrollToBottom.send() },
                 // [T-ios-assistant-header-open-soul] Routed through the same
                 // handler every `minis://` link in the transcript uses, so the
                 // identity row and an agent-authored
                 // `[Soul](minis://settings/soul)` link land identically —
                 // no second navigation path to keep in sync.
-                onOpenSoulSettings: vm.isDSH ? nil : {
+                onOpenSoulSettings: {
                     guard let url = URL(string: "minis://settings/soul") else { return }
                     _ = handleMinisURLTap(url)
                 },
-                onEdit: vm.isDSH ? nil : { [self] msgId in
+                onEdit: { [self] msgId in
                     vm.editMessage(msgId)
                     inputFocused = true
                 },
-                onDeleteFrom: vm.isDSH ? nil : { vm.deleteFromMessage($0) },
-                onWithdraw: vm.isDSH ? nil : { vm.withdrawQueuedMessage($0) },
-                onResume: vm.isDSH ? nil : { vm.resume(); vm.forceScrollToBottom.send() },
-                onStop: vm.isDSH ? { vm.cancel() } : { vm.stopCurrentCommand() },
-                onCompact: vm.isDSH ? nil : { msgId in compactConfirmMessageId = msgId },
-                onRevertCompact: vm.isDSH ? nil : { Task { await vm.revertCompact() } },
-                onForceSync: vm.isDSH ? nil : { [self] in
+                onDeleteFrom: { vm.deleteFromMessage($0) },
+                onWithdraw: { vm.withdrawQueuedMessage($0) },
+                onResume: { vm.resume(); vm.forceScrollToBottom.send() },
+                onStop: { vm.stopCurrentCommand() },
+                onCompact: { msgId in compactConfirmMessageId = msgId },
+                onRevertCompact: { Task { await vm.revertCompact() } },
+                onForceSync: { [self] in
                     guard let sid = vm.sessionId else { return }
                     Task {
                         let count = await ChatStore.shared.forceSyncSession(sid)
@@ -2496,7 +2664,7 @@ struct AIChatView: View {
                 },
                 maxContentWidth: maxContentWidth ?? 0,
                 floatingBarHeight: floatingBarHeight,
-                inputBarHeight: inputAreaHeight
+                inputBarHeight: inputBarHeight
             )
             // Empty/loading overlay for tap-to-dismiss-keyboard.
             // Placed BEFORE the directory timeline in the ZStack so the
@@ -2516,7 +2684,7 @@ struct AIChatView: View {
             // window before its messages load. Returning users with any
             // prior chat skip the tip even on a fresh draft (so it's a
             // genuine first-launch hint).
-            if !vm.isDSH && vm.sessionId == nil
+            if vm.sessionId == nil
                 && vm.messages.isEmpty
                 && !vm.isLoadingSession
                 && (totalSessionCount ?? Int.max) == 0 {
@@ -2562,7 +2730,7 @@ struct AIChatView: View {
                 .padding(.trailing, 4)
                 .frame(maxWidth: maxContentWidth ?? .infinity, alignment: .trailing)
                 .padding(.horizontal, 12)
-                .padding(.bottom, inputAreaHeight + (hasFloatingPreview ? 80 : 12))
+                .padding(.bottom, inputBarHeight + (hasFloatingPreview ? 80 : 12))
                 .animation(.easeInOut(duration: 0.2), value: vm.isNearBottom)
                 .animation(.easeInOut(duration: 0.2), value: vm.isAtFirstTurn)
                 .animation(.easeInOut(duration: 0.2), value: hasFloatingPreview)
@@ -2582,7 +2750,7 @@ struct AIChatView: View {
             .padding(.trailing, 4)
             .frame(maxWidth: maxContentWidth ?? .infinity, alignment: .trailing)
             .padding(.horizontal, 12)
-            .padding(.bottom, inputAreaHeight + (hasFloatingPreview ? 80 : 12) + 92)
+            .padding(.bottom, inputBarHeight + (hasFloatingPreview ? 80 : 12) + 92)
             .animation(.easeInOut(duration: 0.2), value: hasFloatingPreview)
             .capsuleProtectedFrame("downloadButton")
         }
@@ -2846,10 +3014,6 @@ struct AIChatView: View {
     }
 
     private func handleMinisURLTap(_ url: URL) -> OpenURLAction.Result {
-        if vm.isDSH && !["http", "https"].contains(url.scheme?.lowercased() ?? "") {
-            vm.errorMessage = AppLocalized("远程文件暂不能在手机本地打开。")
-            return .handled
-        }
         if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
             withAnimation { safariURL = url }
             return .handled
@@ -2913,7 +3077,6 @@ struct AIChatView: View {
     }
 
     private func handleDropProviders(_ providers: [NSItemProvider]) {
-        guard !vm.isDSH else { return }
         minisLogger.info("[Drop] handleDropProviders called with \(providers.count) provider(s)")
         for (index, provider) in providers.enumerated() {
             let types = provider.registeredTypeIdentifiers
@@ -3022,8 +3185,6 @@ struct AIChatView: View {
             .background(ChatColors.inputIconBg)
             .clipShape(Circle())
             .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
-            .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
-            .contentShape(Rectangle())
 
         if #available(iOS 17, *) {
             Menu {
@@ -3049,21 +3210,9 @@ struct AIChatView: View {
     /// Returns AnyView to keep `inputBar`'s generic type compact; SwiftUI
     /// runtime demangle chokes on deep nested types otherwise.
     private var inputBottomRow: AnyView {
-        let row = HStack(spacing: YimaDesign.Space.xs) {
-            if !vm.isDSH {
-                attachmentMenuButton
-                slashMenuButton
-                modelPickerButton
-            } else {
-                modelPickerButton
-                    .disabled(!vm.dshConnected || vm.dshControlBusy || vm.isProcessing)
-            }
-            // Yields its 46pt to the exit capsule while editing, for the same
-            // reason the read-aloud toggle does below: this row overflows on a
-            // small phone once a capsule joins the icons. The mode is per
-            // session and unchanged by the edit, so nothing is lost by hiding
-            // the control until the edit is committed or cancelled.
-            if !vm.isDSH && vm.editingMessageIndex == nil { chatModePickerButton }
+        let row = HStack(spacing: 12) {
+            attachmentMenuButton
+            slashMenuButton
             if vm.editingMessageIndex != nil { editExitButton }
             Spacer()
             // Mutually exclusive with editExitButton: while editing a past
@@ -3073,11 +3222,7 @@ struct AIChatView: View {
                 readAloudToolbarToggle
                 Spacer()
             }
-            // [T-ios-hide-composer-mic] Voice input is out of scope for this
-            // build — the composer's mic entry point is commented out on
-            // request. `micButtonContainer` and the VAD panel behind it are left
-            // intact: uncommenting this single line brings the icon back.
-            // micButtonContainer
+            micButtonContainer
             sendButton
         }
         return AnyView(row)
@@ -3127,13 +3272,11 @@ struct AIChatView: View {
             .foregroundStyle(on ? Color.accentColor : .secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-                .background(
-                    Capsule().fill(on ? Color.accentColor.opacity(0.15)
+            .background(
+                Capsule().fill(on ? Color.accentColor.opacity(0.15)
                                   : Color.secondary.opacity(0.10))
-                )
-                .frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
-                .contentShape(Rectangle())
-                .fixedSize()
+            )
+            .fixedSize()
         }
         .buttonStyle(.plain)
         // [T-ios-voiceover-labels] State goes in the VALUE, not the label:
@@ -3168,87 +3311,6 @@ struct AIChatView: View {
                 .background(ChatColors.inputIconBg)
                 .clipShape(Circle())
                 .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
-                .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
-                .contentShape(Rectangle())
-        }
-    }
-
-    /// Quick model switcher beside the slash-command button.
-    private var modelPickerButton: some View {
-        Button {
-            if vm.showSlashMenu { vm.dismissSlashMenu() }
-            if vm.showMentionMenu { vm.dismissMentionMenu() }
-            inputFocused = false
-            showModelPicker = true
-        } label: {
-            Image(systemName: "cpu")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(ChatColors.secondaryText)
-                .frame(width: 34, height: 34)
-                .background(ChatColors.inputIconBg)
-                .clipShape(Circle())
-                .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
-                .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
-                .contentShape(Rectangle())
-        }
-        .accessibilityLabel(String(localized: "Choose Model"))
-    }
-
-    /// [T-lite-mode-small-local-models] Chat-mode switcher, deliberately
-    /// sitting next to the model picker: the mode only ever gets changed
-    /// because of which model is answering, so the two controls belong in the
-    /// same glance. Tinted accent while lite is active — the mode silently
-    /// removes tools, so it must never be ambiguous which one is on.
-    @ViewBuilder
-    private var chatModePickerButton: some View {
-        let isLite = vm.chatMode == .lite
-        let icon = Image(systemName: vm.chatMode.iconName)
-            .font(.system(size: 15, weight: .medium))
-            .foregroundStyle(isLite ? ChatColors.primaryText : ChatColors.secondaryText)
-            .frame(width: 34, height: 34)
-            .background(isLite ? ChatColors.primaryText.opacity(0.12) : ChatColors.inputIconBg)
-            .clipShape(Circle())
-            .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
-            .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
-            .contentShape(Rectangle())
-
-        if #available(iOS 17, *) {
-            Menu {
-                chatModeMenuItems
-            } label: {
-                icon
-            }
-            .accessibilityLabel(String(localized: "Chat Mode"))
-        } else {
-            Button { showChatModeDialog = true } label: { icon }
-                .accessibilityLabel(String(localized: "Chat Mode"))
-                .confirmationDialog(Text("Chat Mode", comment: "Composer chat-mode picker title"),
-                                    isPresented: $showChatModeDialog,
-                                    titleVisibility: .visible) {
-                    ForEach(ChatMode.allCases) { mode in
-                        Button(mode.displayName) { vm.applyChatMode(mode) }
-                    }
-                } message: {
-                    Text(vm.chatMode.explanation)
-                }
-        }
-    }
-
-    /// Menu rows. A Button label of Text + Text + Image renders as
-    /// title / subtitle / icon in a UIMenu, which is how each mode gets to
-    /// explain itself without a settings screen.
-    @ViewBuilder
-    private var chatModeMenuItems: some View {
-        Section(String(localized: "Chat Mode", comment: "Composer chat-mode picker title")) {
-            ForEach(ChatMode.allCases) { mode in
-                Button {
-                    vm.applyChatMode(mode)
-                } label: {
-                    Text(mode.displayName)
-                    Text(mode.explanation)
-                    Image(systemName: mode == vm.chatMode ? "checkmark" : mode.iconName)
-                }
-            }
         }
     }
 
@@ -3258,15 +3320,13 @@ struct AIChatView: View {
             vm.cancelEdit()
         } label: {
             Text("Exit Edit Mode", comment: "Cancel message editing")
-                .font(YimaDesign.Typography.compactMetadata.weight(.medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(ChatColors.secondaryText)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(ChatColors.inputIconBg)
                 .clipShape(Capsule())
                 .overlay(Capsule().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
-                .frame(minWidth: YimaDesign.Layout.hitTarget, minHeight: YimaDesign.Layout.hitTarget)
-                .contentShape(Rectangle())
         }
     }
 
@@ -3282,74 +3342,30 @@ struct AIChatView: View {
                 .background(ChatColors.inputIconBg)
                 .clipShape(Circle())
                 .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
-                .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
-                .contentShape(Rectangle())
         }
     }
 
-    private func ensureLocalVoiceModels() -> Bool {
-        #if VOICE_AGENT_FUSION
-        if VoiceProviderResolver.resolvedInputEntry()?.providerInstanceId == SenseVoiceProvider.builtinProviderId,
-           !TranscriptionModelStore.isReady {
-            showTranscriptionModelDownload = true
-            return false
-        }
-        #endif
-        return true
-    }
-
-    /// Mic button: single tap toggles voice mode (the .onChange(of: voiceInputActive)
-    /// below drives the actual VAD start/stop); long-press opens a quick config
-    /// menu for recognition language + input model.
-    private var micButtonContainer: AnyView {
-        AnyView(
-            MicButton(speechManager: speechManager, inputFocused: $inputFocused, onTap: {
-                if voiceInputActive {
-                    // Already in voice mode — the "T" button switches back to text.
-                    // [T-ios-voice-keyboard-text-carry] Keep the transcript: the
-                    // composer mirrors it, so clearing here would empty the input
-                    // box and lose the dictated text on the way back to keyboard.
-                    voiceVM.reset(clearTranscript: false)
-                    withAnimation(.easeInOut(duration: 0.2)) { voiceInputActive = false }
-                } else {
-                    guard ensureLocalVoiceModels() else { return }
-                    // Mark the composition as voice-assisted (committed to the
-                    // "voice" input-mode preference only at send time). Switch the
-                    // composer into inline voice mode — the single voice entry point.
-                    vm.voiceUsedInComposition = true
-                    withAnimation(.easeInOut(duration: 0.2)) { voiceInputActive = true }
-                }
-            }, onLongPress: {
-                showVoiceConfigMenu = true
-            }, isVoiceActive: voiceInputActive)
-            .confirmationDialog(Text("Voice Input Settings", comment: "Long-press mic config menu title"),
-                                 isPresented: $showVoiceConfigMenu, titleVisibility: .visible) {
-                Button("\(String(localized: "Language", comment: "Voice config menu: recognition language")) (\(VoiceLanguages.option(for: voiceVM.language).label))") {
-                    showVoiceLanguagePicker = true
-                }
-                Button("\(String(localized: "Input Model", comment: "Voice config menu: ASR model")) (\(VoiceProviderResolver.inputModelLabel(includeInstance: false)))") {
-                    showVoiceModelSelector = true
-                }
+    /// Mic button plus the attached language-picker sheet.
+    private var micButtonContainer: some View {
+        MicButton(speechManager: speechManager, inputFocused: $inputFocused, onTap: {
+            if voiceInputActive {
+                // Already in voice mode — the "T" button switches back to text.
+                // [T-ios-voice-keyboard-text-carry] Keep the transcript: the
+                // composer mirrors it, so clearing here would empty the input
+                // box and lose the dictated text on the way back to keyboard.
+                voiceVM.reset(clearTranscript: false)
+                withAnimation(.easeInOut(duration: 0.2)) { voiceInputActive = false }
+            } else {
+                // Mark the composition as voice-assisted (committed to the
+                // "voice" input-mode preference only at send time). Switch the
+                // composer into inline voice mode — the single voice entry point.
+                vm.voiceUsedInComposition = true
+                // Switching text→voice opens the panel expanded this one time;
+                // afterwards it resumes the remembered expand/compact state.
+                VoiceModePreference.shared.enteredFromText = true
+                withAnimation(.easeInOut(duration: 0.2)) { voiceInputActive = true }
             }
-            .sheet(isPresented: $showVoiceLanguagePicker) {
-                VoiceLanguagePickerSheet(viewModel: voiceVM)
-            }
-            .sheet(isPresented: $showVoiceModelSelector) {
-                NavigationStack { UnifiedModelPicker(config: .voiceInput()) }
-            }
-            .sheet(isPresented: $showTranscriptionModelDownload) {
-                #if VOICE_AGENT_FUSION
-                NavigationStack {
-                    TranscriptionModelDownloadView()
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("关闭") { showTranscriptionModelDownload = false }
-                            }
-                        }
-                }
-                #endif
-            }
-        )
+        }, isVoiceActive: voiceInputActive)
     }
 
     /// Send / Enqueue / Stop circular button.
@@ -3366,8 +3382,6 @@ struct AIChatView: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 34))
                     .foregroundStyle(ChatColors.sendButton)
-                    .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
-                    .contentShape(Rectangle())
             }
             .keyboardShortcut(.return, modifiers: .command)
             .accessibilityLabel(Text("Add to queue", comment: "VoiceOver label for the send button while a reply is generating"))
@@ -3376,9 +3390,7 @@ struct AIChatView: View {
             Button { vm.cancel() } label: {
                 Image(systemName: "stop.circle.fill")
                     .font(.system(size: 34))
-                    .foregroundStyle(YimaDesign.Color.recording)
-                    .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
-                    .contentShape(Rectangle())
+                    .foregroundStyle(.red)
             }
             .accessibilityLabel(Text("Stop generating", comment: "VoiceOver label for the stop button"))
             .accessibilityHint(Text("Stops the reply that is being generated", comment: "VoiceOver hint for the stop button"))
@@ -3387,8 +3399,6 @@ struct AIChatView: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 34))
                     .foregroundStyle(canSend ? ChatColors.sendButton : ChatColors.sendButtonDisabled)
-                    .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
-                    .contentShape(Rectangle())
             }
             .disabled(!canSend)
             .keyboardShortcut(.return, modifiers: .command)
@@ -3404,6 +3414,20 @@ struct AIChatView: View {
     /// `__swift_instantiateConcreteTypeFromMangledNameV2`).
     private var inputFieldOrWaveform: AnyView {
         let topPadding: CGFloat = (vm.attachments.isEmpty && vm.loadingVideoCount == 0) ? 16 : 11
+        if voiceInputActive {
+            return AnyView(
+                // [voice-correction §6] Recent conversation turns, straight from the
+                // already-loaded in-memory list (§12.1 forbids a DB query on this path),
+                // budgeted by CorrectionContextBuilder.
+                InlineVoiceInputView(
+                    viewModel: voiceVM,
+                    inputText: inputTextBinding,
+                    onPasteImage: { image in vm.addImageAttachment(image) },
+                    onPasteFile: { url in vm.addFileAttachment(from: url) },
+                    conversationContext: { voiceCorrectionContext(from: vm.messages) }
+                )
+            )
+        }
         if speechManager.state == .recording {
             // Transcript area grows with content up to a cap (~5 lines),
             // then scrolls internally. ScrollView is greedy in its scroll
@@ -3453,13 +3477,9 @@ struct AIChatView: View {
             // `%@` form ("Message %@ (@ to mention files)") as the lookup
             // key in Localizable.xcstrings, so translators get one
             // parameterized entry per locale instead of one per soul name.
-            placeholder: vm.isDSH ? AppLocalized("发送消息") : AppLocalized("Message \(soulName) (@ to mention files)"),
-            onPasteImage: { image in
-                if vm.isDSH { vm.errorMessage = AppLocalized("远程聊天暂不支持附件。") } else { vm.addImageAttachment(image) }
-            },
-            onPasteFile: { url in
-                if vm.isDSH { vm.errorMessage = AppLocalized("远程聊天暂不支持附件。") } else { vm.addFileAttachment(from: url) }
-            },
+            placeholder: AppLocalized("Message \(soulName) (@ to mention files)"),
+            onPasteImage: { image in vm.addImageAttachment(image) },
+            onPasteFile: { url in vm.addFileAttachment(from: url) },
             onReturnKey: handleReturnKey,
             onArrowUp: handleArrowUp,
             onArrowDown: handleArrowDown,
@@ -3487,17 +3507,7 @@ struct AIChatView: View {
             // 120pt inside a taller box and the extra space would be dead.
             maxHeightOverride: composerTextHeight
         )
-        let body = composerBody(field: field, topPadding: topPadding)
-        if voiceInputActive {
-            return AnyView(VStack(spacing: 0) {
-                VoiceRecordingStatusBar(
-                    viewModel: voiceVM,
-                    conversationContext: { voiceCorrectionContext(from: vm.messages) }
-                )
-                body
-            })
-        }
-        return AnyView(body)
+        return AnyView(composerBody(field: field, topPadding: topPadding))
     }
 
     /// [T-ipad-composer-resize] Wraps the text field with its (optional) fixed
@@ -3613,10 +3623,21 @@ struct AIChatView: View {
         vm.inputCaret = caret
     }
 
-    // Bound the composer metadata chain: the 2.0 (9) device crashes exhausted
-    // the main-thread stack while instantiating inputBar's nested modifiers.
-    private var inputComposerContent: AnyView {
-        AnyView(
+    private var inputBar: some View {
+        VStack(spacing: 0) {
+            if vm.isSuspended {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .tint(.yellow)
+                    Text("Waiting for other tasks to complete...")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(Color.yellow.opacity(0.08))
+            }
+
             VStack(spacing: 5) {
                 // Attachment preview chips — 3 per row
                 if !vm.attachments.isEmpty || vm.loadingVideoCount > 0 {
@@ -3649,82 +3670,6 @@ struct AIChatView: View {
                 }
                 lastRecognizedLength = newLength
             }
-            // [inline-voice] Single tap on the mic now starts recording directly
-            // (no separate "tap to speak" inner button) — replaces what used to
-            // be InlineVoiceInputView.onAppear/.onDisappear.
-            .onChange(of: voiceInputActive) { active in
-                if active {
-                    guard ensureLocalVoiceModels() else {
-                        voiceInputActive = false
-                        return
-                    }
-                    voiceVM.accumulate = true
-                    VoiceCorrectionEngine.warmUp()
-                    // Seamless text → voice: carry whatever was typed into the
-                    // transcript so dictation appends to it.
-                    voiceVM.setTranscript(vm.inputText)
-                    voiceVM.prepare()
-                    voiceVM.handleMainButtonTap()
-                } else {
-                    voiceVM.stopListening()
-                }
-            }
-            // Mirror the recognized text into the composer field. Never
-            // auto-send — the user reviews then taps Send (or swipes/returns).
-            .onChange(of: voiceVM.transcript) { newValue in
-                if vm.inputText != newValue {
-                    vm.inputText = newValue
-                }
-            }
-            // Reverse mirror: when inputText changes externally (share/paste
-            // injection, "add selected reply to input"), pull it back into the
-            // voice transcript so a subsequent VAD segment appends onto current
-            // text instead of a stale transcript.
-            .onChange(of: vm.inputText) { newValue in
-                if voiceInputActive, voiceVM.transcript != newValue {
-                    voiceVM.setTranscript(newValue)
-                }
-            }
-            .onChange(of: voiceSelection.inputEntryId) { _ in
-                if voiceInputActive && !ensureLocalVoiceModels() {
-                    voiceVM.stopListening()
-                    voiceInputActive = false
-                    return
-                }
-                voiceVM.refreshInputProvider()
-            }
-            #if DEBUG
-            // debug.voice.panel {action:"mic"} — on-device e2e audio tests
-            // (synthetic debug.tap cannot reach SwiftUI buttons). Relocated from
-            // the retired InlineVoiceInputView.
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MinisDebugVoiceMicTap"))) { _ in
-                VoiceLog.log("[debug-bridge] mic tap via debug.voice.panel")
-                if voiceVM.isTranscribing, voiceVM.state != .recording {
-                    voiceVM.cancelTranscription()
-                } else {
-                    voiceVM.handleMainButtonTap()
-                }
-            }
-            #endif
-        )
-    }
-
-    private var inputBar: some View {
-        VStack(spacing: 0) {
-            if vm.isSuspended {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .tint(.yellow)
-                    Text("Waiting for other tasks to complete...")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
-                .background(Color.yellow.opacity(0.08))
-            }
-
-            inputComposerContent
             .overlay(alignment: .topTrailing) {
                 // Only offer "Move to…" when there is actually something to
                 // move. hasInjectedShareContent is flipped true after EVERY
@@ -3749,8 +3694,7 @@ struct AIChatView: View {
             .modifier(ComposerSurface())
             .frame(maxWidth: maxContentWidth)
             .padding(.horizontal, 12)
-            .padding(.top, 4)
-            .padding(.bottom, 0)
+            .padding(.vertical, 8)
             // [T-ios-geometry-observer-crash] onGeometryChange replaces the
             // GeometryReader scaffold (async-renderer SIGTRAP — see the
             // floating-bar site). Fires with the initial value too, so the
@@ -3934,6 +3878,17 @@ struct AIChatView: View {
                             sendSwipeAnchor = nil
                             return
                         }
+                        // Priority in voice mode: component gestures > collapse/
+                        // expand > swipe-to-send. The panel's own drags (collapse/
+                        // expand, delete control) are handled inside the panel; the
+                        // swipe-to-send only engages once the finger has been
+                        // dragged ABOVE the input container (location.y < 0), i.e.
+                        // out toward the message area — making it the lowest
+                        // priority and never colliding with in-panel drags.
+                        if voiceInputActive && value.location.y >= 0 {
+                            if sendSwipeProgress != 0 { sendSwipeProgress = 0 }
+                            return
+                        }
                         let isVertical = abs(value.translation.height) > abs(value.translation.width)
                         guard isVertical, value.translation.height < 0 else {
                             if sendSwipeProgress != 0 { sendSwipeProgress = 0 }
@@ -3978,6 +3933,27 @@ struct AIChatView: View {
                         sendSwipeAnchor = nil
                         guard !inputHasSelection, swipeToSendAllowed else {
                             sendSwipeProgress = 0
+                            return
+                        }
+                        // Voice mode: only a release dragged OUT of the input
+                        // container (toward the message area) sends — in-panel
+                        // drags belong to collapse/expand and the delete control.
+                        //
+                        // [T-voice-scroll-gesture-priority] This location test is
+                        // also what already satisfies "scroll must win over
+                        // swipe-to-send" inside the voice panel's transcript, in
+                        // BOTH the editing and read-only modes: any drag whose
+                        // release lands inside the input container (y >= 0) —
+                        // which is every drag that stays within the transcript
+                        // ScrollView — is rejected here before it can send. So a
+                        // scroll gesture can never be reinterpreted as a send,
+                        // and no separate isScrollable/at-bottom channel needs to
+                        // be plumbed from the panel to this gesture. Send only
+                        // engages once the finger has genuinely left the panel and
+                        // moved up toward the message list, which is exactly the
+                        // required behaviour.
+                        if voiceInputActive && value.location.y >= 0 {
+                            if sendSwipeProgress != 0 { sendSwipeProgress = 0 }
                             return
                         }
                         let isVertical = abs(value.translation.height) > abs(value.translation.width)
@@ -4211,38 +4187,15 @@ struct AIChatView: View {
     }
 
     /// `@` file-mention popup — mirrors slashCommandMenu styling.
-    ///
-    /// In a group the same popup leads with the room's members, because `@` in
-    /// a group means "who should answer this" far more often than it means
-    /// "attach this file" — and both still work from one keystroke.
     private var mentionMenu: some View {
         let rows = vm.filteredMentionEntries
         #if DEBUG
         let preview = rows.prefix(6).map { $0.basename }.joined(separator: ",")
         print("[MentionRender] mentionMenu body filter=\"\(vm.mentionFilter)\" rows.count=\(rows.count) first6=[\(preview)]")
         #endif
-        let groupRows = vm.filteredGroupMentions
         return InputBarPopupChrome(maxContentWidth: maxContentWidth) {
             VStack(spacing: 0) {
-                if !groupRows.isEmpty {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(groupRows.enumerated()), id: \.element.id) { index, candidate in
-                                let isSelected = index == vm.mentionSelectedIndex
-                                Button {
-                                    vm.selectGroupMention(candidate)
-                                } label: {
-                                    GroupMentionRow(candidate: candidate, isSelected: isSelected)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(SlashMenuButtonStyle(isSelected: isSelected))
-                            }
-                        }
-                    }
-                    .scrollIndicators(.visible)
-                    .frame(height: min(Self.slashPickerFixedHeight,
-                                       CGFloat(groupRows.count) * 44))
-                } else if rows.isEmpty {
+                if rows.isEmpty {
                     // Lock empty-state height to slashPickerFixedHeight so
                     // the popup card stays the same size whether matches
                     // are present or not — otherwise it collapses to a
@@ -4356,40 +4309,6 @@ struct AIChatView: View {
     }
 
     /// A single row in the file-mention menu.
-    /// One member (or the whole room) in the `@` popup. Deliberately shaped
-    /// like the roster row rather than like MentionRow below: this is a person
-    /// you are addressing, not a path you are pasting.
-    private struct GroupMentionRow: View {
-        let candidate: GroupMentionCandidate
-        /// Highlighted by the arrow keys — the row Return would commit.
-        let isSelected: Bool
-
-        var body: some View {
-            HStack(spacing: 10) {
-                Text(candidate.emoji)
-                    .font(.system(size: 16))
-                    .frame(width: 26, height: 26)
-                    .background(Color.secondary.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(candidate.display)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(isSelected ? Color.white : ChatColors.primaryText)
-                        .lineLimit(1)
-                    if !candidate.subtitle.isEmpty {
-                        Text(candidate.subtitle)
-                            .font(.system(size: 11))
-                            .foregroundStyle(isSelected ? Color.white.opacity(0.8) : ChatColors.secondaryText)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-        }
-    }
-
     private struct MentionRow: View {
         let entry: FileMentionEntry
         let isSelected: Bool
@@ -4604,7 +4523,7 @@ struct AIChatView: View {
     }
 
     private var canEnqueue: Bool {
-        !vm.isDSH && vm.isProcessing && !vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        vm.isProcessing && !vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Whether the composer actually holds something worth moving to another
@@ -4643,7 +4562,7 @@ struct AIChatView: View {
     /// Dismiss keyboard (commit dictation/marked text) before sending.
     private func performSend() {
         // Intercept slash commands — execute instead of sending to LLM
-        if !vm.isDSH && vm.tryExecuteInputAsSlashCommand() { return }
+        if vm.tryExecuteInputAsSlashCommand() { return }
 
         minisLogger.info("🔑DRAFT performSend vm=\(vm.vmInstanceId) vm.sessionId=\(vm.sessionId ?? "nil") draftId=\(draftId ?? "nil") inputText='\(String(vm.inputText.prefix(50)))' isProcessing=\(vm.isProcessing)")
         // Keep SwiftUI focus when a hardware keyboard is connected — dropping
@@ -4680,10 +4599,7 @@ struct AIChatView: View {
 
     /// Whether the floating tool preview is visible.
     private var hasFloatingPreview: Bool {
-        // Keep overlays aligned with the composer while the floating Bash/tool
-        // preview above is disabled.
-        false
-        // hasAnyToolBlocks
+        hasAnyToolBlocks
     }
 
     /// Max content width — unconstrained in compact (portrait iPhone),
@@ -5010,6 +4926,21 @@ private struct NavTitleKey: Equatable {
     let sessionTitle: String?
     let canEditTitle: Bool
     let soulName: String
+    let modelName: String
+    let isGroupBound: Bool
+    /// [T-codex-fast-mode] Circular ⚡ badge before the model name while
+    /// Fast Mode is enabled on a Codex OAuth model.
+    let showFastBolt: Bool
+    let resolvedText: String?
+    let hasBinding: Bool
+    let hasProviders: Bool
+    let showThinkingBadge: Bool
+    let thinkingLevelName: String
+    let fallbackTrigger: Int
+    /// The fallback-pulse @State lives on AIChatView but is RENDERED inside
+    /// the gated titleView — each discrete set (6 over ~1.75s) must pierce
+    /// the gate or the red pulse freezes at its first frame.
+    let fallbackPulse: Double
     /// [T-ios-navtitle-blur-stuck-after-unlock] Face ID lock state — the
     /// title's `.blur(radius: titleIsVisuallyLocked ? 8 : 0)` renders inside
     /// the gated toolbar content, so the unlock transition must pierce the
@@ -5065,6 +4996,15 @@ private struct ChatToolbarHost<Title: View, Trailing: View>: View, Equatable {
                 if l.sessionTitle != r.sessionTitle { diffs.append("sessionTitle") }
                 if l.canEditTitle != r.canEditTitle { diffs.append("canEditTitle") }
                 if l.soulName != r.soulName { diffs.append("soulName") }
+                if l.modelName != r.modelName { diffs.append("modelName") }
+                if l.isGroupBound != r.isGroupBound { diffs.append("isGroupBound") }
+                if l.resolvedText != r.resolvedText { diffs.append("resolvedText") }
+                if l.hasBinding != r.hasBinding { diffs.append("hasBinding") }
+                if l.hasProviders != r.hasProviders { diffs.append("hasProviders") }
+                if l.showThinkingBadge != r.showThinkingBadge { diffs.append("showThinkingBadge") }
+                if l.thinkingLevelName != r.thinkingLevelName { diffs.append("thinkingLevelName") }
+                if l.fallbackTrigger != r.fallbackTrigger { diffs.append("fallbackTrigger") }
+                if l.fallbackPulse != r.fallbackPulse { diffs.append("fallbackPulse") }
                 if l.titleLocked != r.titleLocked { diffs.append("titleLocked") }
             }
             if lhs.key.messagesEmpty != rhs.key.messagesEmpty { diffs.append("messagesEmpty") }
@@ -5153,7 +5093,6 @@ private struct ChatTrailingMenu: View, Equatable {
     let setSpeakEnabled: (Bool) -> Void
     let setEnhancedCache: (Bool) -> Void
     let setFastMode: (Bool) -> Void
-    let onChooseModel: () -> Void
     let onTokenUsage: () -> Void
     let onCopyRequests: () -> Void
     let onCopySessionData: () -> Void
@@ -5177,11 +5116,6 @@ private struct ChatTrailingMenu: View, Equatable {
             NavbarEvalStats.menuEval += 1
             NavbarEvalStats.logger.info("[NavbarEval] menuEval=\(NavbarEvalStats.menuEval) (toolbarPass=\(NavbarEvalStats.toolbarPass))")
         }()
-        #endif
-        #if VOICE_AGENT_FUSION
-        let showModelControls = showEnhancedCacheToggle
-        #else
-        let showModelControls = showEnhancedCacheToggle || showFastModeToggle
         #endif
         return Menu {
             Button { onNewChat() } label: {
@@ -5247,7 +5181,6 @@ private struct ChatTrailingMenu: View, Equatable {
                 }
             }
 
-            #if !VOICE_AGENT_FUSION
             Toggle(isOn: Binding(
                 get: { speakEnabled },
                 set: { setSpeakEnabled($0) }
@@ -5255,10 +5188,9 @@ private struct ChatTrailingMenu: View, Equatable {
                 Label(AppLocalized("Speak Responses"), systemImage: "speaker.wave.2")
             }
 
-            #endif
             // [T-codex-fast-mode-menu-group] Model-control toggles in their
             // own divider-separated section (mirrors the UIKit buildMenu).
-            if showModelControls {
+            if showEnhancedCacheToggle || showFastModeToggle {
                 Divider()
 
                 if showEnhancedCacheToggle {
@@ -5270,7 +5202,6 @@ private struct ChatTrailingMenu: View, Equatable {
                     }
                 }
 
-                #if !VOICE_AGENT_FUSION
                 if showFastModeToggle {
                     Toggle(isOn: Binding(
                         get: { fastModeEnabled },
@@ -5279,14 +5210,9 @@ private struct ChatTrailingMenu: View, Equatable {
                         Label(AppLocalized("Enable Fast Mode"), systemImage: "bolt.fill")
                     }
                 }
-                #endif
             }
 
             Divider()
-
-            Button { onChooseModel() } label: {
-                Label(String(localized: "Choose Model"), systemImage: "cpu")
-            }
 
             Button { onTokenUsage() } label: {
                 Label(AppLocalized("Token Usage"), systemImage: "number")
@@ -5350,7 +5276,6 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
     let setSpeakEnabled: (Bool) -> Void
     let setEnhancedCache: (Bool) -> Void
     let setFastMode: (Bool) -> Void
-    let onChooseModel: () -> Void
     let onTokenUsage: () -> Void
     let onCopyRequests: () -> Void
     let onCopySessionData: () -> Void
@@ -5475,13 +5400,11 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
             sessionGroup.append(UIAction(title: AppLocalized("Memories in Session"),
                                          image: UIImage(systemName: "brain.head.profile")) { _ in coordinator.parent.onMemories() })
         }
-        #if !VOICE_AGENT_FUSION
         sessionGroup.append(UIAction(title: AppLocalized("Speak Responses"),
                                      image: UIImage(systemName: "speaker.wave.2"),
                                      state: key.speakEnabled ? .on : .off) { _ in
             coordinator.parent.setSpeakEnabled(!key.speakEnabled)
         })
-        #endif
         groups.append(UIMenu(options: .displayInline, children: sessionGroup))
 
         // [T-codex-fast-mode-menu-group] Model-control toggles (they shape how
@@ -5498,7 +5421,6 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
         // [T-codex-fast-mode] Only for Codex OAuth models. Injects
         // service_tier=priority (the wire value codex_cli_rs sends for its
         // Fast mode) into Codex requests while enabled; 2x credit burn.
-        #if !VOICE_AGENT_FUSION
         if key.showFastModeToggle {
             modelControlGroup.append(UIAction(title: AppLocalized("Enable Fast Mode"),
                                               image: UIImage(systemName: "bolt.fill"),
@@ -5506,14 +5428,11 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
                 coordinator.parent.setFastMode(!key.fastModeEnabled)
             })
         }
-        #endif
         if !modelControlGroup.isEmpty {
             groups.append(UIMenu(options: .displayInline, children: modelControlGroup))
         }
 
         var tailGroup: [UIMenuElement] = [
-            UIAction(title: String(localized: "Choose Model"),
-                     image: UIImage(systemName: "cpu")) { _ in coordinator.parent.onChooseModel() },
             UIAction(title: AppLocalized("Token Usage"),
                      image: UIImage(systemName: "number")) { _ in coordinator.parent.onTokenUsage() },
         ]
@@ -5791,12 +5710,12 @@ private struct SessionLockGateOverlay: View {
                     .font(.system(size: 56, weight: .light))
                     .foregroundStyle(.secondary)
 
-                Text(String(localized: "This session is locked"))
+                Text("This session is locked")
                     .font(.system(size: 18, weight: .semibold))
 
                 Text(attemptFailed
-                     ? String(localized: "Authentication failed. Tap to try again.")
-                     : String(format: String(localized: "Tap to unlock with %@"), BiometricAuth.biometryDisplayName))
+                     ? "Authentication failed. Tap to try again."
+                     : "Tap to unlock with \(BiometricAuth.biometryDisplayName)")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -5888,21 +5807,13 @@ private struct MicButton: View {
     /// point. The SpeechRecognitionManager path stays in place but is no longer
     /// triggered from here.
     var onTap: () -> Void = {}
-    /// Long-press (500ms, no movement) — opens the voice config menu
-    /// (language / input model).
-    var onLongPress: () -> Void = {}
     /// True while inline voice mode is active — the button flips to a "T" glyph
     /// that switches back to text input.
     var isVoiceActive: Bool = false
     /// Press feedback for the custom-gesture button.
     @State private var micPressed = false
-    /// True once the hold timer has fired for the current press — suppresses
-    /// onTap on release so a long-press never ALSO fires a tap.
-    @State private var longPressFired = false
-    @State private var longPressTask: Task<Void, Never>?
 
     private static let diameter: CGFloat = 34
-    private static let longPressDuration: Duration = .milliseconds(500)
 
     var body: some View {
         // NOT a Button: SwiftUI's Button has a generous system touch-slop / touch-
@@ -5922,41 +5833,16 @@ private struct MicButton: View {
             .scaleEffect(micPressed ? 0.9 : 1.0)
             .contentShape(Circle())
             .gesture(
-                // Long-press is timed manually inside this SAME gesture rather
-                // than adding a second LongPressGesture recognizer: both would
-                // start tracking on touch-down, a simultaneous LongPressGesture
-                // wouldn't cancel this DragGesture's onEnded (still need the
-                // same "consumed" flag), and the sequenced-gesture composition
-                // (LongPressGesture.sequenced(before:)) delays the tap path this
-                // button was specifically built to keep fast/precise.
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         micPressed = Self.isInside(value.location)
-                        if longPressTask == nil, Self.isInside(value.startLocation) {
-                            longPressFired = false
-                            longPressTask = Task { @MainActor in
-                                try? await Task.sleep(for: Self.longPressDuration)
-                                guard !Task.isCancelled, micPressed else { return }
-                                longPressFired = true
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                onLongPress()
-                            }
-                        }
-                        if hypot(value.translation.width, value.translation.height) >= 10 {
-                            longPressTask?.cancel()
-                            longPressTask = nil
-                        }
                     }
                     .onEnded { value in
-                        longPressTask?.cancel()
-                        longPressTask = nil
-                        let firedLongPress = longPressFired
-                        longPressFired = false
                         let started = Self.isInside(value.startLocation)
                         let ended = Self.isInside(value.location)
                         let moved = hypot(value.translation.width, value.translation.height)
                         micPressed = false
-                        guard started, ended, moved < 10, !firedLongPress else { return }
+                        guard started, ended, moved < 10 else { return }
                         inputFocused = false
                         onTap()
                     }

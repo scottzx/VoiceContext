@@ -27,7 +27,7 @@ final class ICloudSharedZoneTransport: NSObject, SyncTransport {
 
     // MARK: - Configuration
 
-    static let containerIdentifier = AgentBuildIdentity.iCloudContainerID
+    static let containerIdentifier = "iCloud.com.openminis.app"
 
     /// Fixed zone names. Never include device id.
     static let sharedZoneName  = "minis-shared"

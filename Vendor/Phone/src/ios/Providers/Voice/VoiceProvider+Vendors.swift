@@ -76,8 +76,8 @@ final class MiniMaxVoiceProvider: VoiceProvider {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyVoiceAuth(&urlRequest)  // Bearer {apiKey}, from base class
 
-        // MiniMax uses multipliers: speed 0.5...2.0, normal volume 1.0.
-        let speed = min(2.0, max(0.5, request.speed ?? 1.0))
+        // MiniMax-specific shape: speed becomes an integer 0~200.
+        let speedInt = Int((request.speed ?? 1.0) * 100)
         // [T-voice-minimax-quicktest-2054] Quick Test (and any caller whose
         // model entries double as voices) passes the MODEL id in `voice`.
         // MiniMax voice ids are a separate namespace — sending the model id
@@ -90,8 +90,8 @@ final class MiniMaxVoiceProvider: VoiceProvider {
             "stream": false,
             "voice_setting": [
                 "voice_id": requestedVoice ?? defaultVoiceOutputVoice(),  // voice -> voice_id
-                "speed":    speed,
-                "vol":      1.0,
+                "speed":    speedInt,
+                "vol":      100,
                 "pitch":    0
             ],
             "audio_setting": [

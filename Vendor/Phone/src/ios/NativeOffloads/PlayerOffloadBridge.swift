@@ -68,10 +68,6 @@ private class PlayerSession {
 
     private static var sessions: [String: PlayerSession] = [:]
 
-    static func pauseForRecording() {
-        for session in sessions.values { session.videoPlayer?.pause() }
-    }
-
     // MARK: - File Type Detection
 
     private static let videoExtensions: Set<String> = [
@@ -94,10 +90,6 @@ private class PlayerSession {
         guestPath: String,
         completion: @escaping (NSDictionary?, NSString?) -> Void
     ) {
-        guard !AudioSessionCoordinator.shared.isRecording else {
-            completion(nil, "正在录音，暂不可播放媒体。")
-            return
-        }
         let sessionId = UUID().uuidString.prefix(8).lowercased()
         let mediaType = detectMediaType(for: url)
 
@@ -153,10 +145,8 @@ private class PlayerSession {
         // system audio session away from external apps (Spotify, Apple
         // Music, etc.) — taking it away triggers an interruption chain
         // that can kill our background keepalive when they reclaim it.
-        guard AudioSessionCoordinator.shared.beginAndWait(.mediaAttachment) else {
-            completion(nil, "正在录音，暂不可播放媒体。")
-            return
-        }
+        try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
+        try? AVAudioSession.sharedInstance().setActive(true)
 
         let player = AVPlayer(url: session.fileURL)
         session.videoPlayer = player
@@ -234,10 +224,6 @@ private class PlayerSession {
     }
 
     @objc public static func resumeSession(_ sessionId: String, error: UnsafeMutablePointer<NSString?>) -> NSDictionary? {
-        guard AudioSessionCoordinator.shared.beginAndWait(.mediaAttachment) else {
-            error.pointee = "正在录音，暂不可播放媒体。"
-            return nil
-        }
         guard let session = sessions[sessionId] else {
             error.pointee = "Session '\(sessionId)' not found" as NSString
             return nil

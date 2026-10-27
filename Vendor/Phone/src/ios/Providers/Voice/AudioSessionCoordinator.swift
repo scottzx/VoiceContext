@@ -13,9 +13,7 @@ import UIKit
 //
 // Audio sources → intents (System TTS and cloud TTS are the SAME `replyTTS`
 // source, just different engines resolved from the Voice Output group):
-//   .recording          — persistent recording + dedicated meeting speech [highest]
-//   .meetingAssistantTTS— speech lease under the recording's stable profile
-//   .capture            — chat mic recording (.record/.measurement)
+//   .capture            — mic recording (.record/.measurement)            [highest]
 //   .mediaAttachment    — Markdown audio attachment / auto_play playback
 //   .replyTTS           — read-replies (cloud VoiceOutputPlayer OR System AVSpeech)
 //   .backgroundKeepAlive— silent keep-alive track (background only)        [lowest]
@@ -31,129 +29,17 @@ final class AudioSessionCoordinator {
 
     enum Intent: Int {
         // Higher rawValue = higher priority.
-        case backupKeepAlive = -1
         case backgroundKeepAlive = 0
         case replyTTS = 1
-        case toolTTS = 2
-        case mediaAttachment = 3
-        case capture = 4
-        case toolCapture = 5
-        case meetingAssistantTTS = 6
-        case storyPlayback = 7
-        case xiaolanCapture = 8
-        case xiaolanTTS = 9
-        case recording = 10
+        case mediaAttachment = 2
+        case capture = 3
     }
 
     private let logger = AppLogger(category: "AudioSession")
     private var active: Set<Intent> = []
 
     /// True while the mic is capturing — reply TTS is suppressed in this state.
-    var isCapturing: Bool { active.contains(.capture) || active.contains(.toolCapture) || active.contains(.xiaolanCapture) || isRecording }
-    var isRecording: Bool { !recordingOwners.isEmpty }
-    var isStoryPlaybackActive: Bool { active.contains(.storyPlayback) }
-    private(set) var isIndependentVoiceEnabled = false
-    private var recordingOwners = Set<UUID>()
-    static let recordingWillStart = Notification.Name("VoiceContext.recordingWillStart")
-    static let storyPlaybackPreempted = Notification.Name("VoiceContext.storyPlaybackPreempted")
-
-    func beginTool(_ intent: Intent) -> Bool {
-        guard !active.contains(intent) else { return false }
-        if beginAndWait(intent) { return true }
-        end(intent)
-        return false
-    }
-
-    func beginRecording(owner: UUID) throws {
-        guard !isIndependentVoiceEnabled else {
-            throw NSError(domain: "VoiceContext.Audio", code: 3,
-                          userInfo: [NSLocalizedDescriptionKey: "请先关闭语音模式，再开始录音。"])
-        }
-        if recordingOwners.contains(owner) {
-            guard beginAndWait(.recording) else {
-                throw NSError(domain: "VoiceContext.Audio", code: 1,
-                              userInfo: [NSLocalizedDescriptionKey: "录音音频会话尚未恢复，请重试。"])
-            }
-            return
-        }
-        // Synchronous observers stop chat capture before the recorder takes the mic.
-        NotificationCenter.default.post(name: Self.recordingWillStart, object: nil)
-        NotificationCenter.default.post(name: Self.storyPlaybackPreempted, object: nil)
-        BackupKeepAlive.end()
-        SpeechRecognitionManager.shared.stopRecording()
-        GlobalAudioPlayer.shared.stop()
-        PlayerOffloadBridge.pauseForRecording()
-        VoiceOutputPlayer.shared.stopAll()
-        NotificationCenter.default.post(name: Self.replyTTSPreemptedNotification, object: nil)
-        BackgroundKeepAliveManager.shared.suspendSilentAudioForMedia(caller: "VoiceContext.recording")
-        recordingOwners.insert(owner)
-        FusionAudio.suspendWebAudio(true)
-        guard beginAndWait(.recording), AVAudioSession.sharedInstance().category == .playAndRecord else {
-            endRecording(owner: owner)
-            throw NSError(domain: "VoiceContext.Audio", code: 1, userInfo: [NSLocalizedDescriptionKey: "录音音频会话未能就绪，请重试。 "])
-        }
-    }
-
-    func endRecording(owner: UUID) {
-        guard recordingOwners.remove(owner) != nil else { return }
-        if recordingOwners.isEmpty {
-            active.remove(.meetingAssistantTTS)
-            end(.recording)
-            FusionAudio.suspendWebAudio(false)
-            BackgroundKeepAliveManager.shared.resumeSilentAudioForMedia(caller: "VoiceContext.recording")
-        }
-    }
-
-    /// Grants only the meeting assistant permission to speak over an existing
-    /// recording. No session mutation is allowed here: the recorder's engine
-    /// keeps the same category, mode and route throughout the utterance.
-    func beginMeetingAssistantSpeech() -> Bool {
-        let session = AVAudioSession.sharedInstance()
-        guard isRecording,
-              highest == .recording,
-              sessionActive,
-              !active.contains(.meetingAssistantTTS),
-              session.category == .playAndRecord,
-              session.mode == .default,
-              Self.pendingLock.withLock({ Self.pendingApplies == 0 && Self.lastApplySucceeded }) else {
-            return false
-        }
-        active.insert(.meetingAssistantTTS)
-        return true
-    }
-
-    func endMeetingAssistantSpeech() {
-        // Recording remains the highest intent; ending speech must not
-        // reconfigure or deactivate its audio session.
-        active.remove(.meetingAssistantTTS)
-    }
-
-    /// Holds the mode reservation while paused too; paused voice and paused
-    /// recordings remain mutually exclusive until the user closes one mode.
-    func reserveIndependentVoice() -> Bool {
-        guard !isRecording else { return false }
-        guard !isIndependentVoiceEnabled else { return true }
-        isIndependentVoiceEnabled = true
-        BackupKeepAlive.end()
-        SpeechRecognitionManager.shared.stopRecording()
-        GlobalAudioPlayer.shared.stop()
-        PlayerOffloadBridge.pauseForRecording()
-        VoiceOutputPlayer.shared.stopAll()
-        NotificationCenter.default.post(name: Self.replyTTSPreemptedNotification, object: nil)
-        BackgroundKeepAliveManager.shared.suspendSilentAudioForMedia(caller: "VoiceContext.voiceMode")
-        FusionAudio.suspendWebAudio(true)
-        return true
-    }
-
-    func releaseIndependentVoice() {
-        guard isIndependentVoiceEnabled else { return }
-        active.remove(.xiaolanCapture)
-        active.remove(.xiaolanTTS)
-        isIndependentVoiceEnabled = false
-        apply(reason: "close voice mode")
-        FusionAudio.suspendWebAudio(isStoryPlaybackActive)
-        BackgroundKeepAliveManager.shared.resumeSilentAudioForMedia(caller: "VoiceContext.voiceMode")
-    }
+    var isCapturing: Bool { active.contains(.capture) }
 
     // MARK: - Public API
 
@@ -193,41 +79,19 @@ final class AudioSessionCoordinator {
     /// thread is parked for at most `timeout`, well inside the watchdog budget.
     @discardableResult
     func beginAndWait(_ intent: Intent, timeout: TimeInterval = 1.0) -> Bool {
-        guard intent != .meetingAssistantTTS else { return false }
-        guard !isRecording || intent == .recording else { return false }
-        guard independentVoiceAllows(intent) else { return false }
-        if intent == .storyPlayback, isCapturing && !active.contains(.xiaolanCapture) { return false }
-        if intent == .capture, active.contains(.toolCapture) { return false }
-        if intent == .toolCapture, active.contains(.capture) { return false }
         beginInternal(intent)
         // Nothing was queued (already in this profile and active) → already live.
-        guard Self.pendingLock.withLock({ Self.pendingApplies }) > 0 else {
-            return Self.pendingLock.withLock { Self.lastApplySucceeded }
-        }
+        guard Self.pendingLock.withLock({ Self.pendingApplies }) > 0 else { return true }
         let sem = DispatchSemaphore(value: 0)
         Self.sessionQueue.async { sem.signal() }   // FIFO: runs after pending applies
         let hit = sem.wait(timeout: .now() + timeout) == .success
         if !hit {
             logger.error("[AudioSession] beginAndWait(\(intent)) timed out after \(timeout)s — proceeding")
         }
-        return hit && Self.pendingLock.withLock { Self.lastApplySucceeded }
+        return hit
     }
 
     private func beginInternal(_ intent: Intent) {
-        guard intent != .meetingAssistantTTS else { return }
-        guard !isRecording || intent == .recording else { return }
-        guard independentVoiceAllows(intent) else { return }
-        if intent == .storyPlayback, isCapturing && !active.contains(.xiaolanCapture) { return }
-        if [.capture, .toolCapture, .mediaAttachment, .replyTTS, .toolTTS].contains(intent) {
-            NotificationCenter.default.post(name: Self.storyPlaybackPreempted, object: nil)
-        }
-        if intent == .storyPlayback {
-            GlobalAudioPlayer.shared.stop()
-            PlayerOffloadBridge.pauseForRecording()
-            VoiceOutputPlayer.shared.stopAll()
-            NotificationCenter.default.post(name: Self.replyTTSPreemptedNotification, object: nil)
-        }
-        if intent == .capture || intent == .toolCapture { BackupKeepAlive.end() }
         // Media attachment preempts reply TTS (mutually exclusive voice content):
         // stop the cloud queue directly and notify the chat VM to stop System TTS,
         // BEFORE media takes the session. (TTS is not auto-resumed afterwards.)
@@ -244,10 +108,6 @@ final class AudioSessionCoordinator {
 
     /// Declare that `intent` no longer needs the session.
     func end(_ intent: Intent) {
-        if intent == .meetingAssistantTTS {
-            endMeetingAssistantSpeech()
-            return
-        }
         guard active.contains(intent) else { return }
         active.remove(intent)
         apply(reason: "end(\(intent))")
@@ -268,27 +128,15 @@ final class AudioSessionCoordinator {
 
     private func profile(for intent: Intent) -> (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions) {
         switch intent {
-        case .recording, .meetingAssistantTTS, .xiaolanCapture, .xiaolanTTS:
-            return (.playAndRecord, .default, [.defaultToSpeaker])
-        case .capture, .toolCapture:
+        case .capture:
             return (.record, .measurement, [])
         case .mediaAttachment:
             return (.playback, .default, [.duckOthers])
-        case .storyPlayback:
-            return isIndependentVoiceEnabled
-                ? (.playAndRecord, .default, [.defaultToSpeaker])
-                : (.playback, .default, [.duckOthers])
-        case .replyTTS, .toolTTS:
+        case .replyTTS:
             return (.playback, .spokenAudio, [.duckOthers])
-        case .backgroundKeepAlive, .backupKeepAlive:
+        case .backgroundKeepAlive:
             return (.playback, .default, [.mixWithOthers])
         }
-    }
-
-    private func independentVoiceAllows(_ intent: Intent) -> Bool {
-        if intent == .xiaolanCapture || intent == .xiaolanTTS { return isIndependentVoiceEnabled && !isRecording }
-        if intent == .storyPlayback { return !isRecording }
-        return !isIndependentVoiceEnabled
     }
 
     /// Serial queue that owns every blocking AVAudioSession mutation.
@@ -314,7 +162,6 @@ final class AudioSessionCoordinator {
     /// — see `beginAndWait`. `nonisolated` on the lock too, otherwise the
     /// background completion block can't touch it.
     nonisolated(unsafe) private static var pendingApplies = 0
-    nonisolated(unsafe) private static var lastApplySucceeded = false
     nonisolated private static let pendingLock = NSLock()
 
     private func apply(reason: String) {
@@ -341,8 +188,7 @@ final class AudioSessionCoordinator {
         let needsReconfig = session.category != cat
             || session.mode != mode
             || session.categoryOptions != opts
-            || Self.pendingLock.withLock { Self.pendingApplies > 0 }
-        let needsActivate = !sessionActive || needsReconfig || !Self.pendingLock.withLock { Self.lastApplySucceeded }
+        let needsActivate = !sessionActive || needsReconfig
         guard needsReconfig || needsActivate else { return }
         if needsActivate { sessionActive = true }
 
@@ -361,11 +207,9 @@ final class AudioSessionCoordinator {
                 if needsActivate {
                     try session.setActive(true)
                 }
-                Self.pendingLock.withLock { Self.lastApplySucceeded = true }
                 let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
                 log.info("[VoiceInputDebug][AudioSession] \(reason) → \(top) (\(cat.rawValue)/\(mode.rawValue)) applied in \(String(format: "%.0f", ms))ms")
             } catch {
-                Self.pendingLock.withLock { Self.lastApplySucceeded = false }
                 let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
                 log.error("[VoiceInputDebug][AudioSession] \(reason) apply FAILED after \(String(format: "%.0f", ms))ms: \(error.localizedDescription)")
                 // Roll back the optimistic flag so the next begin() retries the
@@ -448,7 +292,6 @@ final class AudioSessionCoordinator {
 
     /// Resume reply TTS if (and only if) WE paused it for external audio.
     private func resumeTTSAfterExternalAudio(reason: String) {
-        guard !isRecording else { pausedByExternalAudio = false; return }
         guard pausedByExternalAudio else { return }
         pausedByExternalAudio = false
         VoiceOutputPlayer.shared.resume()
@@ -467,9 +310,6 @@ final class AudioSessionCoordinator {
             // survives and can resume when the interruption ends.
             pauseTTSForExternalAudio(reason: "interruption-began")
         case .ended:
-            // The recording state machine owns shouldResume and gap recovery.
-            // It will reacquire the session through beginRecording(owner:).
-            guard !isRecording else { return }
             logger.info("[AudioSession] interruption ended → re-asserting")
             apply(reason: "interruption-ended")
             resumeTTSAfterExternalAudio(reason: "interruption-ended")

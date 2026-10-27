@@ -20,17 +20,17 @@ extension AIChatViewModel {
             guard let self else { return }
             let expRemaining = UIApplication.shared.backgroundTimeRemaining
             let expRemainingStr = expRemaining > 99999 ? "unlimited" : String(format: "%.1fs", expRemaining)
-            logger.warning("[BKA][BGTask] Expiry handler fired — id=\(self.backgroundTaskID.rawValue) remaining=\(expRemainingStr) sessions=\(SessionActivityTracker.shared.activeSessions.count) silentAudio=\(BackgroundKeepAliveManager.shared.silentAudioIsPlaying) canContinue=\(BackgroundKeepAliveManager.shared.canContinueBackgroundExecution)")
+            logger.warning("[BKA][BGTask] Expiry handler fired — id=\(self.backgroundTaskID.rawValue) remaining=\(expRemainingStr) sessions=\(SessionActivityTracker.shared.activeSessions.count) silentAudio=\(BackgroundKeepAliveManager.shared.silentAudioIsPlaying) keepAliveEffective=\(BackgroundKeepAliveManager.shared.enhancedBackgroundEffective)")
             // The FINITE UIApplication background task is expiring. This is a
-            // separate mechanism from active microphone / silent-audio
-            // keep-alive: while background audio is active the process stays alive
+            // separate mechanism from the silent-audio (`audio` background mode)
+            // keep-alive: when keep-alive is active the process stays alive
             // regardless of this task's clock, so expiring it must NOT kill the
             // running shell / delay countdown — doing so was severing long
             // `delay:` tool waits (and any in-flight command) even though the
             // app was in no danger of termination. Instead, just re-arm a fresh
             // finite task to reset the clock and let the agent loop continue.
-            if BackgroundKeepAliveManager.shared.canContinueBackgroundExecution {
-                logger.info("[Background] Finite task expiring but background audio is active — re-arming, NOT cancelling")
+            if BackgroundKeepAliveManager.shared.enhancedBackgroundEffective {
+                logger.info("[Background] Finite task expiring but silent-audio keep-alive is active — re-arming, NOT cancelling")
                 // End only the expiring task id (no completion notification),
                 // then immediately request a new one. Order matters: capture the
                 // old id, invalidate, re-begin.
@@ -49,7 +49,7 @@ extension AIChatViewModel {
             // resume when foregrounded.
             logger.warning("[Background] Task expiring (no keep-alive) — suspending agent loop")
             self.backgroundSuspended = true
-            if !BackgroundKeepAliveManager.shared.canContinueBackgroundExecution {
+            if !BackgroundKeepAliveManager.shared.enhancedBackgroundEffective {
                 BackgroundInterruptionTracker.shared.recordInterruption()
                 // [T-session-paused-badge-active-false-positive] The PAUSED badge
                 // is now driven solely by `canResume` (see AIChatViewModel's
@@ -339,7 +339,6 @@ extension AIChatViewModel {
         case .browserTool: toolName = "browser"
         case .readImageTool: toolName = "read_image"
         case .memoryTool: toolName = "memory"
-        case .subagentTool: toolName = "task"
         case .info: toolName = "info"
         }
 
@@ -426,8 +425,8 @@ extension AIChatViewModel {
     /// the app returns to the foreground, then re-registers a background task
     /// so the next iteration can proceed.
     func waitIfBackgroundSuspended() async {
-        // Active voice capture and enhanced keep-alive both permit continued work.
-        if BackgroundKeepAliveManager.shared.canContinueBackgroundExecution { return }
+        // If enhanced background keep-alive is active, skip suspension entirely
+        if BackgroundKeepAliveManager.shared.enhancedBackgroundEffective { return }
         guard backgroundSuspended else { return }
 
         // If the app is already in the foreground (user returned before we got here),

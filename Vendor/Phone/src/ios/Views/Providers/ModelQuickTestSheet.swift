@@ -72,10 +72,6 @@ struct ModelQuickTestSheet: View {
             }
         }
         .onAppear { model.runAllIfNeeded() }
-        .onReceive(NotificationCenter.default.publisher(for: AudioSessionCoordinator.recordingWillStart)) { _ in
-            audioPlayer?.stop()
-            AudioSessionCoordinator.shared.end(.mediaAttachment)
-        }
     }
 
     private var header: some View {
@@ -96,7 +92,8 @@ struct ModelQuickTestSheet: View {
 
     private func playAudio(_ data: Data) {
         do {
-            guard AudioSessionCoordinator.shared.beginAndWait(.mediaAttachment) else { return }
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
             let player = try AVAudioPlayer(data: data)
             player.volume = 1.0
             player.prepareToPlay()

@@ -4,24 +4,11 @@ import Foundation
 
 extension AIChatViewModel {
 
-    /// Memory directory for the agent that owns this session. Created on
-    /// demand so a freshly-made agent can write its first memory without a
-    /// separate bootstrap step.
-    var agentMemoryDir: URL {
-        let dir = SoulStore.memoryDir(for: agentId)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
-
     // MARK: - Memory Tools
 
     /// Load full global memory content for system prompt injection.
-    ///
-    /// `agentId` selects whose memory this is. nil / the default agent resolve
-    /// to the legacy device-wide directory, so upgrading users keep every
-    /// memory they already had (see SoulStore.memoryDir(for:)).
-    nonisolated static func loadGlobalMemoryFragment(agentId: String? = nil) -> String? {
-        let globalFile = SoulStore.memoryDir(for: agentId).appendingPathComponent("GLOBAL.md")
+    nonisolated static func loadGlobalMemoryFragment() -> String? {
+        let globalFile = minisMemoryPersistentDir.appendingPathComponent("GLOBAL.md")
         guard FileManager.default.fileExists(atPath: globalFile.path),
               let content = try? String(contentsOf: globalFile, encoding: .utf8),
               !content.isEmpty else { return nil }
@@ -30,7 +17,7 @@ extension AIChatViewModel {
     }
 
     /// Load the 3 most recent daily memory logs that have content, for system prompt injection (first 200 lines each).
-    nonisolated static func loadRecentDailyMemoryFragment(agentId: String? = nil) -> String? {
+    nonisolated static func loadRecentDailyMemoryFragment() -> String? {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         let fm = FileManager.default
@@ -43,7 +30,7 @@ extension AIChatViewModel {
         while fragments.count < 3 && dayOffset < maxLookback {
             let date = today.addingTimeInterval(-Double(dayOffset) * 86400)
             let dateStr = fmt.string(from: date)
-            let fileURL = SoulStore.memoryDir(for: agentId).appendingPathComponent("\(dateStr).md")
+            let fileURL = minisMemoryPersistentDir.appendingPathComponent("\(dateStr).md")
 
             if fm.fileExists(atPath: fileURL.path),
                let content = try? String(contentsOf: fileURL, encoding: .utf8),
@@ -75,16 +62,6 @@ extension AIChatViewModel {
 
     /// Execute a memory_write tool call: prepend a timestamped entry to today's daily log.
     func executeMemoryWrite(from json: String) -> FileToolResult {
-        // [T-agent-subagent-memory-readonly] Second line of defense behind the
-        // tool-definition gate in makeAgentTools(): a subagent that calls
-        // memory_write anyway (a stale definition in a resumed transcript, a
-        // model inventing the name) must not reach the agent's daily log.
-        guard agentRole != .executor else {
-            return FileToolResult(
-                output: "memory_write is not available here. Memory is read-only for a background task — include anything worth remembering in your final answer, and the assistant that dispatched you will decide what to save.",
-                success: false
-            )
-        }
         guard memoryEnabled else {
             return FileToolResult(output: "Memory saving is disabled for this session. Use /memory to re-enable.", success: false)
         }
@@ -95,7 +72,7 @@ extension AIChatViewModel {
         }
 
         let fm = FileManager.default
-        let persistDir = agentMemoryDir
+        let persistDir = Self.minisMemoryPersistentDir
         try? fm.createDirectory(at: persistDir, withIntermediateDirectories: true)
 
         let dateFmt = DateFormatter()
@@ -172,7 +149,7 @@ extension AIChatViewModel {
 
         var filesToSearch: [(label: String, url: URL)] = []
         let fm = FileManager.default
-        let memDir = agentMemoryDir
+        let memDir = Self.minisMemoryPersistentDir
 
         var globalEmpty = false
         if scope == "all" {

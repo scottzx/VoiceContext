@@ -43,7 +43,7 @@ struct AboutView: View {
                                     .stroke(Color(UIColor.separator), lineWidth: 0.5)
                             )
                     }
-                    Text("一芥伙伴")
+                    Text("Minis")
                         .font(.title2.bold())
                     Text("Version \(appVersion)")
                         .font(.subheadline)
@@ -53,27 +53,21 @@ struct AboutView: View {
                         .foregroundStyle(.tertiary)
                         // Selectable so it can be copied into a bug report.
                         .textSelection(.enabled)
-                    Text("手机上的个人助手")
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    Text("一芥伙伴（Yima）是手机上的个人助手，帮助你记录、理解和处理日常事务。基于 OpenMinis 开源项目构建。")
-                        .font(.footnote)
+                    Text("Minis is Your Fully Local, Fully Private On-Device Agent.")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .listRowBackground(Color.clear)
             }
 
-            // MARK: - Upstream & Links
+            // MARK: - Links
             Section("Links") {
-                Link(destination: URL(string: "https://github.com/scottzx/VoiceContext")!) {
+                Link(destination: URL(string: "https://github.com/OpenMinis")!) {
                     Label {
                         HStack {
-                            Text("Yima (GitHub)")
+                            Text("GitHub Repository")
                                 .foregroundStyle(Color(UIColor.label))
                             Spacer()
                             Image(systemName: "arrow.up.right.square")
@@ -81,26 +75,10 @@ struct AboutView: View {
                                 .foregroundStyle(.secondary)
                         }
                     } icon: {
-                        Image(systemName: "sparkles")
-                            .foregroundStyle(.tint)
+                        Image(systemName: "link.circle.fill")
                     }
                 }
-                Link(destination: URL(string: "https://github.com/OpenMinis/OpenMinis")!) {
-                    Label {
-                        HStack {
-                            Text("Upstream (OpenMinis)")
-                                .foregroundStyle(Color(UIColor.label))
-                            Spacer()
-                            Image(systemName: "arrow.up.right.square")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "arrow.triangle.branch")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Link(destination: URL(string: "https://github.com/scottzx/VoiceContext/issues")!) {
+                Link(destination: URL(string: "https://github.com/OpenMinis/OpenMinis/issues")!) {
                     Label {
                         HStack {
                             Text("Report an Issue")
@@ -112,7 +90,6 @@ struct AboutView: View {
                         }
                     } icon: {
                         Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundStyle(.secondary)
                     }
                 }
             }

@@ -533,7 +533,6 @@ final class VoiceOutputPlayer: NSObject, ObservableObject {
 
     /// Play the front unit if it's ready and nothing is currently playing.
     private func pumpPlayback() {
-        guard !AudioSessionCoordinator.shared.isRecording else { return }
         // Honor an external-audio pause: while paused (e.g. another app is
         // recording) we must NOT start the next queued unit, even though there
         // is no live `player` — otherwise a unit whose synthesis completes
@@ -583,9 +582,7 @@ final class VoiceOutputPlayer: NSObject, ObservableObject {
         // Session is owned by AudioSessionCoordinator — declare the reply-TTS intent
         // (idempotent; AIChatViewModel.speak* already did). It applies the
         // `.playback/.spokenAudio/.duckOthers` profile.
-        guard AudioSessionCoordinator.shared.beginAndWait(.replyTTS) else {
-            throw NSError(domain: "VoiceContext.Audio", code: 3, userInfo: [NSLocalizedDescriptionKey: "录音期间暂不播报。 "])
-        }
+        AudioSessionCoordinator.shared.begin(.replyTTS)
     }
 }
 

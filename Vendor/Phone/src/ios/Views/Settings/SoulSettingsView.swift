@@ -47,7 +47,7 @@ struct SoulSettingsView: View {
 
             Section(AppLocalized("Identity")) {
                 LabeledContent(AppLocalized("Name")) {
-                    TextField("Yima", text: $name)
+                    TextField("Minis", text: $name)
                         .multilineTextAlignment(.trailing)
                         .textInputAutocapitalization(.words)
                         .submitLabel(.done)
@@ -222,7 +222,7 @@ struct SoulSettingsView: View {
                 Text(AppLocalized("Images must have a transparent background (PNG). Photos without transparency can't be used."))
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(name.isEmpty ? "Yima" : name)
+                Text(name.isEmpty ? "Minis" : name)
                     .font(.title3.weight(.semibold))
                 if !style.trimmingCharacters(in: .whitespaces).isEmpty {
                     Text(style)

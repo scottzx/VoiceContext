@@ -39,75 +39,33 @@ struct AssistantBlockView: View {
             )
             .padding(.vertical, 2)
         case .shellTool:
-            ToolCapsuleView(block: block, icon: "terminal", accentColor: ChatColors.secondaryText,
+            ToolCapsuleView(block: block, icon: "terminal", accentColor: .green,
                             commandStartTime: commandStartTime, onStop: onStop, browserPool: browserPool,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .fileReadTool:
-            ToolCapsuleView(block: block, icon: "doc.text", accentColor: ChatColors.secondaryText,
+            ToolCapsuleView(block: block, icon: "doc.text", accentColor: .cyan,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .fileWriteTool:
-            ToolCapsuleView(block: block, icon: "doc.text.fill", accentColor: ChatColors.secondaryText,
+            ToolCapsuleView(block: block, icon: "doc.text.fill", accentColor: .blue,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .fileEditTool:
-            ToolCapsuleView(block: block, icon: "square.and.pencil", accentColor: ChatColors.secondaryText,
+            ToolCapsuleView(block: block, icon: "square.and.pencil", accentColor: .orange,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .browserTool:
-            ToolCapsuleView(block: block, icon: "globe", accentColor: ChatColors.secondaryText,
+            ToolCapsuleView(block: block, icon: "globe", accentColor: .blue,
                             commandStartTime: commandStartTime, onStop: onStop, browserPool: browserPool,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .readImageTool:
-            ToolCapsuleView(block: block, icon: "photo", accentColor: ChatColors.secondaryText,
+            ToolCapsuleView(block: block, icon: "photo", accentColor: .purple,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .memoryTool:
-            ToolCapsuleView(block: block, icon: "brain.head.profile", accentColor: ChatColors.secondaryText,
+            ToolCapsuleView(block: block, icon: "brain.head.profile", accentColor: .pink,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
-        case .subagentTool(let action, _):
-            let isCloud = (action == "spawn_cloud_subagent" || block.content.contains("target: cloud"))
-            let icon = isCloud ? "cloud.fill" : "person.2.badge.gearshape"
-            let tint = ChatColors.secondaryText
-
-            VStack(alignment: .leading, spacing: 6) {
-                ToolCapsuleView(block: block, icon: icon, accentColor: tint,
-                                commandStartTime: commandStartTime, onStop: onStop,
-                                toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
-
-                if message.remoteAssistantName == nil,
-                   let taskId = extractSubagentTaskId(from: block.content),
-                   let req = SubagentApprovalStore.shared.request(for: taskId) {
-                    if req.status == .pending {
-                        HStack(spacing: 5) {
-                            Image(systemName: "exclamationmark.shield.fill")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.orange)
-                            Text(String(localized: "触及策略拦截，请在输入框上方卡片审批"))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.orange)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.1))
-                        .clipShape(Capsule())
-                    } else {
-                        HStack(spacing: 5) {
-                            Image(systemName: req.status == .approved ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .font(.system(size: 11))
-                                .foregroundStyle(req.status == .approved ? .green : .secondary)
-                            Text(req.status == .approved ? String(localized: "创始人特批已批准") : String(localized: "特批申请已驳回"))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(req.status == .approved ? .green : .secondary)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background((req.status == .approved ? Color.green : Color.secondary).opacity(0.1))
-                        .clipShape(Capsule())
-                    }
-                }
-            }
         case .info:
             let allLines = block.content.components(separatedBy: "\n").filter { !$0.isEmpty }
             // Separate reason lines (⚠️) from the final switched line (✅)
@@ -169,27 +127,70 @@ struct AssistantBlockView: View {
         .fixedSize(horizontal: false, vertical: true)
         .modifier(MinisOpenURLHandler())
     }
+}
 
-    private func extractSubagentTaskId(from text: String) -> String? {
-        for line in text.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.hasPrefix("task_id:") {
-                let id = trimmed.dropFirst("task_id:".count).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !id.isEmpty { return id }
-            }
+// MARK: - Shimmer Overlay (continuous diagonal shine via offset animation)
+
+/// A diagonal shimmer band that sweeps from top-leading to bottom-trailing.
+/// Uses a single stable gradient with an animated offset rather than rebuilding
+/// gradient stops every frame — avoids a CAGradientLayer colorspace teardown
+/// race during CATransaction flush (EXC_BAD_ACCESS at encode_colorspace).
+struct ShimmerOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var offsetX: CGFloat = -1.0
+
+    private var peakOpacity: CGFloat {
+        colorScheme == .light ? 0.75 : 0.25
+    }
+
+    private func bell(_ x: CGFloat) -> CGFloat {
+        exp(-4.5 * x * x)
+    }
+
+    private var stableStops: [Gradient.Stop] {
+        let stepCount = 12
+        let bandRadius: CGFloat = 0.40
+        let center: CGFloat = 0.5
+        var stops: [Gradient.Stop] = []
+        stops.append(.init(color: .white.opacity(0), location: 0))
+        for i in 0...stepCount {
+            let frac = CGFloat(i) / CGFloat(stepCount)
+            let pos = center - bandRadius + frac * bandRadius * 2.0
+            let dist = (pos - center) / bandRadius
+            let alpha = bell(dist) * peakOpacity
+            stops.append(.init(color: .white.opacity(Double(alpha)), location: pos))
         }
-        return nil
+        stops.append(.init(color: .white.opacity(0), location: 1))
+        return stops
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let diag = geo.size.width + geo.size.height
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        stops: stableStops,
+                        startPoint: UnitPoint(x: 0, y: 1),
+                        endPoint: UnitPoint(x: 1, y: 0)
+                    )
+                )
+                .frame(width: diag, height: geo.size.height)
+                .offset(x: offsetX * geo.size.width)
+                .onAppear {
+                    withAnimation(
+                        .linear(duration: 2.8)
+                        .repeatForever(autoreverses: false)
+                    ) {
+                        offsetX = 1.0
+                    }
+                }
+        }
+        .clipped()
     }
 }
 
 // MARK: - Tool Capsule View (unified pill for all tool types)
-
-private struct A2ASessionPreview: Identifiable {
-    let sessionId: String
-    let agentName: String
-
-    var id: String { sessionId }
-}
 
 struct ToolCapsuleView: View {
     @ObservedObject var block: AssistantBlock
@@ -201,11 +202,8 @@ struct ToolCapsuleView: View {
     var toolSnapshots: [ToolSnapshotItem] = []
     @Binding var detailBlock: AssistantBlock?
     @State private var dotsActive = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// [T-tool-bg-suspended-hint] Drives the background-suspension info alert.
     @State private var showBgHintAlert = false
-    @State private var showA2ADestinations = false
-    @State private var a2aSessionPreview: A2ASessionPreview?
     /// [T-ios-memory-write-revoke] Confirmation + result alerts for undoing a
     /// memory_write straight from the tool capsule's long-press menu.
     @State private var showRevokeMemoryAlert = false
@@ -231,7 +229,6 @@ struct ToolCapsuleView: View {
     /// `JSONSerialization` there is exactly the per-frame work the menu gate
     /// exists to avoid. Other tools and `memory_get` never match.
     private var isRevocableMemoryWrite: Bool {
-        guard !vm.isDSH else { return false }
         guard case .memoryTool(let action) = block.kind, action == "memory_write" else { return false }
         guard let args = block.toolInputArgs else { return false }
         return !args.isEmpty
@@ -254,17 +251,6 @@ struct ToolCapsuleView: View {
         return block.toolDescription
     }
 
-    private var a2aDelivery: GroupA2ADeliveryPayload? {
-        guard !vm.isDSH else { return nil }
-        guard case .subagentTool(let action, _) = block.kind,
-              action == "send_agent_message" else { return nil }
-        return GroupA2ADeliveryPayload.decode(block.toolInputArgs)
-    }
-
-    private var linkedA2ADestinations: [GroupA2ADeliveryDestination] {
-        a2aDelivery?.destinations.filter { $0.sessionId != nil } ?? []
-    }
-
     /// [T-ios-tool-bubble-longpress-menu] Human-readable, paste-back-able
     /// dump of this tool call + its result for the "Copy Tool Details"
     /// menu action. Pulls tool name from the block kind, the input JSON
@@ -273,19 +259,17 @@ struct ToolCapsuleView: View {
     /// snapshot text as a fallback source).
     private var toolDetailsClipboard: String {
         // Tool name from the block kind.
-        let nativeToolName: String
+        let toolName: String
         switch block.kind {
-        case .shellTool: nativeToolName = "shell_execute"
-        case .fileReadTool:  nativeToolName = "file_read"
-        case .fileWriteTool: nativeToolName = "file_write"
-        case .fileEditTool:  nativeToolName = "file_edit"
-        case .browserTool:   nativeToolName = "browser_use"
-        case .readImageTool: nativeToolName = "read_image"
-        case .memoryTool:    nativeToolName = "memory"
-        case .subagentTool(let a, _): nativeToolName = a
-        case .text, .thinking, .info: nativeToolName = "unknown"
+        case .shellTool:     toolName = "shell_execute"
+        case .fileReadTool:  toolName = "file_read"
+        case .fileWriteTool: toolName = "file_write"
+        case .fileEditTool:  toolName = "file_edit"
+        case .browserTool:   toolName = "browser_use"
+        case .readImageTool: toolName = "read_image"
+        case .memoryTool:    toolName = "memory"
+        case .text, .thinking, .info: toolName = "unknown"
         }
-        let toolName = block.remoteToolName ?? nativeToolName
 
         // Pretty-print the input JSON when possible; otherwise emit raw.
         let inputBlock: String
@@ -361,17 +345,17 @@ struct ToolCapsuleView: View {
                 // Description text with bouncing dots during streaming
                 HStack(spacing: 0) {
                     Text(displayText)
-                        .font(YimaDesign.Typography.compactMetadata.weight(.medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(ChatColors.primaryText)
                         .lineLimit(1)
                     if isStreaming {
                         ForEach(0..<3, id: \.self) { i in
                             Text(".")
-                                .font(YimaDesign.Typography.compactMetadata.weight(.medium))
+                                .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(ChatColors.primaryText)
-                                .offset(y: reduceMotion ? 0 : (dotsActive ? -2 : 1))
+                                .offset(y: dotsActive ? -2 : 1)
                                 .animation(
-                                    reduceMotion ? nil : .easeInOut(duration: 0.35)
+                                    .easeInOut(duration: 0.35)
                                         .repeatForever(autoreverses: true)
                                         .delay(Double(i) * 0.12),
                                     value: dotsActive
@@ -391,38 +375,45 @@ struct ToolCapsuleView: View {
                         .foregroundStyle(ChatColors.tertiaryText)
                 }
 
-                if !linkedA2ADestinations.isEmpty {
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(ChatColors.tertiaryText)
-                }
-
                 // Stop button for running commands
-                if case .running = block.toolStatus, onStop != nil {
+                if case .running = block.toolStatus {
                     Button {
                         onStop?()
                     } label: {
+                        // Visual: 10×10 red square unchanged. Hit area enlarged to
+                        // 24×24 via an expanded contentShape, while the negative
+                        // padding pins the *layout* footprint back to 18×18 so the
+                        // capsule width/height is identical to before.
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(YimaDesign.Color.recording)
+                            .fill(.red)
                             .frame(width: 10, height: 10)
-                            .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
+                            .frame(width: 24, height: 24)
                             .contentShape(Rectangle())
+                            .padding(-3)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(AppLocalized("Stop"))
                 }
             }
-            .padding(.horizontal, YimaDesign.Space.md)
-            .frame(minHeight: YimaDesign.Layout.hitTarget)
-            .background(ChatColors.secondaryBg)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(Color(UIColor.systemGray6))
             .clipShape(Capsule())
+            .overlay(
+                Group {
+                    if isActive {
+                        ShimmerOverlay()
+                            .clipShape(Capsule())
+                            .allowsHitTesting(false)
+                    }
+                }
+            )
             .overlay(
                 Capsule()
                     .stroke(ChatColors.toolBorder, lineWidth: 0.5)
             )
             .contentShape(Capsule())
             .onTapGesture {
-                openA2ADeliveryOrDetails()
+                detailBlock = block
             }
             .contextMenu {
                 // [T-ios-msg-contextmenu-recursion-crash] Gate the eager menu
@@ -452,7 +443,7 @@ struct ToolCapsuleView: View {
                     // and confuse downstream state — hide both the divider and
                     // the button as a group so the menu doesn't leave a
                     // trailing separator with nothing under it.
-                    if !vm.isProcessing && !vm.isDSH {
+                    if !vm.isProcessing {
                         Divider()
                         Button(role: .destructive) {
                             // Re-run the whole assistant turn that owns this
@@ -521,55 +512,6 @@ struct ToolCapsuleView: View {
         } message: {
             Text(AppLocalized("This tool may have been paused by the system while running in the background. Enable enhanced background execution to improve background task reliability."))
         }
-        .confirmationDialog(
-            String(localized: "查看投递会话"),
-            isPresented: $showA2ADestinations,
-            titleVisibility: .visible
-        ) {
-            ForEach(linkedA2ADestinations, id: \.agentId) { destination in
-                Button(destination.name) { openA2ADestination(destination) }
-            }
-            Button(String(localized: "取消"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "选择要打开的成员会话"))
-        }
-        .sheet(item: $a2aSessionPreview) { preview in
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(String(localized: "A2A 投递会话"))
-                            .font(.headline)
-                        Text(preview.agentName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button {
-                        a2aSessionPreview = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text(String(localized: "关闭")))
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-
-                Divider()
-                AIChatView(
-                    sessionId: preview.sessionId,
-                    initialHeaderTitle: preview.agentName,
-                    showsPageHeader: false
-                )
-            }
-            // Open directly at the sheet's maximum height. Supplying the 90%
-            // detent first makes SwiftUI choose it as the initial stop, which
-            // creates the visible two-stage 90% → full-height interaction.
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-        }
         // [T-ios-memory-write-revoke] Mirrors the Revoke Memory confirmation in
         // SessionMemoryView: confirm, then report the outcome in place — the
         // user stays in the transcript, no navigation. The bubble itself is
@@ -597,59 +539,29 @@ struct ToolCapsuleView: View {
             Button(AppLocalized("OK")) {}
         }
         .onChange(of: isStreaming) { streaming in
-            dotsActive = streaming && !reduceMotion
-        }
-        .onChange(of: reduceMotion) { reduced in
-            dotsActive = isStreaming && !reduced
+            dotsActive = streaming
         }
         .onAppear {
-            if isStreaming && !reduceMotion {
+            if isStreaming {
                 dotsActive = true
             }
         }
-    }
-
-    private func openA2ADeliveryOrDetails() {
-        switch linkedA2ADestinations.count {
-        case 1:
-            if let destination = linkedA2ADestinations.first {
-                openA2ADestination(destination)
-            }
-        case 2...:
-            showA2ADestinations = true
-        default:
-            detailBlock = block
-        }
-    }
-
-    private func openA2ADestination(_ destination: GroupA2ADeliveryDestination) {
-        guard let sessionId = destination.sessionId else { return }
-        a2aSessionPreview = A2ASessionPreview(
-            sessionId: sessionId,
-            agentName: destination.name
-        )
     }
 
     // MARK: - Status / Icon
 
     @ViewBuilder
     private var statusOrIcon: some View {
-        if isActive {
-            ProgressView()
-                .controlSize(.mini)
-                .tint(ChatColors.secondaryText)
-        } else {
-            Image(systemName: icon)
-                .font(YimaDesign.Typography.compactMetadata)
-                .foregroundStyle(iconColor)
-        }
+        Image(systemName: icon)
+            .font(.system(size: 13))
+            .foregroundStyle(iconColor)
     }
 
     private var iconColor: Color {
         switch block.toolStatus {
-        case .success: return YimaDesign.Color.success
-        case .failed: return YimaDesign.Color.recording
-        case .cancelled: return ChatColors.secondaryText
+        case .success: return .green
+        case .failed: return .red
+        case .cancelled: return .yellow
         default: return accentColor
         }
     }
@@ -836,29 +748,28 @@ struct ThinkingBlockView: View {
                 Image("ThinkingIcon")
                     .resizable()
                     .frame(width: 14, height: 14)
-                    .foregroundStyle(ChatColors.secondaryText)
+                    .foregroundStyle(.blue)
                 Text(AppLocalized("Deep Thinking"))
-                    .font(YimaDesign.Typography.compactMetadata.weight(.semibold))
-                    .foregroundStyle(ChatColors.secondaryText)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.blue)
                 if isStreaming {
                     ProgressView()
                         .controlSize(.mini)
-                        .tint(ChatColors.secondaryText)
+                        .tint(.blue)
                 }
                 if block.content.count > 0 || block.thinkingContentBuffer.count > 0 {
                     let charCount = max(block.content.count, block.thinkingContentBuffer.count)
                     Text(charCount > 1000 ? "\(charCount / 1000)K" : "\(charCount)")
-                        .font(YimaDesign.Typography.compactMetadata.monospacedDigit())
-                        .foregroundStyle(ChatColors.secondaryText)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.blue.opacity(0.6))
                 }
                 Spacer()
                 Image(systemName: isExpanded.wrappedValue ? "chevron.up" : "chevron.down")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(ChatColors.secondaryText)
+                    .foregroundStyle(.blue.opacity(0.5))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .frame(minHeight: YimaDesign.Layout.hitTarget)
             .contentShape(Rectangle())
             .onTapGesture {
                 // Mark before flipping so any concurrent stream-end collapse
@@ -920,9 +831,9 @@ struct ThinkingBlockView: View {
                             // moving is useless anyway — enable it only once
                             // streaming finished.
                             let thinkingText = Text(displayContent)
-                                .font(YimaDesign.Typography.metadata)
-                                .foregroundStyle(ChatColors.secondaryText)
-                                .lineSpacing(YimaDesign.Document.lineSpacing)
+                                .font(.system(size: 13))
+                                .foregroundStyle(ChatColors.tertiaryText)
+                                .lineSpacing(3)
                             Group {
                                 if isStreaming {
                                     thinkingText
@@ -1018,11 +929,11 @@ struct ThinkingBlockView: View {
         .onDisappear {
             ThinkingHitchMonitor.shared.stop(owner: block.id)
         }
-        .background(ChatColors.secondaryBg)
+        .background(Color.blue.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(ChatColors.toolBorder, lineWidth: 0.5)
+                .stroke(Color.blue.opacity(0.15), lineWidth: 0.5)
         )
         .task(id: block.id) {
             // One-shot per-block auto-expand. Runs when this cell first hosts
@@ -1097,7 +1008,7 @@ struct TypingIndicator: View {
     /// `.soulMdChanged` Notification — same wiring used by `AssistantSoulName`.
     @State private var soulName: String = {
         let n = SoulStore.cachedMetadata.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return n.isEmpty ? "Yima" : n
+        return n.isEmpty ? "Minis" : n
     }()
 
     var body: some View {
@@ -1115,7 +1026,7 @@ struct TypingIndicator: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
             let n = SoulStore.cachedMetadata.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            soulName = n.isEmpty ? "Yima" : n
+            soulName = n.isEmpty ? "Minis" : n
         }
         .font(.system(size: 15, weight: .medium))
         .foregroundStyle(ChatColors.tertiaryText)

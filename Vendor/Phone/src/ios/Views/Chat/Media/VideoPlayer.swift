@@ -307,7 +307,6 @@ struct MinisVideoFullscreenPlayer: View {
                                     player?.seek(to: .zero)
                                     currentTime = 0
                                 }
-                                guard AudioSessionCoordinator.shared.beginAndWait(.mediaAttachment) else { return }
                                 player?.play()
                                 isPlaying = true
                             }
@@ -367,7 +366,8 @@ struct MinisVideoFullscreenPlayer: View {
                 p = AVPlayer(url: fileURL)
             }
             player = p
-            guard AudioSessionCoordinator.shared.beginAndWait(.mediaAttachment) else { return }
+            try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
+            try? AVAudioSession.sharedInstance().setActive(true)
             if externalPlayer == nil {
                 p.play()
             }
@@ -410,10 +410,6 @@ struct MinisVideoFullscreenPlayer: View {
             }
 
             scheduleHide()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: AudioSessionCoordinator.recordingWillStart)) { _ in
-            player?.pause()
-            isPlaying = false
         }
         .onDisappear {
             if let observer = timeObserver {

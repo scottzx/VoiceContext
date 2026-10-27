@@ -66,7 +66,6 @@ final class WebAppWebViewController: UIViewController, WKNavigationDelegate, WKU
         }
 
         let wv = WKWebView(frame: view.bounds, configuration: cfg)
-        FusionAudio.registerWebView(wv)
         wv.translatesAutoresizingMaskIntoConstraints = false
         wv.navigationDelegate = self
         wv.uiDelegate = self
@@ -260,14 +259,6 @@ final class WebAppWebViewController: UIViewController, WKNavigationDelegate, WKU
     }
 
     // MARK: - WKUIDelegate
-
-    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
-                 initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
-                 decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        let needsMicrophone = type == .microphone || type == .cameraAndMicrophone
-        decisionHandler(needsMicrophone && AudioSessionCoordinator.shared.isRecording ? .deny : .prompt)
-    }
-
 
     /// Block window.open / target="_blank" — they would route to the host
     /// browser. The WebApp stays single-frame.

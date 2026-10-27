@@ -558,7 +558,6 @@ private struct HTMLFilePreview: UIViewRepresentable {
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.setURLSchemeHandler(BrowserUseManager.sharedMinisSchemeHandler, forURLScheme: "minis")
         let webView = WKWebView(frame: .zero, configuration: config)
-        FusionAudio.registerWebView(webView)
         webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         return webView
     }

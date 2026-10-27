@@ -116,7 +116,6 @@ final class BrowserUseManager: NSObject, ObservableObject {
         let vp = Self.resolveViewport(profile: profile, width: viewportWidth, height: viewportHeight)
         self.currentViewport = vp
         let wv = WKWebView(frame: CGRect(x: 0, y: 0, width: vp.width, height: vp.height), configuration: configuration)
-        FusionAudio.registerWebView(wv)
         wv.customUserAgent = Self.resolveUA(profile: profile, customString: customString)
         wv.allowsBackForwardNavigationGestures = true
         self.webView = wv
@@ -184,7 +183,6 @@ final class BrowserUseManager: NSObject, ObservableObject {
         config.defaultWebpagePreferences.preferredContentMode = wantsDesktop ? .desktop : .mobile
 
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: vp.width, height: vp.height), configuration: config)
-        FusionAudio.registerWebView(webView)
         webView.customUserAgent = resolveUA(profile: profile, customString: customString)
         webView.allowsBackForwardNavigationGestures = true
         return webView
@@ -247,7 +245,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
         let printController = UIPrintInteractionController.shared
         let printInfo = UIPrintInfo.printInfo()
         printInfo.outputType = .general
-        printInfo.jobName = pageTitle.isEmpty ? "Yima" : pageTitle
+        printInfo.jobName = pageTitle.isEmpty ? "Minis" : pageTitle
         printController.printInfo = printInfo
         printController.printFormatter = webView.viewPrintFormatter()
         printController.present(animated: true) { _, completed, error in
@@ -2597,13 +2595,6 @@ extension BrowserUseManager: WKDownloadDelegate {
 // MARK: - WKUIDelegate (target="_blank" / window.open)
 
 extension BrowserUseManager: WKUIDelegate {
-    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
-                 initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
-                 decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        let needsMicrophone = type == .microphone || type == .cameraAndMicrophone
-        decisionHandler(needsMicrophone && AudioSessionCoordinator.shared.isRecording ? .deny : .prompt)
-    }
-
     /// Called on main thread by WebKit when window.open() / target="_blank" is triggered.
     /// Must return synchronously so the opener retains a window.opener reference.
     @MainActor

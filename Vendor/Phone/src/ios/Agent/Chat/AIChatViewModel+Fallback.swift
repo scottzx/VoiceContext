@@ -15,7 +15,6 @@ extension AIChatViewModel {
         messages: [AgentMessage],
         systemPrompt: String?,
         tools: [AgentToolDefinition],
-        requiredToolName: String? = nil,
         maxTokens: Int,
         chatMessage: ChatMessage?
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error> {
@@ -61,7 +60,6 @@ extension AIChatViewModel {
                     messages: messages,
                     systemPrompt: systemPrompt,
                     tools: tools,
-                    requiredToolName: requiredToolName,
                     maxTokens: maxTokens,
                     thinkingLevel: thinkLvl
                 )
@@ -100,7 +98,6 @@ extension AIChatViewModel {
         baseSystemPrompt: String,
         systemPrompt initialSystemPrompt: String?,
         tools: [AgentToolDefinition],
-        requiredToolName: String? = nil,
         model: LLMModel,
         lastContextTokens: Int = 0,
         chatMessage: ChatMessage?,
@@ -141,7 +138,6 @@ extension AIChatViewModel {
                     messages: messages,
                     systemPrompt: currentSystemPrompt,
                     tools: tools,
-                    requiredToolName: requiredToolName,
                     maxTokens: maxTok,
                     thinkingLevel: thinkLvl
                 )
@@ -222,9 +218,6 @@ extension AIChatViewModel {
                 if let behaviorFragment = nextEntry.model.agentBehaviorPromptFragment {
                     rebuiltPrompt += "\n\n" + behaviorFragment
                 }
-                if runtimePolicy.replyDelivery != nil || runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven) != nil {
-                    rebuiltPrompt += memoryStatusFragment(tools: tools)
-                }
                 currentSystemPrompt = rebuiltPrompt
                 // continue loop — will try next entry immediately
             } catch {
@@ -278,9 +271,6 @@ extension AIChatViewModel {
                     if let behaviorFragment = nextEntry.model.agentBehaviorPromptFragment {
                         rebuiltPrompt += "\n\n" + behaviorFragment
                     }
-                    if runtimePolicy.replyDelivery != nil || runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven) != nil {
-                        rebuiltPrompt += memoryStatusFragment(tools: tools)
-                    }
                     currentSystemPrompt = rebuiltPrompt
                     continue
                 }
@@ -296,7 +286,6 @@ extension AIChatViewModel {
                         messages: messages,
                         systemPrompt: currentSystemPrompt,
                         tools: tools,
-                        requiredToolName: requiredToolName,
                         maxTokens: dynamicMaxTokens(provider: currentProvider, model: retryModel, lastContextTokens: lastContextTokens),
                         chatMessage: chatMessage
                     )
@@ -364,9 +353,6 @@ extension AIChatViewModel {
                     if let behaviorFragment = nextEntry.model.agentBehaviorPromptFragment {
                         rebuiltPrompt += "\n\n" + behaviorFragment
                     }
-                    if runtimePolicy.replyDelivery != nil || runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven) != nil {
-                        rebuiltPrompt += memoryStatusFragment(tools: tools)
-                    }
                     currentSystemPrompt = rebuiltPrompt
                     // continue loop — will try next entry
                 }
@@ -387,7 +373,6 @@ extension AIChatViewModel {
         baseSystemPrompt: String,
         systemPrompt: String?,
         tools: [AgentToolDefinition],
-        requiredToolName: String? = nil,
         model: LLMModel,
         lastContextTokens: Int,
         chatMessage: ChatMessage?,
@@ -405,7 +390,6 @@ extension AIChatViewModel {
                 baseSystemPrompt: baseSystemPrompt,
                 systemPrompt: systemPrompt,
                 tools: tools,
-                requiredToolName: requiredToolName,
                 model: model,
                 lastContextTokens: lastContextTokens,
                 chatMessage: chatMessage,
@@ -431,13 +415,6 @@ extension AIChatViewModel {
                 && result.stopReason != .maxTokens
 
             guard isEmpty else { return result }
-
-            // [T-meeting-empty-fallback-delivery] Let the configured reply loop deliver
-            // an answer without replaying business tools on another model.
-            if agentRole != .executor, result.stopReason == .endTurn,
-               runtimePolicy.replyDelivery?.canRequest(sessionId) == true {
-                return result
-            }
 
             // Empty response — record this entry and force-fail so the next
             // streamWithGroupFallback call advances to a different entry.

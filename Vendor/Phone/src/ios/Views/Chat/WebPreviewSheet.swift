@@ -67,8 +67,6 @@ final class WebViewHolder: NSObject, ObservableObject {
         }
 
         webView = WKWebView(frame: .zero, configuration: config)
-        let createdWebView = webView
-        FusionAudio.onMain { FusionAudio.registerWebView(createdWebView) }
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear

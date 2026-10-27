@@ -25,8 +25,8 @@ struct FaceIDProtectionSettingsView: View {
             Section {
                 Toggle(isOn: $appLockEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(String(localized: "Lock App"))
-                        Text(String(format: String(localized: "Require %@ to open Minis."), BiometricAuth.biometryDisplayName))
+                        Text("Lock App")
+                        Text("Require \(BiometricAuth.biometryDisplayName) to open Minis.")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
@@ -48,7 +48,7 @@ struct FaceIDProtectionSettingsView: View {
                     }
                 }
             } footer: {
-                Text(String(format: String(localized: "When enabled, %@ (or device passcode) is required every time you open the app."), BiometricAuth.biometryDisplayName))
+                Text("When enabled, \(BiometricAuth.biometryDisplayName) (or device passcode) is required every time you open the app.")
             }
 
             if appLockEnabled {
@@ -62,9 +62,9 @@ struct FaceIDProtectionSettingsView: View {
                         store.appLockIdleSeconds = newValue
                     }
                 } header: {
-                    Text(String(localized: "App Lock Timeout"))
+                    Text("App Lock Timeout")
                 } footer: {
-                    Text(String(localized: "How long after leaving the app before the lock re-engages."))
+                    Text("How long after leaving the app before the lock re-engages.")
                 }
             }
 
@@ -72,8 +72,8 @@ struct FaceIDProtectionSettingsView: View {
             Section {
                 Toggle(isOn: $enabled) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(String(localized: "Lock Sessions"))
-                        Text(String(localized: "Long-press a session in the list to lock it."))
+                        Text("Lock Sessions")
+                        Text("Long-press a session in the list to lock it.")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
@@ -89,7 +89,7 @@ struct FaceIDProtectionSettingsView: View {
                     }
                 }
             } footer: {
-                Text(String(format: String(localized: "When enabled, locked sessions require %@ (or device passcode) before their contents are revealed."), BiometricAuth.biometryDisplayName))
+                Text("When enabled, locked sessions require \(BiometricAuth.biometryDisplayName) (or device passcode) before their contents are revealed.")
             }
 
             if enabled {
@@ -103,14 +103,14 @@ struct FaceIDProtectionSettingsView: View {
                     // Session-only timeout (bound to `idleSeconds`). The app-level
                     // lock has its own separate "App Lock Timeout" above bound to
                     // `appLockIdleSeconds` — so this stays session-scoped.
-                    Text(String(localized: "Session Lock Timeout"))
+                    Text("Session Lock Timeout")
                 } footer: {
-                    Text(String(localized: "After leaving an unlocked session, the lock re-engages once the idle window elapses."))
+                    Text("After leaving an unlocked session, the lock re-engages once the idle window elapses.")
                 }
 
                 Section {
                     HStack {
-                        Text(String(localized: "Locked sessions"))
+                        Text("Locked sessions")
                         Spacer()
                         Text("\(store.lockedSessionIds.count)")
                             .foregroundStyle(.secondary)
@@ -128,13 +128,13 @@ struct FaceIDProtectionSettingsView: View {
                                 }
                             }
                         } label: {
-                            Label(String(localized: "Remove All Locks"), systemImage: "lock.open")
+                            Label("Remove All Locks", systemImage: "lock.open")
                         }
                     }
                 }
             }
         }
-        .navigationTitle(String(format: String(localized: "%@ Protection"), BiometricAuth.biometryDisplayName))
+        .navigationTitle("\(BiometricAuth.biometryDisplayName) Protection")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

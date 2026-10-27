@@ -20,7 +20,6 @@ final class AntigravityAgentProvider: AgentProvider {
         messages: [AgentMessage],
         systemPrompt: String?,
         tools: [AgentToolDefinition],
-        requiredToolName: String? = nil,
         maxTokens: Int,
         thinkingLevel: ThinkingLevel
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error> {
@@ -34,7 +33,6 @@ final class AntigravityAgentProvider: AgentProvider {
                 systemPrompt: systemPrompt,
                 maxTokens: maxTokens,
                 tools: geminiTools,
-                requiredToolName: requiredToolName,
                 thinkingLevel: thinkingLevel
             )
         } catch {
@@ -204,9 +202,6 @@ final class AntigravityAgentProvider: AgentProvider {
                     "type": param.type.geminiType,
                     "description": param.description,
                 ]
-                if param.type == .stringArray {
-                    prop["items"] = ["type": "STRING"]
-                }
                 if let enumValues = param.enumValues {
                     prop["description"] = "\(param.description) (values: \(enumValues.joined(separator: ", ")))"
                 }

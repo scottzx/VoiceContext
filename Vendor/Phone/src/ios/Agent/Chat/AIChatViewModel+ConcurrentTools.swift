@@ -81,78 +81,7 @@ extension AIChatViewModel {
     /// concurrent child tasks). The outcome carries the toolResult part,
     /// snapshot, and cancellation flag so the dispatcher can collect them
     /// in original tool_use order after every child task completes.
-    ///
-    /// [Hooks] This is the wrapper; `executeSingleToolUseInner` is the body.
-    /// The bracket sits out here on purpose: the body has a dozen early-return
-    /// refusal paths (cancelled, loop-detected, truncated write, preflight),
-    /// and a rule about "what did this turn actually call" must see those too,
-    /// not just the calls that reached a tool implementation.
     func executeSingleToolUse(
-        tu: StreamResult.ToolEntry,
-        msgIdx: Int,
-        tools: [AgentToolDefinition],
-        batchBudget: BatchImageBudget
-    ) async -> ToolExecOutcome {
-        if let reason = runtimeToolRefusal(name: tu.name, tools: tools) {
-            return await hookBlockedOutcome(tu: tu, msgIdx: msgIdx, reason: reason, isPolicyBlock: true)
-        }
-        let argsJSON: String? = {
-            guard let data = try? JSONSerialization.data(withJSONObject: tu.args),
-                  let string = String(data: data, encoding: .utf8) else { return nil }
-            return string
-        }()
-        let gate = hooks?.willRunTool(name: tu.name, argsJSON: argsJSON)
-        if let reason = gate?.blockReason {
-            return await hookBlockedOutcome(tu: tu, msgIdx: msgIdx, reason: reason)
-        }
-        let outcome = await executeSingleToolUseInner(
-            tu: tu, msgIdx: msgIdx, tools: tools, batchBudget: batchBudget
-        )
-        if let gate {
-            var succeeded = !outcome.cancelled
-            if case .toolResult(_, _, _, let isError, _, _, _, _) = outcome.resultPart {
-                succeeded = !isError && !outcome.cancelled
-            }
-            hooks?.didRunTool(name: tu.name, index: gate.index, succeeded: succeeded)
-        }
-        return outcome
-    }
-
-    /// A tool call a hook refused. Shaped exactly like the preflight rejection
-    /// below it — a failed block in the UI, an error tool_result carrying the
-    /// reason to the model — so a blocked call is a normal, recoverable turn
-    /// event rather than a hole in the history.
-    private func hookBlockedOutcome(
-        tu: StreamResult.ToolEntry,
-        msgIdx: Int,
-        reason: String,
-        isPolicyBlock: Bool = false
-    ) async -> ToolExecOutcome {
-        AppLogger(category: "Hooks").warning(
-            "[Hooks] BLOCKED tool=\(tu.name) id=\(tu.id) reason=\"\(reason)\""
-        )
-        let blockIdx = tu.blockIdx
-        let uiMessage = isPolicyBlock ? AppLocalized("此助手当前不可调用该工具") : String(localized: "Blocked by a hook")
-        let modelMessage = "Error: This call was NOT executed. \(reason)"
-        if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-            messages[msgIdx].blocks[blockIdx].content = uiMessage
-            messages[msgIdx].blocks[blockIdx].toolStatus = .failed(message: uiMessage)
-        }
-        let snapshot = ToolSnapshot(type: .text, text: modelMessage, mediaRef: nil, duration: nil)
-        let item = ToolSnapshotItem(
-            id: tu.id, toolName: tu.name, snapshot: snapshot,
-            mediaResolver: await ChatStore.shared.mediaFileURLResolver()
-        )
-        return ToolExecOutcome(
-            toolId: tu.id, toolName: tu.name,
-            resultPart: .toolResult(id: tu.id, name: tu.name, content: modelMessage, isError: true),
-            snapshotEntry: (toolName: tu.name, snapshot: snapshot),
-            snapshotItem: item,
-            cancelled: false
-        )
-    }
-
-    private func executeSingleToolUseInner(
         tu: StreamResult.ToolEntry,
         msgIdx: Int,
         tools: [AgentToolDefinition],
@@ -351,7 +280,7 @@ extension AIChatViewModel {
         do {
         switch tu.name {
         case "shell_execute":
-            let (command, timeout, delay, isBackground) = parseToolInput(from: argsJson)
+            let (command, timeout, delay) = parseToolInput(from: argsJson)
 
             if command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 ctLogger.warning("[ToolArgsProbe] shell_execute called with empty command — argsJson=<<<\(argsJson)>>>")
@@ -359,46 +288,6 @@ extension AIChatViewModel {
                 toolSuccess = false
                 if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                     messages[msgIdx].blocks[blockIdx].content = toolOutput
-                }
-                break
-            }
-
-            // Explicit background task requested
-            if isBackground {
-                let taskId = "cmd_\(UUID().uuidString.prefix(8))"
-                let targetSid = self.sessionId ?? ""
-                let title = command
-
-                Task { [weak self] in
-                    guard let self else { return }
-                    let bgResult: CommandResult
-                    do {
-                        bgResult = try await self.executeCommand(command, timeout: timeout) { _ in }
-                    } catch {
-                        bgResult = CommandResult(output: "Error: \(error.localizedDescription)", exitCode: -1)
-                    }
-                    let statusStr = (bgResult.exitCode == 0) ? "done" : "failed"
-                    await AsyncTaskNoticeManager.shared.postNotice(
-                        sourceSessionId: targetSid,
-                        taskType: "shell",
-                        taskId: taskId,
-                        title: title,
-                        status: statusStr,
-                        result: bgResult.output
-                    )
-                }
-
-                toolOutput = """
-                [Background Command Started]
-                task_id: \(taskId)
-                command: \(command)
-                status: running
-
-                The command is executing in the background. You will receive an async_task_notice when it completes. You may end your turn now.
-                """
-                toolSuccess = true
-                if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                    messages[msgIdx].blocks[blockIdx].content = "[Background Command Started]\ntask_id: \(taskId)"
                 }
                 break
             }
@@ -428,6 +317,16 @@ extension AIChatViewModel {
             if delay > 0 {
                 toolDelayWaitCount += 1
                 defer { toolDelayWaitCount -= 1 }
+                // [T-delay-stop-latency] The stop button during the countdown
+                // sets `commandCancelledByUser` (stopCurrentCommand guards on
+                // `toolDelayWaitActive`), but the old loop only re-checked that
+                // flag once per whole second and then slept a FULL second — a
+                // tap landing just after a check waited up to ~1s before the
+                // next check, which read as "stop does nothing" during the
+                // delay phase (the user report). Poll on a short tick instead so
+                // both the button flag AND Task cancellation are honored within
+                // ~100ms, while the visible countdown still refreshes once per
+                // whole second.
                 let totalSeconds = Int(delay)
                 let tickNanos: UInt64 = 100_000_000 // 100ms
                 let ticksPerSecond = 10
@@ -448,6 +347,8 @@ extension AIChatViewModel {
                     }
                     try await Task.sleep(nanoseconds: tickNanos)
                 }
+                // Final cancellation check after the last tick so a tap in the
+                // final 100ms window still aborts before we launch the process.
                 if commandCancelledByUser || Task.isCancelled {
                     throw CancellationError()
                 }
@@ -479,6 +380,14 @@ extension AIChatViewModel {
                         self.scrollToBottomSignal.send()
                     }
                 }
+                // [T-tool-exec-breadcrumb] Durable, written BEFORE the command
+                // launches. `[ToolLifecycle] COMPLETED` only lands after a tool
+                // returns, so a process killed mid-execution (watchdog SIGKILL,
+                // Jetsam, SIGABRT) left no record of what was running. This line
+                // is on disk (O_SYNC) before executeCommand is entered, so the
+                // last breadcrumb after a kill names the command that was live.
+                // Command is truncated — enough to identify it, not enough to
+                // bloat the file with a large heredoc.
                 #if DEBUG
                 CrashReporter.writeToolBreadcrumb(
                     "[ToolExec] STARTING shell_execute id=\(tu.id.prefix(20)) sid=\(sessionId?.prefix(8) ?? "nil") timeout=\(timeout)s command=\"\(command.prefix(500))\""
@@ -507,6 +416,11 @@ extension AIChatViewModel {
             } catch {
                 result = CommandResult(output: "Error: \(error.localizedDescription)", exitCode: -1)
             }
+            // [T-tool-exec-breadcrumb] Pair for the STARTING line above. The
+            // existing `[ToolLifecycle] COMPLETED` covers every tool, but it
+            // travels the droppable NSLog pipe; this one shares the STARTING
+            // line's durable file so a STARTING with no matching FINISHED is
+            // unambiguous evidence that the process died inside this command.
             #if DEBUG
             CrashReporter.writeToolBreadcrumb(
                 "[ToolExec] FINISHED shell_execute id=\(tu.id.prefix(20)) exit=\(result.exitCode)"
@@ -570,84 +484,6 @@ extension AIChatViewModel {
             }
             toolOutput = redactedOut
 
-        #if VOICE_AGENT_FUSION
-        case "answer_user":
-            let result = await MeetingAnswerUserTool.execute(
-                toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource
-            )
-            toolOutput = result.output
-            toolSuccess = result.success
-            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                messages[msgIdx].blocks[blockIdx].content = result.output
-            }
-        case "yima_items":
-            let result = await MainActor.run {
-                let policy = AgentRuntimePolicies.policy(for: self.sessionSource)
-                let navigation = AppNavigationCenter.shared
-                let allowsPresentation = policy.allowsItemPresentation && navigation.available
-                    && (!policy.requiresNavigationBinding || navigation.isVoiceBindingCurrent(
-                        sessionID: self.sessionId, generation: self.appNavigationVoiceGeneration))
-                return YimaItemsAgentTool.execute(toolArgs, sessionID: self.sessionId,
-                    allowsPresentation: allowsPresentation)
-            }
-            toolOutput = result.output
-            toolSuccess = result.success
-            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                messages[msgIdx].blocks[blockIdx].content = result.output
-            }
-        case "yima_places":
-            let result = await YimaPlacesAgentTool.execute(
-                toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource,
-                isExecutor: self.agentRole == .executor, noticeDriven: self.isNoticeDriven,
-                executionGeneration: self.toolExecutionGeneration,
-                voiceNavigationGeneration: self.appNavigationVoiceGeneration
-            )
-            toolOutput = result.output
-            toolSuccess = result.success
-            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                messages[msgIdx].blocks[blockIdx].content = result.output
-            }
-        case "apple_native":
-            let result = await MeetingAppleTool.execute(
-                toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource
-            )
-            toolOutput = result.output
-            toolSuccess = result.success
-            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                messages[msgIdx].blocks[blockIdx].content = result.output
-            }
-        case "app_navigation":
-            let result = await AppNavigationTool.execute(
-                toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource,
-                isExecutor: self.agentRole == .executor, voiceGeneration: self.appNavigationVoiceGeneration
-            )
-            toolOutput = result.output
-            toolSuccess = result.success
-            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                messages[msgIdx].blocks[blockIdx].content = result.output
-            }
-        case "app_present":
-            let result = await AppPresentationTool.execute(
-                toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource,
-                voiceGeneration: self.appNavigationVoiceGeneration
-            )
-            toolOutput = result.output
-            toolSuccess = result.success
-            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                messages[msgIdx].blocks[blockIdx].content = result.output
-            }
-        case "story_player":
-            let result = StoryPlayerTool.execute(
-                toolArgs, sessionID: self.sessionId, sessionSource: self.sessionSource,
-                isExecutor: self.agentRole == .executor, noticeDriven: self.isNoticeDriven,
-                voiceGeneration: self.toolExecutionGeneration
-            )
-            toolOutput = result.output
-            toolSuccess = result.success
-            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                messages[msgIdx].blocks[blockIdx].content = result.output
-            }
-        #endif
         case "file_read":
             let fileResult: FileToolResult
             do {
@@ -963,75 +799,9 @@ extension AIChatViewModel {
             toolOutput = memResult.output
             toolSuccess = memResult.success
 
-        case "spawn_subagent", "spawn_cloud_subagent", "check_subagent", "message_subagent", "stop_subagent":
-            // Dispatch tools. Only an orchestrator is ever handed these (see
-            // makeAgentTools), and the work itself happens in a separate
-            // scratch session — so all that lands in THIS transcript is the
-            // short status/result text below, never the subagent's tool output.
-            let sid = sessionId ?? ""
-            if sid.isEmpty {
-                toolOutput = "Error: this conversation has no session yet, so a task cannot be dispatched."
-                toolSuccess = false
-            } else {
-                let reply = await SubagentCoordinator.shared.handle(
-                    toolName: tu.name,
-                    input: toolArgs,
-                    parentSessionId: sid,
-                    agentId: agentId
-                )
-                if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                    messages[msgIdx].blocks[blockIdx].content = reply
-                }
-                toolOutput = reply
-                toolSuccess = !reply.hasPrefix("Error:")
-            }
-
-        case "create_agent", "list_agents", "send_agent_message":
-            // Roster tools. Only a `.main` session is handed these (see
-            // makeAgentTools). Like the dispatch tools above, everything they
-            // touch happens outside this transcript — a created agent lands in
-            // the roster, and a relayed message lands in the RECIPIENT's
-            // conversation — so all that arrives here is the short summary the
-            // coordinator writes.
-            let sid = sessionId ?? ""
-            if sid.isEmpty {
-                toolOutput = "Error: this conversation has no session yet, so it cannot reach the roster."
-                toolSuccess = false
-            } else {
-                let reply = await AgentDirectoryCoordinator.shared.handle(
-                    toolName: tu.name,
-                    input: toolArgs,
-                    callerSessionId: sid,
-                    callerAgentId: agentId,
-                    callerGroupId: groupId
-                )
-                if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                    messages[msgIdx].blocks[blockIdx].content = reply
-                }
-                toolOutput = reply
-                toolSuccess = !reply.hasPrefix("Error:")
-            }
-
-        case ChatHistorySearchTool.name:
-            // Pure read over minis.db — nothing outside this transcript
-            // changes, so the formatted hits are the whole result.
-            let reply = await ChatHistorySearchTool.handle(input: toolArgs, callerAgentId: agentId)
-            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                messages[msgIdx].blocks[blockIdx].content = reply
-            }
-            toolOutput = reply
-            toolSuccess = !reply.hasPrefix("Error:")
-
         default:
-            if let result = try await AgentRuntimePolicies.executeHostTool(name: tu.name, context: .init(
-                toolCallId: tu.id, sessionId: sessionId, source: sessionSource, argumentsJSON: argsJson
-            )) {
-                toolOutput = result.content
-                toolSuccess = result.succeeded
-            } else {
-                toolOutput = "Error: Unknown tool '\(tu.name)'"
-                toolSuccess = false
-            }
+            toolOutput = "Error: Unknown tool '\(tu.name)'"
+            toolSuccess = false
         }
         } catch is CancellationError {
             let cancelContent = "<system-reminder>The user cancelled this operation. The returned result may be incomplete.</system-reminder>"

@@ -36,31 +36,25 @@ enum BackupKeepAlive {
     static func begin() {
         guard !activated else { return }
         do {
-            let coordinator = AudioSessionCoordinator.shared
-            guard !coordinator.isCapturing,
-                  coordinator.beginAndWait(.backupKeepAlive) else {
-                coordinator.end(.backupKeepAlive)
-                logger.info("[Backup] keep-alive skipped: microphone has priority")
-                return
-            }
+            let session = AVAudioSession.sharedInstance()
+            // .playback is the category that actually continues in the
+            // background; .ambient stops when the screen locks, which is
+            // exactly the case this exists to survive.
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
 
             guard let data = silentLoopWAV() else {
-                coordinator.end(.backupKeepAlive)
                 logger.warning("[Backup] keep-alive: could not build silent audio — background time not extended")
                 return
             }
             let p = try AVAudioPlayer(data: data)
             p.numberOfLoops = -1        // forever, until the run ends
             p.volume = 0                // belt and braces: the samples are already silent
-            guard p.play() else {
-                coordinator.end(.backupKeepAlive)
-                return
-            }
+            p.play()
             player = p
             activated = true
             logger.info("[Backup] keep-alive: audio session active — backup continues in the background")
         } catch {
-            AudioSessionCoordinator.shared.end(.backupKeepAlive)
             // Not fatal. The backup still runs; it just loses its protection
             // if the user leaves the app.
             logger.warning("[Backup] keep-alive: could not start audio session: \(error.localizedDescription)")
@@ -73,7 +67,14 @@ enum BackupKeepAlive {
         player?.stop()
         player = nil
         activated = false
-        AudioSessionCoordinator.shared.end(.backupKeepAlive)
+        // Non-fatal on failure, and deliberately notifying others so a paused
+        // music app can resume.
+        do {
+            try AVAudioSession.sharedInstance().setActive(
+                false, options: [.notifyOthersOnDeactivation])
+        } catch {
+            logger.warning("[Backup] keep-alive: could not deactivate audio session: \(error.localizedDescription)")
+        }
         logger.info("[Backup] keep-alive: audio session released")
     }
 

@@ -144,15 +144,7 @@ final class OffloadPermissionManager: ObservableObject {
         .init(name: "apple-weather", displayLabel: "Weather", description: "", category: .system, showInSettings: false),
         .init(name: "apple-nlp", displayLabel: "NLP", description: "", category: .system, showInSettings: false),
         .init(name: "apple-vision", displayLabel: "Vision", description: "", category: .system, showInSettings: false),
-    ] + customExtensionCommands
-
-    private static let customExtensionCommands: [OffloadCommandInfo] = {
-        #if VOICE_AGENT_FUSION
-        return [.init(name: "yima-extensions", displayLabel: "Custom Functions", description: "Manage custom function shortcuts and URLs", category: .privacy, showInSettings: true)]
-        #else
-        return []
-        #endif
-    }()
+    ]
 
     @Published var pendingRequest: PermissionRequest?
 

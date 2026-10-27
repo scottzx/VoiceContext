@@ -201,7 +201,7 @@ class RootfsManager {
         try currentArch.write(to: archTagPath, atomically: true, encoding: .utf8)
 
         // Pre-create /var/minis/ shared directory structure
-        let minisSubdirs = ["var/minis/attachments", "var/minis/offloads", "var/minis/workspace", "var/minis/skills", "var/minis/shared", "var/minis/agents"]
+        let minisSubdirs = ["var/minis/attachments", "var/minis/offloads", "var/minis/workspace", "var/minis/skills", "var/minis/shared"]
         for subdir in minisSubdirs {
             let dirPath = dataPath.appendingPathComponent(subdir)
             try? FileManager.default.createDirectory(at: dirPath, withIntermediateDirectories: true)

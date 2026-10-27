@@ -23,7 +23,7 @@ enum SharedFolderVisibility {
     /// Must match FileProviderExtension.topLevelSubdirs.
     static let allFolderNames: [String] = ["shared", "skills", "memory"]
 
-    private static let appGroupID = AgentBuildIdentity.appGroupID
+    private static let appGroupID = "group.com.openminis.app"
     private static let userDefaultsKeyPrefix = "fileProviderVisible."
 
     private static var store: UserDefaults {

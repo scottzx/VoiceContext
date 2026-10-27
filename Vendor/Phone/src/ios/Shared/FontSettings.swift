@@ -1,7 +1,6 @@
 import Combine
 import Foundation
 import SwiftUI
-import UIKit
 
 extension Notification.Name {
     static let fontSettingsMessageBaseChanged = Notification.Name("fontSettingsMessageBaseChanged")
@@ -80,18 +79,11 @@ enum FontScaleLevel: Int, CaseIterable, Identifiable, Comparable {
 /// - **messageBase**: assistant / user message body text (markdown base size)
 /// - **appBase**: reserved for general UI text (labels, settings, etc.)
 ///
-/// Message and input fonts follow the system category plus their own preference.
-/// General semantic UI keeps the existing app category mapping.
+/// Usage: call `scaled(_:for:)` with the original hardcoded font size and the axis.
+/// The returned value = originalSize × multiplier.
 @MainActor
 final class FontSettings: ObservableObject {
     static let shared = FontSettings()
-    @Published private(set) var systemContentSizeCategory: UIContentSizeCategory
-    private var systemSizeObserver: AnyCancellable?
-    private static let categories: [UIContentSizeCategory] = [
-        .extraSmall, .small, .medium, .large, .extraLarge, .extraExtraLarge,
-        .extraExtraExtraLarge, .accessibilityMedium, .accessibilityLarge,
-        .accessibilityExtraLarge, .accessibilityExtraExtraLarge, .accessibilityExtraExtraExtraLarge
-    ]
 
     // MARK: - Published properties
 
@@ -115,10 +107,7 @@ final class FontSettings: ObservableObject {
             guard appBaseScale != oldValue else { return }
             UserDefaults.standard.set(appBaseScale.rawValue, forKey: Keys.appBase)
             // Defer to next runloop to avoid layout feedback loop with Slider
-            DispatchQueue.main.async { [weak self] in
-                self?.applyAppScaleToAllWindows()
-                NotificationCenter.default.post(name: .fontSettingsMessageBaseChanged, object: nil)
-            }
+            DispatchQueue.main.async { [weak self] in self?.applyAppScaleToAllWindows() }
         }
     }
 
@@ -133,42 +122,12 @@ final class FontSettings: ObservableObject {
 
     /// Scale a font size by the chat-input multiplier.
     func scaledChatInput(_ size: CGFloat) -> CGFloat {
-        scaledContent(size, multiplier: chatInputScale.multiplier)
+        size * chatInputScale.multiplier
     }
 
     /// Scale a font size by the message-base multiplier.
     func scaledMessage(_ size: CGFloat) -> CGFloat {
-        scaledContent(size, multiplier: messageBaseScale.multiplier)
-    }
-
-    private func scaledContent(_ size: CGFloat, multiplier: CGFloat) -> CGFloat {
-        let category = Self.categories.firstIndex(of: systemContentSizeCategory) ?? 3
-        let factor = YimaFontScalePolicy.contentMultiplier(Double(multiplier), system: category)
-        let traits = UITraitCollection(preferredContentSizeCategory: systemContentSizeCategory)
-        return UIFontMetrics(forTextStyle: .body).scaledValue(for: size, compatibleWith: traits) * CGFloat(factor)
-    }
-
-    var effectiveAppContentSizeCategory: UIContentSizeCategory {
-        let system = Self.categories.firstIndex(of: systemContentSizeCategory) ?? 3
-        let preference = appBaseScale == .default ? nil : Self.categories.firstIndex(of: appBaseScale.contentSizeCategory)
-        return Self.categories[YimaFontScalePolicy.appCategory(system: system, preference: preference)]
-    }
-
-    var effectiveAppDynamicTypeSize: DynamicTypeSize {
-        switch effectiveAppContentSizeCategory {
-        case .extraSmall: .xSmall
-        case .small: .small
-        case .medium: .medium
-        case .extraLarge: .xLarge
-        case .extraExtraLarge: .xxLarge
-        case .extraExtraExtraLarge: .xxxLarge
-        case .accessibilityMedium: .accessibility1
-        case .accessibilityLarge: .accessibility2
-        case .accessibilityExtraLarge: .accessibility3
-        case .accessibilityExtraExtraLarge: .accessibility4
-        case .accessibilityExtraExtraExtraLarge: .accessibility5
-        default: .large
-        }
+        size * messageBaseScale.multiplier
     }
 
     /// Scale a font size by the app-base multiplier.
@@ -180,22 +139,9 @@ final class FontSettings: ObservableObject {
 
     private init() {
         let ud = UserDefaults.standard
-        systemContentSizeCategory = UIApplication.shared.preferredContentSizeCategory
         chatInputScale = FontScaleLevel(rawValue: ud.integer(forKey: Keys.chatInput)) ?? .default
         messageBaseScale = FontScaleLevel(rawValue: ud.integer(forKey: Keys.messageBase)) ?? .default
         appBaseScale = FontScaleLevel(rawValue: ud.integer(forKey: Keys.appBase)) ?? .default
-        systemSizeObserver = NotificationCenter.default.publisher(for: UIContentSizeCategory.didChangeNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] notification in
-                guard let self else { return }
-                if let raw = notification.userInfo?[UIContentSizeCategory.newValueUserInfoKey] as? String {
-                    self.systemContentSizeCategory = UIContentSizeCategory(rawValue: raw)
-                } else {
-                    self.systemContentSizeCategory = UIApplication.shared.preferredContentSizeCategory
-                }
-                self.applyAppScaleToAllWindows()
-                NotificationCenter.default.post(name: .fontSettingsMessageBaseChanged, object: nil)
-            }
         // Defer to after first window is available
         DispatchQueue.main.async { [weak self] in self?.applyAppScaleToAllWindows() }
     }
@@ -219,7 +165,7 @@ final class FontSettings: ObservableObject {
             }
             return
         }
-        let category = effectiveAppContentSizeCategory
+        let category = appBaseScale.contentSizeCategory
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
             for window in windowScene.windows {
@@ -258,11 +204,7 @@ private struct AppFontScaleModifier: ViewModifier {
     @ObservedObject private var fontSettings = FontSettings.shared
 
     func body(content: Content) -> some View {
-        if fontSettings.appBaseScale == .default {
-            content
-        } else {
-            content.dynamicTypeSize(fontSettings.effectiveAppDynamicTypeSize)
-        }
+        content.dynamicTypeSize(fontSettings.appBaseScale.dynamicTypeSize)
     }
 }
 

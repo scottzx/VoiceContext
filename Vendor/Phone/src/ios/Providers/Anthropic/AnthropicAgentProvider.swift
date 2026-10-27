@@ -52,22 +52,9 @@ final class AnthropicAgentProvider: AgentProvider {
         messages: [AgentMessage],
         systemPrompt: String?,
         tools: [AgentToolDefinition],
-        requiredToolName: String? = nil,
         maxTokens: Int,
         thinkingLevel: ThinkingLevel
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error> {
-        // These models explicitly reject forced tool use, even with adaptive
-        // thinking. Fail for model-group fallback rather than silently using
-        // auto. https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools
-        if requiredToolName != nil,
-           let version = AnthropicProvider.parseClaudeVersion(model.id), version.major == 5 {
-            let modelID = model.id.lowercased()
-            let rejectsRequiredTool = (version.minor == 5 && (modelID.contains("opus") || modelID.contains("sonnet")))
-                || (version.minor == 1 && (modelID.contains("fable") || modelID.contains("mythos")))
-            if rejectsRequiredTool {
-                throw LLMError.providerError(message: "This model does not support required tool calls. Select another model for voice replies.")
-            }
-        }
         pendingToolResultImages.removeAll()
         #if DEBUG
         AgentRequestTrace.shared.step("anthropic.convertMessages", detail: "input messages=\(messages.count)")
@@ -198,12 +185,6 @@ final class AnthropicAgentProvider: AgentProvider {
             logger.info("Compat-proxy thinking echo: queued \(history.compactMap { $0 }.count) reasoning block(s) across \(history.count) assistant turn(s), placeholder=\(injectPlaceholder)")
         }
 
-        let toolChoice: MessageParameter.ToolChoice
-        if let requiredToolName {
-            toolChoice = .init(type: .tool, name: requiredToolName, disableParallelToolUse: true)
-        } else {
-            toolChoice = .init(type: .auto)
-        }
         let parameter = MessageParameter(
             model: .other(model.id),
             messages: cachedMessages,
@@ -211,7 +192,7 @@ final class AnthropicAgentProvider: AgentProvider {
             system: provider.resolveSystemPrompt(systemPrompt),
             temperature: provider.effectiveTemperature(0.7),
             tools: anthropicTools,
-            toolChoice: toolChoice
+            toolChoice: .init(type: .auto)
         )
 
         #if DEBUG
@@ -827,12 +808,10 @@ final class AnthropicAgentProvider: AgentProvider {
                 case .string: .string
                 case .integer: .integer
                 case .boolean: .boolean
-                case .stringArray: .array
                 }
                 properties[name] = JSONSchema.Property(
                     type: type,
                     description: param.description,
-                    items: param.type == .stringArray ? JSONSchema.Items(type: .string) : nil,
                     enumValues: param.enumValues
                 )
             }

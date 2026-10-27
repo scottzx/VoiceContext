@@ -36,31 +36,411 @@ enum SyncStatus: Equatable {
     case disabled
 }
 
-/// Lightweight identity/order snapshot used to decide whether a cached chat
-/// needs a full reload. It intentionally excludes parts_json so merely opening
-/// an already-cached long session does not decode the entire conversation.
-struct SessionMessageFingerprint: Sendable, Equatable {
-    let count: Int
-    let maxSortOrder: Int
-    let orderHash: Int
+// MARK: - Data Model
+
+/// A chat session (conversation thread).
+struct ChatSession: Identifiable, Codable, Hashable {
+    let id: String
+    var title: String?
+    var category: String?
+    let modelId: String
+    let createdAt: Date
+    var updatedAt: Date
+    var lastMessage: String?
+    var source: String?       // e.g. "shortcut" for Shortcuts-triggered sessions
+    var lastSyncedAt: Date?   // non-nil if successfully synced to iCloud
+    var remoteDeviceId: String?   // non-nil if this session came from another device via iCloud
+    var remoteDeviceName: String? // human-readable name of the remote device
+    var pinnedAt: Date?       // non-nil if session is pinned; timestamp of when it was pinned
+    var folderId: String?     // non-nil if filed into a folder; NULL = ungrouped
+
+    /// Whether this session is from a remote device (read-only).
+    var isRemote: Bool { remoteDeviceId != nil }
+
+    /// Whether this session is pinned to the top of the list.
+    var isPinned: Bool { pinnedAt != nil }
+
+    /// Whether this session belongs to a folder.
+    var isFiled: Bool { folderId != nil }
+
+    // MARK: - Equatable / Hashable (cheap, content-via-proxy)
+    //
+    // [T-ios-session-list-equatable-jank] The compiler-synthesized
+    // `==`/`hash` compared EVERY stored field — including the long
+    // `lastMessage` / `title` strings. SwiftUI's sidebar `ForEach(groupedSessions)`
+    // makes AttributeGraph deep-compare the whole `[ChatSession]` array on every
+    // transaction flush (session switch, tap, foreground, iCloud inbound). In
+    // DEBUG that synthesized `String.==` runs the Unicode NFC normalization
+    // slow path (no inlining / ARC elision), and across a long session list it
+    // pinned the main thread for 1–2s+ (HangDetector: ChatSession
+    // __derived_struct_equals → _stringCompareSlow → _NFCNormalizer). Release
+    // optimizes it away, which is why Release didn't stall.
+    //
+    // Replace with an explicit cheap comparison: identity + the short
+    // change-driving fields, using `updatedAt` as the proxy for the heavy
+    // `lastMessage` (and any other body content) — every content mutation bumps
+    // `updatedAt`, so we never need to NFC-compare the long string to detect a
+    // change. `title`/`category`/`source` ARE compared (they can change without
+    // a content write, e.g. rename / categorize) but they're short. Net: the
+    // sidebar diff no longer touches the long strings.
+    static func == (lhs: ChatSession, rhs: ChatSession) -> Bool {
+        lhs.id == rhs.id
+            && lhs.updatedAt == rhs.updatedAt
+            && lhs.pinnedAt == rhs.pinnedAt
+            // `folderId` MUST be compared: moving a session between folders
+            // changes neither `updatedAt` nor any other compared field, so
+            // without this the sidebar would keep rendering the row in its old
+            // section until some unrelated mutation bumped the diff.
+            && lhs.folderId == rhs.folderId
+            && lhs.title == rhs.title
+            && lhs.category == rhs.category
+            && lhs.source == rhs.source
+            && lhs.lastSyncedAt == rhs.lastSyncedAt
+            && lhs.remoteDeviceId == rhs.remoteDeviceId
+            && lhs.remoteDeviceName == rhs.remoteDeviceName
+        // Intentionally NOT comparing `lastMessage` (long string; `updatedAt`
+        // is its change proxy) or the immutable `modelId` / `createdAt`.
+    }
+
+    func hash(into hasher: inout Hasher) {
+        // Mirror ==: cheap, identity + updatedAt. Avoids hashing long strings.
+        hasher.combine(id)
+        hasher.combine(updatedAt)
+    }
 }
 
-/// One row in the global task queue. Unlike `listSessions()`, the task queue
-/// deliberately includes scratch subagent and group-member sessions so the
-/// user can inspect every conversation that is waiting, running, or recently
-/// completed. `lastReplyAt` is the timestamp of the newest assistant reply and
-/// is kept separate from `ChatSession.updatedAt` so a newly queued user prompt
-/// does not make an old completed conversation look recent.
-struct TaskQueueEntry: Identifiable, Sendable {
-    let session: ChatSession
-    let lastReplyAt: Date?
+/// A user-created folder that groups sessions on the home list.
+///
+/// Named "Folder" rather than "Group" on purpose: the codebase already has
+/// three other "group"s — `ModelGroup` (the LLM provider fallback group behind
+/// the home FAB's "New Chat with Group"), the `__grp__` draft-session id
+/// encoding (which embeds a ModelGroup id), and SwiftUI's `Group {}`.
+///
+/// Identity is a locally generated UUID, and `name` deliberately carries no
+/// uniqueness constraint:
+///
+/// - **Why not key on the name.** Renaming would stop being a single-field
+///   edit and become an identity change (delete old key, create new key,
+///   migrate every member). That multi-row operation tears across devices: if
+///   device A renames while device B files sessions under the old name, B's
+///   sessions end up referencing a key that no longer exists and silently fall
+///   back to ungrouped. With a UUID, a rename is one LWW field on `FolderV2`
+///   and members are untouched.
+/// - **Why duplicate names are allowed.** Two devices each creating "Work"
+///   offline produce two distinct UUIDs, and both are kept. Auto-merging is
+///   irreversible and two same-named folders are not necessarily the same
+///   thing; the user can always move sessions across and dissolve the leftover.
+///   Consequence: any *name-based* lookup must tolerate multiple matches (see
+///   `findFolderByName`).
+struct ChatFolder: Identifiable, Codable, Hashable {
+    let id: String
+    var name: String
+    var icon: String?         // SF Symbol name; nil = use the composed icon
+    var color: String?        // theme color token
+    var origin: String        // "manual" | "ai" — provenance only, no behavior
+    var sortIndex: Int        // reserved for V2 drag-reorder
+    var pinnedAt: Date?       // non-nil = folder pinned above unpinned folders
+    /// One-sentence description (≤100 chars). Auto-grouping context; never
+    /// rendered in the home list, but shown as the Move-to-Group picker row
+    /// subtitle and surfaced for editing in the rename dialog.
+    var desc: String?
+    let createdAt: Date
+    var updatedAt: Date
 
-    var id: String { session.id }
+    var isPinned: Bool { pinnedAt != nil }
+
+    init(
+        id: String = UUID().uuidString,
+        name: String,
+        icon: String? = nil,
+        color: String? = nil,
+        origin: String = "manual",
+        sortIndex: Int = 0,
+        pinnedAt: Date? = nil,
+        desc: String? = nil,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.color = color
+        self.origin = origin
+        self.sortIndex = sortIndex
+        self.pinnedAt = pinnedAt
+        self.desc = desc
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
 }
 
-// Chat persistence value types and the repository contract live in
-// src/apple/Domain/ChatPersistence.swift so iOS and macOS compile the same
-// Codable wire format. SQLite ownership remains in ChatStore below.
+/// Role for a raw message turn.
+enum MessageRole: String, Codable {
+    case user
+    case assistant
+}
+
+/// Reference to a media file stored in Library/MinisChat/minis/<sessionId>/
+struct MediaRef: Codable, Hashable {
+    let id: String
+    let relativePath: String
+    let mimeType: String
+    let originalFileName: String?
+    /// iSH-visible linux path the file is mirrored to (e.g.
+    /// `/var/minis/attachments/uploads/<name>`, `/var/minis/browser/<sid>/...`).
+    /// Optional — older persisted rows decode with `nil` and fall back to
+    /// spillover at request-budget elide time. New writes always populate
+    /// this when the file is offloaded to iSH-visible storage.
+    let linuxPath: String?
+
+    init(id: String, relativePath: String, mimeType: String, originalFileName: String?, linuxPath: String? = nil) {
+        self.id = id
+        self.relativePath = relativePath
+        self.mimeType = mimeType
+        self.originalFileName = originalFileName
+        self.linuxPath = linuxPath
+    }
+}
+
+/// A tool call requested by the assistant.
+struct ToolUse: Codable, Hashable {
+    let toolUseId: String
+    let name: String
+    let input: String
+    let description: String?
+    let thoughtSignature: String?  // Gemini 3.x thought signature
+}
+
+/// A snapshot captured from a tool execution result.
+struct ToolSnapshot: Codable, Hashable {
+    enum SnapshotType: String, Codable, Hashable {
+        case text
+        case image
+    }
+    let type: SnapshotType
+    let text: String?        // For .text snapshots (last N lines of output)
+    let mediaRef: MediaRef?  // For .image snapshots (browser screenshot)
+    let duration: TimeInterval?  // Execution duration in seconds
+}
+
+/// Result of executing a tool.
+struct ToolResult: Codable, Hashable {
+    let toolUseId: String
+    let output: String
+    let success: Bool
+    let mediaRef: MediaRef?
+    let snapshot: ToolSnapshot?
+    /// Final page URL after browser tool execution (for display in tool detail sheet).
+    /// Truncated to ≤512 characters if the original was longer.
+    let pageURL: String?
+    /// Terminal execution status: "success" | "failed" | "cancelled".
+    /// Optional for backward compatibility with rows written before this field existed;
+    /// when nil, callers fall back to `success` (which cannot distinguish failed from cancelled).
+    let status: String?
+
+    /// Truncate a URL to at most `maxLength` characters by eliding the middle.
+    /// Returns the original if it's already short enough.
+    static func truncateURL(_ url: String, maxLength: Int = 512) -> String {
+        guard url.count > maxLength else { return url }
+        let marker = "…[truncated]…"
+        let keep = (maxLength - marker.count) / 2
+        let head = String(url.prefix(keep))
+        let tail = String(url.suffix(keep))
+        return head + marker + tail
+    }
+}
+
+/// A single content part within a message — the atomic unit.
+enum ContentPart: Codable, Hashable {
+    case text(String)
+    case mediaRef(MediaRef)
+    case toolUse(ToolUse)
+    case toolResult(ToolResult)
+
+    // MARK: Codable
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case value
+    }
+
+    private enum PartType: String, Codable {
+        case text
+        case mediaRef
+        case toolUse
+        case toolResult
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .text(let s):
+            try container.encode(PartType.text, forKey: .type)
+            try container.encode(s, forKey: .value)
+        case .mediaRef(let ref):
+            try container.encode(PartType.mediaRef, forKey: .type)
+            try container.encode(ref, forKey: .value)
+        case .toolUse(let tu):
+            try container.encode(PartType.toolUse, forKey: .type)
+            try container.encode(tu, forKey: .value)
+        case .toolResult(let tr):
+            try container.encode(PartType.toolResult, forKey: .type)
+            try container.encode(tr, forKey: .value)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let partType = try container.decode(PartType.self, forKey: .type)
+        switch partType {
+        case .text:
+            self = .text(try container.decode(String.self, forKey: .value))
+        case .mediaRef:
+            self = .mediaRef(try container.decode(MediaRef.self, forKey: .value))
+        case .toolUse:
+            self = .toolUse(try container.decode(ToolUse.self, forKey: .value))
+        case .toolResult:
+            self = .toolResult(try container.decode(ToolResult.self, forKey: .value))
+        }
+    }
+}
+
+/// A compact boundary marker in a session's message history.
+/// Represents the point where older messages were summarized to save context.
+///
+/// Identity model (post Phase A):
+///   - `firstKeptMessageId` is the authoritative active-region start.
+///   - `lastCompactedMessageId` is the last message in the compacted range.
+///   - Sort-order fields (`firstKeptSortOrder`, `uiBoundarySortOrder`) and
+///     `boundaryMessageId` are retained for legacy markers and cross-device
+///     sync compatibility with older builds, used only as fallbacks.
+struct CompactMarker: Identifiable, Codable {
+    let id: String
+    let sessionId: String
+    /// LLM-generated summary of the compacted messages.
+    let summary: String
+    /// LEGACY: sort_order of the first message AFTER the compacted range.
+    /// Only used as fallback when firstKeptMessageId resolution fails.
+    let firstKeptSortOrder: Int
+    /// Number of raw messages that were compacted. UI display only.
+    let compactedCount: Int
+    let createdAt: Date
+    /// LEGACY: sort_order of the UI boundary message.
+    /// Only used as fallback for divider positioning on legacy markers.
+    let uiBoundarySortOrder: Int?
+    /// LEGACY: DB message ID of the boundary message (pre-Phase A name for firstKeptMessageId).
+    /// Kept for cross-device sync compatibility with older builds.
+    let boundaryMessageId: String?
+    /// PRIMARY: DB message ID of the first kept (active-region) message.
+    /// All restore / compact logic resolves boundaries through this id.
+    /// Optional only for legacy markers written before Phase A.
+    let firstKeptMessageId: String?
+    /// PRIMARY: DB message ID of the last compacted message (right edge of the
+    /// compacted range). Used by prune protection to avoid deleting marker anchors.
+    /// Optional only for legacy markers written before Phase A.
+    let lastCompactedMessageId: String?
+    /// Marker schema version. 1 = legacy multi-field model (firstKept/boundary/
+    /// sortOrder fallback chain). 2 = simplified id-only model: only
+    /// `lastCompactedMessageId` is authoritative; everything before it (incl.)
+    /// is the compacted range, everything after it is "live anchor + new msgs".
+    /// `compactedCount` and `summary` are still meaningful for UI; all other
+    /// columns are ignored for v2 markers.
+    var version: Int = 1
+}
+
+/// Token usage stats stored with a message.
+struct StoredTokenUsage: Codable, Hashable {
+    var inputTokens: Int
+    var outputTokens: Int
+    var cacheCreationTokens: Int
+    var cacheReadTokens: Int
+    var latestContextTokens: Int?
+}
+
+/// A single message in the conversation (one "turn").
+struct RawMessage: Identifiable, Codable, Hashable {
+    let id: String
+    let sessionId: String
+    let role: MessageRole
+    let parts: [ContentPart]
+    let createdAt: Date
+    var tokenUsage: StoredTokenUsage?
+    /// Reasoning content from thinking models (Kimi, DeepSeek, QwQ, etc.) — must be echoed back.
+    var reasoningContent: String?
+    /// Number of mid-stream auto-retries that occurred before this message completed successfully.
+    /// 0 means no interruption. Persisted to DB for display after session reload.
+    var streamInterruptCount: Int = 0
+    /// Database sort_order value. Populated during loadMessages, used for compact boundary tracking.
+    var sortOrder: Int = 0
+    /// [T-error-persist-ios] Device-local error string for a failed assistant
+    /// turn. Mirrors ChatMessage.error; persisted to the messages.error_info
+    /// column so the error indicator survives reload. nil = no error.
+    var errorInfo: String? = nil
+
+    /// [T-token-attribution-snapshot] The model that ACTUALLY produced this
+    /// message, snapshotted when it was written.
+    ///
+    /// Snapshot rather than a reference to resolve later: usage is a record of
+    /// what happened, and it must not change when the configuration it once
+    /// pointed at changes. `modelDisplayName` / `providerType` travel with the
+    /// id so a deleted provider does not make history unreadable.
+    ///
+    /// nil on rows written before these columns existed — the signal the Usage
+    /// page uses to mark a row estimated rather than measured.
+    var modelId: String? = nil
+    var modelDisplayName: String? = nil
+    /// `ProviderType` **rawValue** (e.g. `openAI`), never a display name.
+    var providerType: String? = nil
+    /// Diagnostics / disambiguation only; the UI never resolves through it.
+    var providerInstanceId: String? = nil
+
+    /// True if this message contains only tool results (no user text).
+    /// These are internal agent loop messages that shouldn't render as user bubbles.
+    var isToolResultOnly: Bool {
+        role == .user && !parts.isEmpty && parts.allSatisfy {
+            if case .toolResult = $0 { return true }
+            return false
+        }
+    }
+
+    /// [T-bridge-message-ui-leak] The internal assistant "bridge" row inserted
+    /// when a queued user message interrupts a tool loop (#579): it exists
+    /// purely to keep agentHistory role-alternation intact
+    /// (…user(tool_result) → assistant(bridge) → user(queued)…) and must
+    /// never render in the chat UI. Detected by content match rather than a
+    /// schema flag: we generate this text verbatim, a content match also hides
+    /// rows persisted by OLDER builds (a new column could not), and no
+    /// DB/iCloud-sync wiring is needed.
+    static let internalBridgeText =
+        "(Interrupted mid-task by a new user message. Decide based on the new message and overall context whether the prior task should continue — do not forget or abandon it unless the user explicitly says to stop, or the new message makes clear it is no longer needed.)"
+
+    /// Every bridge text this app has ever generated. A row persisted by an
+    /// OLDER build carries the PREVIOUS wording; matching the current constant
+    /// alone would fail and leak that row into the UI (the exact regression seen
+    /// after the 2026-07-23 wording change, d2e111e9). Match against the full
+    /// set so old and new persisted bridges are both recognized. Prefix-match
+    /// (not equality) tolerates trailing-whitespace / normalization drift from
+    /// DB round-trips.
+    static let internalBridgeTexts: [String] = [
+        internalBridgeText,
+        // Pre-d2e111e9 wording.
+        "(Interrupted mid-task to handle your new message. Will return to the prior task after.)",
+    ]
+
+    /// True when `text` is any known internal-bridge string. Shared by
+    /// RawMessage and ChatMessage so every layer recognizes the same rows.
+    static func isInternalBridgeText(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return internalBridgeTexts.contains { trimmed == $0 }
+    }
+
+    var isInternalBridge: Bool {
+        guard role == .assistant, parts.count == 1,
+              case .text(let s) = parts[0] else { return false }
+        return Self.isInternalBridgeText(s)
+    }
+}
+
 // MARK: - ChatStore Actor
 
 /// Persistent store for chat sessions, messages, and media files.
@@ -86,7 +466,6 @@ actor ChatStore {
     // ChatStore is an actor, so these fields need no extra locking.
     private var sessionListCache: [ChatSession]?
     private var sessionListCacheDirty = true
-    private var taskQueueCache: [TaskQueueEntry]?
 
     /// [T-ios-listsessions-cache] Mark the cached session list stale. Called by
     /// every mutation that can change what listSessions() returns — the row set
@@ -98,7 +477,6 @@ actor ChatStore {
     /// see it.
     func invalidateSessionListCache() {
         sessionListCacheDirty = true
-        taskQueueCache = nil
     }
 
     init() {
@@ -205,9 +583,29 @@ actor ChatStore {
     }
 
     private func createTables() {
-        exec(ChatPersistenceSchema.createSessionsSQL)
-        exec(ChatPersistenceSchema.createMessagesSQL)
-        exec(ChatPersistenceSchema.createMessageIndexSQL)
+        exec("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id          TEXT PRIMARY KEY,
+                title       TEXT,
+                model_id    TEXT NOT NULL,
+                created_at  REAL NOT NULL,
+                updated_at  REAL NOT NULL
+            )
+        """)
+
+        exec("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id          TEXT PRIMARY KEY,
+                session_id  TEXT NOT NULL REFERENCES sessions(id),
+                role        TEXT NOT NULL,
+                parts_json  TEXT NOT NULL,
+                created_at  REAL NOT NULL,
+                token_usage TEXT,
+                sort_order  INTEGER NOT NULL
+            )
+        """)
+
+        exec("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, sort_order)")
         // [T-ios-listsessions-part-flags] Supports listSessions' per-role
         // preview subqueries: SEARCH … (session_id=? AND role=?) ORDER BY
         // sort_order DESC LIMIT 1. Measured ~30ms vs ~58ms on the plain
@@ -222,10 +620,6 @@ actor ChatStore {
         addColumnIfMissing(table: "messages", column: "reasoning_content", definition: "TEXT")
         addColumnIfMissing(table: "messages", column: "stream_interrupt_count", definition: "INTEGER NOT NULL DEFAULT 0")
         addColumnIfMissing(table: "sessions", column: "memory_enabled", definition: "INTEGER NOT NULL DEFAULT 1")
-        // [T-lite-mode-small-local-models] Per-session ChatMode. NOT NULL
-        // DEFAULT 'normal' so every pre-existing row keeps the full toolset;
-        // only rows written by createSession pick up the global default.
-        addColumnIfMissing(table: "sessions", column: "chat_mode", definition: "TEXT NOT NULL DEFAULT 'normal'")
         addColumnIfMissing(table: "sessions", column: "last_synced_at", definition: "REAL")
         addColumnIfMissing(table: "sessions", column: "remote_origin_device_id", definition: "TEXT")
         addColumnIfMissing(table: "sync_devices", column: "upload_types", definition: "TEXT NOT NULL DEFAULT ''")
@@ -260,9 +654,6 @@ actor ChatStore {
         // error_info): inbound merge / backfill recompute it locally on write.
         // Backfilled once for pre-existing rows below.
         addColumnIfMissing(table: "messages", column: "part_flags", definition: "INTEGER NOT NULL DEFAULT 0")
-        // Group chat: which member spoke this line. NULL for every 1:1 message,
-        // so existing rows and every existing query are unaffected.
-        addColumnIfMissing(table: "messages", column: "sender_agent_id", definition: "TEXT")
         // v2 sync: soft-delete tombstone for sessions deleted on a peer
         // device but kept locally. Non-nil = tombstoned at that timestamp.
         // See SyncV2 §3.3.
@@ -273,107 +664,6 @@ actor ChatStore {
         // (push only after priority=0 drains in each batch).
         addColumnIfMissing(table: "sync_dirty_records", column: "priority", definition: "INTEGER NOT NULL DEFAULT 0")
         addColumnIfMissing(table: "sync_dirty_records", column: "created_at", definition: "REAL NOT NULL DEFAULT 0")
-
-        // MARK: Agents
-        //
-        // A persistent Agent owns one long-lived "main" session plus any number
-        // of short-lived "subagent" scratch sessions. Metadata lives here; the
-        // persona body and per-agent memory live on disk under
-        // /var/minis/agents/<id>/ (see AgentProfile).
-        exec("""
-            CREATE TABLE IF NOT EXISTS agents (
-                id                    TEXT PRIMARY KEY,
-                name                  TEXT NOT NULL,
-                emoji                 TEXT NOT NULL DEFAULT '',
-                title                 TEXT NOT NULL DEFAULT '',
-                summary               TEXT NOT NULL DEFAULT '',
-                accent_color          TEXT NOT NULL DEFAULT '#5B8DEF',
-                main_session_id       TEXT,
-                default_model_entry   TEXT,
-                tool_policy           TEXT NOT NULL DEFAULT 'orchestrator',
-                memory_enabled        INTEGER NOT NULL DEFAULT 1,
-                created_at            REAL NOT NULL,
-                updated_at            REAL NOT NULL,
-                archived_at           REAL,
-                sort_order            INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-
-        // Placeholder for scheduled agent runs. The table is created so the
-        // Agent home screen has somewhere to point and so a later migration
-        // does not have to backfill, but nothing reads or writes it yet: iOS
-        // has no in-app scheduler (baseSystemPrompt says so explicitly), and
-        // shipping a half-wired scheduler would make the UI contradict the
-        // prompt. Android's ScheduledAgentRunner.kt is the reference for when
-        // this is actually implemented.
-        exec("""
-            CREATE TABLE IF NOT EXISTS agent_schedules (
-                id          TEXT PRIMARY KEY,
-                agent_id    TEXT NOT NULL,
-                title       TEXT NOT NULL,
-                prompt      TEXT NOT NULL,
-                cron        TEXT,
-                next_run_at REAL,
-                enabled     INTEGER NOT NULL DEFAULT 0,
-                created_at  REAL NOT NULL
-            )
-        """)
-
-        // Session → agent linkage. Idempotent adds, same as every migration
-        // above, so re-running on an already-migrated DB is a no-op.
-        addColumnIfMissing(table: "sessions", column: "agent_id", definition: "TEXT")
-        addColumnIfMissing(table: "sessions", column: "parent_session_id", definition: "TEXT")
-        addColumnIfMissing(table: "sessions", column: "spawn_role", definition: "TEXT")
-        addColumnIfMissing(table: "sessions", column: "spawn_title", definition: "TEXT")
-        addColumnIfMissing(table: "sessions", column: "spawn_status", definition: "TEXT")
-        addColumnIfMissing(table: "sessions", column: "spawn_result", definition: "TEXT")
-        exec("CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id, updated_at DESC)")
-        exec("CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_session_id, created_at)")
-        // listSessions() filters subagent rows out on every call; without this
-        // the filter degrades into a full scan once scratch sessions pile up.
-        exec("CREATE INDEX IF NOT EXISTS idx_sessions_spawn_role ON sessions(spawn_role)")
-
-        // MARK: Groups
-        //
-        // A group is a roster plus a transcript — see AgentKit/Group/GroupProfile.swift.
-        // It owns no persona and no memory of its own; its members bring theirs.
-        // The transcript is an ordinary `sessions` row (spawn_role = 'group',
-        // agent_id NULL), and each member's private thread inside the group is
-        // another one (spawn_role = 'group-member', parent_session_id = the
-        // group's session). So membership is the only thing that needs storage.
-        exec("""
-            CREATE TABLE IF NOT EXISTS agent_groups (
-                id             TEXT PRIMARY KEY,
-                session_id     TEXT NOT NULL,
-                title          TEXT NOT NULL,
-                emoji          TEXT NOT NULL DEFAULT '',
-                accent_color   TEXT NOT NULL DEFAULT '#5B8DEF',
-                mode           TEXT NOT NULL DEFAULT 'freeform',
-                owner_agent_id TEXT,
-                created_at     REAL NOT NULL,
-                updated_at     REAL NOT NULL,
-                archived_at    REAL
-            )
-        """)
-        // No FK to agents(id): archiving an agent must not cascade a group's
-        // roster away, and a row for a departed member is more useful than a
-        // silently shortened group (resolveMembers skips what it can't load).
-        exec("""
-            CREATE TABLE IF NOT EXISTS agent_group_members (
-                group_id   TEXT NOT NULL,
-                agent_id   TEXT NOT NULL,
-                sort_order INTEGER NOT NULL DEFAULT 0,
-                joined_at  REAL NOT NULL,
-                PRIMARY KEY (group_id, agent_id)
-            )
-        """)
-        exec("CREATE INDEX IF NOT EXISTS idx_group_members_group ON agent_group_members(group_id, sort_order)")
-        exec("CREATE INDEX IF NOT EXISTS idx_agent_groups_session ON agent_groups(session_id)")
-
-        // Async task completion notices table
-        exec(ChatPersistenceSchema.createAsyncTaskNoticesSQL)
-        addColumnIfMissing(table: "async_task_notices", column: "agent_id", definition: "TEXT")
-        exec(ChatPersistenceSchema.createAsyncTaskNoticesIndexSQL)
 
         // [T-token-attribution-snapshot] Which model actually produced each
         // message, captured at write time.
@@ -766,12 +1056,7 @@ actor ChatStore {
         let rawObj = UserDefaults.standard.object(forKey: "memory.global.enabled")
         memDiagLogger.info("[MemDiag] createSession sid=\(session.id.prefix(8)) rawDefaults=\(String(describing: rawObj)) resolved=\(globalMemoryEnabled) → bind memory_enabled=\(globalMemoryEnabled ? 1 : 0)")
 
-        // [T-lite-mode-small-local-models] Same story as memory_enabled: the
-        // mode the user last picked in the composer seeds new sessions, so
-        // "I'm on the local model today" survives starting a new chat.
-        let globalChatMode = ChatModePreferences.globalDefault
-
-        let sql = "INSERT INTO sessions (id, title, model_id, created_at, updated_at, source, memory_enabled, chat_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        let sql = "INSERT INTO sessions (id, title, model_id, created_at, updated_at, source, memory_enabled) VALUES (?, ?, ?, ?, ?, ?, ?)"
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, (session.id as NSString).utf8String, -1, nil)
@@ -781,7 +1066,6 @@ actor ChatStore {
             sqlite3_bind_double(stmt, 5, now.timeIntervalSince1970)
             bindOptionalText(stmt, index: 6, value: source)
             sqlite3_bind_int(stmt, 7, globalMemoryEnabled ? 1 : 0)
-            sqlite3_bind_text(stmt, 8, (globalChatMode.rawValue as NSString).utf8String, -1, nil)
             let rc = sqlite3_step(stmt)
             memDiagLogger.info("[MemDiag] createSession INSERT step rc=\(rc) (101=DONE) sid=\(session.id.prefix(8))")
         } else {
@@ -1011,22 +1295,11 @@ actor ChatStore {
                        AND m.role = 'user'
                        AND (m.part_flags & \(userMask)) != 0
                      ORDER BY m.sort_order DESC LIMIT 1),
-                   s.agent_id, s.parent_session_id, s.spawn_role,
-                   s.spawn_title, s.spawn_status,
                    -- Appended LAST on purpose: the decode below reads columns
                    -- by index, so a new column goes at the end to leave every
                    -- existing index untouched.
                    s.folder_id
-            FROM sessions s
-            -- Subagent scratch sessions are an implementation detail of one
-            -- dispatched task. They are reachable from their parent's task
-            -- card and must never appear as a top-level conversation. A
-            -- 'group-member' row is the same kind of thing for a group: the
-            -- member's private thread, reachable from the group. The group's
-            -- own transcript ('group') deliberately stays, so it is searchable
-            -- and browsable like any other conversation.
-            WHERE s.spawn_role IS NULL OR s.spawn_role NOT IN ('subagent', 'group-member')
-            ORDER BY s.updated_at DESC
+            FROM sessions s ORDER BY s.updated_at DESC
             """
             // Note: `remote_tombstoned_at` column still exists on the
             // table for legacy rows but is no longer consulted. Peer-side
@@ -1097,20 +1370,13 @@ actor ChatStore {
                 let remoteDeviceId = Self.colTextOpt(stmt, 10)
                 let pinnedAt: Date? = sqlite3_column_type(stmt, 11) != SQLITE_NULL
                     ? Date(timeIntervalSince1970: sqlite3_column_double(stmt, 11)) : nil
-                let agentId = sqlite3_column_text(stmt, 14).map { String(cString: $0) }
-                let parentSessionId = sqlite3_column_text(stmt, 15).map { String(cString: $0) }
-                let spawnRole = sqlite3_column_text(stmt, 16).map { String(cString: $0) }
-                let spawnTitle = sqlite3_column_text(stmt, 17).map { String(cString: $0) }
-                let spawnStatus = sqlite3_column_text(stmt, 18).map { String(cString: $0) }
-                let folderId = Self.colTextOpt(stmt, 19)
+                let folderId = Self.colTextOpt(stmt, 14)
 
                 sessions.append(ChatSession(
                     id: id, title: title, category: category, modelId: modelId,
                     createdAt: createdAt, updatedAt: updatedAt, lastMessage: lastMessage,
                     source: source, lastSyncedAt: lastSyncedAt,
                     remoteDeviceId: remoteDeviceId, pinnedAt: pinnedAt,
-                    agentId: agentId, parentSessionId: parentSessionId,
-                    spawnRole: spawnRole, spawnTitle: spawnTitle, spawnStatus: spawnStatus,
                     folderId: folderId
                 ))
             }
@@ -1126,74 +1392,6 @@ actor ChatStore {
         sessionListCache = sessions
         sessionListCacheDirty = false
         return sessions
-    }
-
-    /// Complete conversation queue for the Tasks mode.
-    ///
-    /// This intentionally does not share `listSessions()`'s top-level-only
-    /// predicate: hidden subagent scratch sessions and private group-member
-    /// sessions are real execution units and must be visible in an operational
-    /// queue. The latest assistant preview/date are fetched with the same
-    /// indexed correlated-subquery shape used by `listSessions()`.
-    func listTaskQueueEntries() -> [TaskQueueEntry] {
-        if let taskQueueCache { return taskQueueCache }
-
-        let assistantMask = Self.partFlagHasText | Self.partFlagHasToolUse
-        let sql = """
-            SELECT s.id, s.title, s.model_id, s.created_at, s.updated_at, s.category,
-                   s.source, s.pinned_at, s.agent_id, s.parent_session_id,
-                   s.spawn_role, s.spawn_title, s.spawn_status, s.folder_id,
-                   (SELECT m.parts_json FROM messages m
-                     WHERE m.session_id = s.id
-                       AND m.role = 'assistant'
-                       AND (m.part_flags & \(assistantMask)) != 0
-                     ORDER BY m.sort_order DESC LIMIT 1),
-                   (SELECT m.created_at FROM messages m
-                     WHERE m.session_id = s.id
-                       AND m.role = 'assistant'
-                       AND (m.part_flags & \(assistantMask)) != 0
-                     ORDER BY m.sort_order DESC LIMIT 1)
-              FROM sessions s
-             ORDER BY s.updated_at DESC
-            """
-
-        var stmt: OpaquePointer?
-        var entries: [TaskQueueEntry] = []
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                let id = Self.colText(stmt, 0)
-                guard !id.isEmpty else { continue }
-
-                let pinnedAt: Date? = sqlite3_column_type(stmt, 7) != SQLITE_NULL
-                    ? Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7)) : nil
-                let latestAssistantJSON = Self.colTextOpt(stmt, 14)
-                let lastReplyAt: Date? = sqlite3_column_type(stmt, 15) != SQLITE_NULL
-                    ? Date(timeIntervalSince1970: sqlite3_column_double(stmt, 15)) : nil
-
-                let session = ChatSession(
-                    id: id,
-                    title: Self.colTextOpt(stmt, 1),
-                    category: Self.colTextOpt(stmt, 5),
-                    modelId: Self.colText(stmt, 2),
-                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3)),
-                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4)),
-                    lastMessage: latestAssistantJSON.flatMap { extractTextFromPartsJSON($0) },
-                    source: Self.colTextOpt(stmt, 6),
-                    pinnedAt: pinnedAt,
-                    agentId: Self.colTextOpt(stmt, 8),
-                    parentSessionId: Self.colTextOpt(stmt, 9),
-                    spawnRole: Self.colTextOpt(stmt, 10),
-                    spawnTitle: Self.colTextOpt(stmt, 11),
-                    spawnStatus: Self.colTextOpt(stmt, 12),
-                    folderId: Self.colTextOpt(stmt, 13)
-                )
-                entries.append(TaskQueueEntry(session: session, lastReplyAt: lastReplyAt))
-            }
-        }
-        sqlite3_finalize(stmt)
-
-        taskQueueCache = entries
-        return entries
     }
 
     /// Query sync_devices table and check UserDefaults to find which remote devices have sync enabled.
@@ -1366,8 +1564,6 @@ actor ChatStore {
             return cap("browser_use \(action)")
         case "memory_write":
             if let content = str("content") { return cap("memory_write: " + content) }
-        case ChatHistorySearchTool.name:
-            if let kw = str("keywords") { return cap("搜索聊天记录：" + kw) }
         case "memory_get":
             if let kw = input["keywords"] as? [Any] {
                 let joined = kw.compactMap { $0 as? String }.joined(separator: ", ")
@@ -1402,11 +1598,7 @@ actor ChatStore {
                     ORDER BY m2.sort_order DESC LIMIT 1)
             FROM sessions s
             LEFT JOIN messages m ON m.session_id = s.id
-            WHERE (s.title LIKE ? OR m.parts_json LIKE ?)
-              -- Same exclusions listSessions applies: a hit inside a scratch
-              -- task or a member's private group thread would point the user at
-              -- a conversation they have no way to navigate to.
-              AND (s.spawn_role IS NULL OR s.spawn_role NOT IN ('subagent', 'group-member'))
+            WHERE s.title LIKE ? OR m.parts_json LIKE ?
             GROUP BY s.id
             ORDER BY s.updated_at DESC
             """
@@ -1640,155 +1832,6 @@ actor ChatStore {
         return results
     }
 
-    // MARK: - Chat history search (agent-facing)
-
-    /// One hit from `searchChatHistory`, carrying enough context that an agent
-    /// can say WHERE it found something rather than just quoting it.
-    struct ChatHistoryHit {
-        let sessionId: String
-        let sessionTitle: String?
-        let messageId: String
-        /// "user" or "assistant".
-        let role: String
-        let createdAt: Date
-        let snippet: String
-        /// The agent whose conversation this is. Nil on a group transcript
-        /// (which belongs to no single agent) and on pre-Agent rows.
-        let agentId: String?
-        /// sessions.spawn_role — "main" / "group" / "group-member" / …
-        let spawnRole: String?
-        /// In a group transcript, which member spoke this line.
-        let senderAgentId: String?
-    }
-
-    /// Which conversations a history search may look at.
-    enum ChatHistoryScope {
-        /// Everything the user can see. Subagent scratch is excluded — it is
-        /// working notes from a task whose result was already delivered, and
-        /// it would swamp any real hit.
-        case all
-        /// One agent's own conversations, its group threads included.
-        case agent(String)
-        /// Group rooms and the members' threads inside them.
-        case groups
-        /// Specific sessions, e.g. following up on an earlier hit.
-        case sessions([String])
-    }
-
-    /// Keyword search over conversation history, for the `search_chat_history`
-    /// tool.
-    ///
-    /// Kept separate from `searchMessages` rather than widening it: that one
-    /// backs `minis-sessions-cli` and its tuple shape is a contract with the
-    /// iSH side. This one answers a different question — it scopes by agent and
-    /// by group, and it reports who spoke, which only means anything in a room.
-    func searchChatHistory(
-        keywords: [String],
-        scope: ChatHistoryScope = .all,
-        limit: Int = 20,
-        startDate: Date? = nil,
-        endDate: Date? = nil
-    ) -> [ChatHistoryHit] {
-        let terms = keywords
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard !terms.isEmpty else { return [] }
-
-        var conditions: [String] = []
-        var textBindings: [String] = []
-        var doubleBindings: [(Int32, Double)] = []
-
-        for term in terms {
-            conditions.append("m.parts_json LIKE ?")
-            textBindings.append("%\(term)%")
-        }
-
-        switch scope {
-        case .all:
-            conditions.append("(s.spawn_role IS NULL OR s.spawn_role != 'subagent')")
-        case .agent(let agentId):
-            conditions.append("s.agent_id = ?")
-            textBindings.append(agentId)
-        case .groups:
-            conditions.append("s.spawn_role IN ('group', 'group-member')")
-        case .sessions(let ids):
-            guard !ids.isEmpty else { return [] }
-            conditions.append("m.session_id IN (\(ids.map { _ in "?" }.joined(separator: ",")))")
-            textBindings.append(contentsOf: ids)
-        }
-
-        // Date bindings are bound after every text binding, so their indexes
-        // start where the text ones stop.
-        var bindIndex = Int32(textBindings.count) + 1
-        if let start = startDate {
-            conditions.append("m.created_at >= ?")
-            doubleBindings.append((bindIndex, start.timeIntervalSince1970))
-            bindIndex += 1
-        }
-        if let end = endDate {
-            conditions.append("m.created_at <= ?")
-            doubleBindings.append((bindIndex, end.timeIntervalSince1970))
-            bindIndex += 1
-        }
-
-        let sql = """
-            SELECT m.session_id, s.title, m.id, m.role, m.created_at, m.parts_json,
-                   s.agent_id, s.spawn_role, m.sender_agent_id
-              FROM messages m
-              LEFT JOIN sessions s ON s.id = m.session_id
-             WHERE \(conditions.joined(separator: " AND "))
-             ORDER BY m.created_at DESC
-             LIMIT ?
-            """
-
-        var stmt: OpaquePointer?
-        var results: [ChatHistoryHit] = []
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            sqlite3_finalize(stmt)
-            return []
-        }
-        for (offset, value) in textBindings.enumerated() {
-            sqlite3_bind_text(stmt, Int32(offset) + 1, (value as NSString).utf8String, -1, nil)
-        }
-        for (index, value) in doubleBindings {
-            sqlite3_bind_double(stmt, index, value)
-        }
-        // Over-fetch, the same way searchMessages does: rows whose keyword
-        // matched inside tool JSON rather than message text drop out below.
-        sqlite3_bind_int(stmt, bindIndex, Int32(max(1, limit) * 3))
-
-        func text(_ column: Int32) -> String? {
-            guard sqlite3_column_type(stmt, column) != SQLITE_NULL else { return nil }
-            let value = String(cString: sqlite3_column_text(stmt, column))
-            return value.isEmpty ? nil : value
-        }
-
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            let partsJSON = String(cString: sqlite3_column_text(stmt, 5))
-            let fullText = extractTextFromPartsJSON(partsJSON) ?? ""
-            guard !fullText.isEmpty else { continue }
-            let snippet = Self.keywordSnippet(from: fullText, keywords: terms, maxLength: 400)
-            guard !snippet.isEmpty else { continue }
-
-            results.append(
-                ChatHistoryHit(
-                    sessionId: String(cString: sqlite3_column_text(stmt, 0)),
-                    sessionTitle: text(1),
-                    messageId: String(cString: sqlite3_column_text(stmt, 2)),
-                    role: String(cString: sqlite3_column_text(stmt, 3)),
-                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4)),
-                    snippet: snippet,
-                    agentId: text(6),
-                    spawnRole: text(7),
-                    senderAgentId: text(8)
-                )
-            )
-            if results.count >= limit { break }
-        }
-        sqlite3_finalize(stmt)
-        return results
-    }
-
     /// Extract a snippet around the first keyword match, up to maxLength characters.
     private static func keywordSnippet(from text: String, keywords: [String], maxLength: Int) -> String {
         guard !text.isEmpty else { return "" }
@@ -1924,7 +1967,7 @@ actor ChatStore {
     }
 
     func getSession(_ id: String) -> ChatSession? {
-        let sql = "SELECT id, title, model_id, created_at, updated_at, category, source, pinned_at, agent_id, parent_session_id, spawn_role, spawn_title, spawn_status, spawn_result, folder_id FROM sessions WHERE id = ?"
+        let sql = "SELECT id, title, model_id, created_at, updated_at, category, source, pinned_at, folder_id FROM sessions WHERE id = ?"
         var stmt: OpaquePointer?
         var session: ChatSession?
 
@@ -1939,321 +1982,18 @@ actor ChatStore {
                 let source = sqlite3_column_text(stmt, 6).map { String(cString: $0) }
                 let pinnedAt: Date? = sqlite3_column_type(stmt, 7) != SQLITE_NULL
                     ? Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7)) : nil
-                let agentId = sqlite3_column_text(stmt, 8).map { String(cString: $0) }
-                let parentSessionId = sqlite3_column_text(stmt, 9).map { String(cString: $0) }
-                let spawnRole = sqlite3_column_text(stmt, 10).map { String(cString: $0) }
-                let spawnTitle = sqlite3_column_text(stmt, 11).map { String(cString: $0) }
-                let spawnStatus = sqlite3_column_text(stmt, 12).map { String(cString: $0) }
-                let spawnResult = sqlite3_column_text(stmt, 13).map { String(cString: $0) }
-                let folderId = sqlite3_column_text(stmt, 14).map { String(cString: $0) }
+                let folderId = sqlite3_column_text(stmt, 8).map { String(cString: $0) }
 
                 session = ChatSession(
                     id: id, title: title, category: category, modelId: modelId,
                     createdAt: createdAt, updatedAt: updatedAt, source: source,
-                    pinnedAt: pinnedAt,
-                    agentId: agentId, parentSessionId: parentSessionId,
-                    spawnRole: spawnRole, spawnTitle: spawnTitle,
-                    spawnStatus: spawnStatus, spawnResult: spawnResult,
-                    folderId: folderId
+                    pinnedAt: pinnedAt, folderId: folderId
                 )
             }
         }
         sqlite3_finalize(stmt)
 
         return session
-    }
-
-    // MARK: - Agent CRUD
-    //
-    // Agents live in the same minis.db as sessions and are read/written through
-    // this actor rather than a second store. One connection means the
-    // `sessions.agent_id` linkage, the roster read and the session write all
-    // serialize behind the same actor — no cross-connection SQLITE_BUSY window
-    // on the launch path, where bootstrap migration and the first listSessions()
-    // would otherwise race. AgentStore is the @MainActor facade over these.
-
-    private func decodeAgent(_ stmt: OpaquePointer?) -> AgentProfile {
-        AgentProfile(
-            id: String(cString: sqlite3_column_text(stmt, 0)),
-            name: String(cString: sqlite3_column_text(stmt, 1)),
-            emoji: sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? "",
-            title: sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? "",
-            summary: sqlite3_column_text(stmt, 4).map { String(cString: $0) } ?? "",
-            accentColor: sqlite3_column_text(stmt, 5).map { String(cString: $0) } ?? "#5B8DEF",
-            mainSessionId: sqlite3_column_text(stmt, 6).map { String(cString: $0) },
-            defaultModelEntryId: sqlite3_column_text(stmt, 7).map { String(cString: $0) },
-            toolPolicy: AgentToolPolicy(
-                rawValue: sqlite3_column_text(stmt, 8).map { String(cString: $0) } ?? ""
-            ) ?? .orchestrator,
-            memoryEnabled: sqlite3_column_int(stmt, 9) == 1,
-            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 10)),
-            updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 11)),
-            archivedAt: sqlite3_column_type(stmt, 12) != SQLITE_NULL
-                ? Date(timeIntervalSince1970: sqlite3_column_double(stmt, 12)) : nil,
-            sortOrder: Int(sqlite3_column_int(stmt, 13))
-        )
-    }
-
-    private static let agentColumns =
-        "id, name, emoji, title, summary, accent_color, main_session_id, default_model_entry, tool_policy, memory_enabled, created_at, updated_at, archived_at, sort_order"
-
-    func listAgents(includeArchived: Bool = false) -> [AgentProfile] {
-        let filter = includeArchived ? "" : "WHERE archived_at IS NULL "
-        let sql = "SELECT \(Self.agentColumns) FROM agents \(filter)ORDER BY sort_order ASC, created_at ASC"
-        var stmt: OpaquePointer?
-        var result: [AgentProfile] = []
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            while sqlite3_step(stmt) == SQLITE_ROW { result.append(decodeAgent(stmt)) }
-        }
-        sqlite3_finalize(stmt)
-        return result
-    }
-
-    func getAgent(_ id: String) -> AgentProfile? {
-        let sql = "SELECT \(Self.agentColumns) FROM agents WHERE id = ?"
-        var stmt: OpaquePointer?
-        var result: AgentProfile?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, nil)
-            if sqlite3_step(stmt) == SQLITE_ROW { result = decodeAgent(stmt) }
-        }
-        sqlite3_finalize(stmt)
-        return result
-    }
-
-    func upsertAgent(_ agent: AgentProfile) {
-        let sql = """
-            INSERT INTO agents (id, name, emoji, title, summary, accent_color,
-                                main_session_id, default_model_entry, tool_policy,
-                                memory_enabled, created_at, updated_at, archived_at, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                name = excluded.name, emoji = excluded.emoji, title = excluded.title,
-                summary = excluded.summary, accent_color = excluded.accent_color,
-                main_session_id = excluded.main_session_id,
-                default_model_entry = excluded.default_model_entry,
-                tool_policy = excluded.tool_policy, memory_enabled = excluded.memory_enabled,
-                updated_at = excluded.updated_at, archived_at = excluded.archived_at,
-                sort_order = excluded.sort_order
-            """
-        var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (agent.id as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 2, (agent.name as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 3, (agent.emoji as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 4, (agent.title as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 5, (agent.summary as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 6, (agent.accentColor as NSString).utf8String, -1, nil)
-            bindOptionalText(stmt, index: 7, value: agent.mainSessionId)
-            bindOptionalText(stmt, index: 8, value: agent.defaultModelEntryId)
-            sqlite3_bind_text(stmt, 9, (agent.toolPolicy.rawValue as NSString).utf8String, -1, nil)
-            sqlite3_bind_int(stmt, 10, agent.memoryEnabled ? 1 : 0)
-            sqlite3_bind_double(stmt, 11, agent.createdAt.timeIntervalSince1970)
-            sqlite3_bind_double(stmt, 12, agent.updatedAt.timeIntervalSince1970)
-            if let archived = agent.archivedAt {
-                sqlite3_bind_double(stmt, 13, archived.timeIntervalSince1970)
-            } else {
-                sqlite3_bind_null(stmt, 13)
-            }
-            sqlite3_bind_int(stmt, 14, Int32(agent.sortOrder))
-            sqlite3_step(stmt)
-        }
-        sqlite3_finalize(stmt)
-    }
-
-    /// Hard-delete an agent row. Its sessions are NOT deleted — archiving is
-    /// the user-facing action, and orphaning a transcript is preferable to
-    /// silently destroying conversation history.
-    func deleteAgentRow(_ id: String) {
-        let sql = "DELETE FROM agents WHERE id = ?"
-        var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, nil)
-            sqlite3_step(stmt)
-        }
-        sqlite3_finalize(stmt)
-    }
-
-    // MARK: - Session ↔ agent linkage
-
-    /// Stamp a session with its owning agent and role. Called once, right
-    /// after the session row is created.
-    func linkSession(
-        _ sessionId: String,
-        agentId: String,
-        role: String,
-        parentSessionId: String? = nil,
-        spawnTitle: String? = nil
-    ) {
-        invalidateSessionListCache()
-        let sql = """
-            UPDATE sessions
-               SET agent_id = ?, spawn_role = ?, parent_session_id = ?,
-                   spawn_title = ?, spawn_status = CASE WHEN ? = 'subagent' THEN 'running' ELSE spawn_status END
-             WHERE id = ?
-            """
-        var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (agentId as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 2, (role as NSString).utf8String, -1, nil)
-            bindOptionalText(stmt, index: 3, value: parentSessionId)
-            bindOptionalText(stmt, index: 4, value: spawnTitle)
-            sqlite3_bind_text(stmt, 5, (role as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 6, (sessionId as NSString).utf8String, -1, nil)
-            sqlite3_step(stmt)
-        }
-        sqlite3_finalize(stmt)
-    }
-
-    /// Record a subagent's terminal state and the answer it handed back.
-    func updateSpawnOutcome(_ sessionId: String, status: String, result: String?) {
-        invalidateSessionListCache()
-        let sql = "UPDATE sessions SET spawn_status = ?, spawn_result = COALESCE(?, spawn_result) WHERE id = ?"
-        var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (status as NSString).utf8String, -1, nil)
-            bindOptionalText(stmt, index: 2, value: result)
-            sqlite3_bind_text(stmt, 3, (sessionId as NSString).utf8String, -1, nil)
-            sqlite3_step(stmt)
-        }
-        sqlite3_finalize(stmt)
-    }
-
-    /// Every subagent scratch session dispatched from `parentSessionId`,
-    /// oldest first. Backs the parent's task-card list.
-    func subagentSessions(parentSessionId: String) -> [ChatSession] {
-        let sql = """
-            SELECT id, title, model_id, created_at, updated_at, category, source, pinned_at,
-                   agent_id, parent_session_id, spawn_role, spawn_title, spawn_status, spawn_result
-              FROM sessions
-             WHERE parent_session_id = ? AND spawn_role = 'subagent'
-             ORDER BY created_at ASC
-            """
-        var stmt: OpaquePointer?
-        var result: [ChatSession] = []
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (parentSessionId as NSString).utf8String, -1, nil)
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                result.append(ChatSession(
-                    id: String(cString: sqlite3_column_text(stmt, 0)),
-                    title: sqlite3_column_text(stmt, 1).map { String(cString: $0) },
-                    category: sqlite3_column_text(stmt, 5).map { String(cString: $0) },
-                    modelId: String(cString: sqlite3_column_text(stmt, 2)),
-                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3)),
-                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4)),
-                    source: sqlite3_column_text(stmt, 6).map { String(cString: $0) },
-                    agentId: sqlite3_column_text(stmt, 8).map { String(cString: $0) },
-                    parentSessionId: sqlite3_column_text(stmt, 9).map { String(cString: $0) },
-                    spawnRole: sqlite3_column_text(stmt, 10).map { String(cString: $0) },
-                    spawnTitle: sqlite3_column_text(stmt, 11).map { String(cString: $0) },
-                    spawnStatus: sqlite3_column_text(stmt, 12).map { String(cString: $0) },
-                    spawnResult: sqlite3_column_text(stmt, 13).map { String(cString: $0) }
-                ))
-            }
-        }
-        sqlite3_finalize(stmt)
-        return result
-    }
-
-    /// Every subagent session still marked `running`, oldest first.
-    ///
-    /// After a relaunch these are suspects, not facts: `spawn_status` is only
-    /// written by the run that owns the task, so a process killed mid-task
-    /// leaves the row saying `running` forever. `SubagentCoordinator`
-    /// reconciles them at launch. A task that is genuinely still running is in
-    /// here too and reconciles to `running` again, which is the point.
-    func runningSubagentSessions() -> [ChatSession] {
-        let sql = """
-            SELECT id, title, model_id, created_at, updated_at, category, source, pinned_at,
-                   agent_id, parent_session_id, spawn_role, spawn_title, spawn_status, spawn_result
-              FROM sessions
-             WHERE spawn_role = 'subagent' AND COALESCE(spawn_status, 'running') = 'running'
-             ORDER BY created_at ASC
-            """
-        var stmt: OpaquePointer?
-        var result: [ChatSession] = []
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                result.append(ChatSession(
-                    id: String(cString: sqlite3_column_text(stmt, 0)),
-                    title: sqlite3_column_text(stmt, 1).map { String(cString: $0) },
-                    category: sqlite3_column_text(stmt, 5).map { String(cString: $0) },
-                    modelId: String(cString: sqlite3_column_text(stmt, 2)),
-                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3)),
-                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4)),
-                    source: sqlite3_column_text(stmt, 6).map { String(cString: $0) },
-                    agentId: sqlite3_column_text(stmt, 8).map { String(cString: $0) },
-                    parentSessionId: sqlite3_column_text(stmt, 9).map { String(cString: $0) },
-                    spawnRole: sqlite3_column_text(stmt, 10).map { String(cString: $0) },
-                    spawnTitle: sqlite3_column_text(stmt, 11).map { String(cString: $0) },
-                    spawnStatus: sqlite3_column_text(stmt, 12).map { String(cString: $0) },
-                    spawnResult: sqlite3_column_text(stmt, 13).map { String(cString: $0) }
-                ))
-            }
-        }
-        sqlite3_finalize(stmt)
-        return result
-    }
-
-    // MARK: - Scratch-session retention
-
-    /// How long a finished subagent session is kept before it is swept.
-    ///
-    /// A dispatched task's session is scratch: it is hidden from the session
-    /// list, its transcript is tool exhaust, and its one durable output (the
-    /// result text) was already copied onto the row and delivered to the user
-    /// weeks ago. Keeping them forever grows minis.db and the per-session file
-    /// buckets without bound, so they age out. Files a task meant to hand back
-    /// live under /var/minis/shared/tasks/<task_id>/, which is NOT touched
-    /// here — deliverables outlive the transcript that produced them.
-    static let subagentRetentionDays = 30
-
-    /// Delete finished subagent sessions older than `days`, plus their
-    /// messages, media and per-session scratch buckets. Returns how many went.
-    ///
-    /// Running tasks are never swept regardless of age: `spawn_status` is only
-    /// reconciled when someone checks on them, so an old row still marked
-    /// `running` may be a task the app was killed in the middle of — deleting
-    /// it under a live executor would leave that executor writing to a session
-    /// that no longer exists.
-    /// Deliberately scoped to `spawn_role = 'subagent'`. A 'group-member' row
-    /// looks similar — hidden, machine-created, parented to another session —
-    /// but it is not scratch: it is a member's memory of a room the user can
-    /// still scroll back through, and sweeping it would silently amnesia an
-    /// agent mid-conversation. Group sessions are never auto-deleted.
-    @discardableResult
-    func purgeExpiredSubagentSessions(olderThan days: Int = ChatStore.subagentRetentionDays) -> Int {
-        let cutoff = Date().addingTimeInterval(-Double(days) * 86_400).timeIntervalSince1970
-        let sql = """
-            SELECT id FROM sessions
-             WHERE spawn_role = 'subagent'
-               AND updated_at < ?
-               AND COALESCE(spawn_status, '') != 'running'
-            """
-        var ids: [String] = []
-        var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_double(stmt, 1, cutoff)
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                ids.append(String(cString: sqlite3_column_text(stmt, 0)))
-            }
-        }
-        sqlite3_finalize(stmt)
-        guard !ids.isEmpty else { return 0 }
-
-        for id in ids {
-            // Full funnel: queues the cloud tombstone and drops messages,
-            // compact markers and media the same way a user-initiated delete
-            // does, so peers converge instead of resurrecting the row.
-            deleteSession(id)
-            // deleteSessionMedia only covers browser/attachments/images; a
-            // scratch session's workspace and offloads are usually the bulk of
-            // what it left on disk, so take the whole per-session directory.
-            let dir = minisBaseURL.appendingPathComponent(id, isDirectory: true)
-            try? FileManager.default.removeItem(at: dir)
-        }
-        logger.info("purged \(ids.count) subagent session(s) older than \(days)d")
-        return ids.count
     }
 
     func updateSessionModelId(_ id: String, modelId: String) {
@@ -2736,37 +2476,6 @@ actor ChatStore {
         sqlite3_finalize(stmt)
     }
 
-    /// [T-lite-mode-small-local-models] The session's ChatMode. Unlike
-    /// `getMemoryEnabled` there is no global fallback for a missing row: the
-    /// column is NOT NULL, so every real row answers for itself, and a lookup
-    /// that finds nothing is a draft whose VM already holds the global
-    /// default. Falling back to the global here would instead re-read it for
-    /// sessions that had deliberately been set the other way.
-    func getChatMode(sessionId: String) -> ChatMode {
-        let sql = "SELECT chat_mode FROM sessions WHERE id = ?"
-        var stmt: OpaquePointer?
-        var mode: ChatMode?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, nil)
-            if sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0) {
-                mode = ChatMode(rawValue: String(cString: raw))
-            }
-        }
-        sqlite3_finalize(stmt)
-        return mode ?? .normal
-    }
-
-    func setChatMode(sessionId: String, mode: ChatMode) {
-        let sql = "UPDATE sessions SET chat_mode = ? WHERE id = ?"
-        var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (mode.rawValue as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 2, (sessionId as NSString).utf8String, -1, nil)
-            sqlite3_step(stmt)
-        }
-        sqlite3_finalize(stmt)
-    }
-
     func deleteSession(_ id: String) {
         invalidateSessionListCache()
         // Queue cloud deletions BEFORE removing local rows so the SELECTs
@@ -2906,210 +2615,6 @@ actor ChatStore {
                   operation: "delete")
     }
 
-    // MARK: - Groups
-    //
-    // Membership is the only thing a group needs stored: the transcript is an
-    // ordinary session and the members are ordinary agents. Kept next to the
-    // agent CRUD above and on the same actor for the same reason that section
-    // gives — a group read almost always sits between a session read and an
-    // agent read, and a second actor would just add hops between them.
-
-    private func decodeGroup(_ stmt: OpaquePointer?) -> GroupProfile {
-        let archivedAt: Date? = sqlite3_column_type(stmt, 9) == SQLITE_NULL
-            ? nil
-            : Date(timeIntervalSince1970: sqlite3_column_double(stmt, 9))
-        return GroupProfile(
-            id: String(cString: sqlite3_column_text(stmt, 0)),
-            sessionId: String(cString: sqlite3_column_text(stmt, 1)),
-            title: String(cString: sqlite3_column_text(stmt, 2)),
-            emoji: String(cString: sqlite3_column_text(stmt, 3)),
-            accentColor: String(cString: sqlite3_column_text(stmt, 4)),
-            mode: GroupChatMode(rawValue: String(cString: sqlite3_column_text(stmt, 5))) ?? .freeform,
-            ownerAgentId: sqlite3_column_text(stmt, 6).map { String(cString: $0) },
-            memberIds: [],
-            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7)),
-            updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 8)),
-            archivedAt: archivedAt
-        )
-    }
-
-    private static let groupColumns =
-        "id, session_id, title, emoji, accent_color, mode, owner_agent_id, created_at, updated_at, archived_at"
-
-    /// Member agent ids for one group, in roster order.
-    func groupMemberIds(_ groupId: String) -> [String] {
-        let sql = "SELECT agent_id FROM agent_group_members WHERE group_id = ? ORDER BY sort_order ASC, joined_at ASC"
-        var stmt: OpaquePointer?
-        var ids: [String] = []
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (groupId as NSString).utf8String, -1, nil)
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                ids.append(String(cString: sqlite3_column_text(stmt, 0)))
-            }
-        }
-        sqlite3_finalize(stmt)
-        return ids
-    }
-
-    func listGroups(includeArchived: Bool = false) -> [GroupProfile] {
-        let sql = """
-            SELECT \(Self.groupColumns) FROM agent_groups
-             \(includeArchived ? "" : "WHERE archived_at IS NULL")
-             ORDER BY updated_at DESC
-            """
-        var stmt: OpaquePointer?
-        var groups: [GroupProfile] = []
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                groups.append(decodeGroup(stmt))
-            }
-        }
-        sqlite3_finalize(stmt)
-        // Second pass rather than a JOIN: a group has at most
-        // GroupProfile.maxMembers rows, and keeping the roster query separate
-        // means decodeGroup stays a plain column read.
-        return groups.map { group in
-            var resolved = group
-            resolved.memberIds = groupMemberIds(group.id)
-            return resolved
-        }
-    }
-
-    func getGroup(_ id: String) -> GroupProfile? {
-        let sql = "SELECT \(Self.groupColumns) FROM agent_groups WHERE id = ?"
-        var stmt: OpaquePointer?
-        var group: GroupProfile?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, nil)
-            if sqlite3_step(stmt) == SQLITE_ROW { group = decodeGroup(stmt) }
-        }
-        sqlite3_finalize(stmt)
-        guard var group else { return nil }
-        group.memberIds = groupMemberIds(group.id)
-        return group
-    }
-
-    /// The group a transcript session belongs to, if any. This is how a chat
-    /// screen opened by session id discovers it is a group.
-    func groupForSession(_ sessionId: String) -> GroupProfile? {
-        let sql = "SELECT \(Self.groupColumns) FROM agent_groups WHERE session_id = ? LIMIT 1"
-        var stmt: OpaquePointer?
-        var group: GroupProfile?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, nil)
-            if sqlite3_step(stmt) == SQLITE_ROW { group = decodeGroup(stmt) }
-        }
-        sqlite3_finalize(stmt)
-        guard var group else { return nil }
-        group.memberIds = groupMemberIds(group.id)
-        return group
-    }
-
-    /// Insert or update a group and replace its roster wholesale.
-    ///
-    /// Membership is rewritten rather than diffed: the list is at most six
-    /// entries, and a delete-then-insert makes reordering, adding and removing
-    /// one single code path with no chance of a stale sort_order.
-    func upsertGroup(_ group: GroupProfile) {
-        let sql = """
-            INSERT INTO agent_groups (\(Self.groupColumns))
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                session_id = excluded.session_id, title = excluded.title,
-                emoji = excluded.emoji, accent_color = excluded.accent_color,
-                mode = excluded.mode, owner_agent_id = excluded.owner_agent_id,
-                updated_at = excluded.updated_at, archived_at = excluded.archived_at
-            """
-        var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (group.id as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 2, (group.sessionId as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 3, (group.title as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 4, (group.emoji as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 5, (group.accentColor as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 6, (group.mode.rawValue as NSString).utf8String, -1, nil)
-            bindOptionalText(stmt, index: 7, value: group.ownerAgentId)
-            sqlite3_bind_double(stmt, 8, group.createdAt.timeIntervalSince1970)
-            sqlite3_bind_double(stmt, 9, group.updatedAt.timeIntervalSince1970)
-            if let archived = group.archivedAt {
-                sqlite3_bind_double(stmt, 10, archived.timeIntervalSince1970)
-            } else {
-                sqlite3_bind_null(stmt, 10)
-            }
-            sqlite3_step(stmt)
-        }
-        sqlite3_finalize(stmt)
-
-        exec("BEGIN TRANSACTION")
-        var delStmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, "DELETE FROM agent_group_members WHERE group_id = ?", -1, &delStmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(delStmt, 1, (group.id as NSString).utf8String, -1, nil)
-            sqlite3_step(delStmt)
-        }
-        sqlite3_finalize(delStmt)
-
-        let now = Date().timeIntervalSince1970
-        let memberSQL = "INSERT INTO agent_group_members (group_id, agent_id, sort_order, joined_at) VALUES (?, ?, ?, ?)"
-        for (index, agentId) in group.memberIds.prefix(GroupProfile.maxMembers).enumerated() {
-            var memberStmt: OpaquePointer?
-            if sqlite3_prepare_v2(db, memberSQL, -1, &memberStmt, nil) == SQLITE_OK {
-                sqlite3_bind_text(memberStmt, 1, (group.id as NSString).utf8String, -1, nil)
-                sqlite3_bind_text(memberStmt, 2, (agentId as NSString).utf8String, -1, nil)
-                sqlite3_bind_int(memberStmt, 3, Int32(index))
-                sqlite3_bind_double(memberStmt, 4, now)
-                sqlite3_step(memberStmt)
-            }
-            sqlite3_finalize(memberStmt)
-        }
-        exec("COMMIT")
-    }
-
-    /// Stamp a freshly created session as a group transcript.
-    ///
-    /// Not `linkSession`: that one requires an agent id, and the whole point of
-    /// a group transcript is that it belongs to no single agent. `agent_id`
-    /// stays NULL so nothing downstream resolves a persona for it.
-    func linkGroupSession(_ sessionId: String, title: String) {
-        invalidateSessionListCache()
-        let sql = """
-            UPDATE sessions
-               SET agent_id = NULL, spawn_role = ?, parent_session_id = NULL,
-                   title = COALESCE(NULLIF(title, ''), ?)
-             WHERE id = ?
-            """
-        var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (GroupSessionRole.group as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 2, (title as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 3, (sessionId as NSString).utf8String, -1, nil)
-            sqlite3_step(stmt)
-        }
-        sqlite3_finalize(stmt)
-    }
-
-    /// The session holding one member's private thread inside one group, if it
-    /// has been opened before. Nil means the member has not spoken in this
-    /// group yet and GroupStore should create one.
-    func groupMemberSessionId(groupSessionId: String, agentId: String) -> String? {
-        let sql = """
-            SELECT id FROM sessions
-             WHERE parent_session_id = ? AND agent_id = ? AND spawn_role = ?
-             ORDER BY created_at ASC LIMIT 1
-            """
-        var stmt: OpaquePointer?
-        var result: String?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, (groupSessionId as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 2, (agentId as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 3, (GroupSessionRole.member as NSString).utf8String, -1, nil)
-            if sqlite3_step(stmt) == SQLITE_ROW {
-                result = String(cString: sqlite3_column_text(stmt, 0))
-            }
-        }
-        sqlite3_finalize(stmt)
-        return result
-    }
-
     // MARK: - Message CRUD
 
     func appendMessage(_ message: RawMessage) {
@@ -3143,8 +2648,8 @@ actor ChatStore {
         logger.info("[Store] appendMessages enter count=\(messages.count) dbOpen=\(dbOK) sid=\(firstSid)")
 
         let sql = """
-            INSERT INTO messages (id, session_id, role, parts_json, created_at, token_usage, sort_order, reasoning_content, stream_interrupt_count, updated_at, error_info, part_flags, model_id, model_display_name, provider_type, provider_instance_id, sender_agent_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO messages (id, session_id, role, parts_json, created_at, token_usage, sort_order, reasoning_content, stream_interrupt_count, updated_at, error_info, part_flags, model_id, model_display_name, provider_type, provider_instance_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         exec("BEGIN TRANSACTION")
@@ -3194,7 +2699,6 @@ actor ChatStore {
                 bindOptionalText(stmt, index: 14, value: message.modelDisplayName)
                 bindOptionalText(stmt, index: 15, value: message.providerType)
                 bindOptionalText(stmt, index: 16, value: message.providerInstanceId)
-                bindOptionalText(stmt, index: 17, value: message.senderAgentId)
                 let stepRC = sqlite3_step(stmt)
                 if stepRC != SQLITE_DONE {
                     let errMsg = String(cString: sqlite3_errmsg(db))
@@ -3253,50 +2757,10 @@ actor ChatStore {
         return (count, maxSo)
     }
 
-    /// Read only the columns needed by AIChatViewModel's cache-consistency
-    /// check. The ordered (id, sort_order) hash preserves detection of a sync
-    /// reorder where COUNT and MAX(sort_order) stay unchanged, without paying
-    /// for ContentPart/usage JSON decoding on every view re-entry.
-    func sessionMessageFingerprint(sessionId: String) -> SessionMessageFingerprint? {
-        let sql = """
-            SELECT id, sort_order
-            FROM messages
-            WHERE session_id = ?
-            ORDER BY sort_order ASC, created_at ASC, id ASC
-        """
-        var stmt: OpaquePointer?
-        var count = 0
-        var maxSortOrder = 0
-        var hasher = Hasher()
-
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            let error = sqlite3_errmsg(db).map { String(cString: $0) } ?? "unknown"
-            logger.error("[ChatStore.sessionMessageFingerprint] prepare failed for \(sessionId): \(error)")
-            sqlite3_finalize(stmt)
-            return nil
-        }
-        defer { sqlite3_finalize(stmt) }
-
-        sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, nil)
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            let id = String(cString: sqlite3_column_text(stmt, 0))
-            let sortOrder = Int(sqlite3_column_int64(stmt, 1))
-            hasher.combine(id)
-            hasher.combine(sortOrder)
-            count += 1
-            maxSortOrder = sortOrder
-        }
-        return SessionMessageFingerprint(
-            count: count,
-            maxSortOrder: maxSortOrder,
-            orderHash: count == 0 ? 0 : hasher.finalize()
-        )
-    }
-
     func loadMessages(sessionId: String) -> [RawMessage] {
         let totalStart = CFAbsoluteTimeGetCurrent()
         let sql = """
-            SELECT id, session_id, role, parts_json, created_at, token_usage, reasoning_content, stream_interrupt_count, sort_order, error_info, model_id, model_display_name, provider_type, provider_instance_id, sender_agent_id
+            SELECT id, session_id, role, parts_json, created_at, token_usage, reasoning_content, stream_interrupt_count, sort_order, error_info, model_id, model_display_name, provider_type, provider_instance_id
             FROM messages WHERE session_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC
         """
         var stmt: OpaquePointer?
@@ -3353,7 +2817,6 @@ actor ChatStore {
                 msg.modelDisplayName = sqlite3_column_text(stmt, 11).map { String(cString: $0) }
                 msg.providerType = sqlite3_column_text(stmt, 12).map { String(cString: $0) }
                 msg.providerInstanceId = sqlite3_column_text(stmt, 13).map { String(cString: $0) }
-                msg.senderAgentId = sqlite3_column_text(stmt, 14).map { String(cString: $0) }
                 messages.append(msg)
             }
         } else {
@@ -3363,7 +2826,7 @@ actor ChatStore {
             sqlite3_finalize(stmt)
             stmt = nil
             let fallbackSql = """
-                SELECT id, session_id, role, parts_json, created_at, token_usage, sort_order
+                SELECT id, session_id, role, parts_json, created_at, token_usage
                 FROM messages WHERE session_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC
             """
             if sqlite3_prepare_v2(db, fallbackSql, -1, &stmt, nil) == SQLITE_OK {
@@ -3394,14 +2857,12 @@ actor ChatStore {
                     }
                     jsonDecodeTime += CFAbsoluteTimeGetCurrent() - decodeStart
 
-                    var message = RawMessage(
+                    messages.append(RawMessage(
                         id: id, sessionId: sessId, role: role, parts: parts,
                         createdAt: createdAt, tokenUsage: tokenUsage,
                         reasoningContent: nil,
                         streamInterruptCount: 0
-                    )
-                    message.sortOrder = Int(sqlite3_column_int64(stmt, 6))
-                    messages.append(message)
+                    ))
                 }
             } else {
                 let fallbackErr = sqlite3_errmsg(db).map { String(cString: $0) } ?? "unknown"
@@ -3419,10 +2880,18 @@ actor ChatStore {
             logger.info("[ChatStore.loadMessages] \(sessionId) — \(messages.count) messages in \(String(format: "%.1f", totalElapsed))ms (JSON decode: \(String(format: "%.1f", jsonElapsed))ms, SQL+IO: \(String(format: "%.1f", totalElapsed - jsonElapsed))ms)")
         }
 
-        // DIAG: Detect sortOrder anomalies from the rows already loaded. The
-        // previous implementation issued a second full ordered query here even
-        // though both primary and fallback paths now populate RawMessage.sortOrder.
-        let sortOrders = messages.map(\.sortOrder)
+        // DIAG: Detect sortOrder anomalies (duplicates, gaps). Small cost — O(n) scan.
+        // loadMessages doesn't populate sortOrder on RawMessage, so re-query it.
+        var sortOrders: [Int] = []
+        let soSql = "SELECT sort_order FROM messages WHERE session_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC"
+        var soStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, soSql, -1, &soStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(soStmt, 1, (sessionId as NSString).utf8String, -1, nil)
+            while sqlite3_step(soStmt) == SQLITE_ROW {
+                sortOrders.append(Int(sqlite3_column_int64(soStmt, 0)))
+            }
+        }
+        sqlite3_finalize(soStmt)
         if !sortOrders.isEmpty {
             let uniq = Set(sortOrders)
             let dupCount = sortOrders.count - uniq.count
@@ -4863,283 +4332,6 @@ actor ChatStore {
         return result
     }
 
-    // MARK: - Async Task Notices
-
-    func saveAsyncTaskNotice(_ notice: AsyncTaskNotice) {
-        let sql = """
-            INSERT OR REPLACE INTO async_task_notices
-            (id, source_session_id, task_type, task_id, agent_id, title, status, result, files_path, created_at, is_delivered, delivered_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-        sqlite3_bind_text(stmt, 1, (notice.id as NSString).utf8String, -1, nil)
-        sqlite3_bind_text(stmt, 2, (notice.sourceSessionId as NSString).utf8String, -1, nil)
-        sqlite3_bind_text(stmt, 3, (notice.taskType as NSString).utf8String, -1, nil)
-        sqlite3_bind_text(stmt, 4, (notice.taskId as NSString).utf8String, -1, nil)
-        bindOptionalText(stmt, index: 5, value: notice.agentId)
-        if let title = notice.title {
-            sqlite3_bind_text(stmt, 6, (title as NSString).utf8String, -1, nil)
-        } else {
-            sqlite3_bind_null(stmt, 6)
-        }
-        sqlite3_bind_text(stmt, 7, (notice.status as NSString).utf8String, -1, nil)
-        sqlite3_bind_text(stmt, 8, (notice.result as NSString).utf8String, -1, nil)
-        if let files = notice.filesPath {
-            sqlite3_bind_text(stmt, 9, (files as NSString).utf8String, -1, nil)
-        } else {
-            sqlite3_bind_null(stmt, 9)
-        }
-        sqlite3_bind_double(stmt, 10, notice.createdAt.timeIntervalSince1970)
-        sqlite3_bind_int(stmt, 11, notice.isDelivered ? 1 : 0)
-        if let delivered = notice.deliveredAt {
-            sqlite3_bind_double(stmt, 12, delivered.timeIntervalSince1970)
-        } else {
-            sqlite3_bind_null(stmt, 12)
-        }
-        sqlite3_step(stmt)
-        sqlite3_finalize(stmt)
-    }
-
-    func pendingAsyncTaskNotices(for sessionId: String) -> [AsyncTaskNotice] {
-        let sql = """
-            SELECT id, source_session_id, task_type, task_id, agent_id, title, status, result, files_path, created_at, is_delivered, delivered_at
-            FROM async_task_notices
-            WHERE source_session_id = ? AND is_delivered = 0
-            ORDER BY created_at ASC
-        """
-        var stmt: OpaquePointer?
-        var notices: [AsyncTaskNotice] = []
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
-        sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, nil)
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            let id = String(cString: sqlite3_column_text(stmt, 0))
-            let sourceSessionId = String(cString: sqlite3_column_text(stmt, 1))
-            let taskType = String(cString: sqlite3_column_text(stmt, 2))
-            let taskId = String(cString: sqlite3_column_text(stmt, 3))
-            let agentId: String? = sqlite3_column_type(stmt, 4) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 4)) : nil
-            let title: String? = sqlite3_column_type(stmt, 5) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 5)) : nil
-            let status = String(cString: sqlite3_column_text(stmt, 6))
-            let result = String(cString: sqlite3_column_text(stmt, 7))
-            let filesPath: String? = sqlite3_column_type(stmt, 8) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 8)) : nil
-            let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 9))
-            let isDelivered = sqlite3_column_int(stmt, 10) != 0
-            let deliveredAt: Date? = sqlite3_column_type(stmt, 11) != SQLITE_NULL ? Date(timeIntervalSince1970: sqlite3_column_double(stmt, 11)) : nil
-
-            notices.append(AsyncTaskNotice(
-                id: id,
-                sourceSessionId: sourceSessionId,
-                taskType: taskType,
-                taskId: taskId,
-                agentId: agentId,
-                title: title,
-                status: status,
-                result: result,
-                filesPath: filesPath,
-                createdAt: createdAt,
-                isDelivered: isDelivered,
-                deliveredAt: deliveredAt
-            ))
-        }
-        sqlite3_finalize(stmt)
-        return notices
-    }
-
-    func sessionsWithPendingAsyncTaskNotices() -> [String] {
-        let sql = """
-            SELECT source_session_id
-            FROM async_task_notices
-            WHERE is_delivered = 0
-            GROUP BY source_session_id
-            ORDER BY MIN(created_at) ASC
-        """
-        var stmt: OpaquePointer?
-        var sessionIds: [String] = []
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
-        while sqlite3_step(stmt) == SQLITE_ROW,
-              let value = sqlite3_column_text(stmt, 0) {
-            sessionIds.append(String(cString: value))
-        }
-        sqlite3_finalize(stmt)
-        return sessionIds
-    }
-
-    func markAsyncTaskNoticesDelivered(ids: [String]) {
-        guard !ids.isEmpty else { return }
-        let placeholders = ids.map { _ in "?" }.joined(separator: ",")
-        let sql = "UPDATE async_task_notices SET is_delivered = 1, delivered_at = ? WHERE id IN (\(placeholders))"
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-        let now = Date().timeIntervalSince1970
-        sqlite3_bind_double(stmt, 1, now)
-        for (index, id) in ids.enumerated() {
-            sqlite3_bind_text(stmt, Int32(index + 2), (id as NSString).utf8String, -1, nil)
-        }
-        sqlite3_step(stmt)
-        sqlite3_finalize(stmt)
-    }
-
-    func markAsyncTaskNoticesPending(ids: [String]) {
-        guard !ids.isEmpty else { return }
-        let placeholders = ids.map { _ in "?" }.joined(separator: ",")
-        let sql = "UPDATE async_task_notices SET is_delivered = 0, delivered_at = NULL WHERE id IN (\(placeholders))"
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-        for (index, id) in ids.enumerated() {
-            sqlite3_bind_text(stmt, Int32(index + 1), (id as NSString).utf8String, -1, nil)
-        }
-        sqlite3_step(stmt)
-        sqlite3_finalize(stmt)
-    }
-
-    /// Persist a complete synthetic tool-use/tool-result notice group and mark
-    /// the source notices delivered in the same SQLite transaction. Message
-    /// ids are deterministic and inserted with OR IGNORE, so retrying the
-    /// exact claim cannot duplicate either half of the pair.
-    @discardableResult
-    func injectAsyncTaskNoticeMessages(_ messages: [RawMessage], noticeIds: [String]) -> Bool {
-        guard !messages.isEmpty, !noticeIds.isEmpty,
-              let sessionId = messages.first?.sessionId,
-              messages.allSatisfy({ $0.sessionId == sessionId }) else { return false }
-
-        invalidateSessionListCache()
-        exec("BEGIN IMMEDIATE TRANSACTION")
-        var succeeded = true
-        var insertedMessageIds: [String] = []
-
-        let insertSQL = """
-            INSERT OR IGNORE INTO messages
-            (id, session_id, role, parts_json, created_at, token_usage, sort_order,
-             reasoning_content, stream_interrupt_count, updated_at, error_info,
-             part_flags, sender_agent_id)
-            VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, 0, ?, NULL, ?, NULL)
-        """
-
-        for message in messages {
-            guard let data = try? JSONEncoder().encode(message.parts),
-                  let partsJSON = String(data: data, encoding: .utf8) else {
-                succeeded = false
-                break
-            }
-
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, insertSQL, -1, &stmt, nil) == SQLITE_OK else {
-                sqlite3_finalize(stmt)
-                succeeded = false
-                break
-            }
-            sqlite3_bind_text(stmt, 1, (message.id as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 2, (message.sessionId as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 3, (message.role.rawValue as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 4, (partsJSON as NSString).utf8String, -1, nil)
-            sqlite3_bind_double(stmt, 5, message.createdAt.timeIntervalSince1970)
-            sqlite3_bind_int64(stmt, 6, Int64(nextSortOrder(sessionId: sessionId)))
-            sqlite3_bind_double(stmt, 7, message.createdAt.timeIntervalSince1970)
-            sqlite3_bind_int64(stmt, 8, Int64(Self.partFlags(for: message.parts)))
-            let rc = sqlite3_step(stmt)
-            let inserted = rc == SQLITE_DONE && sqlite3_changes(db) > 0
-            sqlite3_finalize(stmt)
-            guard rc == SQLITE_DONE else {
-                succeeded = false
-                break
-            }
-            if inserted { insertedMessageIds.append(message.id) }
-        }
-
-        if succeeded {
-            let placeholders = noticeIds.map { _ in "?" }.joined(separator: ",")
-            let updateSQL = "UPDATE async_task_notices SET is_delivered = 1, delivered_at = ? WHERE id IN (\(placeholders))"
-            var stmt: OpaquePointer?
-            if sqlite3_prepare_v2(db, updateSQL, -1, &stmt, nil) == SQLITE_OK {
-                sqlite3_bind_double(stmt, 1, Date().timeIntervalSince1970)
-                for (index, id) in noticeIds.enumerated() {
-                    sqlite3_bind_text(stmt, Int32(index + 2), (id as NSString).utf8String, -1, nil)
-                }
-                succeeded = sqlite3_step(stmt) == SQLITE_DONE
-            } else {
-                succeeded = false
-            }
-            sqlite3_finalize(stmt)
-        }
-
-        if succeeded {
-            for messageId in insertedMessageIds {
-                markDirty(recordType: "Message", recordId: messageId)
-            }
-            touchSession(sessionId)
-            markDirty(recordType: "Session", recordId: sessionId)
-            pendingSyncSessionIds.insert(sessionId)
-            exec("COMMIT")
-            NotificationCenter.default.post(name: .sessionDidUpdate, object: sessionId)
-            return true
-        }
-
-        exec("ROLLBACK")
-        return false
-    }
-
-    func getAsyncTaskNotice(id: String) -> AsyncTaskNotice? {
-        let sql = """
-            SELECT id, source_session_id, task_type, task_id, agent_id, title, status, result, files_path, created_at, is_delivered, delivered_at
-            FROM async_task_notices
-            WHERE id = ?
-        """
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-        sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, nil)
-        var notice: AsyncTaskNotice?
-        if sqlite3_step(stmt) == SQLITE_ROW {
-            let nid = String(cString: sqlite3_column_text(stmt, 0))
-            let sourceSessionId = String(cString: sqlite3_column_text(stmt, 1))
-            let taskType = String(cString: sqlite3_column_text(stmt, 2))
-            let taskId = String(cString: sqlite3_column_text(stmt, 3))
-            let agentId: String? = sqlite3_column_type(stmt, 4) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 4)) : nil
-            let title: String? = sqlite3_column_type(stmt, 5) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 5)) : nil
-            let status = String(cString: sqlite3_column_text(stmt, 6))
-            let result = String(cString: sqlite3_column_text(stmt, 7))
-            let filesPath: String? = sqlite3_column_type(stmt, 8) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 8)) : nil
-            let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 9))
-            let isDelivered = sqlite3_column_int(stmt, 10) != 0
-            let deliveredAt: Date? = sqlite3_column_type(stmt, 11) != SQLITE_NULL ? Date(timeIntervalSince1970: sqlite3_column_double(stmt, 11)) : nil
-
-            notice = AsyncTaskNotice(
-                id: nid,
-                sourceSessionId: sourceSessionId,
-                taskType: taskType,
-                taskId: taskId,
-                agentId: agentId,
-                title: title,
-                status: status,
-                result: result,
-                filesPath: filesPath,
-                createdAt: createdAt,
-                isDelivered: isDelivered,
-                deliveredAt: deliveredAt
-            )
-        }
-        sqlite3_finalize(stmt)
-        return notice
-    }
-
-    func hasDeliveredNotice(id: String) -> Bool {
-        let sql = "SELECT 1 FROM async_task_notices WHERE id = ? AND is_delivered = 1 LIMIT 1"
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
-        sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, nil)
-        let exists = sqlite3_step(stmt) == SQLITE_ROW
-        sqlite3_finalize(stmt)
-        return exists
-    }
-
-    func deleteAsyncTaskNotice(id: String) {
-        let sql = "DELETE FROM async_task_notices WHERE id = ?"
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-        sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, nil)
-        sqlite3_step(stmt)
-        sqlite3_finalize(stmt)
-    }
-
     // MARK: - Private Helpers
 
     private func nextSortOrder(sessionId: String) -> Int {
@@ -5628,20 +4820,6 @@ extension RawMessage {
                 case "memory_write", "memory_get":
                     kind = .memoryTool(action: tu.name)
                     content = tu.name == "memory_write" ? "Writing memory..." : "Reading memory..."
-                case ChatHistorySearchTool.name:
-                    kind = .memoryTool(action: tu.name)
-                    content = "Searching chat history..."
-                case "spawn_subagent", "check_subagent", "message_subagent", "stop_subagent":
-                    let taskTitle = extractStringParam("task_title", from: tu.input)
-                    kind = .subagentTool(action: tu.name, taskTitle: taskTitle)
-                    content = taskTitle.isEmpty ? tu.name : taskTitle
-                case "create_agent", "list_agents", "send_agent_message":
-                    // Roster tools share the dispatch block kind — same capsule,
-                    // same tap-through. They carry no `task_title`, so the
-                    // model-written `tool_title` is the label.
-                    let label = extractStringParam("tool_title", from: tu.input)
-                    kind = .subagentTool(action: tu.name, taskTitle: label)
-                    content = label.isEmpty ? tu.name : label
                 default:
                     kind = .shellTool(command: tu.name)
                     content = tu.name
@@ -5709,9 +4887,6 @@ extension RawMessage {
             )
         }
         msg.streamInterruptCount = streamInterruptCount
-        // Carries the group speaker through to the message-list header, which
-        // is the only place a group transcript differs visually from a 1:1 one.
-        msg.senderAgentId = senderAgentId
         // [T-error-persist-ios] Restore the persisted error indicator so a failed
         // past turn still shows its error after session reload / app restart.
         // Treat empty/whitespace as no-error (UI gates on `error != nil`, so an
@@ -8002,82 +7177,6 @@ extension ChatStore {
     }
 }
 
-// MARK: - Shared ChatRepository adapter
-
-extension ChatStore: ChatRepository {
-    func repositorySessions() async throws -> [ChatSession] {
-        listSessions()
-    }
-
-    func repositorySession(id: String) async throws -> ChatSession? {
-        getSession(id)
-    }
-
-    func repositorySaveSession(_ session: ChatSession) async throws {
-        invalidateSessionListCache()
-        let sql = """
-            INSERT INTO sessions (
-                id, title, category, model_id, created_at, updated_at, source,
-                last_synced_at, remote_origin_device_id, pinned_at, agent_id,
-                parent_session_id, spawn_role, spawn_title, spawn_status, spawn_result
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                title = excluded.title,
-                category = excluded.category,
-                model_id = excluded.model_id,
-                updated_at = excluded.updated_at,
-                source = excluded.source,
-                last_synced_at = excluded.last_synced_at,
-                remote_origin_device_id = excluded.remote_origin_device_id,
-                pinned_at = excluded.pinned_at,
-                agent_id = excluded.agent_id,
-                parent_session_id = excluded.parent_session_id,
-                spawn_role = excluded.spawn_role,
-                spawn_title = excluded.spawn_title,
-                spawn_status = excluded.spawn_status,
-                spawn_result = excluded.spawn_result
-            """
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            throw ChatRepositoryError.persistence("Unable to prepare ChatSession upsert.")
-        }
-        defer { sqlite3_finalize(stmt) }
-        sqlite3_bind_text(stmt, 1, (session.id as NSString).utf8String, -1, nil)
-        bindOptionalText(stmt, index: 2, value: session.title)
-        bindOptionalText(stmt, index: 3, value: session.category)
-        sqlite3_bind_text(stmt, 4, (session.modelId as NSString).utf8String, -1, nil)
-        sqlite3_bind_double(stmt, 5, session.createdAt.timeIntervalSince1970)
-        sqlite3_bind_double(stmt, 6, session.updatedAt.timeIntervalSince1970)
-        bindOptionalText(stmt, index: 7, value: session.source)
-        if let value = session.lastSyncedAt { sqlite3_bind_double(stmt, 8, value.timeIntervalSince1970) }
-        else { sqlite3_bind_null(stmt, 8) }
-        bindOptionalText(stmt, index: 9, value: session.remoteDeviceId)
-        if let value = session.pinnedAt { sqlite3_bind_double(stmt, 10, value.timeIntervalSince1970) }
-        else { sqlite3_bind_null(stmt, 10) }
-        bindOptionalText(stmt, index: 11, value: session.agentId)
-        bindOptionalText(stmt, index: 12, value: session.parentSessionId)
-        bindOptionalText(stmt, index: 13, value: session.spawnRole)
-        bindOptionalText(stmt, index: 14, value: session.spawnTitle)
-        bindOptionalText(stmt, index: 15, value: session.spawnStatus)
-        bindOptionalText(stmt, index: 16, value: session.spawnResult)
-        guard sqlite3_step(stmt) == SQLITE_DONE else {
-            throw ChatRepositoryError.persistence("Unable to persist ChatSession \(session.id).")
-        }
-    }
-
-    func repositoryDeleteSession(id: String) async throws {
-        deleteSession(id)
-    }
-
-    func repositoryMessages(sessionId: String) async throws -> [RawMessage] {
-        loadMessages(sessionId: sessionId)
-    }
-
-    func repositoryAppendMessages(_ messages: [RawMessage]) async throws {
-        appendMessages(messages)
-    }
-}
-
 
 // MARK: - Backup Restore (docs/backup-restore-design.md §8)
 
@@ -8143,8 +7242,7 @@ extension ChatStore {
             guard incoming > local else { return .skippedLocalNewer }
             let sql = """
                 UPDATE sessions SET title = ?, category = ?, model_id = ?, updated_at = ?,
-                                    memory_enabled = ?, model_binding = ?, pinned_at = ?, folder_id = ?,
-                                    agent_id = ?, parent_session_id = ?, spawn_role = ?, spawn_title = ?, spawn_status = ?, spawn_result = ?
+                                    memory_enabled = ?, model_binding = ?, pinned_at = ?, folder_id = ?
                 WHERE id = ?
                 """
             var up: OpaquePointer?
@@ -8158,13 +7256,7 @@ extension ChatStore {
                 if let p = session.pinnedAt { sqlite3_bind_double(up, 7, p.timeIntervalSince1970) }
                 else { sqlite3_bind_null(up, 7) }
                 bindText(up, 8, session.folderId)
-                bindText(up, 9, session.agentId)
-                bindText(up, 10, session.parentSessionId)
-                bindText(up, 11, session.spawnRole)
-                bindText(up, 12, session.spawnTitle)
-                bindText(up, 13, session.spawnStatus)
-                bindText(up, 14, session.spawnResult)
-                sqlite3_bind_text(up, 15, (session.id as NSString).utf8String, -1, nil)
+                sqlite3_bind_text(up, 9, (session.id as NSString).utf8String, -1, nil)
                 sqlite3_step(up)
             }
             sqlite3_finalize(up)
@@ -8175,8 +7267,8 @@ extension ChatStore {
         // list so it defaults to NULL — see the type doc above.
         let sql = """
             INSERT INTO sessions (id, title, category, model_id, created_at, updated_at,
-                                  memory_enabled, model_binding, pinned_at, folder_id, agent_id, parent_session_id, spawn_role, spawn_title, spawn_status, spawn_result)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  memory_enabled, model_binding, pinned_at, folder_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         var ins: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &ins, nil) == SQLITE_OK {
@@ -8191,12 +7283,6 @@ extension ChatStore {
             if let p = session.pinnedAt { sqlite3_bind_double(ins, 9, p.timeIntervalSince1970) }
             else { sqlite3_bind_null(ins, 9) }
             bindText(ins, 10, session.folderId)
-            bindText(ins, 11, session.agentId)
-            bindText(ins, 12, session.parentSessionId)
-            bindText(ins, 13, session.spawnRole)
-            bindText(ins, 14, session.spawnTitle)
-            bindText(ins, 15, session.spawnStatus)
-            bindText(ins, 16, session.spawnResult)
             sqlite3_step(ins)
         }
         sqlite3_finalize(ins)
@@ -8219,8 +7305,7 @@ extension ChatStore {
                         // restore so a restored package keeps its attribution.
                         // nil for packages written before the fields existed.
                         modelId: String? = nil, modelDisplayName: String? = nil,
-                        providerType: String? = nil, providerInstanceId: String? = nil,
-                        senderAgentId: String? = nil) -> RestoreOutcome {
+                        providerType: String? = nil, providerInstanceId: String? = nil) -> RestoreOutcome {
         var exists = false
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, "SELECT id FROM sessions WHERE id = ?", -1, &stmt, nil) == SQLITE_OK {
@@ -8250,8 +7335,8 @@ extension ChatStore {
             INSERT OR REPLACE INTO messages
               (id, session_id, role, parts_json, created_at, token_usage, sort_order,
                reasoning_content, stream_interrupt_count, updated_at, part_flags,
-               model_id, model_display_name, provider_type, provider_instance_id, sender_agent_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \(Self.partFlagsSQLExpr("?4")), ?, ?, ?, ?, ?)
+               model_id, model_display_name, provider_type, provider_instance_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \(Self.partFlagsSQLExpr("?4")), ?, ?, ?, ?)
             """
         var ins: OpaquePointer?
         var outcome: RestoreOutcome = localUpdated == nil ? .inserted : .updated
@@ -8270,7 +7355,6 @@ extension ChatStore {
             bindText(ins, 12, modelDisplayName)
             bindText(ins, 13, providerType)
             bindText(ins, 14, providerInstanceId)
-            bindText(ins, 15, senderAgentId)
             if sqlite3_step(ins) != SQLITE_DONE {
                 logger.warning("[Restore] message insert failed id=\(id.prefix(8)): \(String(cString: sqlite3_errmsg(db)))")
                 outcome = .skippedNoParent
