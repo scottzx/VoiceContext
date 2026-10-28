@@ -29,6 +29,15 @@ enum MeetingAnswerUserTool {
         bindings[sessionID] = Binding(requestID: requestID, deliver: deliver)
     }
 
+    /// A typed turn in a voice session owns its own request; its answer is shown
+    /// in the chat only. Returns nil while a voice request already owns the session.
+    static func bindTypedTurn(sessionID: String) -> UUID? {
+        guard bindings[sessionID] == nil else { return nil }
+        let requestID = UUID()
+        bindings[sessionID] = Binding(requestID: requestID, deliver: { _ in true })
+        return requestID
+    }
+
     static func unbind(sessionID: String, requestID: UUID) {
         guard bindings[sessionID]?.requestID == requestID else { return }
         bindings.removeValue(forKey: sessionID)

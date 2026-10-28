@@ -69,6 +69,36 @@ struct XiaolanVoiceMenu<LabelContent: View>: View {
     }
 }
 
+/// Covers a chat composer while live voice mode owns the session. Taking over
+/// pauses voice mode; resuming it from the voice menu locks the composer again.
+struct XiaolanComposerTakeover: View {
+    let sessionID: String?
+    @ObservedObject private var voice = XiaolanVoiceController.shared
+
+    var body: some View {
+        if voice.ownsComposer(sessionID: sessionID) {
+            HStack(spacing: 12) {
+                Label("语音模式进行中", systemImage: "mic")
+                    .font(.subheadline)
+                    .foregroundStyle(ChatColors.secondaryText)
+                Spacer(minLength: 0)
+                Button("接管") { voice.pause() }
+                    .buttonStyle(.bordered)
+                    .tint(.primary)
+                    .frame(minHeight: YimaDesign.Layout.hitTarget)
+                    .accessibilityHint("暂停语音模式，改为打字输入")
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(ChatColors.inputBg)
+            .contentShape(Rectangle())
+            .onAppear {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        }
+    }
+}
+
 extension View {
     /// Forms and permission/source sheets require direct, deliberate interaction.
     func pausesXiaolanVoice(while presented: Bool) -> some View {

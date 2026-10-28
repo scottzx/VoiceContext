@@ -47,6 +47,11 @@ final class XiaolanVoiceController: ObservableObject {
 
     var isCapturingVoice: Bool { isEnabled && !isPaused && input?.isRunning == true }
 
+    /// Live voice mode owns this session's input; typing requires a takeover (pause).
+    func ownsComposer(sessionID: String?) -> Bool {
+        isEnabled && !isPaused && sessionID != nil && self.sessionID == sessionID
+    }
+
     enum ModeError: LocalizedError {
         case recordingActive, unavailable(String), inactive
         var errorDescription: String? {

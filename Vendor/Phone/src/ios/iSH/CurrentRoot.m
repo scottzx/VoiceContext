@@ -31,8 +31,8 @@ static ssize_t write_file(const char *path, const char *buf, size_t size) {
 
 void FsApplyOverlay(void) {
     // Locate RootfsPatch.bundle inside the app bundle
-    NSBundle *patchBundle = [NSBundle bundleWithURL:
-        [NSBundle.mainBundle URLForResource:@"RootfsPatch" withExtension:@"bundle"]];
+    NSURL *patchBundleURL = [NSBundle.mainBundle URLForResource:@"RootfsPatch" withExtension:@"bundle"];
+    NSBundle *patchBundle = patchBundleURL ? [NSBundle bundleWithURL:patchBundleURL] : nil;
     if (patchBundle == nil) {
         NSLog(@"[RootfsPatch] bundle not found, skipping overlay");
         return;

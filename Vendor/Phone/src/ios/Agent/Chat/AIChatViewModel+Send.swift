@@ -544,6 +544,14 @@ extension AIChatViewModel {
             guard let slotLease = await self.acquireSessionSlot(sid) else { return }
             defer { SessionConcurrencyManager.shared.release(slotLease) }
 
+            #if VOICE_AGENT_FUSION
+            // [VOICE_AGENT_FUSION] A typed turn in a Xiaolan voice session (voice
+            // paused or off) gets its own reply request, so answer_user and
+            // apple_native work. Voice turns arrive already bound and are skipped.
+            let typedReplyID = self.sessionSource == "xiaolan_voice"
+                ? MeetingAnswerUserTool.bindTypedTurn(sessionID: sid) : nil
+            #endif
+
             do {
                 try await self.runAgentLoop()
             } catch is CancellationError {
@@ -581,6 +589,9 @@ extension AIChatViewModel {
                     }
                 }
             }
+            #if VOICE_AGENT_FUSION
+            if let typedReplyID { MeetingAnswerUserTool.unbind(sessionID: sid, requestID: typedReplyID) }
+            #endif
             // If the user tapped Stop while the loop was finishing, still mark as interrupted.
             if self.userDidCancel { self.handleUserCancelledCleanup() }
 

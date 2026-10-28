@@ -226,6 +226,11 @@ extension AIChatView {
                     .padding(.trailing, 10)
                 }
             }
+            #if VOICE_AGENT_FUSION
+            // [VOICE_AGENT_FUSION] Live voice mode owns this session's input
+            // until the user takes over; the cover keeps the composer's height.
+            .overlay { XiaolanComposerTakeover(sessionID: vm.sessionId) }
+            #endif
             .modifier(ComposerSurface())
             // [T-ios-context-usage-hint] Inner glow along the glass wall.
             // An overlay ABOVE the material (so the Liquid Glass backdrop
