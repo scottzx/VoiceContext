@@ -223,7 +223,7 @@ static int elf_exec(struct fd *fd, const char *file, struct exec_args argv, stru
     lock(&current->general_lock);
     struct mm *old_mm = current->mm;
     task_set_mm(current, new_mm);
-    mm_release(old_mm);
+    mm_release_from(old_mm, "exec");
     unlock(&current->general_lock);
     write_wrlock(&current->mem->lock);
 
@@ -674,12 +674,14 @@ int __do_execve(const char *file, struct exec_args argv, struct exec_args envp) 
     if (IS_ERR(fd))
         return PTR_ERR(fd);
 
-    struct statbuf stat;
-    int err = fd->mount->fs->fstat(fd, &stat);
-    if (err < 0) {
-        fd_close(fd);
-        return err;
-    }
+    // [T-ish-exec-fewer-meta-txns] generic_open just stat'ed this fd for its
+    // own access check; reuse that instead of a second fstat, which on fakefs
+    // is a further meta.db transaction under the one global fs->lock (the
+    // only queue left in a 40-way fork+exec storm, ~16 of 40 workers parked
+    // on it at any instant in the 2026-09-19 native samples). Same instant
+    // as the open, so setuid/mode decisions are unchanged.
+    struct statbuf stat = fd->open_stat;
+    int err;
 
     // if nobody has permission to execute, it should be safe to not execute
     if (!(stat.mode & 0111)) {
@@ -731,6 +733,7 @@ int __do_execve(const char *file, struct exec_args argv, struct exec_args envp) 
     unlock(&current->sighand->lock);
 
     current->did_exec = true;
+    current->undumpable = false;
     vfork_notify(current);
 
     if (current->ptrace.traced) {
@@ -790,6 +793,22 @@ static ssize_t user_read_string_array(addr_t addr, char *buf, size_t max) {
         return _E2BIG;
     buf[p] = '\0';
     return i;
+}
+
+// [T-ish-offload-path-scope] OpenMinis#288. True only when `path` exists, can
+// be read, and starts with "#!". Every failure — missing file, unreadable, a
+// directory, a short file — answers false, which leaves the offload decision
+// exactly where the path policy put it (see the call site for why a missing
+// file must not block the offload). Reads two bytes; only reached for the
+// handful of generic offload names, never on an ordinary exec.
+static bool guest_file_is_shebang_script(const char *path) {
+    struct fd *fd = generic_open(path, O_RDONLY_, 0);
+    if (IS_ERR(fd))
+        return false;
+    char magic[2];
+    ssize_t n = fd->ops->read ? fd->ops->read(fd, magic, sizeof(magic)) : -1;
+    fd_close(fd);
+    return n == 2 && magic[0] == '#' && magic[1] == '!';
 }
 
 dword_t sys_execve(addr_t filename_addr, addr_t argv_addr, addr_t envp_addr) {
@@ -906,7 +925,9 @@ dword_t sys_execve(addr_t filename_addr, addr_t argv_addr, addr_t envp_addr) {
         }
     }
 
-    // Inject V8 flags for Node.js to work around scope corruption in emulation.
+    // Inject V8 flags for Node.js: the default set, or the jitless set as an explicit fallback
+    // (both below). The notes that follow are about the jitless set, which was added
+    // to work around scope corruption in emulation.
     // --jitless: disable JIT (avoids V8 code generation incompatible with our JIT)
     // --predictable: disable concurrent GC/compilation (avoids race conditions)
     // --no-lazy: eager compilation (avoids Zone reuse patterns that corrupt scopes)
@@ -921,7 +942,8 @@ dword_t sys_execve(addr_t filename_addr, addr_t argv_addr, addr_t envp_addr) {
         const char *base = strrchr(filename, '/');
         base = base ? base + 1 : filename;
         if (strcmp(base, "node") == 0) {
-            static const char *inject_args_base[] = {
+            // Fallback (jitless) mode, see the mode choice below.
+            static const char *inject_args_jitless[] = {
                 "--jitless",
                 "--no-lazy",
                 "--max-old-space-size=512",
@@ -935,17 +957,70 @@ dword_t sys_execve(addr_t filename_addr, addr_t argv_addr, addr_t envp_addr) {
                 "--no-concurrent-recompilation",
                 "--no-lazy-compile-dispatcher",
                 "--predictable",
+                // [T-ish-node-cage-commit] Skip the young generation. The
+                // comment block above always described this flag but the
+                // array never carried it. Measured 2026-08-27 on iPhone 11:
+                // V8 startup commits ~5 x 128MB cage chunks (~640MB); with
+                // --single-generation the commit drops by ~190MB
+                // (164k -> 113k guest pages) because the semi-space chunks
+                // are never created. Pure memory win for iSH's interpreted
+                // workloads; the young-gen GC it disables exists to serve
+                // allocation-heavy JIT throughput we don't have.
+                "--single-generation",
             };
-            // Conditionally inject --require for polyfill files that exist in guest fs
+            // Default mode: node as it ships, with real WebAssembly (and with it undici's own fetch
+            // and every package that loads wasm), no polyfill needed. Only V8's JS tiers and
+            // native regexp code are off, so JS runs in the interpreter: code V8 generates at run
+            // time runs through the gadgets, while its interpreter and builtins are part of the
+            // node binary, which an AOT image runs natively. --no-lazy is left out: eager
+            // compilation made large CLIs start ~25% slower and the Zone problem it was added for
+            // did not show up. Measured 2026-10-01 on the Mac CLI (pure AOT build, node image
+            // recorded in this mode): 9 agent workloads 15.6s -> 14.0s, 13 MCP servers start
+            // 10-27% faster (mcp-remote only starts in this mode).
+            static const char *inject_args_default[] = {
+                "--no-sparkplug",
+                "--no-maglev",
+                "--no-opt",
+                "--regexp-interpret-all",
+                "--max-old-space-size=512",
+                "--no-concurrent-marking",
+                "--no-concurrent-recompilation",
+                "--no-lazy-compile-dispatcher",
+                "--single-generation",
+            };
+            // The jitless fallback is explicit: ISH_NODE_MODE=jitless in the new program's
+            // environment (so it also reaches the node that npx or a shebang starts), or a
+            // caller that passes --jitless / --no-expose-wasm itself. Both of those flags take
+            // WebAssembly away, and Node's own undici calls WebAssembly.compile() when it loads,
+            // so they need the jitless set with wasm-polyfill.js.
+            bool jitless = false;
+            for (const char *e = envp; *e != '\0'; e += strlen(e) + 1) {
+                if (strcmp(e, "ISH_NODE_MODE=jitless") == 0)
+                    jitless = true;
+            }
+            // node's own options come before the script; what follows it belongs to the script
+            for (const char *a = argv + strlen(argv) + 1; *a != '\0'; a += strlen(a) + 1) {
+                if (a[0] != '-' || strcmp(a, "--") == 0)
+                    break;
+                if (strcmp(a, "--jitless") == 0 || strcmp(a, "--no-expose-wasm") == 0)
+                    jitless = true;
+            }
+            // Conditionally inject --require for polyfill files that exist in guest fs.
+            // With real WebAssembly (the default mode) only the fetch transport is used.
             static const char *optional_requires[] = {
                 "--require=/lib/wasm-polyfill.js",    // WebAssembly shim (must load first)
-                "--require=/lib/fetch-polyfill.js",   // fetch() via native http/https
+                "--require=/lib/fetch-polyfill.js",   // undici dispatcher on native http/https
             };
             const char *inject_args[16]; // base args + optional requires
             size_t inject_count = 0;
-            for (size_t i = 0; i < sizeof(inject_args_base)/sizeof(inject_args_base[0]); i++)
-                inject_args[inject_count++] = inject_args_base[i];
-            for (size_t i = 0; i < sizeof(optional_requires)/sizeof(optional_requires[0]); i++) {
+            if (jitless) {
+                for (size_t i = 0; i < sizeof(inject_args_jitless)/sizeof(inject_args_jitless[0]); i++)
+                    inject_args[inject_count++] = inject_args_jitless[i];
+            } else {
+                for (size_t i = 0; i < sizeof(inject_args_default)/sizeof(inject_args_default[0]); i++)
+                    inject_args[inject_count++] = inject_args_default[i];
+            }
+            for (size_t i = jitless ? 0 : 1; i < sizeof(optional_requires)/sizeof(optional_requires[0]); i++) {
                 // Extract path after "--require="
                 const char *path = optional_requires[i] + 10; // strlen("--require=")
                 struct fd *fd = generic_open(path, O_RDONLY_, 0);
@@ -1011,8 +1086,23 @@ dword_t sys_execve(addr_t filename_addr, addr_t argv_addr, addr_t envp_addr) {
     }
 #endif
 
-    // Native offload: check if this binary should run natively on the host
-    const char *native_path = native_offload_lookup(filename);
+    // Native offload: check if this binary should run natively on the host.
+    // [T-ish-offload-path-scope] OpenMinis#288: path policy + env escape hatch
+    // are applied inside the lookup; the #! check below needs the filesystem.
+    bool offload_is_generic = false;
+    const char *native_path = native_offload_lookup_exec(filename, envp, &offload_is_generic);
+    // A generic offload (ffmpeg) must never take over a text script, even at a
+    // system path — a wrapper like `#!/bin/sh ... exec /opt/real/ffmpeg "$@"`
+    // is the user asking for THEIR ffmpeg, and belongs to shebang_exec.
+    //
+    // A file that does not exist is NOT a reason to skip: busybox ash execs
+    // each PATH directory in turn, so the first whitelisted candidate
+    // (/usr/local/bin/ffmpeg) is routinely absent, and offloading it is how a
+    // bare `ffmpeg` reaches the native build at all.
+    if (native_path && offload_is_generic && guest_file_is_shebang_script(filename)) {
+        printk("native_offload: %s is a #! script, running it as one\n", filename);
+        native_path = NULL;
+    }
     if (native_path) {
         // native_offload_exec calls do_exit() on success, which unwinds via
         // pthread_exit() and skips the err_free_{argv,envp} labels below.

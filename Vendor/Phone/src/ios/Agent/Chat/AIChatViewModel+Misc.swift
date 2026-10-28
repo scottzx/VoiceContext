@@ -80,20 +80,49 @@ extension AIChatViewModel {
 
     /// Queue the current input text as a prompt to be injected into the running agent loop.
     /// The message immediately appears in the chat with a dashed border (isQueued=true).
-    func enqueuePrompt() {
-        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// - Parameter silent: [T-p0-programmatic-prompt] skip the tap haptic; set
+    ///   by `submitProgrammaticPrompt` for CLI / Shortcut / job origins.
+    /// - Parameter overrideText: [T-programmatic-prompt-no-composer] the prompt
+    ///   to queue, for callers that are not the composer. nil (the user's own
+    ///   tap) means "take the draft", which is also the only case that clears
+    ///   it. A programmatic caller passes its text here so the user's in-flight
+    ///   draft is never read, written, or cleared.
+    func enqueuePrompt(silent: Bool = false, deferUntilIdle: Bool = false,
+                       overrideText: String? = nil) {
+        let usingComposer = overrideText == nil
+        let text = (overrideText ?? inputText).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, isProcessing else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if !silent {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+        // [T-user-ask] §11.4: the user typing a new message while a question
+        // waits cancels that question (dismissed, superseded_by_user_message)
+        // and the message becomes the next turn. Job / programmatic prompts
+        // (silent or deferred) are not the user answering and leave it alone.
+        if !silent && !deferUntilIdle {
+            supersedePendingUserAsk()
+        }
         let pendingAttachments = attachments
-        let prompt = QueuedPrompt(text: text, attachments: pendingAttachments)
+        // [T-paste-live-bubble-card] Same birth-time card plan as send(): the
+        // queued bubble keeps the [Pasted#N] literal in its text and is born
+        // with the chip-style cards; the drain writes the files to the
+        // planned ids.
+        let pastePlanned = planPastedCards(for: text)
+        var prompt = QueuedPrompt(text: text, attachments: pendingAttachments,
+                                  pastePlan: pastePlanned.plan)
+        prompt.deferUntilIdle = deferUntilIdle
         promptQueue.append(prompt)
         // Show in chat immediately with queued styling
         let chatMsg = ChatMessage(role: .user, content: text, isQueued: true)
         chatMsg.queuedPromptId = prompt.id
         chatMsg.inputAttachments = pendingAttachments
+        chatMsg.attachments = pastePlanned.metas
         messages.append(chatMsg)
         scrollToBottomSignal.send()
-        inputText = ""
+        // Only the composer's own send empties the composer. A programmatic
+        // prompt carried its text in `overrideText` and must leave the user's
+        // draft exactly as they left it.
+        if usingComposer { inputText = "" }
         attachments = []
         logger.info("Enqueued prompt (\(text.count)ch, \(pendingAttachments.count) attachments), queue size=\(self.promptQueue.count)")
         // [T-ios-queued-candidate-not-onscreen] Log the queued candidate text
@@ -264,10 +293,25 @@ extension AIChatViewModel {
     /// the stale mirror until the user re-picked the model. One live lookup
     /// (binding + group) per capacity check is cheap and always current.
     func effectiveContextWindow(for model: LLMModel) -> Int {
-        if let override = activeGroupContextLimit(), override < Int.max {
-            return override
+        resolvedContextWindow(for: model).window
+    }
+
+    /// The window plus whether it came from a user-chosen group cap, which
+    /// `ContextPolicy` needs in order to pick proportional thresholds
+    /// ([T-ctx-user-cap]).
+    ///
+    /// The cap is applied as `min(modelWindow, groupLimit)`, matching Android's
+    /// `effectiveContextWindowTokens()`. A cap set ABOVE the model's native
+    /// window is not a licence to overflow the model — it just means "no
+    /// practical limit", so it must not raise the ceiling. `isUserCap` is
+    /// therefore true only when the cap actually binds.
+    func resolvedContextWindow(for model: LLMModel) -> (window: Int, isUserCap: Bool) {
+        let native = model.contextWindowTokens
+        guard let override = activeGroupContextLimit(), override > 0, override < Int.max else {
+            return (native, false)
         }
-        return model.contextWindowTokens
+        guard native > 0 else { return (override, true) }
+        return override < native ? (override, true) : (native, false)
     }
 
     /// The bound group's context-limit override for the current session, or nil
@@ -320,6 +364,19 @@ extension AIChatViewModel {
         let inputTokens = lastContextTokens > 0 ? lastContextTokens : estimateContextTokens()
         let remaining = contextWindow - inputTokens
 
+        // [T-ctx-overflow-hard-stop] The input ALREADY does not fit. The floor
+        // below would quietly turn a negative `remaining` back into 1024 and the
+        // oversized request would go out anyway — silently, since only the
+        // `result != upperBound` line logged. Record it loudly: the send and
+        // in-loop guards both treat overflow as `.needsCompact` now, so reaching
+        // here means something bypassed them (a path that skips the check, or an
+        // estimate that was under the ceiling when checked and over it by send
+        // time). The clamp still returns the floor — refusing to send is the
+        // guards' job, not this function's — but it no longer does so unnoticed.
+        if remaining <= 0 {
+            logger.warning("⚠️ dynamicMaxTokens: input \(inputTokens) tokens EXCEEDS context window \(contextWindow) (over by \(inputTokens - contextWindow)) — request would overflow; compaction guard should have fired")
+        }
+
         // Floor: originally a fixed 1024, to guarantee enough room for a useful reply
         // when the context window is nearly full. If the user deliberately set a tiny
         // upper bound (e.g. 32 to test something), respect it — cap the floor to the
@@ -345,4 +402,103 @@ extension AIChatViewModel {
         return result
     }
 
+
+    /// Resume the agent loop after synthetic async tool results (e.g. background task completion)
+    /// have been injected into the session's history in the DB.
+    @discardableResult
+    func resumeNoticeDrivenLoop() async -> Bool {
+        guard !isProcessing else { return false }
+        guard let sid = sessionId else { return false }
+
+        autoRetryAttempt = 0
+        autoRetryCountdown = 0
+        canResume = false
+        committedBlockCount = 0
+        prevCommittedBlockCount = 0
+        userDidCancel = false
+        isNoticeDriven = true
+        isProcessing = true
+        errorMessage = nil
+
+        logger.info("🔄SESSION [vm=\(self.vmInstanceId)] resumeNoticeDrivenLoop START session=\(sid)")
+
+        ensureKernelBooted()
+        beginBackgroundProcessing()
+
+        currentTask = Task { [weak self] in
+            guard let self else { return }
+
+            while self.kernelStatus == .booting {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+
+            if case .failed(let msg) = self.kernelStatus {
+                self.errorMessage = "Kernel not available: \(msg)"
+                self.isNoticeDriven = false
+                self.isProcessing = false
+                self.endBackgroundProcessing()
+                return
+            }
+
+            let concurrency = SessionConcurrencyManager.shared
+            self.isSuspended = concurrency.isAtCapacity
+            do {
+                try await concurrency.acquireSlot(sessionId: sid)
+                self.isSuspended = false
+            } catch {
+                self.isSuspended = false
+                self.isNoticeDriven = false
+                self.isProcessing = false
+                self.endBackgroundProcessing()
+                return
+            }
+            defer {
+                concurrency.releaseSlot(sessionId: sid)
+            }
+
+            do {
+                try await self.runAgentLoop()
+            } catch is CancellationError {
+                logger.info("[NoticeLoop] Agent loop cancelled")
+                self.handleUserCancelledCleanup()
+            } catch {
+                let rawDesc = String(describing: error)
+                logger.error("[NoticeLoop] Agent loop error: \(rawDesc)")
+                if self.userDidCancel {
+                    self.handleUserCancelledCleanup()
+                } else {
+                    let displayDesc = Self.friendlyErrorMessage((error as? LocalizedError)?.errorDescription ?? rawDesc)
+                    if let last = self.messages.last(where: { $0.role == .assistant }) {
+                        last.error = displayDesc
+                    } else {
+                        self.errorMessage = displayDesc
+                    }
+                }
+            }
+
+            if self.userDidCancel { self.handleUserCancelledCleanup() }
+
+            guard !Task.isCancelled else {
+                self.isNoticeDriven = false
+                self.isProcessing = false
+                self.endBackgroundProcessing()
+                return
+            }
+
+            await self.drainQueuedPrompts()
+
+            if let fingerprint = await ChatStore.shared.sessionMessageFingerprint(sessionId: sid) {
+                self.lastKnownDbSortOrder = fingerprint.maxSortOrder
+                self.lastKnownDbCount = fingerprint.count
+                self.lastKnownDbOrderHash = fingerprint.orderHash
+            }
+
+            self.isNoticeDriven = false
+            self.isProcessing = false
+            self.endBackgroundProcessing()
+            logger.info("🔄SESSION [vm=\(self.vmInstanceId)] resumeNoticeDrivenLoop DONE session=\(sid)")
+        }
+
+        return true
+    }
 }

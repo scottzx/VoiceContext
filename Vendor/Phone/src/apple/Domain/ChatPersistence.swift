@@ -20,6 +20,10 @@ public struct ChatSession: Identifiable, Codable, Hashable, Sendable {
     public var folderId: String?   // non-nil if filed into a folder; NULL = ungrouped
     public var agentId: String?
     public var parentSessionId: String?
+    /// [T-p1-delegate-task] The `delegate_task` block that spawned this hidden
+    /// child session (upstream v1.15 linkage). Distinct from `parentSessionId`,
+    /// which the product also uses for agent/group parentage.
+    public var parentToolUseId: String?
     public var spawnRole: String?
     public var spawnTitle: String?
     public var spawnStatus: String?
@@ -40,6 +44,7 @@ public struct ChatSession: Identifiable, Codable, Hashable, Sendable {
         pinnedAt: Date? = nil,
         agentId: String? = nil,
         parentSessionId: String? = nil,
+        parentToolUseId: String? = nil,
         spawnRole: String? = nil,
         spawnTitle: String? = nil,
         spawnStatus: String? = nil,
@@ -60,6 +65,7 @@ public struct ChatSession: Identifiable, Codable, Hashable, Sendable {
         self.pinnedAt = pinnedAt
         self.agentId = agentId
         self.parentSessionId = parentSessionId
+        self.parentToolUseId = parentToolUseId
         self.spawnRole = spawnRole
         self.spawnTitle = spawnTitle
         self.spawnStatus = spawnStatus
@@ -68,6 +74,11 @@ public struct ChatSession: Identifiable, Codable, Hashable, Sendable {
     }
 
     public var isSubagent: Bool { spawnRole == "subagent" }
+    /// [T-p1-delegate-task] A hidden child of a delegated tool call. Upstream
+    /// defines this as `parentSessionId != nil`, but the product also parents
+    /// visible agent/group sessions that way, so keying on `parentToolUseId`
+    /// keeps upstream's hidden-child semantics without hiding product rows.
+    public var isChild: Bool { parentToolUseId != nil }
     public var isRemote: Bool { remoteDeviceId != nil }
     public var isPinned: Bool { pinnedAt != nil }
     /// Whether this session belongs to a folder.

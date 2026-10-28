@@ -24,6 +24,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "asbestos/gen.h"
+#ifdef ISH_JIT
+#include "asbestos/guest-arm64/jit.h"
+#endif
 #include "emu/arch/arm64/decode.h"
 #include "emu/interrupt.h"
 
@@ -880,15 +883,28 @@ extern void gadget_fused_subs_reg_bcond_le(void);
 
 static void gen(struct gen_state *state, unsigned long thing) {
     assert(state->size <= state->capacity);
+    // Once the buffer has failed to grow, stop writing. The remaining gadgets
+    // for this instruction are dropped, but the block is discarded wholesale by
+    // fiber_block_compile(), so a half-emitted stream is never executed.
+    if (state->oom)
+        return;
     if (state->size >= state->capacity) {
-        state->capacity *= 2;
+        unsigned new_capacity = state->capacity * 2;
         struct fiber_block *new_block = realloc(state->block,
-                sizeof(*new_block) + state->capacity * sizeof(unsigned long));
+                sizeof(*new_block) + new_capacity * sizeof(unsigned long));
         if (new_block == NULL) {
-            abort();
+            // Aborting here killed the entire app -- every guest thread, plus
+            // the Swift UI side -- because one guest process asked for more
+            // memory than was available. Record the failure instead and let the
+            // compile fail; the run loop raises INT_GPF, which kills only the
+            // guest process that could not be compiled. [T-ish-jit-oom-abort]
+            state->oom = true;
+            return;
         }
+        state->capacity = new_capacity;
         state->block = new_block;
     }
+    assert(state->size < state->capacity);
     state->block->code[state->size++] = thing;
 }
 
@@ -907,6 +923,7 @@ bool gen_start(addr_t addr, struct gen_state *state) {
     state->ip = addr;
     state->last_insn = 0;
     state->b_follow_depth = 0;
+    state->oom = false;
     for (int i = 0; i <= 1; i++) {
         state->jump_ip[i] = 0;
     }
@@ -917,6 +934,9 @@ bool gen_start(addr_t addr, struct gen_state *state) {
         return false;
     state->block = block;
     block->addr = addr;
+#ifdef ISH_JIT
+    jit_block_init(block);
+#endif
     return true;
 }
 
@@ -1996,9 +2016,22 @@ static int gen_branch(struct gen_state *state, uint32_t insn) {
                 gen(state, rn);
                 break;
             case 1:  // BLR
+#ifdef ISH_JIT
+                // [gadget][block_self_ptr][return_addr][return_cont][rn]: the
+                // first words match BL so an indirect call fills ret_cache too
+                // and its RET (gadget or native) stays out of the run loop.
+                gen(state, (unsigned long) gadget_branch_link_reg);
+                gen(state, 0);                                        // block self-pointer (gen_end)
+                gen(state, state->ip);                                // return address
+                gen(state, (unsigned long) state->ip | (1UL << 63));  // return continuation (chained)
+                gen(state, rn);
+                state->block_patch_ip = state->size - 4;
+                state->jump_ip[0] = state->size - 2;
+#else
                 gen(state, (unsigned long) gadget_branch_link_reg);
                 gen(state, rn);
                 gen(state, state->ip);  // return address
+#endif
                 break;
             case 2:  // RET
                 gen(state, (unsigned long) gadget_ret);
@@ -5943,10 +5976,16 @@ skip_three_different:
     // Mask 0xff201fe0 checks fixed bits, ignores ftype, imm8, Rd
     if ((insn & 0xff201fe0) == 0x1e201000) {
         uint32_t ftype = (insn >> 22) & 3;
-        uint32_t imm8 = (insn >> 13) & 0xff;
+        uint32_t imm8_raw = (insn >> 13) & 0xff;
         uint32_t rd = insn & 0x1f;
         bool is_double = (ftype == 1);
 
+        // arm64_fpimm_to_bits() expects bit6 already inverted -- see the other
+        // caller in gen_simd_fp(). This path passed the raw imm8 instead, so
+        // every scalar FMOV #imm came out scaled by 8x (e.g. #0.71875 -> 11.5).
+        // V8's ieee754::cos loads its C1/C2 range-reduction constants this way,
+        // which is why cos(x) returned x+15 for |x| just under pi/4.
+        uint32_t imm8 = imm8_raw ^ 0x40;
         uint64_t fpbits = arm64_fpimm_to_bits(is_double, imm8);
 
         gen(state, (unsigned long) gadget_fmov_fp_imm);

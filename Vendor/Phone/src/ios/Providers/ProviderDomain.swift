@@ -12,12 +12,55 @@ public enum ProviderType: String, Codable, CaseIterable, Hashable, Sendable {
     case openAIResponses
     case xAI
     case kimiCode
+    /// [T-copilot-provider] GitHub Copilot via an UNOFFICIAL reverse-engineered
+    /// integration: RFC 8628 device-code sign-in to GitHub, then a short-lived
+    /// Copilot session token. The chat surface is OpenAI-compatible, so it
+    /// flows through OpenAIProvider like xAI/Kimi. Opt-in, warned about in the
+    /// sign-in UI, and hideable via CopilotConstants.isEnabled.
+    case githubCopilot
     /// A newer peer may persist a provider this build cannot execute yet.
     case unsupported
 
     /// Decodes unknown persisted values without losing the surrounding record.
     public static func decoded(_ raw: String) -> ProviderType {
         ProviderType(rawValue: raw) ?? .unsupported
+    }
+
+    /// Whether an OAuth instance of this provider can discover its model list
+    /// from the network, rather than only reporting a compiled-in catalog.
+    ///
+    /// [T-provider-oauth-model-discovery] This drives the one-shot refresh
+    /// `ProviderConfigStore.addInstance` fires after a provider is added, so a
+    /// freshly-authenticated account shows the vendor's CURRENT models instead
+    /// of whatever this build happened to ship with (GH#265: xAI OAuth seeded a
+    /// static catalog with no grok-4.6, and only a manual Settings → Models →
+    /// Refresh fixed it).
+    ///
+    /// Deliberately a property of the TYPE rather than a check at the call
+    /// site: the same question is asked of every provider, and the answer is a
+    /// fact about how that provider's OAuth branch in
+    /// `fetchModelsForInstance` is implemented. Keeping it here means adding a
+    /// provider means answering it, instead of silently inheriting "no".
+    ///
+    /// `false` for the two whose OAuth branch returns a static list without a
+    /// request — refreshing them would spend a network round-trip to arrive
+    /// back at the catalog already seeded.
+    public var oauthSupportsModelDiscovery: Bool {
+        switch self {
+        case .anthropic, .gemini, .antigravity, .openRouter, .xAI, .kimiCode, .githubCopilot:
+            // These OAuth branches all reach a real /models endpoint.
+            return true
+        case .openAI:
+            // OpenAIModelsAPI.fetchModelsOAuth() is a compiled-in list.
+            return false
+        case .openAIResponses:
+            // Responses-API instances are API-key only; the OAuth branch
+            // returns builtInModels.
+            return false
+        case .unsupported:
+            // Synced from a newer build — nothing to fetch with.
+            return false
+        }
     }
 }
 

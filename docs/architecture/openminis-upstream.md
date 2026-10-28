@@ -19,7 +19,7 @@
 | 首次导入提交 | `02956e269857e32335b16b4d5e6af999ff14c6e1` |
 | 首次导入的 OpenMinis 基线 | `09fc199928de0f26685e766c34e6d541c7a69e5a` |
 | 当前 iOS 合入基线 | `4ef29002e88db1e20e462ec2ff46916e8a7dcb45`（v1.13；保留本地适配）|
-| 最新已拉取的上游 main | `1a71df0f381cefde80bf912b723de6f9831bc177`（v1.15 + Tailscale 修复；2026-10-27 拉取，未合入）|
+| 最新已拉取的上游 main | `1a71df0f381cefde80bf912b723de6f9831bc177`（v1.15 + Tailscale 修复；2026-10-27 拉取。2026-10-28 已做路径映射合并，基线未推进）|
 
 首次导入包含 fork 的 AgentKit、硬件桥、云端子 Agent 等定制，不能将首次导入 SHA 改写成 OpenMinis SHA，也不能直接用官方源码覆盖现有目录。上游基线来自导入提交与原 `upstream/main` 的共同祖先；它不表示已跟上当前最新上游。
 
@@ -121,3 +121,22 @@ python3 tools/integration/verify_fusion.py --variant production
 - 原生依赖：iSH 子模块由 `3f6384c` 前进到 `0fd17a1`（v1.15），设备静态库需重建；`deps/proot` 同步前进（Android 运行时，不在 iOS 范围）；`deps/rclone-mobile` 源码新增 51 个文件，`go.mod` 升级到 Go 1.25.5 并引入 `tailscale/wireguard-go`，rclone 仍固定 `v1.75.0`，`build_ish.sh` / `build_ffmpeg.sh` / `build_lame.sh` / `build_rclone_ios.sh` 均已修改。`src/ios/AOJITRestore` 为上游新增目录，内容是 Android 恢复用 APK，融合时需确认是否纳入。
 
 本次只执行 fetch 并核对差异，没有 merge、cherry-pick 或覆盖 `Vendor/Phone`；产品实际合入基线仍为 `4ef29002e88db1e20e462ec2ff46916e8a7dcb45`，`SOURCE_SNAPSHOT.json` 未改动。工作区分支 `codex/dsh-remote-chat` 上未提交的修改全部保留（拉取前后 `git status` 一致）。后续合入按上面「合入更新」流程执行。
+
+## 2026-10-28 路径映射合入
+
+分支 `codex/openminis-v1.15`。用合成树把上游 `src/ios` 映射到 `Vendor/Phone/src/ios` 后做三方合并，合成目标 `f4c0fcda907a8b2ac37e58954145b8d0e9c2b655`，对应已拉取的 `openminis/main` `1a71df0f381cefde80bf912b723de6f9831bc177`。没有执行 `git pull openminis main`。
+
+合入时保留的 fork 行为：
+
+- DSH 远程会话、群聊提及、角色运行策略、Yima 视觉和 `VOICE_AGENT_FUSION` 门控，接到上游已拆分的聊天页、侧边栏、消息列表和 Markdown。子代理审批条和 DSH 会话控制重新挂回作曲区。
+- `AIChatViewModel` 使用上游薄类和扩展。DSH、角色、群聊、提示词包装、notice loop 和 reply delivery 留在类和扩展上。`ChatStore` 仍是 fork 单体，不编译上游 `ChatStore+*` 拆分。
+- `CalendarOffload.m` 保留提醒回执，以及非法 `--due` 的失败关闭。
+
+检查：
+
+- 拆分后的 Swift 文件用 `swiftc -frontend -parse` 做过语法检查。`SelectableMarkdownView.swift` 的正则字面量在本机默认 `swiftc` 下报错，暂存区里的上游原文件同样如此。
+- 已重新生成 `VoiceContextAgent.xcodeproj`。
+- `verify_fusion.py` 的 development 和 production 都停在历史清单要求的 `scripts/prepare_rootfs.sh`。该文件在合入前的 `HEAD` 里也不存在。
+- 没有做设备编译或真机验证。iSH 和 rclone 原生库没有重建。
+
+因此当前 iOS 合入基线仍是 `4ef29002e88db1e20e462ec2ff46916e8a7dcb45`，`SOURCE_SNAPSHOT.json` 不改。这次合并提交只表示路径映射后的源码树已经合上，不表示 v1.15 升级已经验证完成。

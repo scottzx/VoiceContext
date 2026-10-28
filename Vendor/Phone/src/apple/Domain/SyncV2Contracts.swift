@@ -108,12 +108,24 @@ public struct SyncOutboundBatch: Sendable {
     public init(records: [PortableRecord], deletes: [SyncRecordID]) { self.records = records; self.deletes = deletes }
 }
 
-public struct SyncInboundBatch: Sendable {
+public struct SyncInboundBatch: @unchecked Sendable {
     public let records: [PortableRecord]
     public let deletes: [SyncRecordID]
     public let sourceDeviceId: String?
-    public init(records: [PortableRecord], deletes: [SyncRecordID], sourceDeviceId: String? = nil) {
+    /// [T-icloud-sync-tier1-cursor-after-apply] Invoked once SyncCore has
+    /// finished applying (or skipping) every record in this batch. The
+    /// transport uses it to advance its fetch cursor only AFTER the data is
+    /// on disk, so a kill mid-apply re-fetches instead of losing the batch.
+    /// Optional so other transports and older call sites are untouched.
+    ///
+    /// The closure is what forces `@unchecked`: upstream v1.15 runs this from
+    /// the applying actor, and the fork shares this contract with the macOS
+    /// domain layer, so the checked conformance cannot be kept here.
+    public var onApplied: (() -> Void)? = nil
+    public init(records: [PortableRecord], deletes: [SyncRecordID], sourceDeviceId: String? = nil,
+                onApplied: (() -> Void)? = nil) {
         self.records = records; self.deletes = deletes; self.sourceDeviceId = sourceDeviceId
+        self.onApplied = onApplied
     }
 }
 
@@ -160,7 +172,7 @@ public extension SyncTransport {
 
 public struct SyncedSession: Codable, Equatable, Sendable {
     public static let recordType = "SessionV2"
-    public static let fieldKeys: Set<String> = ["sessionId", "title", "category", "modelId", "createdAt", "updatedAt", "memoryEnabled", "modelBinding", "pinnedAt", "folderId"]
+    public static let fieldKeys: Set<String> = ["sessionId", "title", "category", "modelId", "createdAt", "updatedAt", "memoryEnabled", "modelBinding", "pinnedAt", "folderId", "parentSessionId", "parentToolUseId"]
 
     public var id: String
     public var title: String?
@@ -172,15 +184,20 @@ public struct SyncedSession: Codable, Equatable, Sendable {
     public var modelBinding: String?
     public var pinnedAt: Date?
     public var folderId: String?
+    /// [T-p1-delegate-task] Child-session linkage carried by upstream v1.15.
+    /// Optional with no schema bump, exactly like `folderId`.
+    public var parentSessionId: String?
+    public var parentToolUseId: String?
 
-    public init(id: String, title: String? = nil, category: String? = nil, modelId: String, createdAt: Date, updatedAt: Date, memoryEnabled: Int, modelBinding: String? = nil, pinnedAt: Date? = nil, folderId: String? = nil) {
+    public init(id: String, title: String? = nil, category: String? = nil, modelId: String, createdAt: Date, updatedAt: Date, memoryEnabled: Int, modelBinding: String? = nil, pinnedAt: Date? = nil, folderId: String? = nil, parentSessionId: String? = nil, parentToolUseId: String? = nil) {
         self.id = id; self.title = title; self.category = category; self.modelId = modelId
         self.createdAt = createdAt; self.updatedAt = updatedAt; self.memoryEnabled = memoryEnabled
         self.modelBinding = modelBinding; self.pinnedAt = pinnedAt; self.folderId = folderId
+        self.parentSessionId = parentSessionId; self.parentToolUseId = parentToolUseId
     }
 
     public static func from(_ session: ChatSession, memoryEnabled: Bool, modelBinding: String?) -> SyncedSession {
-        SyncedSession(id: session.id, title: session.title, category: session.category, modelId: session.modelId, createdAt: session.createdAt, updatedAt: session.updatedAt, memoryEnabled: memoryEnabled ? 1 : 0, modelBinding: modelBinding, pinnedAt: session.pinnedAt, folderId: session.folderId)
+        SyncedSession(id: session.id, title: session.title, category: session.category, modelId: session.modelId, createdAt: session.createdAt, updatedAt: session.updatedAt, memoryEnabled: memoryEnabled ? 1 : 0, modelBinding: modelBinding, pinnedAt: session.pinnedAt, folderId: session.folderId, parentSessionId: session.parentSessionId, parentToolUseId: session.parentToolUseId)
     }
 
     public func portableRecord(unknownFields: [String: PortableFieldValue] = [:]) -> PortableRecord {
@@ -195,7 +212,9 @@ public struct SyncedSession: Codable, Equatable, Sendable {
                 // Optional field added the same way pinnedAt was (no schema
                 // bump): a peer that predates folders ignores the unknown key
                 // on read and omits it on write, both decoding as nil here.
-                "folderId": folderId.map(PortableFieldValue.string) ?? .null
+                "folderId": folderId.map(PortableFieldValue.string) ?? .null,
+                "parentSessionId": parentSessionId.map(PortableFieldValue.string) ?? .null,
+                "parentToolUseId": parentToolUseId.map(PortableFieldValue.string) ?? .null
             ], schemaVersion: 1, unknownFields: unknownFields, updatedAt: updatedAt
         )
     }
@@ -210,7 +229,9 @@ public struct SyncedSession: Codable, Equatable, Sendable {
             modelId: modelId, createdAt: createdAt, updatedAt: record.fields.date("updatedAt") ?? record.updatedAt,
             memoryEnabled: record.fields.int("memoryEnabled") ?? 1,
             modelBinding: record.fields.optionalString("modelBinding"), pinnedAt: record.fields.optionalDate("pinnedAt"),
-            folderId: record.fields.optionalString("folderId")
+            folderId: record.fields.optionalString("folderId"),
+            parentSessionId: record.fields.optionalString("parentSessionId"),
+            parentToolUseId: record.fields.optionalString("parentToolUseId")
         )
     }
 }

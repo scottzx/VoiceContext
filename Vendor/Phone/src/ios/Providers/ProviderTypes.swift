@@ -15,6 +15,7 @@ extension ProviderType {
         case .openAIResponses: return "Responses API (v3)"
         case .xAI: return "xAI (Grok)"
         case .kimiCode: return "Kimi Code"
+        case .githubCopilot: return "GitHub Copilot"
         case .unsupported: return "Unsupported"
         }
     }
@@ -30,6 +31,10 @@ extension ProviderType {
         case .openAIResponses: return LLMModel.allOpenAI
         case .xAI: return XAIModelsAPI.allModels
         case .kimiCode: return KimiModelsAPI.allModels
+        // Deliberately empty: the task requires the list come from the server
+        // (`model_picker_enabled`), never a compiled-in guess that would go
+        // stale and offer models the account cannot use.
+        case .githubCopilot: return []
         case .unsupported: return []
         }
     }
@@ -52,6 +57,8 @@ extension ProviderType {
             return AppLocalized("Works with the Grok series of models")
         case .kimiCode:
             return AppLocalized("Sign in with your Kimi Code / Coding Plan subscription")
+        case .githubCopilot:
+            return AppLocalized("Sign in with GitHub — unofficial, use at your own risk")
         case .antigravity:
             return AppLocalized("\(builtInModels.count) built-in models")
         case .unsupported:
@@ -70,6 +77,7 @@ extension ProviderType {
         case .openAIResponses: return .vision
         case .xAI: return .vision
         case .kimiCode: return .vision
+        case .githubCopilot: return .vision
         case .unsupported: return .vision
         }
     }

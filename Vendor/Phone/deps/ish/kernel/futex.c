@@ -206,9 +206,33 @@ static int futex_wait(addr_t uaddr, dword_t val, struct timespec *timeout) {
                 struct timespec now;
                 clock_gettime(CLOCK_MONOTONIC, &now);
                 int64_t now_ns = (int64_t)now.tv_sec * 1000000000LL + now.tv_nsec;
-                int64_t remain_ms = (deadline_ns - now_ns) / 1000000LL;
-                if (remain_ms <= 0) { err = _ETIMEDOUT; break; }
-                poll_ms = remain_ms > 100 ? 100 : (int)remain_ms;
+                int64_t remain_ns = deadline_ns - now_ns;
+                if (remain_ns <= 0) { err = _ETIMEDOUT; break; }
+                // [T-ish-futex-subms-timeout] This used to be
+                // `remain_ms = remain / 1e6; if (remain_ms <= 0) ETIMEDOUT`:
+                // integer truncation made every sub-millisecond timeout — and
+                // the final <1 ms of every longer one — return ETIMEDOUT
+                // WITHOUT waiting. Go's runtime sleeps on futexes for
+                // "nanoseconds until the next timer", which is usually
+                // sub-ms, so each wait came straight back, the scheduler
+                // re-checked nanotime() and netpoll(0) and slept again: an
+                // idle tsproxy burned ~35% of a core at ~98k syscalls/s
+                // (futex / clock_gettime / epoll_pwait, [CPUTop] 2026-09-19).
+                // Sub-ms remainders now sleep for exactly that long on the
+                // host (a wake in the meantime is picked up by the 0 ms poll
+                // below, so latency is bounded by the remainder itself);
+                // ms-scale remainders poll for the whole milliseconds and
+                // leave the fraction to the sub-ms branch on the next turn,
+                // so a 1.5 ms wait is 1 ms of poll + 0.5 ms of sleep. A futex
+                // may wake late by scheduling slack, never early.
+                if (remain_ns < 1000000LL) {
+                    struct timespec ts = { .tv_sec = 0, .tv_nsec = (long) remain_ns };
+                    nanosleep(&ts, NULL);   // EINTR (signal) just falls through to the checks
+                    poll_ms = 0;
+                } else {
+                    int64_t remain_ms = remain_ns / 1000000LL;   // >= 1 here
+                    poll_ms = remain_ms > 100 ? 100 : (int)remain_ms;
+                }
             } else {
                 poll_ms = 100; // 100ms safety-net timeout for signal/stall checks
             }
@@ -272,45 +296,39 @@ static int futex_wait(addr_t uaddr, dword_t val, struct timespec *timeout) {
                     unlock(&pids_lock);
                 }
             }
-            // Safety valve: continuous infinite futex stall > 180s.
-            if (timeout == NULL && stall_count >= 1800) { // 1800 * 100ms = 180s
-                bool has_live_children = false;
+            // [T-ish-futex-valve-removal] This used to be a "safety valve"
+            // that exit_group(0)'d the whole process once any one thread had
+            // sat in an untimed futex_wait for 180s (5d8e1e1a, added for
+            // Node/npm exit hangs). It judged "stuck" from a single thread,
+            // so it killed every idle Go program: the Go runtime parks idle
+            // Ms in untimed futex waits while the program is perfectly alive
+            // (a 15 s time.Sleep loop died at exactly 3:00, reported
+            // 2026-09-22), and it reported the kill as a clean exit 0.
+            //
+            // The hangs it papered over had real causes that are fixed:
+            // lost wakes (condvar -> per-thread pipe, plus the value re-check
+            // above every 100 ms), exit_group not interrupting blocked
+            // siblings (doing_group_exit check above), and FUTEX_CMP_REQUEUE /
+            // FUTEX_WAKE_OP returning ENOSYS (a820b16a, 20 min after the
+            // valve). With the re-check in place, a wait still stalled here
+            // means no thread ever changed the word: either the guest is
+            // idle or deadlocked the way it would be on Linux, or iSH lost a
+            // wake somewhere else. Neither is the kernel's to kill, and
+            // killing destroys the evidence of the second. So only say so,
+            // once per wait, without needing ISH_EXEC_TRACE; a stuck command
+            // is ended by the caller's own timeout (shell_execute kills the
+            // process group and reports it as a timeout).
+            if (timeout == NULL && stall_count == 1800) { // 1800 * 100ms = 180s
                 int live = 0;
                 lock(&pids_lock);
                 lock(&current->group->lock);
                 struct task *t;
-                list_for_each_entry(&current->group->threads, t, group_links) {
+                list_for_each_entry(&current->group->threads, t, group_links)
                     live++;
-                    struct task *child;
-                    list_for_each_entry(&t->children, child, siblings) {
-                        if (child->group == current->group)
-                            continue;
-                        if (!child->zombie)
-                            has_live_children = true;
-                    }
-                }
                 unlock(&current->group->lock);
                 unlock(&pids_lock);
-                if (live > 1 && !has_live_children) {
-                    if (ish_exec_trace())
-                        printk("SAFETY-VALVE[futex]: pid=%d stalled %ds in futex_wait(uaddr=0x%x val=%d), %d threads, no children → exit_group\n",
-                               current->pid, stall_count / 10, uaddr, val, live);
-                    // Clean up our wait queue entry before exiting — the
-                    // wait struct lives on this thread's stack, so leaving
-                    // it linked into futex->queue after exit_group would
-                    // leave a dangling pointer. Other threads doing
-                    // futex_wake / futex_put_unlocked would then trip the
-                    // assert(list_empty(&futex->queue)) in futex.c:93 when
-                    // refcount hits 0.
-                    lock(&futex_lock);
-                    list_remove_safe(&wait.queue);
-                    futex_put_unlocked(wait.futex);
-                    unlock(&futex_lock);
-                    current->blocking = false;
-                    do_exit_group(0);
-                }
-                if (has_live_children)
-                    stall_count = 0;
+                printk("FUTEX-STALL: pid=%d (%s) in untimed futex_wait(uaddr=0x%x val=%d) for 180s, %d threads; not killed (ISH_FUTEX_DBG=<secs> dumps every thread)\n",
+                       current->pid, current->comm, uaddr, val, live);
             }
         }
         current->blocking = false;

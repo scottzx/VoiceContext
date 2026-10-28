@@ -32,6 +32,7 @@ struct task {
     uid_t_ groups[MAX_GROUPS];
     char comm[16] __strncpy_safe; // locked by general_lock
     bool did_exec; // for that one annoying setsid edge case
+    bool undumpable; // prctl(PR_SET_DUMPABLE, 0); inherited by fork, cleared by exec
 
     struct fdtable *files;
     struct fs_info *fs;
@@ -117,6 +118,14 @@ struct task {
     // lock for anything that needs locking but is not covered by some other lock
     // specifically: comm, mm
     lock_t general_lock;
+
+    // [T-ish-fork-rate] How hard THIS task has been forking lately: an
+    // exponentially weighted forks-per-second with a 1 s time constant, only
+    // ever touched by the task itself inside sys_clone. A fresh shell doing a
+    // handful of forks (a tool call) stays "light" and bypasses the global
+    // fork-rate governor; the looping shells of a fork storm do not.
+    uint64_t fork_rate_last_ns;
+    double fork_rate_ewma;
 
     struct task_sockrestart sockrestart;
 
@@ -253,8 +262,22 @@ struct task *pid_get_task_zombie(dword_t id); // don't return null if the task e
 
 #define MAX_PID (1 << 15) // oughta be enough
 
+// [T-ish-cpu-top] Successful fork/clone count (kernel/fork.c), for host diagnostics.
+extern _Atomic uint64_t ish_guest_forks;
+
+// [T-ish-fork-rate] Global fork-rate governor: a token bucket that every
+// non-thread clone() draws from. When it is empty, heavy forkers sleep until
+// their token arrives (never denied, only delayed); light forkers (see
+// task->fork_rate_ewma) go through. per_sec == 0 turns it off. The host sets
+// the rate from thermal state; the CLI reads ISH_FORK_RATE=per_sec[,burst].
+void ish_set_fork_rate_limit(unsigned per_sec, unsigned burst);
+void ish_fork_rate_stats(uint64_t *throttled, uint64_t *bypassed, uint64_t *sleep_ns);
+
 // TODO document
-void task_start(struct task *task);
+// Starts the task's thread. Returns 0, or a negative guest errno (_EAGAIN when
+// the host is out of thread resources) -- callers must not assume success.
+__attribute__((warn_unused_result))
+int task_start(struct task *task);
 void task_run_current(void);
 
 extern void (*exit_hook)(struct task *task, int code);
