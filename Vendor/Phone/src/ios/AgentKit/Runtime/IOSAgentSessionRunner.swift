@@ -203,7 +203,7 @@ final class IOSAgentSessionRunner: AgentSessionRunning {
             // Resume only once that notice really reached model history.
             guard let tail = vm.agentHistory.last, tail.role == .user, !tail.parts.isEmpty,
                   tail.parts.allSatisfy({ part in
-                      if case .toolResult(let id, let name, _, _, _, _, _, _) = part {
+                      if case .toolResult(let id, let name, _, _, _, _, _, _, _) = part {
                           return id.hasPrefix(ChatPersistenceSchema.asyncTaskNoticeToolUseIdPrefix)
                               && name == ChatPersistenceSchema.asyncTaskNoticeToolName
                       }

@@ -245,7 +245,68 @@ extension ContentView {
         currentStackSessionId = nil
         dshServices.selectedServiceID = serviceID
     }
+
+    func handleDSHServicesChanged(from previous: [DSHService], to current: [DSHService]) {
+        for old in previous where current.first(where: { $0.id == old.id })?.url != old.url {
+            ViewModelCache.shared.invalidateDSH(serviceID: old.id)
+        }
+        let route = selectedSessionId.flatMap(DSHSessionRoute.init(rawValue:))
+            ?? currentStackSessionId.flatMap(DSHSessionRoute.init(rawValue:))
+        if let route {
+            let oldOrigin = previous.first { $0.id == route.serviceID }?.url
+            let newOrigin = current.first { $0.id == route.serviceID }?.url
+            if oldOrigin != newOrigin {
+                selectChatSource(newOrigin == nil ? nil : route.serviceID)
+            }
+        }
+    }
+
+    func handleDSHNewChatRequested(_ notification: Notification) {
+        guard agentFilter == nil, let value = notification.object as? String,
+              let id = UUID(uuidString: value), dshServices.services.contains(where: { $0.id == id }) else { return }
+        selectChatSource(id)
+        openSession(DSHSessionRoute.draft(serviceID: id).rawValue)
+    }
+
+    func handleDSHCredentialsDidChange(_ notification: Notification) {
+        guard agentFilter == nil, let value = notification.object as? String,
+              let serviceID = UUID(uuidString: value) else { return }
+        ViewModelCache.shared.invalidateDSH(serviceID: serviceID)
+        dshListRevision = UUID()
+        let route = selectedSessionId.flatMap(DSHSessionRoute.init(rawValue:))
+            ?? currentStackSessionId.flatMap(DSHSessionRoute.init(rawValue:))
+        if route?.serviceID == serviceID { selectChatSource(dshServices.selectedServiceID) }
+    }
     #endif
+
+    func handleScenePhaseChange(_ phase: ScenePhase) {
+        // [T-ios-scenephase-active-sigkill] Defer ALL .active work off the
+        // synchronous callback. Writing @Published (SyncCore.isAppInBackground)
+        // here triggers objectWillChange → SwiftUI view invalidation in the
+        // same runloop tick as the foreground view-graph re-evaluation → SIGTRAP.
+        if phase == .active {
+            Task { @MainActor in
+                await Task.yield()
+                guard scenePhase == .active else { return }
+                flushPendingBackgroundNavigation()
+                fetchAlarmsIfNeeded()
+                if #available(iOS 17.0, *) {
+                    SyncCore.shared.isAppInBackground = false
+                    Task { await MigrationEngine.shared.resumeIfSuspended(trigger: "foreground") }
+                }
+                #if DEBUG
+                IdleTimerLease.set(.debugMenu, held: keepScreenAwake, reason: "active")
+                #endif
+                if !searchFocused, navigationPath.isEmpty, selectedSessionId == nil {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil, from: nil, for: nil)
+                }
+            }
+        } else if #available(iOS 17.0, *) {
+            SyncCore.shared.isAppInBackground = (phase != .active)
+        }
+    }
 
     /// Drive the quick-action workflow's `ensuringHome → pendingDispatch
     /// → waitingForChatMount` sequence. Pops whatever session is on top

@@ -10,6 +10,9 @@
 //
 
 import SwiftUI
+#if VOICE_AGENT_FUSION
+import VoiceRecording
+#endif
 
 extension ContentView {
     // MARK: - Sidebar Toolbar

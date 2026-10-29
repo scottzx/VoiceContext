@@ -134,6 +134,7 @@ extension AIChatViewModel {
                 case .memoryTool: return "memory"
                 case .delegateTool: return SubAgentDefinition.toolName
                 case .userAskTool: return UserAskTool.name
+                case .subagentTool: return "subagent"
                 case .info: return "info"
                 }
             }()

@@ -31,6 +31,10 @@ final class VoiceModePreference: ObservableObject {
     static let shared = VoiceModePreference()
     /// True = composer is in inline-voice mode; false = text mode.
     @Published var isVoiceActive = false
+    /// Whether the inline voice panel is expanded. In-memory across sessions.
+    @Published var expanded = true
+    /// One-shot: text-to-voice opens the panel expanded once, then resumes the remembered state.
+    var enteredFromText = false
     /// True while the mic is actively capturing (VAD running). Reply TTS is
     /// SUPPRESSED while this is true — capture and playback are mutually exclusive
     /// (no echo, no AVAudioSession category fight). Set by VoiceInputViewModel

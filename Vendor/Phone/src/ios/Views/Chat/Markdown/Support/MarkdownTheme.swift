@@ -111,7 +111,7 @@ struct SelectableMarkdownTheme {
 
 private let markdownBaseFontSizeAttribute = NSAttributedString.Key("YimaMarkdownBaseFontSize")
 
-private func markdownFontMatches(_ string: NSAttributedString, size: CGFloat) -> Bool {
+func markdownFontMatches(_ string: NSAttributedString, size: CGFloat) -> Bool {
     guard string.length > 0,
           let stamped = string.attribute(markdownBaseFontSizeAttribute, at: 0, effectiveRange: nil) as? NSNumber else {
         return false

@@ -1057,6 +1057,11 @@ actor ChatStore {
         return String(decoding: UnsafeBufferPointer(start: ptr, count: len), as: UTF8.self)
     }
 
+    /// Newest-first cap for the move sheet. The full list stays in the sidebar cache.
+    func listSessions(limit: Int) -> [ChatSession] {
+        Array(listSessions().prefix(max(0, limit)))
+    }
+
     func listSessions() -> [ChatSession] {
         // ─── crash triage (sqlite3MutexMisuseAssert in column_text) ───
         // Capture the calling context whenever this enters so we can match
@@ -1262,8 +1267,8 @@ actor ChatStore {
                     source: source, lastSyncedAt: lastSyncedAt,
                     remoteDeviceId: remoteDeviceId, pinnedAt: pinnedAt,
                     agentId: agentId, parentSessionId: parentSessionId,
-                    spawnRole: spawnRole, spawnTitle: spawnTitle, spawnStatus: spawnStatus,
                     parentToolUseId: parentToolUseId,
+                    spawnRole: spawnRole, spawnTitle: spawnTitle, spawnStatus: spawnStatus,
                     folderId: folderId
                 ))
             }
@@ -1981,7 +1986,8 @@ actor ChatStore {
     /// documented `--start/--end` silently returned the whole session).
     /// Both default to nil, so every existing caller keeps its behavior.
     func loadMessagePage(sessionId: String, offset: Int = 0, limit: Int = 20, maxChars: Int = 1000,
-                         startDate: Date? = nil, endDate: Date? = nil) -> [(messageId: String, role: String, createdAt: Date, text: String, truncated: Bool)] {
+                         startDate: Date? = nil, endDate: Date? = nil,
+                         includeTools: Bool = false) -> [(messageId: String, role: String, createdAt: Date, text: String, truncated: Bool, toolUses: [ToolUse], toolResults: [ToolResult])] {
         // Date predicates are appended BEFORE the LIMIT/OFFSET binds, so the
         // bind indices shift — hence the running `bindIndex` instead of the
         // previous hardcoded 1/2/3.
@@ -2005,7 +2011,7 @@ actor ChatStore {
             LIMIT ? OFFSET ?
         """
         var stmt: OpaquePointer?
-        var results: [(messageId: String, role: String, createdAt: Date, text: String, truncated: Bool)] = []
+        var results: [(messageId: String, role: String, createdAt: Date, text: String, truncated: Bool, toolUses: [ToolUse], toolResults: [ToolResult])] = []
 
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, nil)
@@ -2032,7 +2038,22 @@ actor ChatStore {
                 let truncated = fullText.count > maxChars
                 let text = truncated ? String(fullText.prefix(maxChars)) : fullText
 
-                results.append((messageId: messageId, role: role, createdAt: createdAt, text: text, truncated: truncated))
+                var toolUses: [ToolUse] = []
+                var toolResults: [ToolResult] = []
+                if includeTools,
+                   let data = partsJSON.data(using: .utf8),
+                   let parts = try? JSONDecoder().decode([ContentPart].self, from: data) {
+                    for part in parts {
+                        switch part {
+                        case .toolUse(let tu): toolUses.append(tu)
+                        case .toolResult(let tr): toolResults.append(tr)
+                        default: continue
+                        }
+                    }
+                }
+
+                results.append((messageId: messageId, role: role, createdAt: createdAt, text: text, truncated: truncated,
+                                toolUses: toolUses, toolResults: toolResults))
             }
         }
         sqlite3_finalize(stmt)
@@ -2106,9 +2127,9 @@ actor ChatStore {
                     createdAt: createdAt, updatedAt: updatedAt, source: source,
                     pinnedAt: pinnedAt,
                     agentId: agentId, parentSessionId: parentSessionId,
+                    parentToolUseId: parentToolUseId,
                     spawnRole: spawnRole, spawnTitle: spawnTitle,
                     spawnStatus: spawnStatus, spawnResult: spawnResult,
-                    parentToolUseId: parentToolUseId,
                     folderId: folderId
                 )
             }
@@ -3887,9 +3908,9 @@ actor ChatStore {
     func saveMedia(
         data: Data, mimeType: String, sessionId: String,
         originalFileName: String? = nil, subdir: String = "attachments",
-        linuxPath: String? = nil
+        linuxPath: String? = nil, fileId: String? = nil
     ) -> MediaRef {
-        let fileId = UUID().uuidString
+        let fileId = fileId ?? UUID().uuidString
         let ext = Self.fileExtension(for: mimeType)
 
         let relativePath = "\(sessionId)/\(subdir)/\(fileId).\(ext)"
@@ -6018,6 +6039,7 @@ extension RawMessage {
 
         var msg = AgentMessage(role: agentRole, parts: agentParts)
         msg.reasoningContent = reasoningContent
+        msg.reasoningEcho = ReasoningEcho(persistedJSON: reasoningEchoJSON)
         return msg
     }
 
@@ -6042,8 +6064,6 @@ extension RawMessage {
 }
 
 // MARK: - Sync Support
-
-private let iCloudLogger = AppLogger(category: "iCloud")
 
 extension ChatStore {
 
@@ -6938,18 +6958,29 @@ extension ChatStore {
         return Int(sessions + messages + markers)
     }
 
-    func clearDirtyRecord(recordName: String) {
+    /// Clear a dirty row after the transport acknowledged it.
+    /// When `ifOperation` is set, a row whose operation changed while the
+    /// send was in flight is left for the next batch.
+    func clearDirtyRecord(recordName: String, ifOperation: String? = nil) {
         // recordName format is "Type:id"
         let parts = recordName.split(separator: ":", maxSplits: 1)
         guard parts.count == 2 else { return }
         let recordType = String(parts[0])
         let recordId = String(parts[1])
-        let sql = "DELETE FROM sync_dirty_records WHERE record_type = ? AND record_id = ?"
+        let sql = ifOperation == nil
+            ? "DELETE FROM sync_dirty_records WHERE record_type = ? AND record_id = ?"
+            : "DELETE FROM sync_dirty_records WHERE record_type = ? AND record_id = ? AND operation = ?"
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, (recordType as NSString).utf8String, -1, nil)
             sqlite3_bind_text(stmt, 2, (recordId as NSString).utf8String, -1, nil)
+            if let op = ifOperation {
+                sqlite3_bind_text(stmt, 3, (op as NSString).utf8String, -1, nil)
+            }
             sqlite3_step(stmt)
+            if let op = ifOperation, sqlite3_changes(db) == 0 {
+                iCloudLogger.info("[iCloudTrace] clearDirty KEPT \(recordType):\(recordId.prefix(8)) — operation changed while in flight (sent=\(op))")
+            }
         }
         sqlite3_finalize(stmt)
     }

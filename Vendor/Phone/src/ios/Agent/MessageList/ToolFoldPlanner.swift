@@ -250,7 +250,7 @@ extension ToolFoldPlanner {
             return .text(isEmpty: !block.content.contains(where: { !$0.isWhitespace }))
         case .thinking:
             return .thinking
-        case .info, .delegateTool, .userAskTool:  // [T-user-ask] never folded
+        case .info, .delegateTool, .userAskTool, .subagentTool:  // cards, never folded
             return .barrier
         case .shellTool, .fileReadTool, .fileWriteTool, .fileEditTool,
              .browserTool, .readImageTool, .memoryTool:

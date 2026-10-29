@@ -181,7 +181,7 @@ struct AIChatView: View {
     /// Header data already available at the navigation source. Seeding the
     /// view with it avoids briefly rendering the SOUL name while SQLite is
     /// still resolving the same session row.
-    private let initialHeaderTitle: String?
+    let initialHeaderTitle: String?
     /// Optional context action supplied by partner/group containers. Keeping
     /// it inside the page header makes the whole header move as one unit.
     private let headerActionSystemImage: String?
@@ -292,8 +292,8 @@ struct AIChatView: View {
     @ObservedObject private var mentionIndex = FileMentionIndex.shared
     @ObservedObject var configStore = ProviderConfigStore.shared
     @ObservedObject private var fontSettings = FontSettings.shared
-    @ObservedObject private var agentStore = AgentStore.shared
-    @ObservedObject private var groupStore = GroupStore.shared
+    @ObservedObject var agentStore = AgentStore.shared
+    @ObservedObject var groupStore = GroupStore.shared
     @ObservedObject private var deepLink = DeepLinkCoordinator.shared
     @Environment(\.dismiss) private var dismiss
     @State var inputFocused: Bool = false
@@ -324,6 +324,8 @@ struct AIChatView: View {
     /// text's inner scroll or to swipe-to-send. Starts `true` because an empty
     /// composer has nothing to scroll.
     @State var inputAtScrollBottom: Bool = true
+    /// Composer plus the DSH control strip. MessagesArea reads this from another file.
+    var inputAreaHeight: CGFloat { inputBarHeight + (vm.isDSH ? dshControlsHeight : 0) }
     @State var inputBarHeight: CGFloat = 0
     @State var inputBarHeightDebounce: Task<Void, Never>?
     /// [T-voice-inputbar-anim-tail] The most recent ON-SCREEN composer height
@@ -451,11 +453,11 @@ struct AIChatView: View {
     }
     @StateObject var voiceVM = VoiceInputViewModel()
     /// Global read-replies state — observed so the voice-mode "Read replies" toggle
-    @ObservedObject private var voiceSelection = VoiceSelectionStore.shared
-    @State private var showVoiceConfigMenu = false
-    @State private var showVoiceLanguagePicker = false
-    @State private var showVoiceModelSelector = false
-    @State private var showTranscriptionModelDownload = false
+    @ObservedObject var voiceSelection = VoiceSelectionStore.shared
+    @State var showVoiceConfigMenu = false
+    @State var showVoiceLanguagePicker = false
+    @State var showVoiceModelSelector = false
+    @State var showTranscriptionModelDownload = false
     /// reflects enabled/muted in lockstep with the global voice-output capsule.
     @ObservedObject var voiceOutput = VoiceOutputState.shared
     @AppStorage("cloudSync.v2.enabled") var iCloudSyncEnabled: Bool = false
@@ -489,6 +491,8 @@ struct AIChatView: View {
     /// True while unsent share-extension content is in the input bar.
     @State var hasInjectedShareContent = false
     @State var showModelPicker = false
+    /// Fork chat-mode picker on iOS 16, where Menu is not used.
+    @State var showChatModeDialog = false
     @State var showThinkingLevelSheet = false
     @State var showSessionSkills = false
     @State var showSessionMCPs = false
@@ -623,6 +627,13 @@ struct AIChatView: View {
     @State var missingMinisFileName: String?
 
     var body: some View {
+        chatKeyboard
+    }
+
+    /// Page content and the first modifier group. Split out of `body` so the
+    /// type checker can finish each chain. The AnyView erase below stays: it
+    /// keeps the runtime stack from copying this ZStack through every modifier.
+    var chatCanvas: some View {
         // [T-ios-chat-body-stack-erase] Type-erase the page's content before
         // the ~80-modifier chain below. Most of those modifiers (.sheet,
         // .onChange, .onReceive, .alert, ...) return an opaque `some View`
@@ -904,7 +915,7 @@ struct AIChatView: View {
         // .background position — the gate silently never engaged. EquatableView
         // wrapping is the only guaranteed path to ==.
         .background(
-            ChatToolbarHost(key: chatToolbarKey, showsTrailing: !ChatNavMenuBarItem.isEnabled, title: {
+            ChatToolbarHost(key: chatToolbarKey, showsTrailing: vm.isDSH || !ChatNavMenuBarItem.isEnabled, title: {
                 chatNavPrincipalContent
             }, trailing: {
                 trailingMenu
@@ -1059,6 +1070,10 @@ struct AIChatView: View {
         .sheet(isPresented: $showHookSettings) {
             HookSettingsView(sessionId: vm.sessionId, agentId: vm.agentId)
         }
+    }
+
+    var chatPreviews: some View {
+        chatCanvas
         .alert(AppLocalized("Compact Above"), isPresented: Binding(
             get: { compactConfirmMessageId != nil },
             set: { if !$0 { compactConfirmMessageId = nil } }
@@ -1213,6 +1228,10 @@ struct AIChatView: View {
             }
             MinisOpenURLBroker.shared.consume()
         }
+    }
+
+    var chatSheets: some View {
+        chatPreviews
         .sheet(item: $previewHTMLFile) { fileURL in
             MinisHTMLPreviewView(fileURL: fileURL, onExpand: { _ in
                 fullBrowserIsLocal = true
@@ -1673,59 +1692,11 @@ struct AIChatView: View {
         }, onWillAppear: { [pageLeaveLatch] in
             pageLeaveLatch.markAppeared()
         }))
-        .onDisappear {
-            isChatViewVisible = false
-            CrashBreadcrumbs.record("page.hide",
-                                    detail: "chat:" + CrashBreadcrumbs.hash8(vm.sessionId ?? vm.draftId ?? "draft"))
-            AlwaysOnController.shared.chatDisappeared(key: vm.sessionId ?? vm.draftId)
-            // [T-voice-inputbar-collapse-selfheal] The health probe must not
-            // outlive the view — its report would describe a composer that no
-            // longer exists.
-            inputBarHealthProbe?.cancel()
-            inputBarHealthProbe = nil
-            // [T-voice-send-lock] A send still waiting for recognition does
-            // not go out behind the user's back once they have left the page;
-            // the transcript stays, and they send it when they return.
-            voiceVM.abandonFinishForSend(.chatLeft)
-            if speechManager.state == .recording {
-                speechManager.stopRecording()
-            }
-            // [T-inputbar-keyboard-leaks-to-home] Cut the ONLY channel by which
-            // chat composer geometry can reach the HOME screen.
-            //
-            // `inputBarHeight` is per-view @State and only feeds the message
-            // list's bottom inset — it cannot touch home. What CAN is a stranded
-            // first responder: leaving the chat while the composer (or the voice
-            // transcript editor) still holds focus leaves the keyboard's inset
-            // reserved on the WINDOW, and SwiftUI's automatic keyboard avoidance
-            // applies that window-wide. The home screen's New/Search FAB row is a
-            // `.safeAreaInset(edge: .bottom)` (ContentView 1213/1326) with no
-            // `.ignoresSafeArea(.keyboard)` opt-out, so it reads that inflated
-            // bottom safe area and floats upward — the reported symptom. Same
-            // failure class as the offscreen-WebView phantom keyboard (8232308a)
-            // and the voice-editor stranded responder (4c530bf4); this closes the
-            // remaining door, the chat→home transition itself.
-            //
-            // Blanket-disabling keyboard avoidance on the home FAB row would be
-            // the wrong fix — its inline search field legitimately needs to rise
-            // with the keyboard. Releasing the responder at the source is correct
-            // and is a no-op when nothing is focused.
-            inputFocused = false
-            let keyWindow = UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap(\.windows)
-                .first(where: \.isKeyWindow)
-            if let keyWindow, keyWindow.endEditing(true) {
-                AppLogger(category: "InputBarLayout").info("chat onDisappear — released a lingering first responder (would have left a phantom keyboard inset on the window)")
-            }
-            // [OpenMinis#433] A new chat left with unsent text keeps it, like
-            // an existing session does: the next new chat for the same group
-            // resumes this VM. No-op once the chat has a session id. Runs after
-            // the voice cleanup above so a transcript kept there counts.
-            ViewModelCache.shared.parkNewChatIfUnsent(vm, groupId: initialGroupId)
-            // Capsule auto-shows whenever audio is loaded — no manual activation needed.
-            minisLogger.info("🔑DRAFT AIChatView.onDisappear vm=\(vm.vmInstanceId) sessionId=\(sessionId ?? "nil") draftId=\(draftId ?? "nil") vm.sessionId=\(vm.sessionId ?? "nil") vm.isProcessing=\(vm.isProcessing)")
-        }
+        .onDisappear { handleChatDisappear() }
+    }
+
+    var chatKeyboard: some View {
+        chatSheets
         // [T-voice-bg-fg-gap] Structural immunity: while the voice panel is up
         // and the transcript editor is NOT open, there is no legitimate keyboard
         // in this subtree — so ignore the keyboard safe-area entirely in that
@@ -1761,7 +1732,10 @@ struct AIChatView: View {
             let undocked = KeyboardDockRules.isUndocked(keyboardFrame: frame, screenBounds: bounds)
             if undocked != keyboardUndocked {
                 keyboardUndocked = undocked
-                AppLogger(category: "InputBarLayout").info("[FloatingKeyboard] keyboard \(undocked ? "undocked/floating — composer stays put" : "docked or hidden — normal avoidance") frame=\(frame) screen=\(bounds)")
+                let placement = undocked
+                    ? "undocked/floating — composer stays put"
+                    : "docked or hidden — normal avoidance"
+                AppLogger(category: "InputBarLayout").info("[FloatingKeyboard] keyboard \(placement) frame=\(String(describing: frame)) screen=\(String(describing: bounds))")
             }
         }
         // No keyboardWillHide reset on purpose: iPadOS posts a "hide" when the
@@ -1979,5 +1953,31 @@ struct AIChatView: View {
         // descendants (e.g. ToolCapsuleView's long-press menu) can react to
         // `vm.isProcessing` without threading the vm through every level.
         .environmentObject(vm)
+    }
+
+    func handleChatDisappear() {
+        isChatViewVisible = false
+        CrashBreadcrumbs.record("page.hide",
+                                detail: "chat:" + CrashBreadcrumbs.hash8(vm.sessionId ?? vm.draftId ?? "draft"))
+        AlwaysOnController.shared.chatDisappeared(key: vm.sessionId ?? vm.draftId)
+        inputBarHealthProbe?.cancel()
+        inputBarHealthProbe = nil
+        voiceVM.abandonFinishForSend(.chatLeft)
+        if speechManager.state == .recording {
+            speechManager.stopRecording()
+        }
+        inputFocused = false
+        let keyWindow = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+        if let keyWindow, keyWindow.endEditing(true) {
+            AppLogger(category: "InputBarLayout").info("chat onDisappear — released a lingering first responder (would have left a phantom keyboard inset on the window)")
+        }
+        ViewModelCache.shared.parkNewChatIfUnsent(vm, groupId: initialGroupId)
+        let sid = sessionId ?? "nil"
+        let draft = draftId ?? "nil"
+        let vmSid = vm.sessionId ?? "nil"
+        minisLogger.info("🔑DRAFT AIChatView.onDisappear vm=\(vm.vmInstanceId) sessionId=\(sid) draftId=\(draft) vm.sessionId=\(vmSid) vm.isProcessing=\(vm.isProcessing)")
     }
 }

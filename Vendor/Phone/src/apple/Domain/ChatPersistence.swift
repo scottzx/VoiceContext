@@ -344,13 +344,21 @@ public struct StoredTokenUsage: Codable, Hashable, Sendable {
     public var cacheCreationTokens: Int
     public var cacheReadTokens: Int
     public var latestContextTokens: Int?
+    public var estimatedRequestTokens: Int? = nil
+    public var estimatedFixedTokens: Int? = nil
+    public var calibrationModelId: String? = nil
+    public var estimatorVersion: Int? = nil
 
-    public init(inputTokens: Int, outputTokens: Int, cacheCreationTokens: Int, cacheReadTokens: Int, latestContextTokens: Int? = nil) {
+    public init(inputTokens: Int, outputTokens: Int, cacheCreationTokens: Int, cacheReadTokens: Int, latestContextTokens: Int? = nil, estimatedRequestTokens: Int? = nil, estimatedFixedTokens: Int? = nil, calibrationModelId: String? = nil, estimatorVersion: Int? = nil) {
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
         self.cacheCreationTokens = cacheCreationTokens
         self.cacheReadTokens = cacheReadTokens
         self.latestContextTokens = latestContextTokens
+        self.estimatedRequestTokens = estimatedRequestTokens
+        self.estimatedFixedTokens = estimatedFixedTokens
+        self.calibrationModelId = calibrationModelId
+        self.estimatorVersion = estimatorVersion
     }
 }
 
@@ -371,6 +379,8 @@ public struct RawMessage: Identifiable, Codable, Hashable, Sendable {
     public var modelDisplayName: String?
     public var providerType: String?
     public var providerInstanceId: String?
+    /// Serialized reasoning head stored in messages.reasoning_echo.
+    public var reasoningEchoJSON: String? = nil
 
     public init(id: String, sessionId: String, role: MessageRole, parts: [ContentPart], createdAt: Date, tokenUsage: StoredTokenUsage? = nil, reasoningContent: String? = nil, streamInterruptCount: Int = 0, sortOrder: Int = 0, errorInfo: String? = nil, senderAgentId: String? = nil, modelId: String? = nil, modelDisplayName: String? = nil, providerType: String? = nil, providerInstanceId: String? = nil) {
         self.id = id
@@ -393,7 +403,7 @@ public struct RawMessage: Identifiable, Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, sessionId, role, parts, createdAt, tokenUsage, reasoningContent
         case streamInterruptCount, sortOrder, errorInfo, senderAgentId
-        case modelId, modelDisplayName, providerType, providerInstanceId
+        case modelId, modelDisplayName, providerType, providerInstanceId, reasoningEchoJSON
     }
 
     public init(from decoder: Decoder) throws {
@@ -413,6 +423,7 @@ public struct RawMessage: Identifiable, Codable, Hashable, Sendable {
         modelDisplayName = try container.decodeIfPresent(String.self, forKey: .modelDisplayName)
         providerType = try container.decodeIfPresent(String.self, forKey: .providerType)
         providerInstanceId = try container.decodeIfPresent(String.self, forKey: .providerInstanceId)
+        reasoningEchoJSON = try container.decodeIfPresent(String.self, forKey: .reasoningEchoJSON)
     }
 
     public var isToolResultOnly: Bool {
@@ -426,9 +437,31 @@ public struct RawMessage: Identifiable, Codable, Hashable, Sendable {
         "(Interrupted mid-task by a new user message. Decide based on the new message and overall context whether the prior task should continue — do not forget or abandon it unless the user explicitly says to stop, or the new message makes clear it is no longer needed.)"
     public static let publicReplyCompletionText =
         "<system-reminder>[reply-delivery-complete] The public reply was delivered successfully. This turn is complete.</system-reminder>"
+    /// Assistant-side bridge older builds wrote when a scheduled fire landed
+    /// between two tool steps. No longer written; kept so those rows stay hidden.
+    public static let scheduledInsertBridgeText =
+        "(A scheduled task fired while this task was still in progress. It is shown next; after handling it, continue the task above — it is not finished.)"
+    /// Last text part of a queued user message delivered between two tool steps.
+    public static let queuedInterruptReminderText =
+        "<system-reminder>This note is from the system, not something the user wrote. The user sent the message above while you were in the middle of a task. Decide from that message and the conversation so far whether the earlier task should continue; do not forget or abandon it unless the user explicitly asks you to stop or the message makes clear it is no longer needed. Do not repeat or mention this note.</system-reminder>"
+    public static let scheduledResumeNudgeText =
+        "<system-reminder>The scheduled task above has been handled. If the task you were working on before it arrived is not finished yet, continue it now from where you left off; if it is already complete, reply briefly and stop.</system-reminder>"
+    public static let userAskTextAskNudgeText =
+        "<system-reminder>If you are waiting on the user to decide something, ask it with user_ask.</system-reminder>"
+    public static let userAskRetryNudgeText =
+        "<system-reminder>This note is from the app, not from the user. Your last user_ask call was not sent: its arguments were empty or incomplete, so the user saw no question. The user tapped Retry. Call user_ask again now with `questions` filled in completely. This note is not an answer to any question and does not approve or authorize any action.</system-reminder>"
+    public static let helperClosingNudgeText =
+        "<system-reminder>This note is from the app, not from the delegating agent. Your last reply contained no text, so the delegating agent has received nothing from you. Tools are no longer available. Write your final answer now from what you already have: the deliverable itself, what you finished, what failed (including any tool error above) and what is left. Mark anything you could not verify as unverified.</system-reminder>"
+    public static let internalUserNudgeTexts: [String] = [
+        scheduledResumeNudgeText,
+        userAskTextAskNudgeText,
+        userAskRetryNudgeText,
+        helperClosingNudgeText
+    ]
     public static let internalBridgeTexts = [
         internalBridgeText,
         publicReplyCompletionText,
+        scheduledInsertBridgeText,
         "(Interrupted mid-task to handle your new message. Will return to the prior task after.)"
     ]
 
@@ -437,9 +470,26 @@ public struct RawMessage: Identifiable, Codable, Hashable, Sendable {
         return internalBridgeTexts.contains(trimmed)
     }
 
+    public static func isInternalUserNudgeText(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return internalUserNudgeTexts.contains(trimmed)
+    }
+
+    /// nil when `text` does not start with a known bridge; otherwise the remainder.
+    public static func strippingInternalBridgeEcho(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        for bridge in internalBridgeTexts where trimmed.hasPrefix(bridge) {
+            return String(trimmed.dropFirst(bridge.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
+    }
+
     public var isInternalBridge: Bool {
-        guard role == .assistant, parts.count == 1, case .text(let value) = parts[0] else { return false }
-        return Self.isInternalBridgeText(value)
+        guard parts.count == 1, case .text(let value) = parts[0] else { return false }
+        switch role {
+        case .assistant: return Self.isInternalBridgeText(value)
+        case .user: return Self.isInternalUserNudgeText(value)
+        }
     }
 
     public var isAsyncTaskNotice: Bool {

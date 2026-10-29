@@ -15,7 +15,6 @@ import Combine
 import GameController
 import PhotosUI
 import QuickLook
-import QuickLook
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -26,14 +25,6 @@ extension AIChatView {
 
     @ViewBuilder
     var trailingMenu: some View {
-        trailingMenuButton
-    }
-
-    /// [T-ios-navbar-menu-baritem] The menu with this page's actions; shown
-    /// either inside the SwiftUI toolbar (`trailingMenu`) or as a real bar
-    /// button by ChatNavMenuBarItemInstaller (`navBarMenuInstaller`).
-    var trailingMenuButton: ChatTrailingMenuButton {
-        // [T-ios-navbar-uikit-menu] FINAL: UIKit-owned button+menu. The
         if vm.isDSH {
             Menu {
                 Button {
@@ -53,6 +44,15 @@ extension AIChatView {
             }
             .accessibilityLabel(String(localized: "More"))
         } else {
+            trailingMenuButton
+        }
+    }
+
+    /// [T-ios-navbar-menu-baritem] The menu with this page's actions; shown
+    /// either inside the SwiftUI toolbar (`trailingMenu`) or as a real bar
+    /// button by ChatNavMenuBarItemInstaller (`navBarMenuInstaller`).
+    var trailingMenuButton: ChatTrailingMenuButton {
+        // [T-ios-navbar-uikit-menu] FINAL: UIKit-owned button+menu. The
         // SwiftUI route is exhausted — with .equatable() the toolbar host
         // provably stopped ALL ToolbarContent rebuilds (device log
         // 2026-07-18 01:33: toolbarHostEval=1 across an entire session)
@@ -156,13 +156,12 @@ extension AIChatView {
             onSearchInChat: { vm.chatSearch.activate(prefill: nil) }
         )
     }
-        }
 
     /// [T-ios-navbar-menu-baritem] Zero-size view that keeps the "..." on the
     /// navigation item as a UIBarButtonItem (see ChatNavMenuBarItemInstaller).
     @ViewBuilder
     var navBarMenuInstaller: some View {
-        if ChatNavMenuBarItem.isEnabled {
+        if ChatNavMenuBarItem.isEnabled, !vm.isDSH {
             ChatNavMenuBarItemInstaller(menu: trailingMenuButton)
                 .frame(width: 0, height: 0)
                 .allowsHitTesting(false)

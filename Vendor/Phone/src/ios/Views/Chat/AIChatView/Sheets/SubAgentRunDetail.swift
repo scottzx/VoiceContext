@@ -446,15 +446,7 @@ struct SubAgentToolTimelineCard: View {
                             .padding(.horizontal, 7).padding(.vertical, 3)
                             .background(Capsule().stroke(Color(UIColor.separator), lineWidth: 0.5))
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(
-                            headerActionAccessibilityLabel
-                                ?? String(localized: "More")
-                        )
                     }
-
-                    trailingMenu
-                        .frame(width: YimaDesign.Layout.hitTarget, height: YimaDesign.Layout.hitTarget)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(digest.recent(limit)) { call in

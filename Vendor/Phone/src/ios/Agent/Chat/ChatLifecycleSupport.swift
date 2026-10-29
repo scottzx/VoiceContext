@@ -497,7 +497,7 @@ final class SessionConcurrencyManager: ObservableObject {
     }
 
     /// Acquire a processing slot. Returns immediately if under limit, otherwise suspends until a slot opens.
-    private func acquireSlot(sessionId: String) async throws {
+    func acquireSlot(sessionId: String) async throws {
         // A newcomer must not use a temporarily visible vacancy while an older
         // waiter is being resumed. `fillAvailableSlots` reserves released slots
         // in `runningSessions` before continuations are resumed, and this queue
@@ -524,7 +524,7 @@ final class SessionConcurrencyManager: ObservableObject {
     }
 
     /// Release a processing slot and resume the next waiting session (FIFO).
-    private func releaseSlot(sessionId: String) {
+    func releaseSlot(sessionId: String) {
         guard let count = runningCounts[sessionId], count > 0 else { return }
         if count == 1 {
             runningCounts.removeValue(forKey: sessionId)
@@ -785,7 +785,8 @@ final class ViewModelCache {
             dshDraftAliases = dshDraftAliases.filter { $0.key != key && $0.value != key }
             lruOrder.removeAll { $0 == key }
         }
-        let vm = AIChatViewModel(dshService: service)
+        let vm = AIChatViewModel()
+        vm.dshService = service
         vm.sessionId = sessionID
         vm.draftId = draftID
         cache[requestedKey] = vm

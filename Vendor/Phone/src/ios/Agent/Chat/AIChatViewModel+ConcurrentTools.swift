@@ -166,7 +166,7 @@ extension AIChatViewModel {
         )
         if let gate {
             var succeeded = !outcome.cancelled
-            if case .toolResult(_, _, _, let isError, _, _, _, _) = outcome.resultPart {
+            if case .toolResult(_, _, _, let isError, _, _, _, _, _) = outcome.resultPart {
                 succeeded = !isError && !outcome.cancelled
             }
             hooks?.didRunTool(name: tu.name, index: gate.index, succeeded: succeeded)

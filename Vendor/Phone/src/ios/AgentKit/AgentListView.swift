@@ -60,6 +60,22 @@ private enum AppRootTab: Hashable {
     case me
 }
 
+private struct DiscoveryHubView: View {
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView("发现", systemImage: "safari")
+        }
+    }
+}
+
+private struct MySettingsHubView: View {
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView("我的", systemImage: "person.crop.circle")
+        }
+    }
+}
+
 private enum UnifiedChatItem: Identifiable {
     case direct(AgentProfile)
     case group(GroupProfile)

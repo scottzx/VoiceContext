@@ -85,8 +85,8 @@ enum ToolSheet: String, Identifiable {
 
 struct ContentView: View {
     #if VOICE_AGENT_FUSION
-    @ObservedObject private var appNavigation = AppNavigationCenter.shared
-    @Environment(\.appNavigationIsActive) private var appNavigationIsActive
+    @ObservedObject var appNavigation = AppNavigationCenter.shared
+    @Environment(\.appNavigationIsActive) var appNavigationIsActive
     #endif
     /// When set, this screen shows only the given agent's sessions and acts as
     /// that agent's history list rather than the app's root. Left nil at the
@@ -142,7 +142,7 @@ struct ContentView: View {
         return list.filter { $0.agentId == agentFilter }
     }
 
-    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.scenePhase) var scenePhase
     @EnvironmentObject var shareCoordinator: ShareCoordinator
     @ObservedObject private var deepLink = DeepLinkCoordinator.shared
     /// Subscribe to the router so changes to its `@Published` fields are
@@ -607,6 +607,12 @@ struct ContentView: View {
     static let pendingBackgroundNavigationTTL: TimeInterval = 90
 
     var body: some View {
+        tailLayer
+    }
+
+    /// Layout and session-creation observers. Split from `body` so each
+    /// modifier chain stays inside the type checker's time budget.
+    var rootLayer: some View {
         GeometryReader { geo in
             let wide = isIPad && geo.size.width >= compactThreshold
             Group {
@@ -821,6 +827,10 @@ struct ContentView: View {
                 ISHTerminalView(showCloseButton: true)
             }
         }
+    }
+
+    var sheetLayer: some View {
+        rootLayer
         // [T-crash-breadcrumbs] Toolbar sheets and the terminal cover: which
         // one is up (an enum name), and when it goes away.
         .onChange(of: activeToolSheet) { sheet in
@@ -1178,6 +1188,10 @@ struct ContentView: View {
             fetchAlarmsIfNeeded()
             await refreshRemoteDeviceSessions()
         }
+    }
+
+    var navigationLayer: some View {
+        sheetLayer
         .onReceive(NotificationCenter.default.publisher(for: .cloudSyncDidFetchChanges)) { _ in
             // [T-ios-state-publish-offmain-crash] cloud-sync fetch fires off-main;
             // force the @State write onto the main thread.
@@ -1382,6 +1396,10 @@ struct ContentView: View {
             }
             fetchAlarmsIfNeeded()
         }
+    }
+
+    var tailLayer: some View {
+        navigationLayer
         .onChange(of: shareCoordinator.hasPendingShare) { hasPending in
             if hasPending {
                 let hadRecord = SharedContainerStore.loadPendingShare() != nil
@@ -1462,33 +1480,13 @@ struct ContentView: View {
             DSHServiceSettingsView()
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.dshNewChatRequested"))) { notification in
-            guard agentFilter == nil, let value = notification.object as? String,
-                  let id = UUID(uuidString: value), dshServices.services.contains(where: { $0.id == id }) else { return }
-            selectChatSource(id)
-            openSession(DSHSessionRoute.draft(serviceID: id).rawValue)
+            handleDSHNewChatRequested(notification)
         }
         .onChange(of: dshServices.services) { previous, current in
-            for old in previous where current.first(where: { $0.id == old.id })?.url != old.url {
-                ViewModelCache.shared.invalidateDSH(serviceID: old.id)
-            }
-            let route = selectedSessionId.flatMap(DSHSessionRoute.init(rawValue:))
-                ?? currentStackSessionId.flatMap(DSHSessionRoute.init(rawValue:))
-            if let route {
-                let oldOrigin = previous.first { $0.id == route.serviceID }?.url
-                let newOrigin = current.first { $0.id == route.serviceID }?.url
-                if oldOrigin != newOrigin {
-                    selectChatSource(newOrigin == nil ? nil : route.serviceID)
-                }
-            }
+            handleDSHServicesChanged(from: previous, to: current)
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Yima.dshServiceCredentialsDidChange"))) { notification in
-            guard agentFilter == nil, let value = notification.object as? String,
-                  let serviceID = UUID(uuidString: value) else { return }
-            ViewModelCache.shared.invalidateDSH(serviceID: serviceID)
-            dshListRevision = UUID()
-            let route = selectedSessionId.flatMap(DSHSessionRoute.init(rawValue:))
-                ?? currentStackSessionId.flatMap(DSHSessionRoute.init(rawValue:))
-            if route?.serviceID == serviceID { selectChatSource(dshServices.selectedServiceID) }
+            handleDSHCredentialsDidChange(notification)
         }
         #endif
         .onChange(of: deepLink.pendingSessionId) { sid in
@@ -1504,56 +1502,7 @@ struct ContentView: View {
             deepLink.pendingSessionId = nil
         }
         .onChange(of: scenePhase) { phase in
-            // [T-ios-scenephase-active-sigkill] Defer ALL .active work off the
-            // synchronous callback. Writing @Published (SyncCore.isAppInBackground)
-            // here triggers objectWillChange → SwiftUI view invalidation in the
-            // same runloop tick as the foreground view-graph re-evaluation → SIGTRAP.
-            if phase == .active {
-                Task { @MainActor in
-                    await Task.yield()
-                    // Guard against rapid bg→fg→bg: if scenePhase already
-                    // changed back, skip the stale .active work.
-                    guard scenePhase == .active else { return }
-                    // [T-ios-bg-nav-push-watchdog] Commit any push that arrived
-                    // while backgrounded. Runs here — after the `Task.yield()`
-                    // that keeps .active work off the synchronous callback — so
-                    // the pushed screen's first layout pass lands on its own
-                    // runloop turn with a full frame budget, never inside the
-                    // foreground-transition tick.
-                    flushPendingBackgroundNavigation()
-                    fetchAlarmsIfNeeded()
-                    if #available(iOS 17.0, *) {
-                        SyncCore.shared.isAppInBackground = false
-                        // [T-icloud-migration-keeps-going] A migration that
-                        // suspended (no progress for a window, or left
-                        // suspended by an older build) picks up again on
-                        // foreground instead of waiting for a cold launch.
-                        // No-op unless suspended and idle.
-                        Task { await MigrationEngine.shared.resumeIfSuspended(trigger: "foreground") }
-                    }
-                    #if DEBUG
-                    IdleTimerLease.set(.debugMenu, held: keepScreenAwake, reason: "active")
-                    #endif
-                    // [T-home-fab-keyboard-inset] Defense-in-depth behind the
-                    // structural .ignoresSafeArea immunity on the session lists:
-                    // on foreground return with the HOME screen actually showing
-                    // (no pushed chat on compact, no selected session on split —
-                    // a split chat column may legitimately hold composer focus)
-                    // and the inline search bar not focused, no responder is
-                    // legitimate. Resign whatever UIKit resurrected during the
-                    // background snapshot pass so its stale keyboard inset can't
-                    // inflate the window's bottom safe area.
-                    if !searchFocused, navigationPath.isEmpty, selectedSessionId == nil {
-                        UIApplication.shared.sendAction(
-                            #selector(UIResponder.resignFirstResponder),
-                            to: nil, from: nil, for: nil)
-                    }
-                }
-            } else {
-                if #available(iOS 17.0, *) {
-                    SyncCore.shared.isAppInBackground = (phase != .active)
-                }
-            }
+            handleScenePhaseChange(phase)
         }
         #if VOICE_AGENT_FUSION
         .onChange(of: appNavigation.command) { _, command in handleAppNavigation(command) }

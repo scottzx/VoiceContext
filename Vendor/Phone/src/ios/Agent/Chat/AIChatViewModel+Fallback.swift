@@ -390,7 +390,7 @@ extension AIChatViewModel {
                     rebuiltPrompt += "\n\n" + behaviorFragment
                 }
                 if runtimePolicy.replyDelivery != nil || runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven) != nil {
-                    rebuiltPrompt += memoryStatusFragment(tools: tools)
+                    rebuiltPrompt += memoryStatusFragment
                 }
                 currentSystemPrompt = rebuiltPrompt
                 // continue loop — will try next entry immediately
@@ -441,7 +441,7 @@ extension AIChatViewModel {
                         rebuiltPrompt += "\n\n" + behaviorFragment
                     }
                     if runtimePolicy.replyDelivery != nil || runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven) != nil {
-                        rebuiltPrompt += memoryStatusFragment(tools: tools)
+                        rebuiltPrompt += memoryStatusFragment
                     }
                     currentSystemPrompt = rebuiltPrompt
                     continue
@@ -544,7 +544,7 @@ extension AIChatViewModel {
                         rebuiltPrompt += "\n\n" + behaviorFragment
                     }
                     if runtimePolicy.replyDelivery != nil || runtimePolicy.allowedToolNames(noticeDriven: isNoticeDriven) != nil {
-                        rebuiltPrompt += memoryStatusFragment(tools: tools)
+                        rebuiltPrompt += memoryStatusFragment
                     }
                     currentSystemPrompt = rebuiltPrompt
                     // continue loop — will try next entry

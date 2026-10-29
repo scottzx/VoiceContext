@@ -135,7 +135,7 @@ private final class SharedAgentRunToolBatchAdapter {
             batchBudget: imageBudget
         )
         outcomes.append(outcome)
-        guard case .toolResult(_, _, let content, _, _, _, _, _) = outcome.resultPart else {
+        guard case .toolResult(_, _, let content, _, _, _, _, _, _) = outcome.resultPart else {
             return "Tool completed."
         }
         return content

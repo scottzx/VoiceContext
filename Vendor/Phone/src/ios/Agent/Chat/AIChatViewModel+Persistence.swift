@@ -378,11 +378,12 @@ extension AIChatViewModel {
             // A group transcript is a display/routing projection. Its member
             // agents run in their own private sessions, so this full API-context
             // copy is never consumed. Avoid rebuilding it for long rooms.
+            // Phase B: stamp the DB row id into dbMessageId so compact can
+            // resolve boundaries by id after restore. Group transcripts never
+            // consume this copy, but the user bubble still links through it.
+            var agentMsg = raw.toAgentMessage(mediaResolver: resolver)
+            agentMsg.dbMessageId = raw.id
             if !isGroupTranscript {
-                // Phase B: stamp the DB row id into dbMessageId so compact can
-                // resolve boundaries by id after restore.
-                var agentMsg = raw.toAgentMessage(mediaResolver: resolver)
-                agentMsg.dbMessageId = raw.id
                 loadedHistory.append(agentMsg)
             }
 

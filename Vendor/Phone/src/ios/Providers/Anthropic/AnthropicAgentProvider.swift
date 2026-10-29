@@ -1193,7 +1193,7 @@ extension AnthropicAgentProvider {
         } else {
             toolChoice = .init(type: .auto)
         }
-        MessageParameter(
+        return MessageParameter(
             model: .other(model.id),
             messages: cachedMessages,
             maxTokens: maxTokens,

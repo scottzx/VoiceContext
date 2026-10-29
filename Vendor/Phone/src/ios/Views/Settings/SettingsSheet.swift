@@ -40,6 +40,7 @@ private enum SettingsDestination: Hashable {
 
 struct SettingsSheet: View {
     @Binding var showTerminal: Bool
+    var presentationOwner: String = "chat"
     @AppStorage("appearanceMode") private var appearanceMode: Int = 0
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var deepLink = DeepLinkCoordinator.shared
@@ -437,6 +438,7 @@ struct SettingsSheet: View {
                 }
             }
             .onAppear {
+                UserDefaults.standard.set(presentationOwner, forKey: "settingsPresentationOwner")
                 applyPendingDeepLink()
                 // Legacy flags — kept so older call sites keep working.
                 if deepLink.showEnvironmentVariables {

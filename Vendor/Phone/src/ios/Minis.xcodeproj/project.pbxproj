@@ -151,6 +151,7 @@
 					<string>$(SRCROOT)/NativeOffloads</string>
 					<string>$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers</string>
 					<string>$(SRCROOT)/Vendor/cppjieba/include</string>
+					<string>$(SRCROOT)/../../deps/frameworks/Rclone.xcframework/ios-arm64/Headers</string>
 				</array>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>1</string>
@@ -1482,6 +1483,9 @@
 				<string>E5KIMIR02</string>
 				<string>E5KIMIR03</string>
 				<string>E5KIMIR04</string>
+				<string>E5COPIR01</string>
+				<string>E5COPIR02</string>
+				<string>E5COPIR03</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -1615,6 +1619,7 @@
 					<string>$(SRCROOT)/NativeOffloads</string>
 					<string>$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers</string>
 					<string>$(SRCROOT)/Vendor/cppjieba/include</string>
+					<string>$(SRCROOT)/../../deps/frameworks/Rclone.xcframework/ios-arm64/Headers</string>
 				</array>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>1</string>
@@ -3306,6 +3311,26 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>RCL000010</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>RCL000020</string>
+		</dict>
+		<key>RCL000020</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>wrapper.xcframework</string>
+			<key>name</key>
+			<string>Rclone.xcframework</string>
+			<key>path</key>
+			<string>../../deps/frameworks/Rclone.xcframework</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>E51000020</key>
 		<dict>
 			<key>isa</key>
@@ -3314,6 +3339,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 			<string>2147483647</string>
 			<key>files</key>
 			<array>
+				<string>RCL000010</string>
 				<string>AA9C2BF92F65996900F41633</string>
 				<string>AA26CCB92F31070A00AECF2D</string>
 				<string>AA26CCC32F31090100AECF2D</string>
@@ -4360,6 +4386,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 				<string>E5FP00003</string>
 				<string>E5FP00200</string>
 				<string>E5SHV0002</string>
+				<string>E5FPBH02</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
@@ -4510,6 +4537,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 					<string>$(SRCROOT)/NativeOffloads</string>
 					<string>$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers</string>
 					<string>$(SRCROOT)/Vendor/cppjieba/include</string>
+					<string>$(SRCROOT)/../../deps/frameworks/Rclone.xcframework/ios-arm64/Headers</string>
 				</array>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>1</string>
@@ -4984,6 +5012,7 @@ echo "note: stripped VAD framework ($BEFORE -&gt; $AFTER bytes)"
 					<string>$(SRCROOT)/NativeOffloads</string>
 					<string>$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers</string>
 					<string>$(SRCROOT)/Vendor/cppjieba/include</string>
+					<string>$(SRCROOT)/../../deps/frameworks/Rclone.xcframework/ios-arm64/Headers</string>
 				</array>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>1</string>
@@ -6774,6 +6803,86 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>2147483647</string>
 			<key>files</key>
 			<array>
+				<string>E5AD0001</string>
+				<string>E5AD0002</string>
+				<string>E5AD0003</string>
+				<string>E5AD0004</string>
+				<string>E5AD0005</string>
+				<string>E5AD0006</string>
+				<string>E5AD0007</string>
+				<string>E5AD0008</string>
+				<string>E5AD0111</string>
+				<string>E5AD0112</string>
+				<string>E5AD0113</string>
+				<string>E5AD0114</string>
+				<string>E5SAC0010</string>
+				<string>E5SUB0002</string>
+				<string>E5FIO0001</string>
+				<string>9214E78B060BCD8BA7E118D4</string>
+				<string>E5QTA04B</string>
+				<string>E5SCH0001</string>
+				<string>E5AJR0004</string>
+				<string>E5CBR0001</string>
+				<string>E5LRD0001</string>
+				<string>E5AJS0001</string>
+				<string>E5STD0001</string>
+				<string>E5QTA06B</string>
+				<string>E5ACB0001</string>
+				<string>87764AE3691086C907B97519</string>
+				<string>E5TWG0001</string>
+				<string>E5UAM0001</string>
+				<string>E5SCH0002</string>
+				<string>E5CVSET0000000000000A002</string>
+				<string>7F0DF01D0A</string>
+				<string>E5CBR0002</string>
+				<string>E5QTA08B</string>
+				<string>E5STD0002</string>
+				<string>E5QTA01B</string>
+				<string>E5ACB0002</string>
+				<string>F1MCPDCRB</string>
+				<string>FE115F74BE2709CEB6B7837F</string>
+				<string>E5VMSPL016B</string>
+				<string>E5CRDBL01</string>
+				<string>E5SCH0003</string>
+				<string>E5SPT0001</string>
+				<string>E5CSH0001</string>
+				<string>E5QTA03B</string>
+				<string>E5AJR0001</string>
+				<string>E5ITL0001</string>
+				<string>E5A0J1T0B1F0000000000001</string>
+				<string>E5AOV0001</string>
+				<string>E5SEV0001</string>
+				<string>E5TLS0001</string>
+				<string>E5CRDBL02</string>
+				<string>E5QTA05B</string>
+				<string>E5SCH0004</string>
+				<string>C39F1823882535F6FCC47D18</string>
+				<string>E5AON0001</string>
+				<string>E5SRS0001</string>
+				<string>E5CSH0002</string>
+				<string>E5CDX0001</string>
+				<string>E5AMI0001</string>
+				<string>E5SAT0001</string>
+				<string>E5AJR0002</string>
+				<string>E5D000F1</string>
+				<string>F1W00901</string>
+				<string>E5QTA07B</string>
+				<string>E5C0DE9A1</string>
+				<string>E5RSD0001</string>
+				<string>E5CRDBL03</string>
+				<string>E5CVSET0000000000000A001</string>
+				<string>E5SDS0001</string>
+				<string>E5CSH0003</string>
+				<string>E5MSS0001</string>
+				<string>90EF21EB8AAB5C9B849883A4</string>
+				<string>E5CDX0002</string>
+				<string>E5HBV0001</string>
+				<string>E5SUB0011</string>
+				<string>E5PPB0001</string>
+				<string>E5AJR0003</string>
+				<string>E5QTA02B</string>
+				<string>E5SPDT0001</string>
+				<string>E5FPBH01</string>
 				<string>FK1000020000000000000001</string>
 				<string>FK1000020000000000000002</string>
 				<string>FK1000020000000000000003</string>
@@ -6839,6 +6948,10 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>E5KIMI0B1</string>
 				<string>E5KIMI0C1</string>
 				<string>E5KIMI0D1</string>
+				<string>E5COPI0A1</string>
+				<string>E5COPI0B1</string>
+				<string>E5COPI0C1</string>
+				<string>E5SRCH0A1</string>
 				<string>E52000009</string>
 				<string>E53000001</string>
 				<string>E5VME001</string>
@@ -8454,6 +8567,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 				<string>E5CSSPL021R</string>
 				<string>E5CSSPL022R</string>
 				<string>E5CSSPL023R</string>
+				<string>E5SRCHR01</string>
 				<string>E5SDS0011</string>
 			</array>
 			<key>sourceTree</key>
@@ -8820,6 +8934,222 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>fileRef</key>
 			<string>A1B2C3D4E5F60718293A4B5D</string>
 		</dict>
+		<key>E5AD0011</key>
+		<dict>
+			<key>path</key>
+			<string>AgentProfile.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0012</key>
+		<dict>
+			<key>path</key>
+			<string>GroupProfile.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0013</key>
+		<dict>
+			<key>path</key>
+			<string>GroupMentionRouter.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0014</key>
+		<dict>
+			<key>path</key>
+			<string>GroupChatPrompt.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0015</key>
+		<dict>
+			<key>path</key>
+			<string>AgentRunEngine.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0016</key>
+		<dict>
+			<key>path</key>
+			<string>ChatPersistence.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0017</key>
+		<dict>
+			<key>path</key>
+			<string>GroupChatEngine.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0018</key>
+		<dict>
+			<key>path</key>
+			<string>SyncV2Contracts.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0101</key>
+		<dict>
+			<key>path</key>
+			<string>Hooks/HookTypes.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0102</key>
+		<dict>
+			<key>path</key>
+			<string>Hooks/HookEngine.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0103</key>
+		<dict>
+			<key>path</key>
+			<string>AgentCore/AgentCoreModels.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0104</key>
+		<dict>
+			<key>path</key>
+			<string>AgentCore/AgentCoreConfig.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5AD0001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0011</string>
+		</dict>
+		<key>E5AD0002</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0012</string>
+		</dict>
+		<key>E5AD0003</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0013</string>
+		</dict>
+		<key>E5AD0004</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0014</string>
+		</dict>
+		<key>E5AD0005</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0015</string>
+		</dict>
+		<key>E5AD0006</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0016</string>
+		</dict>
+		<key>E5AD0007</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0017</string>
+		</dict>
+		<key>E5AD0008</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0018</string>
+		</dict>
+		<key>E5AD0111</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0101</string>
+		</dict>
+		<key>E5AD0112</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0102</string>
+		</dict>
+		<key>E5AD0113</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0103</string>
+		</dict>
+		<key>E5AD0114</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5AD0104</string>
+		</dict>
 		<key>E5AD0030</key>
 		<dict>
 			<key>path</key>
@@ -8829,7 +9159,20 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<key>name</key>
 			<string>AppleDomain</string>
 			<key>children</key>
-			<array/>
+			<array>
+				<string>E5AD0011</string>
+				<string>E5AD0015</string>
+				<string>E5AD0016</string>
+				<string>E5AD0018</string>
+				<string>E5AD0012</string>
+				<string>E5AD0013</string>
+				<string>E5AD0014</string>
+				<string>E5AD0017</string>
+				<string>E5AD0101</string>
+				<string>E5AD0102</string>
+				<string>E5AD0103</string>
+				<string>E5AD0104</string>
+			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -9074,6 +9417,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 					<string>$(SRCROOT)/NativeOffloads</string>
 					<string>$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers</string>
 					<string>$(SRCROOT)/Vendor/cppjieba/include</string>
+					<string>$(SRCROOT)/../../deps/frameworks/Rclone.xcframework/ios-arm64/Headers</string>
 				</array>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>1</string>
@@ -10730,6 +11074,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 					<string>$(SRCROOT)/NativeOffloads</string>
 					<string>$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers</string>
 					<string>$(SRCROOT)/Vendor/cppjieba/include</string>
+					<string>$(SRCROOT)/../../deps/frameworks/Rclone.xcframework/ios-arm64/Headers</string>
 				</array>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>1</string>
@@ -11709,6 +12054,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 					<string>$(SRCROOT)/NativeOffloads</string>
 					<string>$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers</string>
 					<string>$(SRCROOT)/Vendor/cppjieba/include</string>
+					<string>$(SRCROOT)/../../deps/frameworks/Rclone.xcframework/ios-arm64/Headers</string>
 				</array>
 				<key>INFOPLIST_KEY_UILaunchStoryboardName</key>
 				<string>Launch Screen</string>
@@ -14109,6 +14455,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>Frameworks</string>
 			<key>children</key>
 			<array>
+				<string>RCL000020</string>
 				<string>AA26CCB82F31070A00AECF2D</string>
 				<string>AA26CCC42F31090100AECF2D</string>
 				<string>AA26CCC22F31090000AECF2D</string>
@@ -14242,6 +14589,7 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 					<string>$(SRCROOT)/NativeOffloads</string>
 					<string>$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers</string>
 					<string>$(SRCROOT)/Vendor/cppjieba/include</string>
+					<string>$(SRCROOT)/../../deps/frameworks/Rclone.xcframework/ios-arm64/Headers</string>
 				</array>
 				<key>INFOPLIST_KEY_UILaunchStoryboardName</key>
 				<string>Launch Screen</string>
@@ -14465,6 +14813,84 @@ if [ ! -f "$OUT" ] || ! cmp -s "$TMP" "$OUT"; then mv "$TMP" "$OUT"; else rm -f 
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>E5KIMIR04</string>
+		</dict>
+		<key>E5COPI0A1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5COPIR01</string>
+		</dict>
+		<key>E5COPI0B1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5COPIR02</string>
+		</dict>
+		<key>E5COPI0C1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5COPIR03</string>
+		</dict>
+		<key>E5COPIR01</key>
+		<dict>
+			<key>path</key>
+			<string>Providers/Copilot/CopilotConstants.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>CopilotConstants.swift</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>E5COPIR02</key>
+		<dict>
+			<key>path</key>
+			<string>Providers/Copilot/CopilotModelsAPI.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>CopilotModelsAPI.swift</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>E5COPIR03</key>
+		<dict>
+			<key>path</key>
+			<string>Providers/Copilot/OAuth/CopilotOAuthManager.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>CopilotOAuthManager.swift</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>E5SRCH0A1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E5SRCHR01</string>
+		</dict>
+		<key>E5SRCHR01</key>
+		<dict>
+			<key>path</key>
+			<string>SearchKeywords.swift</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>E5S000012</key>
 		<dict>

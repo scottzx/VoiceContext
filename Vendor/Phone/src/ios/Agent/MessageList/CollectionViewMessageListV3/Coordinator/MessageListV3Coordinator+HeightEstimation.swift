@@ -346,11 +346,11 @@ extension CollectionViewMessageListV3.Coordinator {
             }
         }
 
-        private static var assistantHeaderHeight: CGFloat {
+        static var assistantHeaderHeight: CGFloat {
             max(YimaDesign.Layout.hitTarget, UIFont.preferredFont(forTextStyle: .headline).lineHeight) + YimaDesign.Space.xs
         }
 
-        private static var toolRowHeight: CGFloat {
+        static var toolRowHeight: CGFloat {
             max(YimaDesign.Layout.hitTarget, UIFont.preferredFont(forTextStyle: .caption1).lineHeight)
         }
 

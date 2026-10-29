@@ -633,7 +633,6 @@ int calendar_cmd_reminders(int argc, char **argv, int stdout_fd, BOOL compact, B
         }
         calendars = filtered;
     }
-            }
 
     NSPredicate *pred;
     if (showCompleted) {

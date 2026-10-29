@@ -180,6 +180,8 @@ extension AIChatView {
         #if DEBUG
         NavbarEvalStats.toolbarPass += 1
         #endif
+        let display = SessionModelDisplay(store: configStore, draftGroupId: vm.initialGroupId)
+        let resolved = display.resolvedDetail(for: vm.sessionId)
         return NavTitleKey(
             sessionTitle: chatHeaderTitle,
             canEditTitle: canEditChatHeaderTitle,
@@ -509,6 +511,46 @@ extension AIChatView {
         .blur(radius: titleIsVisuallyLocked ? 8 : 0)
         .allowsHitTesting(!titleIsVisuallyLocked)
         .animation(.easeInOut(duration: 0.15), value: titleIsVisuallyLocked)
+    }
+
+    @ViewBuilder
+    private var thinkingLevelBadge: some View {
+        let level = vm.currentThinkingLevel
+        // Sits on nav-bar row 2 (the 9pt "provider · model" line). Kept a
+        // touch smaller than that text (8pt / 6px icon) so it stays the most
+        // compact label in the title and never larger than the "is thinking…"
+        // intensity pill in the message list.
+        //
+        // Also rendered when the level is Off (reasoning-capable model with
+        // thinking disabled): the pill then reads icon + "Off" as a tap target
+        // for enabling deep thinking. Dim the icon in that state — matches the
+        // 0.4 Off-row convention in ThinkingLevelSheetView.
+        HStack(spacing: 2) {
+            Image("ThinkingIcon")
+                .resizable()
+                .frame(width: 6, height: 6)
+                .opacity(level.isEnabled ? 1.0 : 0.4)
+            Text(level.displayName)
+                .font(.system(size: 8, weight: .medium))
+        }
+        .foregroundStyle(ChatColors.secondaryText)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(Color.secondary.opacity(0.10)))
+        .onTapGesture {
+            showThinkingLevelSheet = true
+        }
+        .sheet(isPresented: $showThinkingLevelSheet) {
+            ThinkingLevelSheetView(
+                currentLevel: level,
+                availableLevels: vm.availableThinkingLevels,
+                onSelect: { newLevel in
+                    vm.setThinkingLevel(newLevel)
+                    showThinkingLevelSheet = false
+                }
+            )
+            .presentationDetents([.medium])
+        }
     }
 
     /// True when the current session's navbar title must render blurred —

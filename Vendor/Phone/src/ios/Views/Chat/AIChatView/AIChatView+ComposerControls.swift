@@ -20,6 +20,9 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import WebKit
+#if VOICE_AGENT_FUSION
+import VoiceRecording
+#endif
 
 extension AIChatView {
     /// Attachment "+" button.
@@ -353,7 +356,7 @@ extension AIChatView {
                 .contentShape(Rectangle())
     }
 
-    private func ensureLocalVoiceModels() -> Bool {
+    func ensureLocalVoiceModels() -> Bool {
         #if VOICE_AGENT_FUSION
         if VoiceProviderResolver.resolvedInputEntry()?.providerInstanceId == SenseVoiceProvider.builtinProviderId,
            !TranscriptionModelStore.isReady {
